@@ -41,7 +41,7 @@ settings:add({
 })
 
 local alert = module:addAlert({ key = "place", label = L["Surroundings Announcements"] })
-alert:addOutput({
+local placeTTS = alert:addOutput({
     type = "TTS",
     key = "tts",
     label = L["TTS Alert"],
@@ -50,6 +50,21 @@ alert:addOutput({
     end,
 })
 settings:addRef("place", alert.parameters)
+
+-- Announcements made while walking speak with game voice 0, not the player's speech voice: with
+-- an NVDA SAPI voice there, the screen reader cuts its speech off at every key press (walking).
+-- Same as the minimap scanner's walking announcements.
+local WALK_VOICE = 0
+
+function placeTTS:onFire(message)
+    local text = message.text
+    if text == nil then
+        return
+    end
+    local speech = WowVision.base.speech
+    local volume = math.max(0, math.min(100, speech.settings.speechVolume or 100))
+    C_VoiceChat.SpeakText(WALK_VOICE, WowVision.ttsCacheBust.bust(text), speech.settings.speechRate, volume, false)
+end
 
 local zone = nil                 -- the zone data the player is in (unpacked)
 local outdoor = logic.newEntry(8)
