@@ -22,10 +22,19 @@ local function newZone()
         grid = { "100*2,213*2,383*2", "400*6", "0*6" },
         bridgeUnder = { 0, 5, 5 },
         exits = { 95, 20, 10 },
-        -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water
-        structs = { "dock" },
-        structCells = { 1, 1, 1, 1, 2, 1 },
-        edges = { { 1, 1, 3, 1, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 } },
+        -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water;
+        -- a wall over row 1, columns 4 and 5, its wall-walk (high piece 1) dropping 12 yd to the
+        -- south at x = 81; stepped onto from the ground at its east end (x 88, y 1) or out of a
+        -- building at x 85, y 25; the wall-walk joins a tower top (piece 2) over row 0, column 4
+        structs = { "dock", "wall" },
+        structCells = { 1, 1, 1, 1, 2, 1, 1, 4, 2, 1, 5, 2 },
+        edges = {
+            { 1, 1, 3, 1, 0, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 },
+            { 2, 5, 12, 0, 1, 81, 14, 81, 12 },
+        },
+        pieceCells = { 1, 4, 1, 1, 5, 1, 0, 4, 2 },
+        access = { 1, 1, 88, 1, 1, 2, 85, 25 },
+        links = { 1, 2 },
         -- frames chosen so that the building frame equals world x and y
         interiors = { { "Test Inn", 0, 0, 1, -1, 0, 0, -1 }, { "Test Barn", 0, 0, 1, -1, 0, 0, -1 } },
         rooms = {
@@ -69,6 +78,8 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(z, 100, true), "forest")
         t:assertEqual(logic.describe(z, 673, true), "at the well, to the east, Test road to the north")
         t:assertEqual(logic.describe(z, 673, false), "at the well")
+        -- leaving a road: the live road hint replaces the stored nearest road
+        t:assertEqual(logic.describe(z, 673, true, true), "at the well, to the east")
         t:assertNil(logic.describe(z, 900, true))
     end,
 
@@ -109,6 +120,45 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.nearestEdge(z, 85, 30, 3))       -- 5 yd away
         t:assertNil(logic.nearestEdge(z, 88, 55, 3))       -- beside the dock: too far from the edge
         t:assertNil(logic.nearestEdge(z, 91, 30, 3))       -- beyond the edge (in the water)
+    end,
+
+    ["a wall-walk's edge warns only after stepping onto it, not from below"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        local high = {}
+        -- walking along the foot of the wall: under the wall-walk, never on it
+        logic.updateHigh(z, high, 85, 35)
+        logic.updateHigh(z, high, 83, 14)
+        t:assertNil(high[1])
+        t:assertNil(logic.nearestEdge(z, 83, 14, 3, high))
+        -- up at the east end, then along the wall-walk to its edge
+        logic.updateHigh(z, high, 88, 2)
+        t:assertEqual(high[1], true)
+        logic.updateHigh(z, high, 83, 14)
+        t:assertEqual(high[1], true)
+        local i, d = logic.nearestEdge(z, 83, 14, 3, high)
+        t:assertEqual(i, 2)
+        t:assertEqual(d, 2)
+        -- the joined tower top counts while walking over to it
+        t:assertEqual(high[2], true)
+        -- off the wall's footprint: forgotten
+        logic.updateHigh(z, high, 85, 35)
+        t:assertNil(high[1])
+        t:assertNil(high[2])
+    end,
+
+    ["coming out of a building onto a wall-walk counts; walking past that spot does not"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        local high = {}
+        logic.updateHigh(z, high, 86, 25, false)
+        t:assertNil(high[1])
+        logic.updateHigh(z, high, 86, 25, true)
+        t:assertEqual(high[1], true)
+        -- the tower top alone is not stepped onto from below
+        local other = {}
+        logic.updateHigh(z, other, 95, 15)
+        t:assertNil(other[2])
     end,
 
     ["a place counts only after walking the entry distance inside it"] = function(t)

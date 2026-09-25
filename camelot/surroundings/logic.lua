@@ -10,8 +10,14 @@
 -- bridgeUnder: row, col, place triples said while swimming (water under bridges, city canals).
 -- exits: x, y, width triples (ways out of city water). structs: names of structures with drop
 -- edges; structCells: row, col, struct triples (their floors); edges: per drop edge
--- {struct, facing (compass index), drop yards, into water (0/1), x1, y1, x2, y2, ...}: points
--- along the edge about 2 yd apart (a point set, not a line: thick or bent edges zigzag).
+-- {struct, facing (compass index), drop yards, into water (0/1), piece, x1, y1, x2, y2, ...}:
+-- points along the edge about 2 yd apart (a point set, not a line: thick or bent edges zigzag).
+-- piece 0: the floor lies low over the ground or water, nobody walks under it. Otherwise the edge
+-- lies on a high floor piece (a gate's wall-walk, a bridge deck over a bank) that one can walk
+-- under; there is no height on Forever, so the piece warns only after the player was seen
+-- stepping onto it: pieceCells (row, col, piece: its footprint), access (piece, kind, x, y: 1
+-- from the ground, 2 coming out of a building's rooms) and links (piece a, piece b: joined high
+-- pieces, one walks from one onto the other).
 
 local logic = {}
 WowVision.surroundingsLogic = logic
@@ -49,6 +55,33 @@ function logic.unpack(zone)
         onStruct[list[i] * zone.cols + list[i + 1]] = list[i + 2]
     end
     zone._struct = onStruct
+    local pieces = {}
+    list = zone.pieceCells or {}
+    for i = 1, #list - 2, 3 do
+        local key = list[i] * zone.cols + list[i + 1]
+        pieces[key] = pieces[key] or {}
+        pieces[key][list[i + 2]] = true
+    end
+    zone._pieces = pieces
+    local access = {}
+    list = zone.access or {}
+    for i = 1, #list - 3, 4 do
+        local x, y = list[i + 2], list[i + 3]
+        local key = math.floor((zone.top - x) / zone.cell) * zone.cols + math.floor((zone.left - y) / zone.cell)
+        access[key] = access[key] or {}
+        table.insert(access[key], { piece = list[i], kind = list[i + 1], x = x, y = y })
+    end
+    zone._access = access
+    local links = {}
+    list = zone.links or {}
+    for i = 1, #list - 1, 2 do
+        local a, b = list[i], list[i + 1]
+        links[a] = links[a] or {}
+        links[b] = links[b] or {}
+        table.insert(links[a], b)
+        table.insert(links[b], a)
+    end
+    zone._links = links
 end
 
 -- Free the unpacked grid when the player leaves the zone.
@@ -56,6 +89,9 @@ function logic.pack(zone)
     zone._rows = nil
     zone._under = nil
     zone._struct = nil
+    zone._pieces = nil
+    zone._access = nil
+    zone._links = nil
     zone._rooms = nil
     zone._entrances = nil
 end
@@ -131,9 +167,73 @@ local function onStructure(zone, r, c, struct)
     return false
 end
 
+logic.ACCESS_REACH = 2.5   -- yd from a place where a high piece is stepped onto from the ground
+logic.ROOMS_REACH = 6.0    -- yd from where it joins a building, just after coming out of it
+
+-- Is the cell (or a neighbour) part of a high piece's footprint?
+local function onPiece(zone, r, c, piece)
+    local cells = zone._pieces
+    if cells == nil then
+        return false
+    end
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            local set = cells[(r + dr) * zone.cols + c + dc]
+            if set and set[piece] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Which high floor pieces the player is on (`on`, a set kept by the caller): a piece is entered
+-- by passing where it is stepped onto from the ground, where it joins a building the player just
+-- came out of (`cameOut`), or from a joined piece the player is on; it is left by walking off its
+-- footprint. Walking under a piece never enters it.
+function logic.updateHigh(zone, on, x, y, cameOut)
+    local _v, r, c = logic.valueAt(zone, x, y)
+    for piece in pairs(on) do
+        if not onPiece(zone, r, c, piece) then
+            on[piece] = nil
+        end
+    end
+    local access = zone._access or {}
+    local n = math.ceil(logic.ROOMS_REACH / zone.cell)
+    for dr = -n, n do
+        for dc = -n, n do
+            for _, a in ipairs(access[(r + dr) * zone.cols + c + dc] or {}) do
+                local d = math.sqrt((a.x - x) ^ 2 + (a.y - y) ^ 2)
+                if (a.kind == 1 and d <= logic.ACCESS_REACH) or (a.kind == 2 and cameOut and d <= logic.ROOMS_REACH) then
+                    on[a.piece] = true
+                end
+            end
+        end
+    end
+    local links = zone._links or {}
+    local added = true
+    while added do
+        added = false
+        local new = {}
+        for piece in pairs(on) do
+            for _, other in ipairs(links[piece] or {}) do
+                if not on[other] and onPiece(zone, r, c, other) then
+                    new[#new + 1] = other
+                end
+            end
+        end
+        for _, piece in ipairs(new) do
+            on[piece] = true
+            added = true
+        end
+    end
+    return on
+end
+
 -- The nearest drop edge within `reach` yards that the player stands in front of, on the
--- structure's floor (not beyond the edge): the edge index and distance.
-function logic.nearestEdge(zone, x, y, reach)
+-- structure's floor (not beyond the edge): the edge index and distance. An edge on a high piece
+-- counts only while the player is on that piece (`on`, see updateHigh).
+function logic.nearestEdge(zone, x, y, reach, on)
     local edges = zone.edges
     if edges == nil or #edges == 0 then
         return nil
@@ -143,7 +243,8 @@ function logic.nearestEdge(zone, x, y, reach)
     for i, e in ipairs(edges) do
         local struct = e[1]
         local fx, fy = logic.compassVector(e[2])
-        for k = 5, #e - 1, 2 do
+        local start = (e[5] == 0 or (on and on[e[5]])) and 6 or #e + 1
+        for k = start, #e - 1, 2 do
             local qx, qy = e[k], e[k + 1]
             local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
             -- in front of the edge: the drop lies ahead in the facing direction
@@ -196,8 +297,9 @@ function logic.kind(zone, placeId)
 end
 
 -- Spoken text for a cell value: the place label, and its direction and nearest road when wanted.
--- A place is {kind, label, nearest road (optional)}.
-function logic.describe(zone, value, withDirection)
+-- A place is {kind, label, nearest road (optional)}. `noNearRoad`: leave the stored nearest road
+-- out (the caller says where the road is itself, after stepping off it).
+function logic.describe(zone, value, withDirection, noNearRoad)
     local placeId = math.floor(value / 100)
     local p = zone.places[placeId]
     if p == nil then
@@ -219,7 +321,7 @@ function logic.describe(zone, value, withDirection)
         end
     end
     -- the nearest road, fixed per place ("Goldshire road to the north")
-    if withDirection and p[3] then
+    if withDirection and p[3] and not noNearRoad then
         text = text .. ", " .. p[3]
     end
     return text

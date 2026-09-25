@@ -106,12 +106,15 @@ local room = nil                 -- the room the player is in as far as known (s
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
 local warnedEdge = nil           -- the drop edge last warned about (again only after leaving it)
 local saidExit = nil             -- the way out of the water last announced
+local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
+local outAt = nil                -- when the player last came out of a building
 
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
 local EDGE_CLEAR = 6             -- yd away from every edge before the same edge warns again
 local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
 local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
 local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
+local CAME_OUT = 3               -- seconds after coming out of a building that it can lead onto a wall-walk
 
 -- Entrance guidance: within the entrance distance the nearest entrance is said with distance and
 -- direction; again whenever the direction word changes (so turning toward it can be followed),
@@ -200,6 +203,14 @@ local function logEntry(kind, text, x, y, extra)
     if IsSwimming() then
         e.swimming = true
     end
+    local on = {}
+    for piece in pairs(high) do
+        on[#on + 1] = piece
+    end
+    if #on > 0 then
+        table.sort(on)
+        e.high = table.concat(on, " ")   -- the high floor pieces the player was on
+    end
     for k, v in pairs(extra or {}) do
         e[k] = v
     end
@@ -252,6 +263,7 @@ local function findZone(x, y, map)
         outdoor:reset()
         indoor:reset()
         lastRoom, room = nil, nil
+        high = {}
     end
     return zone
 end
@@ -310,6 +322,7 @@ end
 local function checkEdgesAndExits(z, x, y)
     if IsSwimming() then
         warnedEdge = nil
+        high = {}
         if not module.settings.waysOut then
             return
         end
@@ -322,10 +335,12 @@ local function checkEdgesAndExits(z, x, y)
         return
     end
     saidExit = nil
+    -- edges of a wall-walk or a deck high over the ground warn only while the player is up there
+    logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high)
     if i then
         if i ~= warnedEdge then
             local e = z.edges[i]
@@ -335,7 +350,7 @@ local function checkEdgesAndExits(z, x, y)
             say(text, "edge", x, y)
             warnedEdge = i
         end
-    elseif warnedEdge and not logic.nearestEdge(z, x, y, EDGE_CLEAR) then
+    elseif warnedEdge and not logic.nearestEdge(z, x, y, EDGE_CLEAR, high) then
         warnedEdge = nil
     end
 end
@@ -350,6 +365,7 @@ module:hasUpdate(function(self)
         outdoor:reset()
         indoor:reset()
         room, lastX = nil, nil
+        high = {}
         return
     end
     local x, y, _z, map = UnitPosition("player")
@@ -373,6 +389,8 @@ module:hasUpdate(function(self)
         outdoor:reset()
         indoor:reset()
         room = nil
+        high = {}
+        outAt = (wasIndoors and not isIndoors) and now or nil
         wasIndoors = isIndoors
     end
     local px, py = lastX, lastY
@@ -395,12 +413,14 @@ module:hasUpdate(function(self)
     local previous = outdoor.current
     if outdoor:update(outdoorKey(z, place, value), x, y) then
         local text = logic.describe(z, value, self.settings.directions)
-        -- stepped off a road: where the road is, to step back onto it
+        -- stepped off a road: where the road is, to step back onto it (instead of the place's
+        -- stored nearest road, which may be another one)
         local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
         if wasRoad and not ROADS[logic.kind(z, place)] then
             local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
             if d then
-                text = text .. ", " .. string.format(L["road to the %s"], z.compass[dir])
+                text = logic.describe(z, value, self.settings.directions, true) .. ", "
+                    .. string.format(L["road to the %s"], z.compass[dir])
             end
         elseif logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
             logEntry("quiet", text, x, y, { walked = round1(outdoor.walked or 0) })
