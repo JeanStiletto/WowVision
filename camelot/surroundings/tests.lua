@@ -137,8 +137,20 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(e:update("road", 0, 1))
         t:assertEqual(e:update("road", 0, 4), "road")          -- 3 yd are enough on a road
         t:assertNil(e:update("forest", 0, 5))
-        t:assertNil(e:update("forest", 0, 9))
-        t:assertEqual(e:update("forest", 0, 13), "forest")     -- the rest keeps 8 yd
+        t:assertEqual(e:update("forest", 0, 8), "forest")      -- leaving the road: 3 yd as well
+        t:assertNil(e:update("open land", 0, 9))
+        t:assertNil(e:update("open land", 0, 13))
+        t:assertEqual(e:update("open land", 0, 17), "open land") -- the rest keeps 8 yd
+    end,
+
+    ["the nearest road from off the road, with its direction"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        -- from the forest cell (row 0, column 0) the bridge is 4 cells east
+        local d, dir = logic.nearestOfKinds(z, 95, 55, { bridge = true }, 45)
+        t:assertEqual(d, 40)
+        t:assertEqual(dir, 3)
+        t:assertNil(logic.nearestOfKinds(z, 95, 55, { bridge = true }, 20))
     end,
 
     ["stacked rooms: keep the current room, or the one behind a door, else stay unknown"] = function(t)

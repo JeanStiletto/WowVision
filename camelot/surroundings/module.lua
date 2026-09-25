@@ -18,6 +18,7 @@ T["Announce Ways Out of the Water"] = true
 T["edge to the %s, drop %d yards"] = true
 T["edge to the %s, drop into water"] = true
 T["way out of the water, %d yards to the %s"] = true
+T["road to the %s"] = true
 T["Announce Entrances"] = true
 T["Entrance Distance (yards)"] = true
 T["entrance of %s, %d yards to the %s"] = true
@@ -119,11 +120,26 @@ local guide = { index = nil, dir = nil, at = false, time = 0 }
 
 -- Roads, bridges and forks are narrow (about 9 to 14 yd including junctions): with the outdoor distance
 -- a road crossed straight across would never be announced.
+-- A road's key is its whole value (road and direction piece), so a bend is a new place like any
+-- other; other places are keyed by the place alone.
 local NARROW = { road = true, bridge = true, fork = true, crossing = true }
-outdoor.distanceFor = function(place)
-    if zone and NARROW[logic.kind(zone, place)] then
+local ROADS = { road = true, fork = true, crossing = true }
+local ROAD_SIDE_REACH = 12       -- yd; leaving a road says where it is within this
+
+outdoor.distanceFor = function(key)
+    if key == nil then
+        return nil
+    end
+    if type(key) == "string" or (zone and NARROW[logic.kind(zone, key)]) then
         return module.settings.roadDistance or 3
     end
+end
+
+local function outdoorKey(z, place, value)
+    if place and logic.kind(z, place) == "road" then
+        return "r" .. value
+    end
+    return place
 end
 
 -- Log: every announcement (and every place entered but not said) with what `/wv surr` would say,
@@ -376,12 +392,21 @@ module:hasUpdate(function(self)
     checkEdgesAndExits(z, x, y)
     checkEntrance(z, x, y)
     local place, value = outdoorValue(z, x, y)
-    if outdoor:update(place, x, y) then
-        if logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
-            logEntry("quiet", logic.describe(z, value, true), x, y, { walked = round1(outdoor.walked or 0) })
+    local previous = outdoor.current
+    if outdoor:update(outdoorKey(z, place, value), x, y) then
+        local text = logic.describe(z, value, self.settings.directions)
+        -- stepped off a road: where the road is, to step back onto it
+        local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
+        if wasRoad and not ROADS[logic.kind(z, place)] then
+            local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
+            if d then
+                text = text .. ", " .. string.format(L["road to the %s"], z.compass[dir])
+            end
+        elseif logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
+            logEntry("quiet", text, x, y, { walked = round1(outdoor.walked or 0) })
             return
         end
-        say(logic.describe(z, value, self.settings.directions), "place", x, y, outdoor.walked)
+        say(text, "place", x, y, outdoor.walked)
     end
 end)
 

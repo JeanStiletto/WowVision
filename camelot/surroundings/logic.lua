@@ -161,6 +161,31 @@ function logic.compassVector(index)
     return math.cos(angle), -math.sin(angle)
 end
 
+-- The nearest cell within `reach` yards whose place kind is in `kinds` (a set): distance and
+-- compass index toward it (from the cell centres), or nil.
+function logic.nearestOfKinds(zone, x, y, kinds, reach)
+    local _v, r0, c0 = logic.valueAt(zone, x, y)
+    local n = math.ceil(reach / zone.cell)
+    local best, bx, by = nil, nil, nil
+    for dr = -n, n do
+        for dc = -n, n do
+            local cx = zone.top - (r0 + dr + 0.5) * zone.cell
+            local cy = zone.left - (c0 + dc + 0.5) * zone.cell
+            local d = math.sqrt((cx - x) ^ 2 + (cy - y) ^ 2)
+            if d <= reach and (best == nil or d < best) then
+                local v = logic.valueAt(zone, cx, cy)
+                if kinds[logic.kind(zone, logic.placeOf(v))] then
+                    best, bx, by = d, cx, cy
+                end
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    return best, logic.compassIndex(bx - x, by - y)
+end
+
 function logic.placeOf(value)
     return math.floor(value / 100)
 end
@@ -214,7 +239,8 @@ function Entry:reset()
 end
 
 -- Returns the key when it becomes the current one, else nil.
--- `distanceFor(key)` (optional) gives a key its own distance (roads are narrow).
+-- `distanceFor(key)` (optional) gives a key its own distance (roads are narrow); the shorter of
+-- the new key's and the current key's counts, so leaving a road is as quick as entering it.
 function Entry:update(key, x, y)
     if key == nil then
         self.candidate = nil
@@ -235,7 +261,10 @@ function Entry:update(key, x, y)
         self.walked = self.walked + math.sqrt(dx * dx + dy * dy)
         self.lastX, self.lastY = x, y
     end
-    local distance = self.distanceFor and self.distanceFor(key) or self.distance
+    local distance = self.distance
+    if self.distanceFor then
+        distance = math.min(self.distanceFor(key) or distance, self.distanceFor(self.current) or distance)
+    end
     if self.walked >= distance then
         self.current, self.candidate = key, nil
         return key
