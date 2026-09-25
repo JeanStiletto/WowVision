@@ -20,6 +20,11 @@ local function newZone()
         },
         grid = { "100*2,213*2,383*2", "400*6", "0*6" },
         bridgeUnder = { 0, 5, 5 },
+        exits = { 95, 20, 10 },
+        -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water
+        structs = { "dock" },
+        structCells = { 1, 1, 1, 1, 2, 1 },
+        edges = { { 1, 1, 3, 1, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 } },
         -- frames chosen so that the building frame equals world x and y
         interiors = { { "Test Inn", 0, 0, 1, -1, 0, 0, -1 }, { "Test Barn", 0, 0, 1, -1, 0, 0, -1 } },
         rooms = {
@@ -72,6 +77,35 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.underBridge(z, 0, 0))
         logic.pack(z)
         t:assertNil(z._rows)
+    end,
+
+    ["compass words for world offsets (x north, y west)"] = function(t)
+        t:assertEqual(logic.compassIndex(10, 0), 1)     -- north
+        t:assertEqual(logic.compassIndex(0, -10), 3)    -- east
+        t:assertEqual(logic.compassIndex(-10, 10), 6)   -- southwest
+        local vx, vy = logic.compassVector(3)
+        t:assertEqual(math.floor(vx + 0.5), 0)
+        t:assertEqual(math.floor(vy + 0.5), -1)
+    end,
+
+    ["the nearest way out of the water, with its direction"] = function(t)
+        local z = newZone()
+        local i, d, dir = logic.nearestExit(z, 95, 30, 25)
+        t:assertEqual(i, 1)
+        t:assertEqual(d, 10)
+        t:assertEqual(dir, 3)                              -- y 20 is east of y 30
+        t:assertNil(logic.nearestExit(z, 95, 60, 25))
+    end,
+
+    ["a drop edge warns only on the structure, in front of the edge"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        local i, d = logic.nearestEdge(z, 88, 30, 3)       -- on the dock, 2 yd from its north side
+        t:assertEqual(i, 1)
+        t:assertEqual(d, 2)
+        t:assertNil(logic.nearestEdge(z, 85, 30, 3))       -- 5 yd away
+        t:assertNil(logic.nearestEdge(z, 88, 55, 3))       -- beside the dock: too far from the edge
+        t:assertNil(logic.nearestEdge(z, 91, 30, 3))       -- beyond the edge (in the water)
     end,
 
     ["a place counts only after walking the entry distance inside it"] = function(t)

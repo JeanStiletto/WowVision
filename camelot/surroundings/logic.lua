@@ -7,6 +7,11 @@
 -- row 0 at world x = `top` (north), column 0 at world y = `left` (west); each row a run-length
 -- string "value*count,...". value = place id * 100 + direction code; code = template * 10 +
 -- word (template from `dirs`, word from `compass`, or from `axes` for "running %s"); 0 = no data.
+-- bridgeUnder: row, col, place triples said while swimming (water under bridges, city canals).
+-- exits: x, y, width triples (ways out of city water). structs: names of structures with drop
+-- edges; structCells: row, col, struct triples (their floors); edges: per drop edge
+-- {struct, facing (compass index), drop yards, into water (0/1), x1, y1, x2, y2, ...}: points
+-- along the edge about 2 yd apart (a point set, not a line: thick or bent edges zigzag).
 
 local logic = {}
 WowVision.surroundingsLogic = logic
@@ -38,12 +43,19 @@ function logic.unpack(zone)
         under[list[i] * zone.cols + list[i + 1]] = list[i + 2]
     end
     zone._under = under
+    local onStruct = {}
+    list = zone.structCells or {}
+    for i = 1, #list - 2, 3 do
+        onStruct[list[i] * zone.cols + list[i + 1]] = list[i + 2]
+    end
+    zone._struct = onStruct
 end
 
 -- Free the unpacked grid when the player leaves the zone.
 function logic.pack(zone)
     zone._rows = nil
     zone._under = nil
+    zone._struct = nil
     zone._rooms = nil
 end
 
@@ -77,6 +89,75 @@ end
 -- The water under a bridge cell, as a place id (nil where there is none).
 function logic.underBridge(zone, r, c)
     return zone._under and zone._under[r * zone.cols + c]
+end
+
+-- Compass index (1 = north, clockwise) of a world offset: dx north, dy west.
+function logic.compassIndex(dx, dy)
+    local angle = math.deg(math.atan2(-dy, dx)) % 360
+    return math.floor((angle + 22.5) / 45) % 8 + 1
+end
+
+-- The nearest way out of the water within `reach` yards: index, distance, compass index.
+function logic.nearestExit(zone, x, y, reach)
+    local list = zone.exits or {}
+    local best, bestD = nil, reach
+    for i = 1, #list - 2, 3 do
+        local dx, dy = list[i] - x, list[i + 1] - y
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d <= bestD then
+            best, bestD = i, d
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    return (best + 2) / 3, bestD, logic.compassIndex(list[best] - x, list[best + 1] - y)
+end
+
+-- Is the cell (or a neighbour) part of the structure's floor?
+local function onStructure(zone, r, c, struct)
+    local cells = zone._struct
+    if cells == nil then
+        return false
+    end
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            if cells[(r + dr) * zone.cols + c + dc] == struct then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- The nearest drop edge within `reach` yards that the player stands in front of, on the
+-- structure's floor (not beyond the edge): the edge index and distance.
+function logic.nearestEdge(zone, x, y, reach)
+    local edges = zone.edges
+    if edges == nil or #edges == 0 then
+        return nil
+    end
+    local _v, r, c = logic.valueAt(zone, x, y)
+    local best, bestD = nil, reach
+    for i, e in ipairs(edges) do
+        local struct = e[1]
+        local fx, fy = logic.compassVector(e[2])
+        for k = 5, #e - 1, 2 do
+            local qx, qy = e[k], e[k + 1]
+            local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
+            -- in front of the edge: the drop lies ahead in the facing direction
+            if d <= bestD and (x - qx) * fx + (y - qy) * fy <= 0.5 and onStructure(zone, r, c, struct) then
+                best, bestD = i, d
+            end
+        end
+    end
+    return best, best and bestD
+end
+
+-- Unit world vector (x north, y west) of a compass index.
+function logic.compassVector(index)
+    local angle = math.rad((index - 1) * 45)
+    return math.cos(angle), -math.sin(angle)
 end
 
 function logic.placeOf(value)

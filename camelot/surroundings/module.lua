@@ -13,6 +13,11 @@ T["Announce Directions"] = true
 T["Entry Distance Outdoors (yards)"] = true
 T["Entry Distance Indoors (yards)"] = true
 T["Entry Distance Roads and Bridges (yards)"] = true
+T["Warn at Drop Edges"] = true
+T["Announce Ways Out of the Water"] = true
+T["edge to the %s, drop %d yards"] = true
+T["edge to the %s, drop into water"] = true
+T["way out of the water, %d yards to the %s"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -40,6 +45,8 @@ settings:add({
     min = 0,
     max = 40,
 })
+settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"], default = true })
+settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
     type = "Number",
@@ -83,6 +90,12 @@ local lastCheck = 0
 local lastRoom = nil             -- the last announced room, for the interior name
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
+local warnedEdge = nil           -- the drop edge last warned about (again only after leaving it)
+local saidExit = nil             -- the way out of the water last announced
+
+local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
+local EDGE_CLEAR = 6             -- yd away from every edge before the same edge warns again
+local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
 
 -- Roads and bridges are narrow (about 9 to 14 yd including junctions): with the outdoor distance
 -- a road crossed straight across would never be announced.
@@ -214,20 +227,55 @@ local function say(text, kind, x, y, walked)
     logEntry(kind, text, x, y, { walked = walked and round1(walked) or nil })
 end
 
--- The outdoor place key and value at a position (bridges while swimming: the water below).
+-- The outdoor place key and value at a position (while swimming: the water under a bridge, or
+-- the city canal under the streets).
 local function outdoorValue(z, x, y)
     local value, r, c = logic.valueAt(z, x, y)
-    if value == 0 then
-        return nil, 0
-    end
-    local place = logic.placeOf(value)
-    if logic.kind(z, place) == "bridge" and IsSwimming() then
+    if IsSwimming() then
         local under = logic.underBridge(z, r, c)
         if under then
             return under, under * 100
         end
     end
-    return place, value
+    if value == 0 then
+        return nil, 0
+    end
+    return logic.placeOf(value), value
+end
+
+-- Warnings that do not wait for the entry distance: a drop edge ahead on a dock, bridge or wall
+-- (on foot), and the nearest way out of city water (swimming).
+local function checkEdgesAndExits(z, x, y)
+    if IsSwimming() then
+        warnedEdge = nil
+        if not module.settings.waysOut then
+            return
+        end
+        local i, d, dir = logic.nearestExit(z, x, y, EXIT_REACH)
+        if i and i ~= saidExit then
+            say(string.format(L["way out of the water, %d yards to the %s"], math.floor(d + 0.5), z.compass[dir]),
+                "exit", x, y)
+        end
+        saidExit = i
+        return
+    end
+    saidExit = nil
+    if not module.settings.dropEdges then
+        return
+    end
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH)
+    if i then
+        if i ~= warnedEdge then
+            local e = z.edges[i]
+            local word = z.compass[e[2]]
+            local text = e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
+                or string.format(L["edge to the %s, drop %d yards"], word, e[3])
+            say(text, "edge", x, y)
+            warnedEdge = i
+        end
+    elseif warnedEdge and not logic.nearestEdge(z, x, y, EDGE_CLEAR) then
+        warnedEdge = nil
+    end
 end
 
 module:hasUpdate(function(self)
@@ -279,6 +327,7 @@ module:hasUpdate(function(self)
         return
     end
     lastRoom = nil
+    checkEdgesAndExits(z, x, y)
     local place, value = outdoorValue(z, x, y)
     if outdoor:update(place, x, y) then
         if logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
