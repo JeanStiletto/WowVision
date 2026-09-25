@@ -170,7 +170,8 @@ function logic.kind(zone, placeId)
     return p and p[1]
 end
 
--- Spoken text for a cell value: the place label, and its direction when wanted.
+-- Spoken text for a cell value: the place label, and its direction and nearest road when wanted.
+-- A place is {kind, label, nearest road (optional)}.
 function logic.describe(zone, value, withDirection)
     local placeId = math.floor(value / 100)
     local p = zone.places[placeId]
@@ -191,6 +192,10 @@ function logic.describe(zone, value, withDirection)
                 text = text .. ", " .. string.format(template, word)
             end
         end
+    end
+    -- the nearest road, fixed per place ("Goldshire road to the north")
+    if withDirection and p[3] then
+        text = text .. ", " .. p[3]
     end
     return text
 end

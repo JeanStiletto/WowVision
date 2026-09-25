@@ -117,9 +117,9 @@ local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announc
 -- and once at the entrance itself.
 local guide = { index = nil, dir = nil, at = false, time = 0 }
 
--- Roads and bridges are narrow (about 9 to 14 yd including junctions): with the outdoor distance
+-- Roads, bridges and forks are narrow (about 9 to 14 yd including junctions): with the outdoor distance
 -- a road crossed straight across would never be announced.
-local NARROW = { road = true, bridge = true }
+local NARROW = { road = true, bridge = true, fork = true, crossing = true }
 outdoor.distanceFor = function(place)
     if zone and NARROW[logic.kind(zone, place)] then
         return module.settings.roadDistance or 3

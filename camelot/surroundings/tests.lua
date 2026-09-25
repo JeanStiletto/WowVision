@@ -17,6 +17,7 @@ local function newZone()
             { "bridge", "bridge" },
             { "open land", "open land" },
             { "deep water", "deep water of Test Lake" },
+            { "landmark", "at the well", "Test road to the north" },
         },
         grid = { "100*2,213*2,383*2", "400*6", "0*6" },
         bridgeUnder = { 0, 5, 5 },
@@ -66,6 +67,8 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(z, 213, false), "shore of Test Lake")
         t:assertEqual(logic.describe(z, 383, true), "bridge, east to west")
         t:assertEqual(logic.describe(z, 100, true), "forest")
+        t:assertEqual(logic.describe(z, 673, true), "at the well, to the east, Test road to the north")
+        t:assertEqual(logic.describe(z, 673, false), "at the well")
         t:assertNil(logic.describe(z, 900, true))
     end,
 
