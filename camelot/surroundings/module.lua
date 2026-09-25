@@ -18,6 +18,10 @@ T["Announce Ways Out of the Water"] = true
 T["edge to the %s, drop %d yards"] = true
 T["edge to the %s, drop into water"] = true
 T["way out of the water, %d yards to the %s"] = true
+T["Announce Entrances"] = true
+T["Entrance Distance (yards)"] = true
+T["entrance of %s, %d yards to the %s"] = true
+T["at the entrance of %s"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -46,6 +50,15 @@ settings:add({
     max = 40,
 })
 settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"], default = true })
+settings:add({ key = "entrances", type = "Bool", label = L["Announce Entrances"], default = true })
+settings:add({
+    key = "entranceDistance",
+    type = "Number",
+    label = L["Entrance Distance (yards)"],
+    default = 15,
+    min = 3,
+    max = 40,
+})
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
@@ -96,6 +109,13 @@ local saidExit = nil             -- the way out of the water last announced
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
 local EDGE_CLEAR = 6             -- yd away from every edge before the same edge warns again
 local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
+local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
+local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
+
+-- Entrance guidance: within the entrance distance the nearest entrance is said with distance and
+-- direction; again whenever the direction word changes (so turning toward it can be followed),
+-- and once at the entrance itself.
+local guide = { index = nil, dir = nil, at = false, time = 0 }
 
 -- Roads and bridges are narrow (about 9 to 14 yd including junctions): with the outdoor distance
 -- a road crossed straight across would never be announced.
@@ -245,6 +265,32 @@ end
 
 -- Warnings that do not wait for the entry distance: a drop edge ahead on a dock, bridge or wall
 -- (on foot), and the nearest way out of city water (swimming).
+local function checkEntrance(z, x, y)
+    if not module.settings.entrances or IsSwimming() then
+        guide.index = nil
+        return
+    end
+    local i, d, dir = logic.nearestEntrance(z, x, y, module.settings.entranceDistance or 15)
+    if i == nil then
+        guide.index = nil
+        return
+    end
+    local e = logic.entrances(z)[i]
+    local now = GetTime()
+    if d <= ENTRANCE_AT then
+        if not (guide.index == i and guide.at) then
+            say(string.format(L["at the entrance of %s"], e.text), "entrance", x, y)
+            guide.index, guide.dir, guide.at, guide.time = i, dir, true, now
+        end
+        return
+    end
+    if guide.index ~= i or (guide.dir ~= dir and now - guide.time >= ENTRANCE_REPEAT) or (guide.at and d > ENTRANCE_AT + 2) then
+        say(string.format(L["entrance of %s, %d yards to the %s"], e.text, math.floor(d + 0.5), z.compass[dir]),
+            "entrance", x, y)
+        guide.index, guide.dir, guide.at, guide.time = i, dir, false, now
+    end
+end
+
 local function checkEdgesAndExits(z, x, y)
     if IsSwimming() then
         warnedEdge = nil
@@ -328,6 +374,7 @@ module:hasUpdate(function(self)
     end
     lastRoom = nil
     checkEdgesAndExits(z, x, y)
+    checkEntrance(z, x, y)
     local place, value = outdoorValue(z, x, y)
     if outdoor:update(place, x, y) then
         if logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
@@ -397,6 +444,11 @@ module:registerCommand({
                 local value, r, c = logic.valueAt(z, x, y)
                 parts[#parts + 1] = string.format("Data %s, cell %d %d", z.label or z.key, r, c)
                 parts[#parts + 1] = "Place: " .. (logic.describe(z, value, true) or "none")
+                local ei, ed, edir = logic.nearestEntrance(z, x, y, 100)
+                if ei then
+                    parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s",
+                        logic.entrances(z)[ei].text, math.floor(ed + 0.5), z.compass[edir])
+                end
                 if IsIndoors() then
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")

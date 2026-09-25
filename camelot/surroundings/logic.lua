@@ -57,6 +57,7 @@ function logic.pack(zone)
     zone._under = nil
     zone._struct = nil
     zone._rooms = nil
+    zone._entrances = nil
 end
 
 function logic.covers(zone, x, y)
@@ -357,6 +358,63 @@ function logic.resolveRoom(zone, x, y, current, px, py)
         end
     end
     return joined
+end
+
+-- A building-frame position in world yards (the inverse of toBuilding).
+function logic.toWorld(interior, vx, vy)
+    local ox, oy, s, a, b, c, d = interior[2], interior[3], interior[4], interior[5], interior[6], interior[7], interior[8]
+    return ox - s * (a * vx + b * vy), oy - s * (c * vx + d * vy)
+end
+
+logic.ENTRANCE_MERGE = 4   -- yd; doorways of one building closer than this are one entrance
+
+-- Entrances: the doorways between outside and a room, in world yards, built once per zone.
+-- Each {x, y, text}: the building, and the room behind unless it is just the entrance.
+function logic.entrances(zone)
+    if zone._entrances then
+        return zone._entrances
+    end
+    local list = {}
+    for _, d in ipairs(zone.doors or {}) do
+        local inside = d[1] == 0 and d[2] or d[2] == 0 and d[1] or nil
+        local room = inside and zone.rooms[inside]
+        local interior = zone.interiors[d[3]]
+        if room and interior then
+            local x, y = logic.toWorld(interior, d[4], d[5])
+            local text = interior[1]
+            if room[2] ~= "entrance" and room[2] ~= interior[1] then
+                text = text .. ", " .. room[2]
+            end
+            local merged = false
+            for _, e in ipairs(list) do
+                if e.text == text and (e.x - x) ^ 2 + (e.y - y) ^ 2 < logic.ENTRANCE_MERGE ^ 2 then
+                    merged = true
+                    break
+                end
+            end
+            if not merged then
+                list[#list + 1] = { x = x, y = y, text = text }
+            end
+        end
+    end
+    zone._entrances = list
+    return list
+end
+
+-- The nearest entrance within `reach` yards: index, distance, compass index toward it.
+function logic.nearestEntrance(zone, x, y, reach)
+    local best, bestD = nil, reach
+    for i, e in ipairs(logic.entrances(zone)) do
+        local d = math.sqrt((e.x - x) ^ 2 + (e.y - y) ^ 2)
+        if d <= bestD then
+            best, bestD = i, d
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    local e = zone._entrances[best]
+    return best, bestD, logic.compassIndex(e.x - x, e.y - y)
 end
 
 -- Spoken text for a room: the interior's name when it changes, then the room.

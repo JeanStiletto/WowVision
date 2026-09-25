@@ -169,6 +169,21 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.crossedDoor(z, 3, 30, 5, 29, 5))          -- far from any doorway
     end,
 
+    ["entrances: doorways to outside in world yards, with the room unless it is the entrance"] = function(t)
+        local z = newZone()
+        -- the only outside door: common room of the Test Inn (its frame equals world x and y)
+        local list = logic.entrances(z)
+        t:assertEqual(#list, 1)
+        t:assertEqual(list[1].text, "Test Inn, common room")
+        t:assertEqual(list[1].x, 0)
+        t:assertEqual(list[1].y, 5)
+        local i, d, dir = logic.nearestEntrance(z, 10, 5, 15)
+        t:assertEqual(i, 1)
+        t:assertEqual(d, 10)
+        t:assertEqual(dir, 5)                              -- the door lies south
+        t:assertNil(logic.nearestEntrance(z, 40, 5, 15))
+    end,
+
     ["a room names its interior when the interior changes"] = function(t)
         local z = newZone()
         t:assertEqual(logic.describeRoom(z, 1, nil), "Test Inn, common room")
