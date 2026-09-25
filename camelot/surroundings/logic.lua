@@ -99,10 +99,15 @@ function logic.describe(zone, value, withDirection)
     local code = value % 100
     if withDirection and code > 0 then
         local template = zone.dirs[math.floor(code / 10)]
-        local words = template == "running %s" and zone.axes or zone.compass
-        local word = words[code % 10]
+        local axis = template == "running %s"
+        local word = (axis and zone.axes or zone.compass)[code % 10]
         if template and word then
-            text = text .. ", " .. string.format(template, word)
+            if axis then
+                -- "road, northwest to southeast": the hyphenated axis runs together when spoken
+                text = text .. ", " .. word:gsub("%-", " to ")
+            else
+                text = text .. ", " .. string.format(template, word)
+            end
         end
     end
     return text
@@ -122,6 +127,7 @@ function Entry:reset()
 end
 
 -- Returns the key when it becomes the current one, else nil.
+-- `distanceFor(key)` (optional) gives a key its own distance (roads are narrow).
 function Entry:update(key, x, y)
     if key == nil then
         self.candidate = nil
@@ -142,7 +148,8 @@ function Entry:update(key, x, y)
         self.walked = self.walked + math.sqrt(dx * dx + dy * dy)
         self.lastX, self.lastY = x, y
     end
-    if self.walked >= self.distance then
+    local distance = self.distanceFor and self.distanceFor(key) or self.distance
+    if self.walked >= distance then
         self.current, self.candidate = key, nil
         return key
     end

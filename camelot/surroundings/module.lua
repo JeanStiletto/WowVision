@@ -12,6 +12,7 @@ T["Announce Open Land"] = true
 T["Announce Directions"] = true
 T["Entry Distance Outdoors (yards)"] = true
 T["Entry Distance Indoors (yards)"] = true
+T["Entry Distance Roads and Bridges (yards)"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -28,6 +29,14 @@ settings:add({
     type = "Number",
     label = L["Entry Distance Outdoors (yards)"],
     default = 8,
+    min = 0,
+    max = 40,
+})
+settings:add({
+    key = "roadDistance",
+    type = "Number",
+    label = L["Entry Distance Roads and Bridges (yards)"],
+    default = 3,
     min = 0,
     max = 40,
 })
@@ -75,6 +84,95 @@ local lastRoom = nil             -- the last announced room, for the interior na
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
 
+-- Roads and bridges are narrow (about 9 to 14 yd including junctions): with the outdoor distance
+-- a road crossed straight across would never be announced.
+local NARROW = { road = true, bridge = true }
+outdoor.distanceFor = function(place)
+    if zone and NARROW[logic.kind(zone, place)] then
+        return module.settings.roadDistance or 3
+    end
+end
+
+-- Log: every announcement (and every place entered but not said) with what `/wv surr` would say,
+-- plus a position trail, in the data addon's SavedVariables (WowVisionSurroundingsLog), so walks
+-- can be compared with the data offline after a /reload or logout.
+local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 4
+local trailX, trailY = nil, nil
+local sessionLogged = false
+
+local function logStore()
+    local log = WowVisionSurroundingsLog
+    if type(log) ~= "table" then
+        return nil
+    end
+    log.entries = log.entries or {}
+    log.trail = log.trail or {}
+    return log
+end
+
+local function trim(list, max)
+    if #list > max + 500 then
+        local keep = {}
+        for i = #list - max + 1, #list do
+            keep[#keep + 1] = list[i]
+        end
+        return keep
+    end
+    return list
+end
+
+local function round1(v)
+    return math.floor(v * 10 + 0.5) / 10
+end
+
+local roomCandidateNames
+
+-- One log entry: {date, kind ("place", "room", "quiet", "session", "zone", "surr"), text} and
+-- the state here.
+local function logEntry(kind, text, x, y, extra)
+    local log = logStore()
+    if log == nil then
+        return
+    end
+    local e = { date("%Y-%m-%d %H:%M:%S"), kind, text or "" }
+    if x then
+        e.x, e.y = round1(x), round1(y)
+    end
+    if zone and zone._rows and x then
+        local value, r, c = logic.valueAt(zone, x, y)
+        e.zone, e.r, e.c = zone.key, r, c
+        e.cell = logic.describe(zone, value, true)
+        if IsIndoors() then
+            e.indoors = true
+            e.candidates = roomCandidateNames(zone, x, y)
+            e.room = room and logic.describeRoom(zone, room, nil) or nil
+        end
+    end
+    if IsSwimming() then
+        e.swimming = true
+    end
+    for k, v in pairs(extra or {}) do
+        e[k] = v
+    end
+    table.insert(log.entries, e)
+    log.entries = trim(log.entries, LOG_MAX)
+end
+
+-- A trail point every few yards: "time x y", plus i (indoors) and s (swimming).
+local function logTrail(x, y)
+    if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
+        return
+    end
+    local log = logStore()
+    if log == nil then
+        return
+    end
+    trailX, trailY = x, y
+    local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "")
+    table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
+    log.trail = trim(log.trail, TRAIL_MAX)
+end
+
 local function zones()
     return WowVisionSurroundingsData and WowVisionSurroundingsData.zones or {}
 end
@@ -99,6 +197,9 @@ local function findZone(x, y, map)
             logic.unpack(found)
         end
         zone = found
+        if found then
+            logEntry("zone", found.label or found.key, x, y)
+        end
         outdoor:reset()
         indoor:reset()
         lastRoom, room = nil, nil
@@ -106,10 +207,11 @@ local function findZone(x, y, map)
     return zone
 end
 
-local function say(text)
+local function say(text, kind, x, y, walked)
     if text and text ~= "" then
         module:fireAlert("place", { text = text })
     end
+    logEntry(kind, text, x, y, { walked = walked and round1(walked) or nil })
 end
 
 -- The outdoor place key and value at a position (bridges while swimming: the water below).
@@ -144,10 +246,15 @@ module:hasUpdate(function(self)
     if x == nil then
         return
     end
+    if not sessionLogged then
+        sessionLogged = true
+        logEntry("session", GetRealmName() .. ", " .. UnitName("player"), x, y)
+    end
     local z = findZone(x, y, map)
     if z == nil then
         return
     end
+    logTrail(x, y)
     outdoor.distance = self.settings.entryDistance or 8
     indoor.distance = self.settings.roomDistance or 3
     local isIndoors = IsIndoors()
@@ -166,7 +273,7 @@ module:hasUpdate(function(self)
             room = found
         end
         if indoor:update(room, x, y) then
-            say(logic.describeRoom(z, room, lastRoom))
+            say(logic.describeRoom(z, room, lastRoom), "room", x, y, indoor.walked)
             lastRoom = room
         end
         return
@@ -175,17 +282,57 @@ module:hasUpdate(function(self)
     local place, value = outdoorValue(z, x, y)
     if outdoor:update(place, x, y) then
         if logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
+            logEntry("quiet", logic.describe(z, value, true), x, y, { walked = round1(outdoor.walked or 0) })
             return
         end
-        say(logic.describe(z, value, self.settings.directions))
+        say(logic.describe(z, value, self.settings.directions), "place", x, y, outdoor.walked)
     end
 end)
+
+roomCandidateNames = function(z, x, y)
+    local names = {}
+    for _, id in ipairs(logic.roomCandidates(z, x, y)) do
+        names[#names + 1] = logic.describeRoom(z, id, nil)
+    end
+    return table.concat(names, "; ")
+end
+
+-- /wv surr log [count]: the last announcements; /wv surr log clear empties the log.
+local function speakLog(args)
+    local log = logStore()
+    if log == nil then
+        WowVision:speak("No surroundings log; is the WowVision_Surroundings addon enabled?")
+        return
+    end
+    if args == "clear" then
+        log.entries, log.trail = {}, {}
+        trailX, trailY = nil, nil
+        WowVision:speak("Surroundings log cleared")
+        return
+    end
+    local count = tonumber(args) or 5
+    local parts = {}
+    for i = math.max(1, #log.entries - count + 1), #log.entries do
+        local e = log.entries[i]
+        parts[#parts + 1] = e[1]:sub(12) .. " " .. e[2] .. ": " .. e[3]
+    end
+    for _, line in ipairs(parts) do
+        print(line)
+    end
+    WowVision:speak(string.format("%d log entries, %d trail points. ", #log.entries, #log.trail)
+        .. table.concat(parts, ". "))
+end
 
 -- /wv surr: what the module knows here, spoken and printed.
 module:registerCommand({
     name = "surr",
-    description = "Surroundings: speak the current place or room and the data state",
+    description = "Surroundings: speak the current place or room and the data state; log [count|clear]",
     func = function(args)
+        local sub, rest = (args or ""):match("^(%S*)%s*(.*)$")
+        if sub == "log" then
+            speakLog(rest)
+            return
+        end
         local x, y, _z, map = UnitPosition("player")
         local parts = {}
         if #zones() == 0 then
@@ -202,12 +349,8 @@ module:registerCommand({
                 parts[#parts + 1] = string.format("Data %s, cell %d %d", z.label or z.key, r, c)
                 parts[#parts + 1] = "Place: " .. (logic.describe(z, value, true) or "none")
                 if IsIndoors() then
-                    local cands = logic.roomCandidates(z, x, y)
-                    local names = {}
-                    for _, id in ipairs(cands) do
-                        names[#names + 1] = logic.describeRoom(z, id, nil)
-                    end
-                    parts[#parts + 1] = "Indoors. Room candidates: " .. (#names > 0 and table.concat(names, "; ") or "none")
+                    local names = roomCandidateNames(z, x, y)
+                    parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
                     parts[#parts + 1] = "Current room: " .. (room and logic.describeRoom(z, room, nil) or "unknown")
                 end
             end
@@ -215,6 +358,7 @@ module:registerCommand({
         for _, line in ipairs(parts) do
             print(line)
         end
+        logEntry("surr", table.concat(parts, ". "), x, y)
         WowVision:speak(table.concat(parts, ". "))
     end,
 })

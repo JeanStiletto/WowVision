@@ -59,7 +59,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         t:assertEqual(logic.describe(z, 213, true), "shore of Test Lake, water to the east")
         t:assertEqual(logic.describe(z, 213, false), "shore of Test Lake")
-        t:assertEqual(logic.describe(z, 383, true), "bridge, running east-west")
+        t:assertEqual(logic.describe(z, 383, true), "bridge, east to west")
         t:assertEqual(logic.describe(z, 100, true), "forest")
         t:assertNil(logic.describe(z, 900, true))
     end,
@@ -89,6 +89,19 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(e.current, "road")
         e:reset()
         t:assertEqual(e:update("forest", 0, 40), "forest")
+    end,
+
+    ["a key can have its own entry distance"] = function(t)
+        local e = logic.newEntry(8)
+        e.distanceFor = function(key)
+            return key == "road" and 3 or nil
+        end
+        e:update("forest", 0, 0)
+        t:assertNil(e:update("road", 0, 1))
+        t:assertEqual(e:update("road", 0, 4), "road")          -- 3 yd are enough on a road
+        t:assertNil(e:update("forest", 0, 5))
+        t:assertNil(e:update("forest", 0, 9))
+        t:assertEqual(e:update("forest", 0, 13), "forest")     -- the rest keeps 8 yd
     end,
 
     ["stacked rooms: keep the current room, or the one behind a door, else stay unknown"] = function(t)
