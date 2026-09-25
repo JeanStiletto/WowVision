@@ -11,4 +11,6 @@
        client is the modern engine with vanilla content, so the retail
        modules load first and Forever-only modules go here. -->
 
+  <Include file="surroundings\modules.xml" />
+
 </Ui>
