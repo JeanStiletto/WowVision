@@ -20,8 +20,8 @@ local function newZone()
             { "landmark", "at the well", "Test road to the north" },
         },
         grid = { "100*2,213*2,383*2", "400*6", "0*6" },
-        bridgeUnder = { 0, 5, 5 },
-        exits = { 95, 20, 10 },
+        bridgeUnder = { 0, 5, 500 },
+        exits = { 95, 20, 10, 1 },   -- climbed out toward the north
         -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water;
         -- a wall over row 1, columns 4 and 5, its wall-walk (high piece 1) dropping 12 yd to the
         -- south at x = 81; stepped onto from the ground at its east end (x 88, y 1) or out of a
@@ -71,7 +71,7 @@ local function newSquareZone()
         { "canal", "canal of Test" },
     }
     z.grid = { "300*2,281*2,300*3", "300,100*5,300", "300,100*5,400", "300,100*5,400", "0*7" }
-    z.bridgeUnder = { 4, 1, 5, 4, 2, 5, 4, 3, 5 }
+    z.bridgeUnder = { 4, 1, 500, 4, 2, 500, 4, 3, 500 }
     z.structs, z.structCells, z.edges, z.pieceCells, z.access, z.links = {}, {}, {}, {}, {}, {}
     z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
     z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
@@ -111,7 +111,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         logic.unpack(z)
         local _v, r, c = logic.valueAt(z, 95, 5)
-        t:assertEqual(logic.underBridge(z, r, c), 5)
+        t:assertEqual(logic.underBridge(z, r, c), 500)
         t:assertNil(logic.underBridge(z, 0, 0))
         logic.pack(z)
         t:assertNil(z._rows)
@@ -171,7 +171,8 @@ testRunner:addSuite("Surroundings", {
 
     ["the nearest way out of the water, with its direction"] = function(t)
         local z = newZone()
-        local i, d, dir = logic.nearestExit(z, 95, 30, 25)
+        local i, d, dir, out = logic.nearestExit(z, 95, 30, 25)
+        t:assertEqual(out, 1)                              -- one climbs out toward the north
         t:assertEqual(i, 1)
         t:assertEqual(d, 10)
         t:assertEqual(dir, 3)                              -- y 20 is east of y 30
@@ -370,6 +371,8 @@ testRunner:addSuite("Surroundings", {
         local list = logic.entrances(z)
         t:assertEqual(#list, 1)
         t:assertEqual(list[1].text, "Test Inn, common room")
+        -- a flat opening: the common room's way out is south (from its middle), so one goes in north
+        t:assertEqual(list[1].inDir, 1)
         t:assertEqual(list[1].x, 0)
         t:assertEqual(list[1].y, 5)
         local i, d, dir = logic.nearestEntrance(z, 10, 5, 15)

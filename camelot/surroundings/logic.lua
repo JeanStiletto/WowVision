@@ -7,8 +7,9 @@
 -- row 0 at world x = `top` (north), column 0 at world y = `left` (west); each row a run-length
 -- string "value*count,...". value = place id * 100 + direction code; code = template * 10 +
 -- word (template from `dirs`, word from `compass`, or from `axes` for "running %s"); 0 = no data.
--- bridgeUnder: row, col, place triples said while swimming (water under bridges, city canals).
--- exits: x, y, width triples (ways out of city water). structs: names of structures with drop
+-- bridgeUnder: row, col, value triples said while swimming (water under bridges, city canals; the
+-- value as in the grid, a long canal piece with its direction). exits: x, y, width, out
+-- quadruples (ways out of city water; out: the compass index one climbs out toward, 0 unknown). structs: names of structures with drop
 -- edges; structCells: row, col, struct triples (their floors); edges: per drop edge
 -- {struct, facing (compass index), drop yards, into water (0/1), piece, x1, y1, x2, y2, ...}:
 -- points along the edge about 2 yd apart (a point set, not a line: thick or bent edges zigzag).
@@ -164,7 +165,8 @@ function logic.valueAt(zone, x, y)
     return row.values[lo], r, c
 end
 
--- The water under a bridge cell, as a place id (nil where there is none).
+-- The water under a bridge cell (or the canal under a city street), as a cell value (nil where
+-- there is none).
 function logic.underBridge(zone, r, c)
     return zone._under and zone._under[r * zone.cols + c]
 end
@@ -175,11 +177,12 @@ function logic.compassIndex(dx, dy)
     return math.floor((angle + 22.5) / 45) % 8 + 1
 end
 
--- The nearest way out of the water within `reach` yards: index, distance, compass index.
+-- The nearest way out of the water within `reach` yards: index, distance, compass index toward
+-- it, and the compass index one climbs out toward (nil when unknown).
 function logic.nearestExit(zone, x, y, reach)
     local list = zone.exits or {}
     local best, bestD = nil, reach
-    for i = 1, #list - 2, 3 do
+    for i = 1, #list - 3, 4 do
         local dx, dy = list[i] - x, list[i + 1] - y
         local d = math.sqrt(dx * dx + dy * dy)
         if d <= bestD then
@@ -189,7 +192,8 @@ function logic.nearestExit(zone, x, y, reach)
     if best == nil then
         return nil
     end
-    return (best + 2) / 3, bestD, logic.compassIndex(list[best] - x, list[best + 1] - y)
+    local out = list[best + 3]
+    return (best + 3) / 4, bestD, logic.compassIndex(list[best] - x, list[best + 1] - y), out ~= 0 and out or nil
 end
 
 -- Is the cell (or a neighbour) part of the structure's floor?
@@ -708,7 +712,8 @@ end
 logic.ENTRANCE_MERGE = 4   -- yd; doorways of one building closer than this are one entrance
 
 -- Entrances: the doorways between outside and a room, in world yards, built once per zone.
--- Each {x, y, text}: the building, and the room behind unless it is just the entrance.
+-- Each {x, y, text, building, inDir}: the building, and the room behind unless it is just the
+-- entrance; inDir: the compass index one goes in toward (the room's way out, reversed).
 function logic.entrances(zone)
     if zone._entrances then
         return zone._entrances
@@ -732,7 +737,8 @@ function logic.entrances(zone)
                 end
             end
             if not merged then
-                list[#list + 1] = { x = x, y = y, text = text, building = interior[1] }
+                local out = logic.doorwayDirection(zone, d, inside)
+                list[#list + 1] = { x = x, y = y, text = text, building = interior[1], inDir = out and (out + 3) % 8 + 1 }
             end
         end
     end
