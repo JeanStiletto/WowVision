@@ -148,7 +148,7 @@ local lastCheck = 0
 local lastRoom = nil             -- the last announced room, for the interior name
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
-local warnedEdges = {}           -- drop edges warned about (again only after being EDGE_CLEAR away)
+local warnedEdges = {}           -- drop edges in reach and warned about (again after stepping out of reach)
 local edgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local saidExit = nil             -- the way out of the water last announced
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
@@ -157,7 +157,7 @@ local region = nil               -- the square the player is on (announced), for
 local saidMouths = {}            -- its streets, water and the like already said on this visit
 
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
-local EDGE_CLEAR = 6             -- yd away from every edge before the same edge warns again
+local EDGE_REARM = 0.5           -- yd beyond the reach before the same edge warns again (not on position noise)
 local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
 local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
 local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
@@ -511,7 +511,8 @@ end
 
 local function checkEdgesAndExits(z, x, y)
     if IsSwimming() then
-        -- the warned edges stay warned: climbing out at the same edge says nothing new
+        -- climbing out at an edge warns again
+        warnedEdges = {}
         high = {}
         if not module.settings.waysOut then
             return
@@ -528,14 +529,14 @@ local function checkEdgesAndExits(z, x, y)
     -- edges of a wall-walk or a deck high over the ground warn only while the player is up there
     logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
     for i in pairs(warnedEdges) do
-        if logic.edgeDistance(z, i, x, y) > EDGE_CLEAR then
+        if logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
             warnedEdges[i] = nil
         end
     end
     if not module.settings.dropEdges then
         return
     end
-    -- each edge once until the player is away from it; the one ahead in the view first
+    -- an edge warns every time the player comes within reach of it; the one ahead in the view first
     local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
     if i then
         local e = z.edges[i]
