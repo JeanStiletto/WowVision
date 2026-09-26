@@ -105,6 +105,7 @@ local lastRoom = nil             -- the last announced room, for the interior na
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
 local warnedEdge = nil           -- the drop edge last warned about (again only after leaving it)
+local edgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local saidExit = nil             -- the way out of the water last announced
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
 local outAt = nil                -- when the player last came out of a building
@@ -115,6 +116,7 @@ local EXIT_REACH = 25            -- yd to a way out of the water that is announc
 local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
 local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
 local CAME_OUT = 3               -- seconds after coming out of a building that it can lead onto a wall-walk
+local EDGE_REPEAT = 1            -- second in which the same edge warning is not said again
 
 -- Entrance guidance: within the entrance distance the nearest entrance is said with distance and
 -- direction; again whenever the direction word changes (so turning toward it can be followed),
@@ -218,7 +220,7 @@ local function logEntry(kind, text, x, y, extra)
     log.entries = trim(log.entries, LOG_MAX)
 end
 
--- A trail point every few yards: "time x y", plus i (indoors) and s (swimming).
+-- A trail point every few yards: "time x y", plus i (indoors), s (swimming) and g (ghost).
 local function logTrail(x, y)
     if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
         return
@@ -228,7 +230,7 @@ local function logTrail(x, y)
         return
     end
     trailX, trailY = x, y
-    local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "")
+    local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "") .. (UnitIsGhost("player") and "g" or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
@@ -347,7 +349,11 @@ local function checkEdgesAndExits(z, x, y)
             local word = z.compass[e[2]]
             local text = e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
                 or string.format(L["edge to the %s, drop %d yards"], word, e[3])
-            say(text, "edge", x, y)
+            local now = GetTime()
+            if text ~= edgeText or now - edgeAt >= EDGE_REPEAT then
+                say(text, "edge", x, y)
+                edgeText, edgeAt = text, now
+            end
             warnedEdge = i
         end
     elseif warnedEdge and not logic.nearestEdge(z, x, y, EDGE_CLEAR, high) then
@@ -361,7 +367,8 @@ module:hasUpdate(function(self)
         return
     end
     lastCheck = now
-    if UnitOnTaxi("player") or UnitIsDeadOrGhost("player") then
+    -- a ghost walks back to the body by the same rules; only a flight pauses the announcements
+    if UnitOnTaxi("player") then
         outdoor:reset()
         indoor:reset()
         room, lastX = nil, nil

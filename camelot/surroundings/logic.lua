@@ -82,6 +82,17 @@ function logic.unpack(zone)
         table.insert(links[b], a)
     end
     zone._links = links
+    -- a box per drop edge, so the edge search skips the far ones (cities have hundreds)
+    local boxes = {}
+    for i, e in ipairs(zone.edges or {}) do
+        local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
+        for k = 6, #e - 1, 2 do
+            x0, x1 = math.min(x0, e[k]), math.max(x1, e[k])
+            y0, y1 = math.min(y0, e[k + 1]), math.max(y1, e[k + 1])
+        end
+        boxes[i] = { x0, x1, y0, y1 }
+    end
+    zone._edgeBoxes = boxes
 end
 
 -- Free the unpacked grid when the player leaves the zone.
@@ -92,6 +103,7 @@ function logic.pack(zone)
     zone._pieces = nil
     zone._access = nil
     zone._links = nil
+    zone._edgeBoxes = nil
     zone._rooms = nil
     zone._entrances = nil
 end
@@ -240,10 +252,15 @@ function logic.nearestEdge(zone, x, y, reach, on)
     end
     local _v, r, c = logic.valueAt(zone, x, y)
     local best, bestD = nil, reach
+    local boxes = zone._edgeBoxes or {}
     for i, e in ipairs(edges) do
         local struct = e[1]
         local fx, fy = logic.compassVector(e[2])
         local start = (e[5] == 0 or (on and on[e[5]])) and 6 or #e + 1
+        local box = boxes[i]
+        if box and (x < box[1] - reach or x > box[2] + reach or y < box[3] - reach or y > box[4] + reach) then
+            start = #e + 1
+        end
         for k = start, #e - 1, 2 do
             local qx, qy = e[k], e[k + 1]
             local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
