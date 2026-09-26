@@ -293,6 +293,42 @@ function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
     return best, best and bestD
 end
 
+-- A drop edge in the player's path: moving along the unit vector (vx, vy), an edge point at most
+-- `look` yards ahead and `width` yards beside the path, whose drop lies ahead (the path meets
+-- the edge at 75 degrees or steeper, not running along it), with the player on the structure in
+-- front of it. Returns the edge index and the distance along the path. `on` and `skip` as for
+-- nearestEdge.
+logic.AHEAD_WIDTH = 1.5
+logic.AHEAD_ANGLE = 0.25   -- cosine: the path turns at most 75 degrees away from the drop
+
+function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip)
+    local edges = zone.edges
+    if edges == nil or #edges == 0 or look <= 0 then
+        return nil
+    end
+    local _v, r, c = logic.valueAt(zone, x, y)
+    local best, bestAlong = nil, look
+    local boxes = zone._edgeBoxes or {}
+    for i, e in ipairs(edges) do
+        local fx, fy = logic.compassVector(e[2])
+        local start = (e[5] == 0 or (on and on[e[5]])) and 6 or #e + 1
+        local box = boxes[i]
+        if (skip and skip[i]) or fx * vx + fy * vy < logic.AHEAD_ANGLE
+            or (box and (x < box[1] - look or x > box[2] + look or y < box[3] - look or y > box[4] + look)) then
+            start = #e + 1
+        end
+        for k = start, #e - 1, 2 do
+            local dx, dy = e[k] - x, e[k + 1] - y
+            local along = dx * vx + dy * vy
+            if along > 0 and along <= bestAlong and math.abs(dx * vy - dy * vx) <= logic.AHEAD_WIDTH
+                and -dx * fx - dy * fy <= 0.5 and onStructure(zone, r, c, e[1]) then
+                best, bestAlong = i, along
+            end
+        end
+    end
+    return best, best and bestAlong
+end
+
 -- Distance from a position to the nearest point of a drop edge.
 function logic.edgeDistance(zone, i, x, y)
     local e = zone.edges[i]
@@ -671,7 +707,7 @@ function logic.regionAt(zone, x, y)
         local cx, cy = cellCentre(zone, r, c)
         return (logic.valueAt(zone, cx, cy))
     end
-    local region = { value = value, cells = {}, mouths = {} }
+    local region = { value = value, label = zone.places[logic.placeOf(value)][2], cells = {}, mouths = {} }
     local cells = region.cells
     local stack, list = { r0, c0 }, {}
     cells[key0] = true
@@ -736,7 +772,7 @@ function logic.regionAt(zone, x, y)
                         points[#points + 1] = px
                         points[#points + 1] = py
                     end
-                    table.insert(region.mouths, { label = label, class = group.class, points = points })
+                    table.insert(region.mouths, { label = label, class = group.class, points = points, cells = members })
                 end
             end
         end
@@ -758,6 +794,61 @@ function logic.regionAt(zone, x, y)
         zone._regionOf[key] = region
     end
     return region
+end
+
+logic.LEADS_MAX = 5000   -- cells a way is followed to see where it leads; farther counts as leading on
+
+-- Does the way behind a square's mouth lead on: does the thing (all cells of that name joined to
+-- the mouth) meet another way than itself and the square? The ramps from the Valley of Heroes down
+-- to the moat banks do not (they end at the shore); a street to the next district does. Cached.
+function logic.leadsOn(zone, mouth, originLabel)
+    if mouth.leads ~= nil then
+        return mouth.leads
+    end
+    local cols = zone.cols
+    local seen, stack, count = {}, {}, 0
+    local function labelAt(r, c)
+        if r < 0 or r >= zone.rows or c < 0 or c >= cols then
+            return nil, nil
+        end
+        local cx, cy = cellCentre(zone, r, c)
+        local p = zone.places[logic.placeOf((logic.valueAt(zone, cx, cy)))]
+        return p and p[2], p and p[1]
+    end
+    for _, m in ipairs(mouth.cells or {}) do
+        local key = m[1] * cols + m[2]
+        if not seen[key] then
+            seen[key] = true
+            stack[#stack + 1] = m[1]
+            stack[#stack + 1] = m[2]
+        end
+    end
+    local leads = false
+    while #stack > 0 and not leads do
+        local c = table.remove(stack)
+        local r = table.remove(stack)
+        count = count + 1
+        if count > logic.LEADS_MAX then
+            leads = true
+            break
+        end
+        for _, s in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+            local nr, nc = r + s[1], c + s[2]
+            local key = nr * cols + nc
+            if not seen[key] then
+                local label, kind = labelAt(nr, nc)
+                if label == mouth.label then
+                    seen[key] = true
+                    stack[#stack + 1] = nr
+                    stack[#stack + 1] = nc
+                elseif label and label ~= originLabel and logic.WAYS[kind] then
+                    leads = true
+                end
+            end
+        end
+    end
+    mouth.leads = leads
+    return leads
 end
 
 -- Distance from a position to a mouth's nearest point, and the compass index toward it.
@@ -826,12 +917,13 @@ end
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
 -- opts (all optional): max (items), cameFrom (the label that goes first when there are more),
 -- dirs (directions per item at most), said (a set of mouths left out: already said), classes
--- (a set: only these classes).
+-- (a set: only these classes), leading (with zone: only ways that lead on, see leadsOn).
 function logic.aroundItems(region, x, y, opts)
     opts = opts or {}
     local found = {}
     for _, m in ipairs(region.mouths) do
-        if not (opts.said and opts.said[m]) and (opts.classes == nil or opts.classes[m.class]) then
+        if not (opts.said and opts.said[m]) and (opts.classes == nil or opts.classes[m.class])
+            and not (opts.leading and m.class == "way" and not logic.leadsOn(opts.zone, m, region.label)) then
             local d, dir = logic.mouthDistance(m, x, y)
             found[#found + 1] = { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
         end

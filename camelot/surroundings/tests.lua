@@ -162,6 +162,37 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(math.floor(logic.edgeDistance(z, 3, 87, 36) * 10), 41)
     end,
 
+    ["an edge in the path warns ahead, with its distance; not when walking along it"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        -- on the dock at 82, 30, its north edge 8 yd ahead when moving north
+        local i, along = logic.edgeAhead(z, 82, 30, 1, 0, 10)
+        t:assertEqual(i, 1)
+        t:assertEqual(along, 8)
+        t:assertNil(logic.edgeAhead(z, 82, 30, 1, 0, 5))           -- farther than the look-ahead
+        t:assertNil(logic.edgeAhead(z, 82, 30, 0, -1, 10))         -- moving east, along the edge
+        t:assertNil(logic.edgeAhead(z, 82, 30, -1, 0, 10))         -- moving away from it
+        t:assertNil(logic.edgeAhead(z, 82, 30, 1, 0, 10, {}, { [1] = true }))
+    end,
+
+    ["a square's exits leave out ways that lead nowhere"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        -- the street north of the square ends in open land: a dead end
+        local exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#exits, 0)
+        -- with a road joining the street, it leads on
+        z = newSquareZone()
+        table.insert(z.places, { "road", "road" })
+        z.grid[1] = "300*2,281*2,600,300*2"
+        logic.unpack(z)
+        region = logic.regionAt(z, 78, 35)
+        exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#exits, 1)
+        t:assertEqual(exits[1].label, "street of Test")
+    end,
+
     ["cliffs and water near a place: nearest first, directions not neighbours on the compass"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)

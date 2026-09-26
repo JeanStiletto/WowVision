@@ -17,6 +17,9 @@ T["Warn at Drop Edges"] = true
 T["Announce Ways Out of the Water"] = true
 T["edge to the %s, drop %d yards"] = true
 T["edge to the %s, drop into water"] = true
+T["edge to the %s in %d yards, drop into water"] = true
+T["edge to the %s in %d yards, drop %d yards"] = true
+T["Look Ahead for Edges (yards)"] = true
 T["way out of the water, %d yards to the %s"] = true
 T["road to the %s"] = true
 T["Announce Entrances"] = true
@@ -67,6 +70,14 @@ settings:add({
     max = 40,
 })
 settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"], default = true })
+settings:add({
+    key = "edgeLookAhead",
+    type = "Number",
+    label = L["Look Ahead for Edges (yards)"],
+    default = 10,
+    min = 0,
+    max = 25,
+})
 settings:add({ key = "entrances", type = "Bool", label = L["Announce Entrances"], default = true })
 settings:add({
     key = "entranceDistance",
@@ -149,7 +160,7 @@ local lastRoom = nil             -- the last announced room, for the interior na
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
 local warnedEdges = {}           -- drop edges in reach and warned about (again after stepping out of reach)
-local edgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
+local lastEdgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local saidExit = nil             -- the way out of the water last announced
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
 local outAt = nil                -- when the player last came out of a building
@@ -157,6 +168,7 @@ local region = nil               -- the square the player is on (announced), for
 local saidMouths = {}            -- its streets, water and the like already said on this visit
 
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
+local MOVE_MIN = 0.3             -- yd moved in one check (0.2 s) that give a direction to look ahead
 local EDGE_REARM = 0.5           -- yd beyond the reach before the same edge warns again (not on position noise)
 local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
 local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
@@ -434,6 +446,8 @@ local function squareText(z, x, y, value, previous)
         cameFrom = keyLabel(z, previous),
         dirs = logic.ITEM_DIRS,
         classes = { way = true },
+        leading = true,
+        zone = z,
     })
     for _, item in ipairs(logic.aroundItems(region, x, y, { classes = { way = true } })) do
         for _, m in ipairs(item.mouths) do
@@ -509,7 +523,18 @@ local function roomText(z, x, y, id, previous)
     return text
 end
 
-local function checkEdgesAndExits(z, x, y)
+local function edgeText(z, e, ahead)
+    local word = z.compass[e[2]]
+    if ahead then
+        local yards = math.max(1, math.floor(ahead + 0.5))
+        return e[4] == 1 and string.format(L["edge to the %s in %d yards, drop into water"], word, yards)
+            or string.format(L["edge to the %s in %d yards, drop %d yards"], word, yards, e[3])
+    end
+    return e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
+        or string.format(L["edge to the %s, drop %d yards"], word, e[3])
+end
+
+local function checkEdgesAndExits(z, x, y, px, py)
     if IsSwimming() then
         -- climbing out at an edge warns again
         warnedEdges = {}
@@ -528,25 +553,46 @@ local function checkEdgesAndExits(z, x, y)
     saidExit = nil
     -- edges of a wall-walk or a deck high over the ground warn only while the player is up there
     logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+    -- the way the player moves (not the facing: strafing and walking back count too)
+    local vx, vy = nil, nil
+    local moved = px and math.sqrt((x - px) ^ 2 + (y - py) ^ 2) or 0
+    if moved >= MOVE_MIN then
+        vx, vy = (x - px) / moved, (y - py) / moved
+    end
+    local look = module.settings.edgeLookAhead or 10
+    local aheadNow = {}
+    if vx then
+        -- every edge in the path counts as still ahead (not only the one said)
+        local skip = {}
+        while true do
+            local i = logic.edgeAhead(z, x, y, vx, vy, look, high, skip)
+            if i == nil then
+                break
+            end
+            aheadNow[i], skip[i] = true, true
+        end
+    end
+    -- an edge warns again after the player is out of its reach and it is no longer in the path
     for i in pairs(warnedEdges) do
-        if logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
+        if not aheadNow[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
             warnedEdges[i] = nil
         end
     end
     if not module.settings.dropEdges then
         return
     end
-    -- an edge warns every time the player comes within reach of it; the one ahead in the view first
+    -- within reach: the one ahead in the view first; else an edge in the path, with its distance
     local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
+    local along = nil
+    if i == nil and vx then
+        i, along = logic.edgeAhead(z, x, y, vx, vy, look, high, warnedEdges)
+    end
     if i then
-        local e = z.edges[i]
-        local word = z.compass[e[2]]
-        local text = e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
-            or string.format(L["edge to the %s, drop %d yards"], word, e[3])
+        local text = edgeText(z, z.edges[i], along)
         local now = GetTime()
-        if text ~= edgeText or now - edgeAt >= EDGE_REPEAT then
+        if text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
             say(text, "edge", x, y)
-            edgeText, edgeAt = text, now
+            lastEdgeText, edgeAt = text, now
         end
         warnedEdges[i] = true
     end
@@ -605,7 +651,7 @@ module:hasUpdate(function(self)
         return
     end
     lastRoom = nil
-    checkEdgesAndExits(z, x, y)
+    checkEdgesAndExits(z, x, y, px, py)
     checkEntrance(z, x, y)
     local place, value = outdoorValue(z, x, y)
     local previous = outdoor.current
