@@ -126,6 +126,13 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(math.floor(vy + 0.5), -1)
     end,
 
+    ["degrees between an offset and a compass direction"] = function(t)
+        t:assertEqual(logic.angleOff(10, 0, 1), 0)                     -- due north, north
+        t:assertEqual(math.floor(logic.angleOff(10, 4, 1) + 0.5), 22)  -- a bit west of north
+        t:assertEqual(math.floor(logic.angleOff(10, 4, 8) + 0.5), 23)  -- and from northwest
+        t:assertEqual(logic.angleOff(-10, 0, 1), 180)
+    end,
+
     ["the nearest way out of the water, with its direction"] = function(t)
         local z = newZone()
         local i, d, dir = logic.nearestExit(z, 95, 30, 25)

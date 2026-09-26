@@ -339,6 +339,13 @@ function logic.edgeDistance(zone, i, x, y)
     return best
 end
 
+-- Degrees between the direction of a world offset (dx north, dy west) and a compass index's.
+function logic.angleOff(dx, dy, index)
+    local angle = math.deg(math.atan2(-dy, dx)) % 360
+    local off = math.abs(angle - (index - 1) * 45) % 360
+    return math.min(off, 360 - off)
+end
+
 -- Unit world vector (x north, y west) of a compass index.
 function logic.compassVector(index)
     local angle = math.rad((index - 1) * 45)

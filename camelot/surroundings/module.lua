@@ -24,9 +24,9 @@ T["way out of the water, %d yards to the %s"] = true
 T["road to the %s"] = true
 T["Announce Entrances"] = true
 T["Entrance Distance (yards)"] = true
-T["entrance of %s, %d yards to the %s"] = true
+T["entrance of %s, %d to the %s"] = true
 T["at the entrance of %s"] = true
-T["entrance, %d yards to the %s"] = true
+T["entrance, %d to the %s"] = true
 T["at the entrance"] = true
 T["Announce What Lies Around"] = true
 T["Approach Distance on Squares (yards)"] = true
@@ -82,10 +82,10 @@ settings:add({
 })
 settings:add({ key = "entrances", type = "Bool", label = L["Announce Entrances"], default = true })
 settings:add({
-    key = "entranceDistance",
+    key = "entranceReach",   -- was entranceDistance (15); a new key so the new default reaches saved settings
     type = "Number",
     label = L["Entrance Distance (yards)"],
-    default = 15,
+    default = 10,
     min = 3,
     max = 40,
 })
@@ -174,6 +174,7 @@ local MOVE_MIN = 0.3             -- yd moved in one check (0.2 s) that give a di
 local EDGE_REARM = 0.5           -- yd beyond the reach before the same edge warns again (not on position noise)
 local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
 local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
+local ENTRANCE_TURN = 32          -- degrees off the last said direction before a new one is said
 local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
 local CAME_OUT = 3               -- seconds after coming out of a building that it can lead onto a wall-walk
 local EDGE_REPEAT = 1            -- second in which the same edge warning is not said again
@@ -368,7 +369,7 @@ local function checkEntrance(z, x, y)
         guide.index = nil
         return
     end
-    local i, d, dir = logic.nearestEntrance(z, x, y, module.settings.entranceDistance or 15)
+    local i, d, dir = logic.nearestEntrance(z, x, y, module.settings.entranceReach or 10)
     if i == nil then
         guide.index = nil
         return
@@ -384,10 +385,13 @@ local function checkEntrance(z, x, y)
         end
         return
     end
-    if guide.index ~= i or (guide.dir ~= dir and now - guide.time >= ENTRANCE_REPEAT) or (guide.at and d > ENTRANCE_AT + 2) then
+    -- a new direction only when well into it: standing near the line between north and northwest
+    -- does not switch back and forth
+    local turned = guide.dir ~= dir and logic.angleOff(e.x - x, e.y - y, guide.dir or dir) > ENTRANCE_TURN
+    if guide.index ~= i or (turned and now - guide.time >= ENTRANCE_REPEAT) or (guide.at and d > ENTRANCE_AT + 2) then
         local yards, word = math.floor(d + 0.5), z.compass[dir]
-        say(named and string.format(L["entrance of %s, %d yards to the %s"], e.text, yards, word)
-            or string.format(L["entrance, %d yards to the %s"], yards, word), "entrance", x, y)
+        say(named and string.format(L["entrance of %s, %d to the %s"], e.text, yards, word)
+            or string.format(L["entrance, %d to the %s"], yards, word), "entrance", x, y)
         guide.index, guide.dir, guide.at, guide.time, guide.named = i, dir, false, now, i
     end
 end
@@ -807,9 +811,9 @@ function module:describeAround()
             if near then
                 text = text .. ", " .. near
             end
-            local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceDistance or 15)
+            local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceReach or 10)
             if i then
-                text = text .. ", " .. string.format(L["entrance of %s, %d yards to the %s"],
+                text = text .. ", " .. string.format(L["entrance of %s, %d to the %s"],
                     logic.entrances(z)[i].text, math.floor(d + 0.5), z.compass[dir])
             end
         end
