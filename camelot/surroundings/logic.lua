@@ -12,6 +12,9 @@
 -- edges; structCells: row, col, struct triples (their floors); edges: per drop edge
 -- {struct, facing (compass index), drop yards, into water (0/1), piece, x1, y1, x2, y2, ...}:
 -- points along the edge about 2 yd apart (a point set, not a line: thick or bent edges zigzag).
+-- objects (things one bumps into), flat, 7 values each: x, y, half length and half width in
+-- 0.1 yd, the long axis' angle in degrees (0 = north, toward west), name index into objectNames,
+-- room (0 = outdoors).
 -- piece 0: the floor lies low over the ground or water, nobody walks under it. Otherwise the edge
 -- lies on a high floor piece (a gate's wall-walk, a bridge deck over a bank) that one can walk
 -- under; there is no height on Forever, so the piece warns only after the player was seen
@@ -93,6 +96,29 @@ function logic.unpack(zone)
         boxes[i] = { x0, x1, y0, y1 }
     end
     zone._edgeBoxes = boxes
+    -- objects per grid cell (every cell their footprint's circle touches)
+    local buckets = {}
+    list = zone.objects or {}
+    for i = 1, #list - 6, 7 do
+        local x, y = list[i], list[i + 1]
+        local reach = math.sqrt(list[i + 2] ^ 2 + list[i + 3] ^ 2) / 10
+        local r0 = math.floor((zone.top - x - reach) / zone.cell)
+        local r1 = math.floor((zone.top - x + reach) / zone.cell)
+        local c0 = math.floor((zone.left - y - reach) / zone.cell)
+        local c1 = math.floor((zone.left - y + reach) / zone.cell)
+        for r = r0, r1 do
+            for c = c0, c1 do
+                local key = r * zone.cols + c
+                buckets[key] = buckets[key] or {}
+                table.insert(buckets[key], i)
+            end
+        end
+    end
+    zone._objects = buckets
+    zone._waterStruct = {}
+    for _, sid in ipairs(zone.waterStructs or {}) do
+        zone._waterStruct[sid] = true
+    end
 end
 
 -- Free the unpacked grid when the player leaves the zone.
@@ -107,6 +133,8 @@ function logic.pack(zone)
     zone._rooms = nil
     zone._entrances = nil
     zone._regionOf = nil
+    zone._objects = nil
+    zone._waterStruct = nil
 end
 
 function logic.covers(zone, x, y)
@@ -464,6 +492,76 @@ function Entry:update(key, x, y)
     return nil
 end
 
+-- The nearest point of an object's footprint to a position, and the distance.
+function logic.objectPoint(zone, i, x, y)
+    local o = zone.objects
+    local cx, cy = o[i], o[i + 1]
+    local hu, hv = o[i + 2] / 10, o[i + 3] / 10
+    local a = math.rad(o[i + 4])
+    local ux, uy = math.cos(a), math.sin(a)
+    local dx, dy = x - cx, y - cy
+    local pu = math.max(-hu, math.min(hu, dx * ux + dy * uy))
+    local pv = math.max(-hv, math.min(hv, -dx * uy + dy * ux))
+    local qx, qy = cx + pu * ux - pv * uy, cy + pu * uy + pv * ux
+    return qx, qy, math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
+end
+
+logic.BUMP_REACH = 1.5    -- yd from the player to an object that can be what they push against
+logic.BUMP_ANGLE = 0.34   -- cosine: the object lies at most 70 degrees off the way they push
+
+-- The object the player pushes against: moving (or trying to) along the unit vector (vx, vy),
+-- the nearest object within `reach` yards that lies that way. `room`: only objects of this room
+-- (0 = outdoors). Returns the object's start index in zone.objects and its distance, or nil.
+function logic.objectAhead(zone, x, y, vx, vy, reach, room)
+    local buckets = zone._objects
+    if buckets == nil then
+        return nil
+    end
+    local _v, r, c = logic.valueAt(zone, x, y)
+    local n = math.ceil(reach / zone.cell)
+    local best, bestD, seen = nil, reach, {}
+    for dr = -n, n do
+        for dc = -n, n do
+            for _, i in ipairs(buckets[(r + dr) * zone.cols + c + dc] or {}) do
+                if not seen[i] and (room == nil or zone.objects[i + 6] == room) then
+                    seen[i] = true
+                    local qx, qy, d = logic.objectPoint(zone, i, x, y)
+                    if d <= bestD and (d < 0.3 or ((qx - x) * vx + (qy - y) * vy) / d >= logic.BUMP_ANGLE) then
+                        best, bestD = i, d
+                    end
+                end
+            end
+        end
+    end
+    return best, best and bestD
+end
+
+function logic.objectName(zone, i)
+    return zone.objectNames and zone.objectNames[zone.objects[i + 5]]
+end
+
+-- Whose wall the player pushes against from outside: the interior whose room floor lies just
+-- ahead (within `reach` yards along the vector), or a structure with drop edges (a gate, a wall,
+-- a pier) whose floor lies there. Returns the name or nil.
+function logic.wallOwner(zone, x, y, vx, vy, reach)
+    for k = 0.5, reach, 0.5 do
+        local px, py = x + vx * k, y + vy * k
+        local found = logic.roomCandidates(zone, px, py, 0)
+        local id = found[1] or logic.roomOutlineAt(zone, px, py)
+        if id then
+            local interior = zone.interiors[zone.rooms[id][1]]
+            return interior and interior[1]
+        end
+        local _v, r, c = logic.valueAt(zone, px, py)
+        local struct = zone._struct and zone._struct[r * zone.cols + c]
+        -- the city water edges are a structure of their own (waterStructs): no wall
+        if struct and not zone._waterStruct[struct] then
+            return zone.structs[struct]
+        end
+    end
+    return nil
+end
+
 -- Rooms: floor boxes per room and doors between rooms, built once per zone.
 local function roomIndex(zone)
     if zone._rooms then
@@ -526,6 +624,21 @@ function logic.toBuilding(interior, x, y)
     local r0, r1 = (ox - x) / s, (oy - y) / s
     local det = a * d - b * c
     return (d * r0 - b * r1) / det, (-c * r0 + a * r1) / det
+end
+
+-- The first room whose outline (the box of its walls, room[5], in the building frame) holds the
+-- position, or nil: where the floor pieces leave gaps (under counters, a raised platform).
+function logic.roomOutlineAt(zone, x, y)
+    for id, room in ipairs(zone.rooms or {}) do
+        local o = room[5]
+        if o then
+            local vx, vy = logic.toBuilding(zone.interiors[room[1]], x, y)
+            if vx >= o[1] and vx <= o[3] and vy >= o[2] and vy <= o[4] then
+                return id
+            end
+        end
+    end
+    return nil
 end
 
 -- Rooms whose floor boxes contain the position (within `margin` yards).

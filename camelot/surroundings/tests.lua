@@ -126,6 +126,42 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(math.floor(vy + 0.5), -1)
     end,
 
+    ["pushing against an object names it; only objects of the room, the way one pushes"] = function(t)
+        local z = newSquareZone()
+        -- a barrel outdoors at 78, 30 (1 yd across); a crate 4 yd long along north-south at 70, 35
+        -- (angle 0) in room 1; a counter outdoors east of the crate at 70, 31 (angle 90: its long
+        -- axis runs east-west, 2 yd long)
+        z.objectNames = { "barrel", "crate", "counter" }
+        z.objects = { 78, 30, 5, 5, 0, 1, 0, 70, 35, 20, 5, 0, 2, 1, 70, 31, 10, 3, 90, 3, 0 }
+        logic.unpack(z)
+        -- at 78, 31.5 pushing east (y falls): the barrel, 1 yd away
+        local i, d = logic.objectAhead(z, 78, 31.5, 0, -1, 1.5, 0)
+        t:assertEqual(logic.objectName(z, i), "barrel")
+        t:assertEqual(d, 1)
+        t:assertNil(logic.objectAhead(z, 78, 31.5, 0, 1, 1.5, 0))        -- pushing west: nothing
+        t:assertNil(logic.objectAhead(z, 78, 31.5, 0, -1, 0.5, 0))       -- too far
+        -- beside the crate's long side (x 70, 1 yd west of it), pushing east: the crate, but only
+        -- for its room
+        t:assertNil(logic.objectAhead(z, 71, 36.5, 0, -1, 1.5, 0))
+        i = logic.objectAhead(z, 71, 36.5, 0, -1, 1.5, 1)
+        t:assertEqual(logic.objectName(z, i), "crate")
+        -- the counter's short end is 1 yd from y 31 along its axis: at 70, 29 pushing west
+        i = logic.objectAhead(z, 70, 29, 0, 1, 1.5, 0)
+        t:assertEqual(logic.objectName(z, i), "counter")
+    end,
+
+    ["whose wall: the room ahead, by its floor or its outline; a structure's floor"] = function(t)
+        local z = newZone()
+        -- the barn (room 4, floor x 30 to 40, y 0 to 10) gets an outline a yard wider
+        z.rooms[4][5] = { 29, -1, 41, 11 }
+        logic.unpack(z)
+        t:assertNil(logic.wallOwner(z, 44, 5, -1, 0, 2.5))                   -- the outline 3 yd south: too far
+        t:assertEqual(logic.wallOwner(z, 42.5, 5, -1, 0, 2.5), "Test Barn")  -- the outline 1.5 yd south
+        -- the dock (a structure with a drop edge) lies under 85, 45
+        t:assertEqual(logic.wallOwner(z, 85, 55, 0, -1, 2.5), nil)
+        t:assertEqual(logic.wallOwner(z, 85, 51, 0, -1, 2.5), "dock")
+    end,
+
     ["degrees between an offset and a compass direction"] = function(t)
         t:assertEqual(logic.angleOff(10, 0, 1), 0)                     -- due north, north
         t:assertEqual(math.floor(logic.angleOff(10, 4, 1) + 0.5), 22)  -- a bit west of north

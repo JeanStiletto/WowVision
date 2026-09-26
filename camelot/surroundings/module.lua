@@ -44,6 +44,9 @@ T["canal"] = true
 T["way out"] = true
 T["entrance of %s"] = true
 T["room unknown"] = true
+T["Name What I Bump Into"] = true
+T["wall"] = true
+T["wall of %s"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -117,6 +120,7 @@ settings:add({
     min = 5,
     max = 60,
 })
+settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
@@ -169,6 +173,8 @@ local outAt = nil                -- when the player last came out of a building
 local region = nil               -- the square the player is on (announced), for what comes close
 local saidMouths = {}            -- its streets, water and the like already said on this visit
 
+local BUMP_TICKS = 2             -- checks in a row hard against something (0.4 s) before naming it
+local BUMP_FREE = 1.0            -- seconds moving freely before the same thing is named again
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
 local MOVE_MIN = 0.3             -- yd moved in one check (0.2 s) that give a direction to look ahead
 local EDGE_REARM = 0.5           -- yd beyond the reach before the same edge warns again (not on position noise)
@@ -534,6 +540,81 @@ local function roomText(z, x, y, id, previous)
     return text
 end
 
+-- Naming what the player bumps into: when they push against something (the wall detection's
+-- "blocked", held for a moment), the object in the way they push (a barrel, a cart, a fence), or
+-- the wall of the building ahead ("wall of auction house"), or indoors a wall. Once per bump; the
+-- same thing again only after moving freely for a moment.
+local bump = { ticks = 0, key = nil, free = 0, time = nil }
+
+local function pushDirection()
+    local facing = GetPlayerFacing()
+    local flags = WowVision.movement and WowVision.movement.flags
+    if facing == nil or flags == nil then
+        return nil
+    end
+    local ahead = ((flags.moveForward or flags.autorun) and 1 or 0) - (flags.moveBackward and 1 or 0)
+    local side = (flags.strafeLeft and 1 or 0) - (flags.strafeRight and 1 or 0)
+    local vx = ahead * math.cos(facing) + side * math.cos(facing + math.pi / 2)
+    local vy = ahead * math.sin(facing) + side * math.sin(facing + math.pi / 2)
+    local len = math.sqrt(vx * vx + vy * vy)
+    if len < 0.1 then
+        return nil
+    end
+    return vx / len, vy / len
+end
+
+local function checkBump(z, x, y, px, py, isIndoors)
+    local now = GetTime()
+    local dt = bump.time and now - bump.time or nil
+    bump.time = now
+    if not module.settings.bumps or px == nil or dt == nil or IsSwimming() then
+        bump.ticks = 0
+        return
+    end
+    local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+    local speed = GetUnitSpeed("player")
+    if WowVision.isSecret and WowVision.isSecret(speed) then
+        speed = nil
+    end
+    local translating = WowVision.movement and WowVision.movement:isTranslating()
+    local severity = translating and WowVision.stuckMath.severity(moved, speed, dt) or nil
+    if severity ~= 1 then
+        bump.ticks = 0
+        if moved > 0.2 then
+            bump.free = bump.free + dt
+            if bump.free >= BUMP_FREE then
+                bump.key = nil
+            end
+        end
+        return
+    end
+    bump.ticks = bump.ticks + 1
+    bump.free = 0
+    if bump.ticks < BUMP_TICKS then
+        return
+    end
+    local vx, vy = pushDirection()
+    if vx == nil then
+        return
+    end
+    local i = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, isIndoors and room or 0)
+    local text, key
+    if i then
+        text, key = logic.objectName(z, i), i
+    elseif isIndoors then
+        text, key = L["wall"], "wall"
+    else
+        local owner = logic.wallOwner(z, x, y, vx, vy, 2.5)
+        if owner then
+            text, key = string.format(L["wall of %s"], owner), owner
+        end
+    end
+    if text and key ~= bump.key then
+        say(text, "bump", x, y)
+    end
+    bump.key = key or bump.key
+end
+
 local function edgeText(z, e, ahead)
     local word = z.compass[e[2]]
     if ahead then
@@ -650,6 +731,7 @@ module:hasUpdate(function(self)
     end
     local px, py = lastX, lastY
     lastX, lastY = x, y
+    checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
         local found = logic.resolveRoom(z, x, y, room, px, py)
         if found ~= nil then
