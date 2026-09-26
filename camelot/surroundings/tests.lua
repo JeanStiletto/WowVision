@@ -55,6 +55,30 @@ local function newZone()
     }
 end
 
+-- A square in a city: 5 rows x 7 columns of 10 yd cells; north edge at x = 100, west edge at
+-- y = 70. The square fills rows 1 to 3, columns 1 to 5; a street (running north-south) meets it
+-- at row 0, columns 2 and 3; deep water east of it (rows 2 and 3, column 6); a canal (no place,
+-- said while swimming) south of it (row 4, columns 1 to 3); open land elsewhere; the Test Bank's
+-- door on its south-east corner.
+local function newSquareZone()
+    local z = newZone()
+    z.rows, z.cols, z.top, z.left = 5, 7, 100, 70
+    z.places = {
+        { "square", "square of Test" },
+        { "street", "street of Test" },
+        { "open land", "open land" },
+        { "deep water", "deep water of Test" },
+        { "canal", "canal of Test" },
+    }
+    z.grid = { "300*2,281*2,300*3", "300,100*5,300", "300,100*5,400", "300,100*5,400", "0*7" }
+    z.bridgeUnder = { 4, 1, 5, 4, 2, 5, 4, 3, 5 }
+    z.structs, z.structCells, z.edges, z.pieceCells, z.access, z.links = {}, {}, {}, {}, {}, {}
+    z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
+    z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
+    z.doors = { { 0, 1, 1, 65, 15, 1, 0, 0 } }
+    return z
+end
+
 testRunner:addSuite("Surroundings", {
     ["a position finds its cell value; west and south of the edges is outside"] = function(t)
         local z = newZone()
@@ -254,5 +278,98 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describeRoom(z, 1, nil), "Test Inn, common room")
         t:assertEqual(logic.describeRoom(z, 3, 1), "back room")
         t:assertEqual(logic.describeRoom(z, 4, 3), "Test Barn, barn")
+    end,
+
+    ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        t:assertEqual(logic.isAroundPlace(z, 100), true)
+        t:assertEqual(logic.isAroundPlace(z, 281), false)   -- a street with a direction
+        t:assertEqual(logic.isAroundPlace(z, 200), true)    -- a street without one
+        t:assertEqual(logic.isAroundPlace(z, 300), false)
+        local region = logic.regionAt(z, 78, 35)
+        t:assertEqual(logic.regionAt(z, 65, 55), region)    -- the same square, cached
+        t:assertNil(logic.regionAt(z, 95, 65))              -- open land
+        local items = logic.aroundItems(region, 78, 35)
+        local said = {}
+        for _, item in ipairs(items) do
+            said[#said + 1] = item.label .. " " .. table.concat(item.dirs, "+")
+        end
+        -- nearest first: street 17 yd north, canal 23 south, entrance 24 southeast, water 30 east
+        t:assertEqual(table.concat(said, ", "), "street of Test 1, canal 5, Test Bank 4, water 3")
+        t:assertEqual(items[2].class, "canal")
+        t:assertEqual(items[3].class, "entrance")
+    end,
+
+    ["a square says at most the count; the way the player came goes first"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        t:assertEqual(#logic.aroundItems(region, 78, 35, { max = 4, cameFrom = "street of Test" }), 4)   -- fits: kept
+        local items = logic.aroundItems(region, 78, 35, { max = 3, cameFrom = "street of Test" })
+        t:assertEqual(#items, 3)
+        t:assertEqual(items[1].label, "canal")
+        items = logic.aroundItems(region, 78, 35, { max = 2, cameFrom = "somewhere else" })
+        t:assertEqual(items[1].label, "street of Test")
+        t:assertEqual(items[2].label, "canal")
+        -- things already said are left out (back on the square soon after leaving it)
+        local said = { [items[1].mouths[1]] = true }
+        items = logic.aroundItems(region, 78, 35, { said = said })
+        t:assertEqual(#items, 3)
+        t:assertEqual(items[1].label, "canal")
+    end,
+
+    ["stepping onto a square names its nearest way on, not the nearer water or canal"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 62, 35)   -- canal 7 yd south, street 33 yd north
+        local items = logic.aroundItems(region, 62, 35, { max = 1, classes = { way = true } })
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "street of Test")
+        t:assertEqual(items[1].dirs[1], 1)
+    end,
+
+    ["a thing meeting the square in several places says its nearest directions, at most the count"] = function(t)
+        local z = newSquareZone()
+        -- the street meets the square from the north (columns 3 and 4, apart from the other
+        -- mouth) and from the west (rows 2 and 3, column 0)
+        z.grid[1] = "300*3,281*2,300*2"
+        z.grid[3] = "281,100*5,400"
+        z.grid[4] = "281,100*5,400"
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local street = logic.aroundItems(region, 78, 35)[1]
+        t:assertEqual(street.label, "street of Test")
+        t:assertEqual(table.concat(street.dirs, "+"), "1+7")   -- north (17 yd), then west (30 yd)
+        street = logic.aroundItems(region, 78, 35, { dirs = 1 })[1]
+        t:assertEqual(table.concat(street.dirs, "+"), "1")
+    end,
+
+    ["on a square each thing is said once when the player comes close; entrances are not"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local said = {}
+        local items = logic.approaching(region, 78, 35, 18, said)
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "street of Test")
+        t:assertEqual(#logic.approaching(region, 78, 35, 18, said), 0)   -- once
+        items = logic.approaching(region, 56, 40, 18, said)
+        t:assertEqual(#items, 1)                                         -- the canal; the entrance stays with the guidance
+        t:assertEqual(items[1].label, "canal")
+    end,
+
+    ["a room names its doorways, nearest first; the one the player came through goes first"] = function(t)
+        local z = newZone()
+        local items = logic.roomDoorways(z, 1, 5, 9)
+        t:assertEqual(#items, 2)
+        t:assertEqual(items[1].label, "upstairs landing")
+        t:assertEqual(items[1].dirs[1], 3)                 -- east (y grows west)
+        t:assertEqual(items[2].class, "out")
+        t:assertEqual(items[2].dirs[1], 4)                 -- southeast
+        t:assertEqual(logic.roomDoorways(z, 1, 5, 9, { max = 1, cameFrom = 0 })[1].label, "upstairs landing")
+        t:assertEqual(logic.roomDoorways(z, 1, 5, 9, { max = 1, cameFrom = 2 })[1].class, "out")
+        -- right at a doorway: no direction
+        t:assertEqual(#logic.roomDoorways(z, 1, 0.5, 5)[1].dirs, 0)
     end,
 })

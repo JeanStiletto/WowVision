@@ -23,6 +23,19 @@ T["Announce Entrances"] = true
 T["Entrance Distance (yards)"] = true
 T["entrance of %s, %d yards to the %s"] = true
 T["at the entrance of %s"] = true
+T["Announce What Lies Around"] = true
+T["Doorways at Most"] = true
+T["Approach Distance on Squares (yards)"] = true
+T["Describe Surroundings"] = true
+T["%s to the %s"] = true
+T["%s here"] = true
+T["%s and %s"] = true
+T["water"] = true
+T["drop"] = true
+T["canal"] = true
+T["way out"] = true
+T["entrance of %s"] = true
+T["room unknown"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -59,6 +72,25 @@ settings:add({
     default = 15,
     min = 3,
     max = 40,
+})
+-- squares say their nearest way on and, on coming close, streets, squares, water and drops;
+-- rooms say their doorways
+settings:add({ key = "around", type = "Bool", label = L["Announce What Lies Around"], default = true })
+settings:add({
+    key = "aroundMax",
+    type = "Number",
+    label = L["Doorways at Most"],
+    default = 4,
+    min = 1,
+    max = 10,
+})
+settings:add({
+    key = "approachDistance",
+    type = "Number",
+    label = L["Approach Distance on Squares (yards)"],
+    default = 10,
+    min = 3,
+    max = 30,
 })
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
@@ -109,6 +141,8 @@ local edgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouri
 local saidExit = nil             -- the way out of the water last announced
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
 local outAt = nil                -- when the player last came out of a building
+local region = nil               -- the square the player is on (announced), for what comes close
+local saidMouths = {}            -- its streets, water and the like already said on this visit
 
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
 local EDGE_CLEAR = 6             -- yd away from every edge before the same edge warns again
@@ -266,6 +300,7 @@ local function findZone(x, y, map)
         indoor:reset()
         lastRoom, room = nil, nil
         high = {}
+        region = nil
     end
     return zone
 end
@@ -319,6 +354,98 @@ local function checkEntrance(z, x, y)
             "entrance", x, y)
         guide.index, guide.dir, guide.at, guide.time = i, dir, false, now
     end
+end
+
+-- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
+local WORDS = { water = "water", drop = "drop", canal = "canal", out = "way out" }
+
+local function joinWords(words)
+    local text = words[#words]
+    for i = #words - 1, 1, -1 do
+        text = i == #words - 1 and string.format(L["%s and %s"], words[i], text) or words[i] .. ", " .. text
+    end
+    return text
+end
+
+local function itemsText(z, items)
+    local parts = {}
+    for _, item in ipairs(items) do
+        local name = item.label
+        if WORDS[item.class] then
+            name = L[WORDS[item.class]]
+        elseif item.class == "entrance" then
+            name = string.format(L["entrance of %s"], item.label)
+        end
+        if #item.dirs == 0 then
+            parts[#parts + 1] = string.format(L["%s here"], name)
+        else
+            local words = {}
+            for _, dir in ipairs(item.dirs) do
+                words[#words + 1] = z.compass[dir]
+            end
+            parts[#parts + 1] = string.format(L["%s to the %s"], name, joinWords(words))
+        end
+    end
+    return table.concat(parts, ", ")
+end
+
+-- Stepping onto a square, by the outdoor rules: its name and the nearest way on (a street, road
+-- or square), like a landmark's nearest road; plus what is already close. Everything else is
+-- said on coming close to it, as landmarks outdoors.
+local function squareText(z, x, y, value)
+    region = logic.regionAt(z, x, y)
+    saidMouths = {}
+    local text = logic.describe(z, value, module.settings.directions)
+    if region == nil or not module.settings.around then
+        return text
+    end
+    local items = logic.aroundItems(region, x, y, { max = 1, dirs = 1, classes = { way = true } })
+    for _, item in ipairs(items) do
+        for _, m in ipairs(item.mouths) do
+            saidMouths[m] = true
+        end
+    end
+    local close = logic.approaching(region, x, y, module.settings.approachDistance or 10, saidMouths, logic.ITEM_DIRS)
+    for _, item in ipairs(close) do
+        items[#items + 1] = item
+    end
+    if #items > 0 then
+        text = text .. ", " .. itemsText(z, items)
+    end
+    return text
+end
+
+-- On the square: a street, water or square not said yet comes within the approach distance.
+local function checkApproach(z, x, y)
+    if region == nil or not module.settings.around then
+        return
+    end
+    local here = logic.regionAt(z, x, y)
+    if here and here ~= region and here.value == region.value then
+        region, saidMouths = here, {}
+    end
+    local items = logic.approaching(region, x, y, module.settings.approachDistance or 10, saidMouths, logic.ITEM_DIRS)
+    if #items > 0 then
+        say(itemsText(z, items), "near", x, y)
+    end
+end
+
+-- A room: its name and its doorways (at most the setting's count; with more, the one the player
+-- came through goes first).
+local function roomText(z, x, y, id, previous)
+    local text = logic.describeRoom(z, id, previous)
+    if text == nil or not module.settings.around then
+        return text
+    end
+    local items = logic.roomDoorways(z, id, x, y, {
+        max = module.settings.aroundMax or 4,
+        cameFrom = previous or 0,
+        dirs = logic.ITEM_DIRS,
+    })
+    if #items > 0 then
+        text = text .. ", " .. itemsText(z, items)
+    end
+    return text
 end
 
 local function checkEdgesAndExits(z, x, y)
@@ -408,7 +535,7 @@ module:hasUpdate(function(self)
             room = found
         end
         if indoor:update(room, x, y) then
-            say(logic.describeRoom(z, room, lastRoom), "room", x, y, indoor.walked)
+            say(roomText(z, x, y, room, lastRoom), "room", x, y, indoor.walked)
             lastRoom = room
         end
         return
@@ -420,10 +547,13 @@ module:hasUpdate(function(self)
     local previous = outdoor.current
     if outdoor:update(outdoorKey(z, place, value), x, y) then
         local text = logic.describe(z, value, self.settings.directions)
+        region = nil
         -- stepped off a road: where the road is, to step back onto it (instead of the place's
         -- stored nearest road, which may be another one)
         local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
-        if wasRoad and not ROADS[logic.kind(z, place)] then
+        if logic.isAroundPlace(z, value) then
+            text = squareText(z, x, y, value)
+        elseif wasRoad and not ROADS[logic.kind(z, place)] then
             local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
             if d then
                 text = logic.describe(z, value, self.settings.directions, true) .. ", "
@@ -434,6 +564,9 @@ module:hasUpdate(function(self)
             return
         end
         say(text, "place", x, y, outdoor.walked)
+    elseif region and outdoor.current == logic.placeOf(region.value) then
+        -- also from the square's edge (a step onto the street beside it does not leave it)
+        checkApproach(z, x, y)
     end
 end)
 
@@ -474,11 +607,14 @@ end
 -- /wv surr: what the module knows here, spoken and printed.
 module:registerCommand({
     name = "surr",
-    description = "Surroundings: speak the current place or room and the data state; log [count|clear]",
+    description = "Surroundings: speak the current place or room and the data state; log [count|clear]; around",
     func = function(args)
         local sub, rest = (args or ""):match("^(%S*)%s*(.*)$")
         if sub == "log" then
             speakLog(rest)
+            return
+        elseif sub == "around" then
+            module:describeAround()
             return
         end
         local x, y, _z, map = UnitPosition("player")
@@ -514,4 +650,50 @@ module:registerCommand({
         logEntry("surr", table.concat(parts, ". "), x, y)
         WowVision:speak(table.concat(parts, ". "))
     end,
+})
+
+-- The describe key: the place or room here and everything around it, without the count limit.
+function module:describeAround()
+    local x, y, _z, map = UnitPosition("player")
+    local z = x and findZone(x, y, map)
+    if z == nil then
+        return
+    end
+    local text
+    if IsIndoors() then
+        if room == nil then
+            text = L["room unknown"]
+        else
+            text = logic.describeRoom(z, room, nil)
+            local items = logic.roomDoorways(z, room, x, y)
+            if #items > 0 then
+                text = text .. ", " .. itemsText(z, items)
+            end
+        end
+    else
+        local _place, value = outdoorValue(z, x, y)
+        text = logic.describe(z, value, true) or ""
+        local here = logic.regionAt(z, x, y)
+        if here then
+            local items = logic.aroundItems(here, x, y)
+            if #items > 0 then
+                text = text .. ", " .. itemsText(z, items)
+            end
+        else
+            local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceDistance or 15)
+            if i then
+                text = text .. ", " .. string.format(L["entrance of %s, %d yards to the %s"],
+                    logic.entrances(z)[i].text, math.floor(d + 0.5), z.compass[dir])
+            end
+        end
+    end
+    say(text, "around", x, y)
+end
+
+module:registerBinding({
+    type = "Script",
+    key = "surroundings/describe",
+    label = L["Describe Surroundings"],
+    inputs = { "ALT-CTRL-S" },
+    script = "/run WowVision.base.navigation.surroundings:describeAround()",
 })

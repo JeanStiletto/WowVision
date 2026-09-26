@@ -106,6 +106,7 @@ function logic.pack(zone)
     zone._edgeBoxes = nil
     zone._rooms = nil
     zone._entrances = nil
+    zone._regionOf = nil
 end
 
 function logic.covers(zone, x, y)
@@ -546,7 +547,7 @@ function logic.entrances(zone)
                 end
             end
             if not merged then
-                list[#list + 1] = { x = x, y = y, text = text }
+                list[#list + 1] = { x = x, y = y, text = text, building = interior[1] }
             end
         end
     end
@@ -568,6 +569,295 @@ function logic.nearestEntrance(zone, x, y, reach)
     end
     local e = zone._entrances[best]
     return best, bestD, logic.compassIndex(e.x - x, e.y - y)
+end
+
+-- What lies around a place with no direction of its own (a city square): the things along its
+-- border (streets, other squares, roads, bridges, canal walks, water, canals, drops) and the
+-- building entrances on it, each said with its direction from the player on a north-up map. The
+-- place's cells are found by a flood fill from the player's cell (one region per square, cached),
+-- so nothing is cut up: a big square says the nearest things on entry and the others when the
+-- player comes close to them. Terrain under a city (open land, hillside, forest) is no landmark.
+
+logic.AROUND_PLACES = { square = true, hall = true }   -- plus streets without a direction
+logic.WAYS = {
+    street = true, square = true, hall = true, road = true, fork = true, crossing = true, bridge = true,
+    quay = true, ["canal walk"] = true, ["slime canal walk"] = true, ["walk along the lava"] = true,
+}
+logic.WATER = { ["deep water"] = true, shore = true }
+logic.DROPS = { ["cliff edge"] = true }
+logic.MOUTH_MIN = 2        -- border cells at least that make a thing worth saying (about 8 yd)
+logic.MOUTH_GAP = 2        -- cells; border pieces of one thing closer than this are one mouth
+logic.REGION_MAX = 20000   -- cells; a flood fill stops there
+
+-- Does a cell value belong to a place that says what lies around it?
+function logic.isAroundPlace(zone, value)
+    if value == nil or value == 0 then
+        return false
+    end
+    local kind = logic.kind(zone, logic.placeOf(value))
+    return logic.AROUND_PLACES[kind] or (kind == "street" and value % 100 == 0) or false
+end
+
+local function cellCentre(zone, r, c)
+    return zone.top - (r + 0.5) * zone.cell, zone.left - (c + 0.5) * zone.cell
+end
+
+-- The thing a border cell shows: label and class ("way", "water", "drop", "canal"), or nil.
+local function borderThing(zone, value, key)
+    if value ~= 0 then
+        local p = zone.places[logic.placeOf(value)]
+        local kind = p and p[1]
+        if logic.WAYS[kind] then
+            return p[2], "way"
+        elseif logic.WATER[kind] then
+            return "water", "water"
+        elseif logic.DROPS[kind] then
+            return "drop", "drop"
+        end
+        return nil
+    end
+    if zone._under and zone._under[key] then
+        return "canal", "canal"
+    end
+    return nil
+end
+
+-- The region of the around-place at a position: {value, cells (set of keys), mouths}, where a
+-- mouth is {label, class, points {x, y, ...}}; nil where the place is no around-place.
+function logic.regionAt(zone, x, y)
+    local value, r0, c0 = logic.valueAt(zone, x, y)
+    if not logic.isAroundPlace(zone, value) then
+        return nil
+    end
+    local cols = zone.cols
+    zone._regionOf = zone._regionOf or {}
+    local key0 = r0 * cols + c0
+    if zone._regionOf[key0] then
+        return zone._regionOf[key0]
+    end
+    local function at(r, c)
+        if r < 0 or r >= zone.rows or c < 0 or c >= cols then
+            return 0
+        end
+        local cx, cy = cellCentre(zone, r, c)
+        return (logic.valueAt(zone, cx, cy))
+    end
+    local region = { value = value, cells = {}, mouths = {} }
+    local cells = region.cells
+    local stack, list = { r0, c0 }, {}
+    cells[key0] = true
+    local steps = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+    while #stack > 0 and #list < logic.REGION_MAX * 2 do
+        local c = table.remove(stack)
+        local r = table.remove(stack)
+        list[#list + 1] = r
+        list[#list + 1] = c
+        for _, s in ipairs(steps) do
+            local nr, nc = r + s[1], c + s[2]
+            local key = nr * cols + nc
+            if not cells[key] and at(nr, nc) == value then
+                cells[key] = true
+                stack[#stack + 1] = nr
+                stack[#stack + 1] = nc
+            end
+        end
+    end
+    -- border cells per thing, then grouped into mouths (one per stretch of border)
+    local byLabel, order, seen = {}, {}, {}
+    for i = 1, #list - 1, 2 do
+        local r, c = list[i], list[i + 1]
+        for _, s in ipairs(steps) do
+            local nr, nc = r + s[1], c + s[2]
+            local key = nr * cols + nc
+            if not cells[key] and not seen[key] then
+                seen[key] = true
+                local label, class = borderThing(zone, at(nr, nc), key)
+                if label then
+                    if byLabel[label] == nil then
+                        byLabel[label] = { class = class, cells = {} }
+                        order[#order + 1] = label
+                    end
+                    table.insert(byLabel[label].cells, { nr, nc })
+                end
+            end
+        end
+    end
+    for _, label in ipairs(order) do
+        local group = byLabel[label]
+        local todo, done = group.cells, {}
+        for i = 1, #todo do
+            if not done[i] then
+                done[i] = true
+                local members, queue = { todo[i] }, { i }
+                while #queue > 0 do
+                    local a = todo[table.remove(queue)]
+                    for j = 1, #todo do
+                        if not done[j] and math.abs(todo[j][1] - a[1]) <= logic.MOUTH_GAP
+                            and math.abs(todo[j][2] - a[2]) <= logic.MOUTH_GAP then
+                            done[j] = true
+                            members[#members + 1] = todo[j]
+                            queue[#queue + 1] = j
+                        end
+                    end
+                end
+                if #members >= logic.MOUTH_MIN then
+                    local points = {}
+                    for _, m in ipairs(members) do
+                        local px, py = cellCentre(zone, m[1], m[2])
+                        points[#points + 1] = px
+                        points[#points + 1] = py
+                    end
+                    table.insert(region.mouths, { label = label, class = group.class, points = points })
+                end
+            end
+        end
+    end
+    -- building entrances on the square or at its edge
+    for _, e in ipairs(logic.entrances(zone)) do
+        local _v, er, ec = logic.valueAt(zone, e.x, e.y)
+        local near = false
+        for dr = -1, 1 do
+            for dc = -1, 1 do
+                near = near or cells[(er + dr) * cols + ec + dc] == true
+            end
+        end
+        if near then
+            table.insert(region.mouths, { label = e.building, class = "entrance", points = { e.x, e.y } })
+        end
+    end
+    for key in pairs(cells) do
+        zone._regionOf[key] = region
+    end
+    return region
+end
+
+-- Distance from a position to a mouth's nearest point, and the compass index toward it.
+function logic.mouthDistance(mouth, x, y)
+    local p = mouth.points
+    local best, bx, by = math.huge, nil, nil
+    for i = 1, #p - 1, 2 do
+        local d = math.sqrt((p[i] - x) ^ 2 + (p[i + 1] - y) ^ 2)
+        if d < best then
+            best, bx, by = d, p[i], p[i + 1]
+        end
+    end
+    return best, logic.compassIndex(bx - x, by - y)
+end
+
+logic.ITEM_DIRS = 2  -- directions per thing while walking (a street meeting a square in five places)
+logic.HERE = 2   -- yd; closer than this a thing is "here", without a direction
+
+-- Items from a list of {label, class, distance d, compass index dir} entries: one item per label
+-- with its compass indexes (nearest first, no repeats, at most `maxDirs`; closer than HERE none),
+-- items nearest first.
+local function groupItems(found, maxDirs)
+    table.sort(found, function(a, b)
+        return a.d < b.d
+    end)
+    local items, byLabel = {}, {}
+    for _, f in ipairs(found) do
+        local item = byLabel[f.label]
+        if item == nil then
+            item = { label = f.label, class = f.class, d = f.d, dirs = {}, mouths = {} }
+            byLabel[f.label] = item
+            items[#items + 1] = item
+        end
+        local dir = f.d >= logic.HERE and f.dir or nil
+        local known = false
+        for _, v in ipairs(item.dirs) do
+            known = known or v == dir
+        end
+        if dir and not known and #item.dirs < (maxDirs or math.huge) then
+            item.dirs[#item.dirs + 1] = dir
+        end
+        if f.mouth then
+            item.mouths[#item.mouths + 1] = f.mouth
+        end
+    end
+    return items
+end
+
+-- At most `max` items (nil: all); with more, the item labelled `cameFrom` goes first.
+local function capItems(items, max, cameFrom)
+    if max == nil or #items <= max then
+        return items
+    end
+    local out = {}
+    for _, item in ipairs(items) do
+        if item.label ~= cameFrom then
+            out[#out + 1] = item
+        end
+    end
+    while #out > max do
+        table.remove(out)
+    end
+    return out
+end
+
+-- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
+-- opts (all optional): max (items), cameFrom (the label that goes first when there are more),
+-- dirs (directions per item at most), said (a set of mouths left out: already said), classes
+-- (a set: only these classes).
+function logic.aroundItems(region, x, y, opts)
+    opts = opts or {}
+    local found = {}
+    for _, m in ipairs(region.mouths) do
+        if not (opts.said and opts.said[m]) and (opts.classes == nil or opts.classes[m.class]) then
+            local d, dir = logic.mouthDistance(m, x, y)
+            found[#found + 1] = { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
+        end
+    end
+    return capItems(groupItems(found, opts.dirs), opts.max, opts.cameFrom)
+end
+
+-- Mouths of the region not yet said (`said`, a set kept by the caller) that the player has come
+-- within `reach` yards of, nearest first, as items; they are marked said. Entrances are left to
+-- the entrance guidance.
+function logic.approaching(region, x, y, reach, said, maxDirs)
+    local found = {}
+    for _, m in ipairs(region.mouths) do
+        if not said[m] and m.class ~= "entrance" then
+            local d, dir = logic.mouthDistance(m, x, y)
+            if d <= reach then
+                said[m] = true
+                found[#found + 1] = { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
+            end
+        end
+    end
+    return groupItems(found, maxDirs)
+end
+
+-- The doorways of a room as items {label, class ("room" or "out"), dirs}: the room behind each
+-- (0 = the way out), nearest first. opts (optional): max, dirs as for aroundItems; cameFrom: the
+-- room the player came from (a room id, 0 = outside), going first when there are more.
+function logic.roomDoorways(zone, roomId, x, y, opts)
+    opts = opts or {}
+    local cameFrom = opts.cameFrom
+    local room = zone.rooms[roomId]
+    if room == nil then
+        return {}
+    end
+    local found, cameLabel = {}, nil
+    for _, d in ipairs(roomIndex(zone).doors[roomId] or {}) do
+        local other = d[1] == roomId and d[2] or d[1]
+        local interior = zone.interiors[d[3]]
+        if interior then
+            local dx, dy = logic.toWorld(interior, d[4], d[5])
+            local label, class = nil, "out"
+            if other ~= 0 then
+                label, class = logic.describeRoom(zone, other, roomId), "room"
+            end
+            label = label or "out"
+            if other == cameFrom then
+                cameLabel = label
+            end
+            found[#found + 1] = {
+                label = label, class = class, d = math.sqrt((dx - x) ^ 2 + (dy - y) ^ 2),
+                dir = logic.compassIndex(dx - x, dy - y),
+            }
+        end
+    end
+    return capItems(groupItems(found, opts.dirs), opts.max, cameLabel)
 end
 
 -- Spoken text for a room: the interior's name when it changes, then the room.
