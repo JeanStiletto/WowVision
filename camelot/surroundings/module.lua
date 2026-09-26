@@ -15,10 +15,10 @@ T["Entry Distance Indoors (yards)"] = true
 T["Entry Distance Roads and Bridges (yards)"] = true
 T["Warn at Drop Edges"] = true
 T["Announce Ways Out of the Water"] = true
-T["edge to the %s, drop %d yards"] = true
-T["edge to the %s, drop into water"] = true
-T["edge to the %s in %d yards, drop into water"] = true
-T["edge to the %s in %d yards, drop %d yards"] = true
+T["edge %s, drop %d yards"] = true
+T["edge %s, drop into water"] = true
+T["edge %s in %d yards, drop into water"] = true
+T["edge %s in %d yards, drop %d yards"] = true
 T["Look Ahead for Edges (yards)"] = true
 T["way out of the water, %d yards to the %s"] = true
 T["road to the %s"] = true
@@ -26,6 +26,8 @@ T["Announce Entrances"] = true
 T["Entrance Distance (yards)"] = true
 T["entrance of %s, %d yards to the %s"] = true
 T["at the entrance of %s"] = true
+T["entrance, %d yards to the %s"] = true
+T["at the entrance"] = true
 T["Announce What Lies Around"] = true
 T["Approach Distance on Squares (yards)"] = true
 T["Describe Surroundings"] = true
@@ -178,8 +180,9 @@ local EDGE_REPEAT = 1            -- second in which the same edge warning is not
 
 -- Entrance guidance: within the entrance distance the nearest entrance is said with distance and
 -- direction; again whenever the direction word changes (so turning toward it can be followed),
--- and once at the entrance itself.
-local guide = { index = nil, dir = nil, at = false, time = 0 }
+-- and once at the entrance itself. Its name only the first time: until another entrance is named,
+-- "entrance, 8 yards to the west".
+local guide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- named: the entrance last said by name
 
 -- Roads, bridges and forks are narrow (about 9 to 14 yd including junctions): with the outdoor distance
 -- a road crossed straight across would never be announced.
@@ -330,6 +333,7 @@ local function findZone(x, y, map)
         high = {}
         region = nil
         warnedEdges = {}
+        guide.named = nil
     end
     return zone
 end
@@ -371,17 +375,20 @@ local function checkEntrance(z, x, y)
     end
     local e = logic.entrances(z)[i]
     local now = GetTime()
+    -- the name only when the entrance is not the one last named
+    local named = guide.named ~= i
     if d <= ENTRANCE_AT then
         if not (guide.index == i and guide.at) then
-            say(string.format(L["at the entrance of %s"], e.text), "entrance", x, y)
-            guide.index, guide.dir, guide.at, guide.time = i, dir, true, now
+            say(named and string.format(L["at the entrance of %s"], e.text) or L["at the entrance"], "entrance", x, y)
+            guide.index, guide.dir, guide.at, guide.time, guide.named = i, dir, true, now, i
         end
         return
     end
     if guide.index ~= i or (guide.dir ~= dir and now - guide.time >= ENTRANCE_REPEAT) or (guide.at and d > ENTRANCE_AT + 2) then
-        say(string.format(L["entrance of %s, %d yards to the %s"], e.text, math.floor(d + 0.5), z.compass[dir]),
-            "entrance", x, y)
-        guide.index, guide.dir, guide.at, guide.time = i, dir, false, now
+        local yards, word = math.floor(d + 0.5), z.compass[dir]
+        say(named and string.format(L["entrance of %s, %d yards to the %s"], e.text, yards, word)
+            or string.format(L["entrance, %d yards to the %s"], yards, word), "entrance", x, y)
+        guide.index, guide.dir, guide.at, guide.time, guide.named = i, dir, false, now, i
     end
 end
 
@@ -527,11 +534,11 @@ local function edgeText(z, e, ahead)
     local word = z.compass[e[2]]
     if ahead then
         local yards = math.max(1, math.floor(ahead + 0.5))
-        return e[4] == 1 and string.format(L["edge to the %s in %d yards, drop into water"], word, yards)
-            or string.format(L["edge to the %s in %d yards, drop %d yards"], word, yards, e[3])
+        return e[4] == 1 and string.format(L["edge %s in %d yards, drop into water"], word, yards)
+            or string.format(L["edge %s in %d yards, drop %d yards"], word, yards, e[3])
     end
-    return e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
-        or string.format(L["edge to the %s, drop %d yards"], word, e[3])
+    return e[4] == 1 and string.format(L["edge %s, drop into water"], word)
+        or string.format(L["edge %s, drop %d yards"], word, e[3])
 end
 
 local function checkEdgesAndExits(z, x, y, px, py)
