@@ -694,6 +694,6 @@ module:registerBinding({
     type = "Script",
     key = "surroundings/describe",
     label = L["Describe Surroundings"],
-    inputs = { "ALT-CTRL-S" },
+    inputs = { "ALT-L" },
     script = "/run WowVision.base.navigation.surroundings:describeAround()",
 })
