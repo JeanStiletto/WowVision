@@ -24,14 +24,17 @@ T["Entrance Distance (yards)"] = true
 T["entrance of %s, %d yards to the %s"] = true
 T["at the entrance of %s"] = true
 T["Announce What Lies Around"] = true
-T["Doorways at Most"] = true
 T["Approach Distance on Squares (yards)"] = true
 T["Describe Surroundings"] = true
 T["%s to the %s"] = true
 T["%s here"] = true
 T["%s and %s"] = true
 T["water"] = true
-T["drop"] = true
+T["cliff edge"] = true
+T["rock wall"] = true
+T["Exits at Most"] = true
+T["Announce Cliffs and Water Nearby"] = true
+T["Cliffs and Water Distance (yards)"] = true
 T["canal"] = true
 T["way out"] = true
 T["entrance of %s"] = true
@@ -73,13 +76,13 @@ settings:add({
     min = 3,
     max = 40,
 })
--- squares say their nearest way on and, on coming close, streets, squares, water and drops;
--- rooms say their doorways
+-- squares say their exits (streets, roads, squares) and, on coming close, water and drops;
+-- rooms say their doorways; outdoor places the cliffs and water near them
 settings:add({ key = "around", type = "Bool", label = L["Announce What Lies Around"], default = true })
 settings:add({
     key = "aroundMax",
     type = "Number",
-    label = L["Doorways at Most"],
+    label = L["Exits at Most"],
     default = 4,
     min = 1,
     max = 10,
@@ -91,6 +94,15 @@ settings:add({
     default = 10,
     min = 3,
     max = 30,
+})
+settings:add({ key = "features", type = "Bool", label = L["Announce Cliffs and Water Nearby"], default = true })
+settings:add({
+    key = "featureDistance",
+    type = "Number",
+    label = L["Cliffs and Water Distance (yards)"],
+    default = 25,
+    min = 5,
+    max = 60,
 })
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
@@ -136,7 +148,7 @@ local lastCheck = 0
 local lastRoom = nil             -- the last announced room, for the interior name
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
-local warnedEdge = nil           -- the drop edge last warned about (again only after leaving it)
+local warnedEdges = {}           -- drop edges warned about (again only after being EDGE_CLEAR away)
 local edgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local saidExit = nil             -- the way out of the water last announced
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
@@ -239,6 +251,10 @@ local function logEntry(kind, text, x, y, extra)
     if IsSwimming() then
         e.swimming = true
     end
+    local facing = GetPlayerFacing()
+    if facing then
+        e.facing = math.floor(math.deg(facing) + 0.5)   -- degrees, 0 = north, counter-clockwise
+    end
     local on = {}
     for piece in pairs(high) do
         on[#on + 1] = piece
@@ -301,6 +317,7 @@ local function findZone(x, y, map)
         lastRoom, room = nil, nil
         high = {}
         region = nil
+        warnedEdges = {}
     end
     return zone
 end
@@ -357,7 +374,10 @@ local function checkEntrance(z, x, y)
 end
 
 -- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
-local WORDS = { water = "water", drop = "drop", canal = "canal", out = "way out" }
+local WORDS = {
+    water = "water", drop = "cliff edge", canal = "canal", out = "way out",
+    ["cliff edge"] = "cliff edge", ["rock wall"] = "rock wall",
+}
 
 local function joinWords(words)
     local text = words[#words]
@@ -389,20 +409,35 @@ local function itemsText(z, items)
     return table.concat(parts, ", ")
 end
 
--- Stepping onto a square, by the outdoor rules: its name and the nearest way on (a street, road
--- or square), like a landmark's nearest road; plus what is already close. Everything else is
--- said on coming close to it, as landmarks outdoors.
-local function squareText(z, x, y, value)
+-- The label of an outdoor key's place (roads are keyed "r<value>").
+local function keyLabel(z, key)
+    if type(key) == "string" then
+        key = logic.placeOf(tonumber(key:sub(2)) or 0)
+    end
+    local p = key and z.places[key]
+    return p and p[2]
+end
+
+-- Stepping onto a square: its name and its exits (streets, roads, squares; nearest first, at most
+-- the setting's count, the way the player came going first when there are more), so even on a
+-- big square the direction to search for is known; plus water and drops already close. The
+-- rest of those is said on coming close to it, as landmarks outdoors.
+local function squareText(z, x, y, value, previous)
     region = logic.regionAt(z, x, y)
     saidMouths = {}
     local text = logic.describe(z, value, module.settings.directions)
     if region == nil or not module.settings.around then
         return text
     end
-    local items = logic.aroundItems(region, x, y, { max = 1, dirs = 1, classes = { way = true } })
-    for _, item in ipairs(items) do
+    local items = logic.aroundItems(region, x, y, {
+        max = module.settings.aroundMax or 4,
+        cameFrom = keyLabel(z, previous),
+        dirs = logic.ITEM_DIRS,
+        classes = { way = true },
+    })
+    for _, item in ipairs(logic.aroundItems(region, x, y, { classes = { way = true } })) do
         for _, m in ipairs(item.mouths) do
-            saidMouths[m] = true
+            saidMouths[m] = true   -- the exits are said on entry (or left out as the way back)
         end
     end
     local close = logic.approaching(region, x, y, module.settings.approachDistance or 10, saidMouths, logic.ITEM_DIRS)
@@ -413,6 +448,32 @@ local function squareText(z, x, y, value)
         text = text .. ", " .. itemsText(z, items)
     end
     return text
+end
+
+-- Cliffs and water near an outdoor place, said with it: "forest, cliff edge to the west and
+-- north". Not on roads (they come often), not what the place itself is or what the player just
+-- left (the shore behind them).
+local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
+local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
+
+local function featuresText(z, x, y, place, previous)
+    local kind = logic.kind(z, place)
+    if not module.settings.features or IsSwimming() or FEATURE_SKIP[kind] then
+        return nil
+    end
+    local skip = {}
+    if FEATURES[kind] then
+        skip[FEATURES[kind]] = true
+    end
+    local before = type(previous) == "number" and FEATURES[logic.kind(z, previous)]
+    if before then
+        skip[before] = true
+    end
+    local items = logic.featuresAround(z, x, y, module.settings.featureDistance or 25, FEATURES, skip)
+    if #items == 0 then
+        return nil
+    end
+    return itemsText(z, items)
 end
 
 -- On the square: a street, water or square not said yet comes within the approach distance.
@@ -450,7 +511,7 @@ end
 
 local function checkEdgesAndExits(z, x, y)
     if IsSwimming() then
-        warnedEdge = nil
+        -- the warned edges stay warned: climbing out at the same edge says nothing new
         high = {}
         if not module.settings.waysOut then
             return
@@ -466,25 +527,27 @@ local function checkEdgesAndExits(z, x, y)
     saidExit = nil
     -- edges of a wall-walk or a deck high over the ground warn only while the player is up there
     logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+    for i in pairs(warnedEdges) do
+        if logic.edgeDistance(z, i, x, y) > EDGE_CLEAR then
+            warnedEdges[i] = nil
+        end
+    end
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high)
+    -- each edge once until the player is away from it; the one ahead in the view first
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
     if i then
-        if i ~= warnedEdge then
-            local e = z.edges[i]
-            local word = z.compass[e[2]]
-            local text = e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
-                or string.format(L["edge to the %s, drop %d yards"], word, e[3])
-            local now = GetTime()
-            if text ~= edgeText or now - edgeAt >= EDGE_REPEAT then
-                say(text, "edge", x, y)
-                edgeText, edgeAt = text, now
-            end
-            warnedEdge = i
+        local e = z.edges[i]
+        local word = z.compass[e[2]]
+        local text = e[4] == 1 and string.format(L["edge to the %s, drop into water"], word)
+            or string.format(L["edge to the %s, drop %d yards"], word, e[3])
+        local now = GetTime()
+        if text ~= edgeText or now - edgeAt >= EDGE_REPEAT then
+            say(text, "edge", x, y)
+            edgeText, edgeAt = text, now
         end
-    elseif warnedEdge and not logic.nearestEdge(z, x, y, EDGE_CLEAR, high) then
-        warnedEdge = nil
+        warnedEdges[i] = true
     end
 end
 
@@ -552,7 +615,7 @@ module:hasUpdate(function(self)
         -- stored nearest road, which may be another one)
         local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
         if logic.isAroundPlace(z, value) then
-            text = squareText(z, x, y, value)
+            text = squareText(z, x, y, value, previous)
         elseif wasRoad and not ROADS[logic.kind(z, place)] then
             local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
             if d then
@@ -562,6 +625,12 @@ module:hasUpdate(function(self)
         elseif logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
             logEntry("quiet", text, x, y, { walked = round1(outdoor.walked or 0) })
             return
+        end
+        if not logic.isAroundPlace(z, value) then
+            local near = featuresText(z, x, y, place, previous)
+            if near then
+                text = text .. ", " .. near
+            end
         end
         say(text, "place", x, y, outdoor.walked)
     elseif region and outdoor.current == logic.placeOf(region.value) then
@@ -671,7 +740,7 @@ function module:describeAround()
             end
         end
     else
-        local _place, value = outdoorValue(z, x, y)
+        local place, value = outdoorValue(z, x, y)
         text = logic.describe(z, value, true) or ""
         local here = logic.regionAt(z, x, y)
         if here then
@@ -680,6 +749,10 @@ function module:describeAround()
                 text = text .. ", " .. itemsText(z, items)
             end
         else
+            local near = featuresText(z, x, y, place, nil)
+            if near then
+                text = text .. ", " .. near
+            end
             local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceDistance or 15)
             if i then
                 text = text .. ", " .. string.format(L["entrance of %s, %d yards to the %s"],

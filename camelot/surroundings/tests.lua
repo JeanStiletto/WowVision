@@ -146,6 +146,38 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.nearestEdge(z, 91, 30, 3))       -- beyond the edge (in the water)
     end,
 
+    ["the edge ahead in the view wins over a nearer one; warned edges are left out"] = function(t)
+        local z = newZone()
+        -- a second dock edge, its drop to the west at y = 40
+        z.edges[3] = { 1, 7, 3, 1, 0, 84, 40, 86, 40 }
+        logic.unpack(z)
+        -- at 87, 36: the north edge 3.6 yd away (north-northeast), the west edge 4.1 yd (west)
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}), 1)
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}, 0), 1)               -- facing north
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}, math.pi / 2), 3)     -- facing west
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}, 3 * math.pi / 2), 1) -- facing east: the north edge ahead left
+        -- facing east with the north edge warned: nothing ahead, the nearest other one
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}, 3 * math.pi / 2, { [1] = true }), 3)
+        t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}, 0, { [1] = true }), 3)
+        t:assertEqual(math.floor(logic.edgeDistance(z, 3, 87, 36) * 10), 41)
+    end,
+
+    ["cliffs and water near a place: nearest first, directions not neighbours on the compass"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local classes = { ["open land"] = "land", ["deep water"] = "water" }
+        local items = logic.featuresAround(z, 75, 35, 35, classes)
+        t:assertEqual(items[1].label, "land")
+        -- open land 22 yd northeast, 28 northwest, 30 west, 32 east: northeast, then northwest
+        t:assertEqual(table.concat(items[1].dirs, "+"), "2+8")
+        t:assertEqual(items[2].label, "water")
+        t:assertEqual(table.concat(items[2].dirs, "+"), "3")
+        items = logic.featuresAround(z, 75, 35, 25, classes)
+        t:assertEqual(#items, 1)
+        t:assertEqual(table.concat(items[1].dirs, "+"), "2")
+        t:assertEqual(#logic.featuresAround(z, 75, 35, 35, classes, { land = true, water = true }), 0)
+    end,
+
     ["a wall-walk's edge warns only after stepping onto it, not from below"] = function(t)
         local z = newZone()
         logic.unpack(z)

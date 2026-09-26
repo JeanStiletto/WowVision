@@ -243,35 +243,64 @@ function logic.updateHigh(zone, on, x, y, cameOut)
     return on
 end
 
--- The nearest drop edge within `reach` yards that the player stands in front of, on the
--- structure's floor (not beyond the edge): the edge index and distance. An edge on a high piece
--- counts only while the player is on that piece (`on`, see updateHigh).
-function logic.nearestEdge(zone, x, y, reach, on)
+-- The drop edge to warn about within `reach` yards: one the player stands in front of, on the
+-- structure's floor (not beyond the edge); the edge index and distance. An edge on a high piece
+-- counts only while the player is on that piece (`on`, see updateHigh). With `facing` (radians,
+-- 0 = north, counter-clockwise, as GetPlayerFacing) an edge ahead (within 90 degrees of the
+-- view) wins over a nearer one beside or behind. `skip`: a set of edge indexes left out (warned).
+function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
     local edges = zone.edges
     if edges == nil or #edges == 0 then
         return nil
     end
     local _v, r, c = logic.valueAt(zone, x, y)
-    local best, bestD = nil, reach
+    local vx, vy = nil, nil
+    if facing then
+        vx, vy = math.cos(facing), math.sin(facing)
+    end
+    local best, bestD, ahead, aheadD = nil, reach, nil, reach
     local boxes = zone._edgeBoxes or {}
     for i, e in ipairs(edges) do
         local struct = e[1]
         local fx, fy = logic.compassVector(e[2])
         local start = (e[5] == 0 or (on and on[e[5]])) and 6 or #e + 1
         local box = boxes[i]
-        if box and (x < box[1] - reach or x > box[2] + reach or y < box[3] - reach or y > box[4] + reach) then
+        if (skip and skip[i]) or (box and (x < box[1] - reach or x > box[2] + reach or y < box[3] - reach or y > box[4] + reach)) then
             start = #e + 1
         end
         for k = start, #e - 1, 2 do
             local qx, qy = e[k], e[k + 1]
             local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
             -- in front of the edge: the drop lies ahead in the facing direction
-            if d <= bestD and (x - qx) * fx + (y - qy) * fy <= 0.5 and onStructure(zone, r, c, struct) then
-                best, bestD = i, d
+            if (d <= bestD or d <= aheadD) and (x - qx) * fx + (y - qy) * fy <= 0.5 and onStructure(zone, r, c, struct) then
+                if d <= bestD then
+                    best, bestD = i, d
+                end
+                -- ahead in the view: toward the point, or, standing on it, toward the drop
+                local dx, dy = qx - x, qy - y
+                if d < 0.5 then
+                    dx, dy = fx, fy
+                end
+                if vx and d <= aheadD and dx * vx + dy * vy >= 0 then
+                    ahead, aheadD = i, d
+                end
             end
         end
     end
+    if ahead then
+        return ahead, aheadD
+    end
     return best, best and bestD
+end
+
+-- Distance from a position to the nearest point of a drop edge.
+function logic.edgeDistance(zone, i, x, y)
+    local e = zone.edges[i]
+    local best = math.huge
+    for k = 6, #e - 1, 2 do
+        best = math.min(best, math.sqrt((x - e[k]) ^ 2 + (y - e[k + 1]) ^ 2))
+    end
+    return best
 end
 
 -- Unit world vector (x north, y west) of a compass index.
@@ -612,7 +641,7 @@ local function borderThing(zone, value, key)
         elseif logic.WATER[kind] then
             return "water", "water"
         elseif logic.DROPS[kind] then
-            return "drop", "drop"
+            return "cliff edge", "drop"
         end
         return nil
     end
@@ -858,6 +887,61 @@ function logic.roomDoorways(zone, roomId, x, y, opts)
         end
     end
     return capItems(groupItems(found, opts.dirs), opts.max, cameLabel)
+end
+
+-- Cliffs and water around an outdoor place: per class (from `classOf`, kind -> class word) the
+-- nearest cells within `reach` yards, as items {label, class, dirs, d}: up to 2 directions that
+-- are not neighbours on the compass ("cliff edge to the west and north", not "west and
+-- northwest"), items nearest first. `skip`: a set of classes left out (the place itself, the
+-- place the player came from).
+function logic.featuresAround(zone, x, y, reach, classOf, skip)
+    local _v, r0, c0 = logic.valueAt(zone, x, y)
+    local n = math.ceil(reach / zone.cell)
+    local sectors = {}   -- class -> compass index -> nearest distance
+    for dr = -n, n do
+        for dc = -n, n do
+            local cx, cy = cellCentre(zone, r0 + dr, c0 + dc)
+            local d = math.sqrt((cx - x) ^ 2 + (cy - y) ^ 2)
+            if d <= reach and d >= zone.cell / 2 then
+                local v = logic.valueAt(zone, cx, cy)
+                local class = v ~= 0 and classOf[logic.kind(zone, logic.placeOf(v))]
+                if class and not (skip and skip[class]) then
+                    local byDir = sectors[class] or {}
+                    sectors[class] = byDir
+                    local dir = logic.compassIndex(cx - x, cy - y)
+                    if byDir[dir] == nil or d < byDir[dir] then
+                        byDir[dir] = d
+                    end
+                end
+            end
+        end
+    end
+    local items = {}
+    for class, byDir in pairs(sectors) do
+        local list = {}
+        for dir, d in pairs(byDir) do
+            list[#list + 1] = { dir = dir, d = d }
+        end
+        table.sort(list, function(a, b)
+            return a.d < b.d
+        end)
+        local dirs = {}
+        for _, s in ipairs(list) do
+            local apart = true
+            for _, dir in ipairs(dirs) do
+                local gap = math.abs(s.dir - dir) % 8
+                apart = apart and math.min(gap, 8 - gap) >= 2
+            end
+            if apart and #dirs < 2 then
+                dirs[#dirs + 1] = s.dir
+            end
+        end
+        items[#items + 1] = { label = class, class = class, dirs = dirs, d = list[1].d }
+    end
+    table.sort(items, function(a, b)
+        return a.d < b.d
+    end)
+    return items
 end
 
 -- Spoken text for a room: the interior's name when it changes, then the room.
