@@ -449,47 +449,37 @@ local function keyLabel(z, key)
     return p and p[2]
 end
 
--- Stepping onto a square: its name and its exits (streets, roads, squares; nearest first, at most
--- the setting's count, the way the player came going first when there are more), so even on a
--- big square the direction to search for is known; plus water and drops already close. The
--- rest of those is said on coming close to it, as landmarks outdoors.
-local function squareText(z, x, y, value, previous)
-    region = logic.regionAt(z, x, y)
-    saidMouths = {}
-    local text = logic.describe(z, value, module.settings.directions)
-    if region == nil or not module.settings.around then
-        return text
+-- One description of a spot, the same for the announcements and the describe key: what is said
+-- depends only on where the player stands and the fixed map, never on how they got there. The
+-- announcements (`cut`) may only leave things out: what was just said (the way the player came,
+-- `previous`: the outdoor key before) and more than the setting's count.
+
+-- A square's exits (streets, roads, squares that lead on; nearest first) and the water, canals
+-- and cliff edges within the approach distance.
+local function squareItems(z, x, y, region, cut, previous)
+    local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = z }
+    if cut then
+        opts.max = module.settings.aroundMax or 4
+        opts.cameFrom = keyLabel(z, previous)
     end
-    local items = logic.aroundItems(region, x, y, {
-        max = module.settings.aroundMax or 4,
-        cameFrom = keyLabel(z, previous),
-        dirs = logic.ITEM_DIRS,
-        classes = { way = true },
-        leading = true,
-        zone = z,
-    })
-    for _, item in ipairs(logic.aroundItems(region, x, y, { classes = { way = true } })) do
-        for _, m in ipairs(item.mouths) do
-            saidMouths[m] = true   -- the exits are said on entry (or left out as the way back)
-        end
+    local items = logic.aroundItems(region, x, y, opts)
+    local said = {}
+    for _, m in ipairs(region.mouths) do
+        said[m] = m.class == "way" or nil
     end
-    local close = logic.approaching(region, x, y, module.settings.approachDistance or 10, saidMouths, logic.ITEM_DIRS)
-    for _, item in ipairs(close) do
+    for _, item in ipairs(logic.approaching(region, x, y, module.settings.approachDistance or 10, said, logic.ITEM_DIRS)) do
         items[#items + 1] = item
     end
-    if #items > 0 then
-        text = text .. ", " .. itemsText(z, items)
-    end
-    return text
+    return items
 end
 
--- Cliffs and water near an outdoor place, said with it: "forest, cliff edge to the west and
--- north". Not on roads (they come often), not what the place itself is or what the player just
--- left (the shore behind them).
+-- Cliffs and water near an outdoor place: "forest, cliff edge to the west and north". Not on
+-- roads (they come often), not what the place itself is; announcements also leave out what the
+-- player just left (the shore behind them).
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
 local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
 
-local function featuresText(z, x, y, place, previous)
+local function featuresText(z, x, y, place, previous, cut)
     local kind = logic.kind(z, place)
     if not module.settings.features or IsSwimming() or FEATURE_SKIP[kind] then
         return nil
@@ -498,7 +488,7 @@ local function featuresText(z, x, y, place, previous)
     if FEATURES[kind] then
         skip[FEATURES[kind]] = true
     end
-    local before = type(previous) == "number" and FEATURES[logic.kind(z, previous)]
+    local before = cut and type(previous) == "number" and FEATURES[logic.kind(z, previous)]
     if before then
         skip[before] = true
     end
@@ -507,6 +497,62 @@ local function featuresText(z, x, y, place, previous)
         return nil
     end
     return itemsText(z, items)
+end
+
+-- The outdoor spot: the place, its direction and nearest road; on a square its exits and what is
+-- close; elsewhere where a road is (within 12 yd, off a road; announcements only on stepping off
+-- one) and the cliffs and water near. Returns the text and the square's region (or nil).
+local function spotText(z, x, y, place, value, previous, cut)
+    local directions = module.settings.directions
+    local text = logic.describe(z, value, directions)
+    if text == nil then
+        return nil
+    end
+    local kind = logic.kind(z, place)
+    if logic.isAroundPlace(z, value) then
+        local region = logic.regionAt(z, x, y)
+        if region and module.settings.around then
+            local items = squareItems(z, x, y, region, cut, previous)
+            if #items > 0 then
+                text = text .. ", " .. itemsText(z, items)
+            end
+        end
+        return text, region
+    end
+    local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
+    if not ROADS[kind] and (wasRoad or not cut) then
+        -- where the road is, to step back onto it (instead of the place's stored nearest road,
+        -- which may be another one)
+        local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
+        if d then
+            text = logic.describe(z, value, directions, true) .. ", " .. string.format(L["road to the %s"], z.compass[dir])
+        end
+    end
+    local near = featuresText(z, x, y, place, previous, cut)
+    if near then
+        text = text .. ", " .. near
+    end
+    return text, nil
+end
+
+-- A room: its name (with the building's when it changes) and its doorways, each with the fixed
+-- direction one passes through it leaving the room; announcements at most the setting's count,
+-- the doorway the player came through left out first.
+local function roomText(z, id, previous, cut)
+    local text = logic.describeRoom(z, id, previous)
+    if text == nil or not module.settings.around then
+        return text
+    end
+    local opts = { dirs = logic.ITEM_DIRS }
+    if cut then
+        opts.max = module.settings.aroundMax or 4
+        opts.cameFrom = previous or 0
+    end
+    local items = logic.roomDoorways(z, id, opts)
+    if #items > 0 then
+        text = text .. ", " .. itemsText(z, items)
+    end
+    return text
 end
 
 -- On the square: a street, water or square not said yet comes within the approach distance.
@@ -522,24 +568,6 @@ local function checkApproach(z, x, y)
     if #items > 0 then
         say(itemsText(z, items), "near", x, y)
     end
-end
-
--- A room: its name and its doorways (at most the setting's count; with more, the one the player
--- came through goes first).
-local function roomText(z, x, y, id, previous)
-    local text = logic.describeRoom(z, id, previous)
-    if text == nil or not module.settings.around then
-        return text
-    end
-    local items = logic.roomDoorways(z, id, x, y, {
-        max = module.settings.aroundMax or 4,
-        cameFrom = previous or 0,
-        dirs = logic.ITEM_DIRS,
-    })
-    if #items > 0 then
-        text = text .. ", " .. itemsText(z, items)
-    end
-    return text
 end
 
 -- Naming what the player bumps into: when they push against something (the wall detection's
@@ -745,7 +773,7 @@ module:hasUpdate(function(self)
             room = found
         end
         if indoor:update(room, x, y) then
-            say(roomText(z, x, y, room, lastRoom), "room", x, y, indoor.walked)
+            say(roomText(z, room, lastRoom, true), "room", x, y, indoor.walked)
             lastRoom = room
         end
         return
@@ -756,28 +784,19 @@ module:hasUpdate(function(self)
     local place, value = outdoorValue(z, x, y)
     local previous = outdoor.current
     if outdoor:update(outdoorKey(z, place, value), x, y) then
-        local text = logic.describe(z, value, self.settings.directions)
+        local text, square = spotText(z, x, y, place, value, previous, true)
         region = nil
-        -- stepped off a road: where the road is, to step back onto it (instead of the place's
-        -- stored nearest road, which may be another one)
-        local wasRoad = type(previous) == "string" or (previous and ROADS[logic.kind(z, previous)])
-        if logic.isAroundPlace(z, value) then
-            text = squareText(z, x, y, value, previous)
-        elseif wasRoad and not ROADS[logic.kind(z, place)] then
-            local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
-            if d then
-                text = logic.describe(z, value, self.settings.directions, true) .. ", "
-                    .. string.format(L["road to the %s"], z.compass[dir])
+        if square then
+            -- on the square: what was said now (its exits, what is close) is not said again on
+            -- coming close
+            region, saidMouths = square, {}
+            for _, m in ipairs(square.mouths) do
+                saidMouths[m] = m.class == "way" or nil
             end
+            logic.approaching(square, x, y, self.settings.approachDistance or 10, saidMouths)
         elseif logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
             logEntry("quiet", text, x, y, { walked = round1(outdoor.walked or 0) })
             return
-        end
-        if not logic.isAroundPlace(z, value) then
-            local near = featuresText(z, x, y, place, previous)
-            if near then
-                text = text .. ", " .. near
-            end
         end
         say(text, "place", x, y, outdoor.walked)
     elseif region and outdoor.current == logic.placeOf(region.value) then
@@ -868,43 +887,25 @@ module:registerCommand({
     end,
 })
 
--- The describe key: the place or room here and everything around it, without the count limit.
+-- The describe key: the place or room here as the announcements describe it, without their cuts.
 function module:describeAround()
     local x, y, _z, map = UnitPosition("player")
     local z = x and findZone(x, y, map)
     if z == nil then
         return
     end
+    -- the same description the announcements give here, without their cuts; plus the entrance
+    -- guidance
     local text
     if IsIndoors() then
-        if room == nil then
-            text = L["room unknown"]
-        else
-            text = logic.describeRoom(z, room, nil)
-            local items = logic.roomDoorways(z, room, x, y)
-            if #items > 0 then
-                text = text .. ", " .. itemsText(z, items)
-            end
-        end
+        text = room and roomText(z, room, nil, false) or L["room unknown"]
     else
         local place, value = outdoorValue(z, x, y)
-        text = logic.describe(z, value, true) or ""
-        local here = logic.regionAt(z, x, y)
-        if here then
-            local items = logic.aroundItems(here, x, y)
-            if #items > 0 then
-                text = text .. ", " .. itemsText(z, items)
-            end
-        else
-            local near = featuresText(z, x, y, place, nil)
-            if near then
-                text = text .. ", " .. near
-            end
-            local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceReach or 10)
-            if i then
-                text = text .. ", " .. string.format(L["entrance of %s, %d to the %s"],
-                    logic.entrances(z)[i].text, math.floor(d + 0.5), z.compass[dir])
-            end
+        text = spotText(z, x, y, place, value, nil, false) or ""
+        local i, d, dir = logic.nearestEntrance(z, x, y, self.settings.entranceReach or 10)
+        if i and self.settings.entrances then
+            text = text .. ", " .. string.format(L["entrance of %s, %d to the %s"],
+                logic.entrances(z)[i].text, math.floor(d + 0.5), z.compass[dir])
         end
     end
     say(text, "around", x, y)

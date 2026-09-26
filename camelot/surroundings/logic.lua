@@ -1068,37 +1068,101 @@ function logic.approaching(region, x, y, reach, said, maxDirs)
     return groupItems(found, maxDirs)
 end
 
--- The doorways of a room as items {label, class ("room" or "out"), dirs}: the room behind each
--- (0 = the way out), nearest first. opts (optional): max, dirs as for aroundItems; cameFrom: the
--- room the player came from (a room id, 0 = outside), going first when there are more.
-function logic.roomDoorways(zone, roomId, x, y, opts)
-    opts = opts or {}
-    local cameFrom = opts.cameFrom
-    local room = zone.rooms[roomId]
-    if room == nil then
-        return {}
+-- The middle of a room's floor boxes (building frame), area weighted.
+local function roomMiddle(room)
+    local b = room[4]
+    local sx, sy, n = 0, 0, 0
+    for i = 1, #b - 3, 4 do
+        local a = math.max((b[i + 2] - b[i]) * (b[i + 3] - b[i + 1]), 0.01)
+        sx, sy, n = sx + (b[i] + b[i + 2]) / 2 * a, sy + (b[i + 1] + b[i + 3]) / 2 * a, n + a
     end
-    local found, cameLabel = {}, nil
-    for _, d in ipairs(roomIndex(zone).doors[roomId] or {}) do
-        local other = d[1] == roomId and d[2] or d[1]
-        local interior = zone.interiors[d[3]]
-        if interior then
-            local dx, dy = logic.toWorld(interior, d[4], d[5])
-            local label, class = nil, "out"
-            if other ~= 0 then
-                label, class = logic.describeRoom(zone, other, roomId), "room"
-            end
-            label = label or "out"
-            if other == cameFrom then
-                cameLabel = label
-            end
-            found[#found + 1] = {
-                label = label, class = class, d = math.sqrt((dx - x) ^ 2 + (dy - y) ^ 2),
-                dir = logic.compassIndex(dx - x, dy - y),
-            }
+    if n == 0 then
+        return nil
+    end
+    return sx / n, sy / n
+end
+
+-- The direction of a doorway seen from a room: the way one passes through it leaving the room
+-- (its plane's normal, away from the room's side), a compass index. Fixed per room and doorway,
+-- like the map: the auction house's way out is to the east from anywhere in the hall. Without a
+-- usable plane (a flat opening), the way from the room's middle to the doorway.
+function logic.doorwayDirection(zone, d, roomId)
+    local interior = zone.interiors[d[3]]
+    if interior == nil then
+        return nil
+    end
+    local cx, cy, nx, ny, sideA = d[4], d[5], d[6], d[7], d[8]
+    local vx, vy
+    if sideA ~= 0 and (nx ~= 0 or ny ~= 0) then
+        -- room a lies on the side sideA of the normal, room b on the other one
+        local side = roomId == d[1] and sideA or -sideA
+        vx, vy = -side * nx, -side * ny
+    else
+        local room = zone.rooms[roomId]
+        local mx, my = nil, nil
+        if room then
+            mx, my = roomMiddle(room)
+        end
+        if mx == nil then
+            return nil
+        end
+        vx, vy = cx - mx, cy - my
+        if vx * vx + vy * vy < 0.01 then
+            return nil
         end
     end
-    return capItems(groupItems(found, opts.dirs), opts.max, cameLabel)
+    local ax, ay = logic.toWorld(interior, cx, cy)
+    local bx, by = logic.toWorld(interior, cx + vx, cy + vy)
+    return logic.compassIndex(bx - ax, by - ay)
+end
+
+-- The doorways of a room as items {label, class ("room" or "out"), dirs}: the room behind each
+-- (0 = the way out) with the fixed direction of its doorways (doorwayDirection); the way out
+-- first, then the other rooms in the data's order, so a room always says the same. opts
+-- (optional): max, dirs as for aroundItems; cameFrom: the room the player came from (a room id,
+-- 0 = outside), left out first when there are more than max.
+function logic.roomDoorways(zone, roomId, opts)
+    opts = opts or {}
+    if zone.rooms[roomId] == nil then
+        return {}
+    end
+    local list = roomIndex(zone).doors[roomId] or {}
+    local ordered = {}
+    for pass = 1, 2 do
+        for _, d in ipairs(list) do
+            if ((d[1] == 0 or d[2] == 0) and 1 or 2) == pass then
+                ordered[#ordered + 1] = d
+            end
+        end
+    end
+    local items, byLabel, cameLabel = {}, {}, nil
+    for _, d in ipairs(ordered) do
+        local other = d[1] == roomId and d[2] or d[1]
+        local label, class = "out", "out"
+        if other ~= 0 then
+            label, class = logic.describeRoom(zone, other, roomId), "room"
+        end
+        if label then
+            if other == opts.cameFrom then
+                cameLabel = label
+            end
+            local item = byLabel[label]
+            if item == nil then
+                item = { label = label, class = class, dirs = {} }
+                byLabel[label] = item
+                items[#items + 1] = item
+            end
+            local dir = logic.doorwayDirection(zone, d, roomId)
+            local known = false
+            for _, v in ipairs(item.dirs) do
+                known = known or v == dir
+            end
+            if dir and not known and #item.dirs < (opts.dirs or math.huge) then
+                item.dirs[#item.dirs + 1] = dir
+            end
+        end
+    end
+    return capItems(items, opts.max, cameLabel)
 end
 
 -- Cliffs and water around an outdoor place: per class (from `classOf`, kind -> class word) the

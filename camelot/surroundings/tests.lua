@@ -465,17 +465,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(items[1].label, "canal")
     end,
 
-    ["a room names its doorways, nearest first; the one the player came through goes first"] = function(t)
+    ["a room names its doorways with their fixed direction, the way out first"] = function(t)
         local z = newZone()
-        local items = logic.roomDoorways(z, 1, 5, 9)
+        -- common room: the way out (a flat opening: from the room's middle 5, 5 toward 0, 5:
+        -- south), the upstairs landing through a doorway at y 5 with the landing on its +y side
+        -- (west)
+        local items = logic.roomDoorways(z, 1)
         t:assertEqual(#items, 2)
-        t:assertEqual(items[1].label, "upstairs landing")
-        t:assertEqual(items[1].dirs[1], 3)                 -- east (y grows west)
-        t:assertEqual(items[2].class, "out")
-        t:assertEqual(items[2].dirs[1], 4)                 -- southeast
-        t:assertEqual(logic.roomDoorways(z, 1, 5, 9, { max = 1, cameFrom = 0 })[1].label, "upstairs landing")
-        t:assertEqual(logic.roomDoorways(z, 1, 5, 9, { max = 1, cameFrom = 2 })[1].class, "out")
-        -- right at a doorway: no direction
-        t:assertEqual(#logic.roomDoorways(z, 1, 0.5, 5)[1].dirs, 0)
+        t:assertEqual(items[1].class, "out")
+        t:assertEqual(items[1].dirs[1], 5)
+        t:assertEqual(items[2].label, "upstairs landing")
+        t:assertEqual(items[2].dirs[1], 7)
+        -- the same from the landing's side: the common room east, the back room north
+        items = logic.roomDoorways(z, 2)
+        t:assertEqual(items[1].label, "back room")
+        t:assertEqual(items[1].dirs[1], 1)
+        t:assertEqual(items[2].label, "common room")
+        t:assertEqual(items[2].dirs[1], 3)
+        -- more than the count: the one the player came through goes first
+        t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 0 })[1].label, "upstairs landing")
+        t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 2 })[1].class, "out")
     end,
 })
