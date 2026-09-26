@@ -345,11 +345,13 @@ local function findZone(x, y, map)
     return zone
 end
 
-local function say(text, kind, x, y, walked)
+local function say(text, kind, x, y, walked, extra)
     if text and text ~= "" then
         module:fireAlert("place", { text = text })
     end
-    logEntry(kind, text, x, y, { walked = walked and round1(walked) or nil })
+    extra = extra or {}
+    extra.walked = walked and round1(walked) or nil
+    logEntry(kind, text, x, y, extra)
 end
 
 -- The outdoor place key and value at a position (while swimming: the water under a bridge, or
@@ -610,7 +612,12 @@ local function checkBump(z, x, y, px, py, isIndoors)
         end
     end
     if text and key ~= bump.key then
-        say(text, "bump", x, y)
+        -- the movement keys held (f forward, b back, l and r strafe, a autorun): with the facing in
+        -- the entry, the way the player pushed
+        local flags = WowVision.movement.flags
+        local keys = (flags.moveForward and "f" or "") .. (flags.moveBackward and "b" or "")
+            .. (flags.strafeLeft and "l" or "") .. (flags.strafeRight and "r" or "") .. (flags.autorun and "a" or "")
+        say(text, "bump", x, y, nil, { keys = keys })
     end
     bump.key = key or bump.key
 end
