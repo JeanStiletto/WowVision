@@ -15,12 +15,12 @@ T["Entry Distance Indoors (yards)"] = true
 T["Entry Distance Roads and Bridges (yards)"] = true
 T["Warn at Drop Edges"] = true
 T["Announce Ways Out of the Water"] = true
-T["edge %s, drop %d yards"] = true
-T["edge %s, drop into water"] = true
-T["edge %s, drop into canal"] = true
-T["edge %s in %d yards, drop into water"] = true
-T["edge %s in %d yards, drop into canal"] = true
-T["edge %s in %d yards, drop %d yards"] = true
+T["%s, drop %d yards"] = true
+T["%s, drop into water"] = true
+T["%s, drop into canal"] = true
+T["%s in %d yards, drop into water"] = true
+T["%s in %d yards, drop into canal"] = true
+T["%s in %d yards, drop %d yards"] = true
 T["Look Ahead for Edges (yards)"] = true
 T["way out of the water"] = true
 T["at the way out"] = true
@@ -795,22 +795,24 @@ local function checkBump(z, x, y, px, py, isIndoors)
     bump.key = key or bump.key
 end
 
+-- The direction first, then the drop ("southeast, drop into canal"): the drop already says it is
+-- an edge.
 local function edgeText(z, e, ahead)
     local word = z.compass[e[2]]
     -- e[4]: 1 into water, 2 into a city canal, 0 a plain drop
     if ahead then
         local yards = math.max(1, math.floor(ahead + 0.5))
         if e[4] == 2 then
-            return string.format(L["edge %s in %d yards, drop into canal"], word, yards)
+            return string.format(L["%s in %d yards, drop into canal"], word, yards)
         end
-        return e[4] == 1 and string.format(L["edge %s in %d yards, drop into water"], word, yards)
-            or string.format(L["edge %s in %d yards, drop %d yards"], word, yards, e[3])
+        return e[4] == 1 and string.format(L["%s in %d yards, drop into water"], word, yards)
+            or string.format(L["%s in %d yards, drop %d yards"], word, yards, e[3])
     end
     if e[4] == 2 then
-        return string.format(L["edge %s, drop into canal"], word)
+        return string.format(L["%s, drop into canal"], word)
     end
-    return e[4] == 1 and string.format(L["edge %s, drop into water"], word)
-        or string.format(L["edge %s, drop %d yards"], word, e[3])
+    return e[4] == 1 and string.format(L["%s, drop into water"], word)
+        or string.format(L["%s, drop %d yards"], word, e[3])
 end
 
 local function checkEdgesAndExits(z, x, y, px, py)
