@@ -65,8 +65,6 @@ T["Name What I Bump Into"] = true
 T["Turn Hints on Roads and Streets"] = true
 T["turn slightly left"] = true
 T["turn slightly right"] = true
-T["turn left"] = true
-T["turn right"] = true
 T["wall"] = true
 T["wall of %s"] = true
 
@@ -624,7 +622,7 @@ end
 -- Cliffs and water near an outdoor place: "forest, cliff edge to the west and north". Not on
 -- roads (they come often), not what the place itself is; announcements also leave out what the
 -- player just left (the shore behind them).
-local TURN_WORDS = { [-2] = "turn right", [-1] = "turn slightly right", [1] = "turn slightly left", [2] = "turn left" }
+local TURN_WORDS = { [-1] = "turn slightly right", [1] = "turn slightly left" }
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
 local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
 
@@ -658,11 +656,12 @@ local function spotText(z, x, y, place, value, previous, cut)
         return nil
     end
     local kind = logic.kind(z, place)
-    -- on a road, street or walk: which way to turn to face along it (nothing when already along
-    -- it or facing across it)
+    -- on a road, street or walk: which way to turn to face along it, only where the words cannot
+    -- tell (the facing points the compass way the said direction does); nothing when already along
+    -- it or facing across it
     if module.settings.turnHints and logic.LANE_KINDS[kind] then
         local facing = GetPlayerFacing()
-        local hint = facing and logic.turnHint(z, x, y, facing)
+        local hint = facing and logic.turnHint(z, x, y, facing, directions and logic.axisOf(z, value) or nil)
         if hint and hint ~= 0 then
             text = text .. ", " .. L[TURN_WORDS[hint]]
         end

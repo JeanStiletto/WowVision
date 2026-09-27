@@ -472,15 +472,18 @@ end
 
 -- Which way to turn to face along the way here: the direction of its centre line over about 12 yd
 -- around the nearest point (short stretches alone bend too much), taken the end nearer the
--- facing. `facing`: radians, 0 = north, counter-clockwise (GetPlayerFacing). Returns -2 (turn
--- right), -1 (slightly right), 1 (slightly left), 2 (turn left), 0 (along it already), or nil (no
--- way with a single direction here: a fork, a crossing; or facing across it, crossing over).
-logic.TURN_SLIGHT, logic.TURN_MORE, logic.TURN_ACROSS = 8, 20, 60   -- degrees
+-- facing. `facing`: radians, 0 = north, counter-clockwise (GetPlayerFacing). `spokenAxis`: the
+-- axis the announcement says (index into zone.axes) or nil: a hint only where the words cannot tell
+-- the player the facing is off, i.e. the facing points the same compass way as that axis (a
+-- facing a compass word off is heard in the words already). Returns -1 (turn right), 1 (turn
+-- left), 0 (no turn needed), or nil (no way with a single direction here: a fork, a crossing; or
+-- facing across it, crossing over).
+logic.TURN_OFF, logic.TURN_ACROSS = 8, 60   -- degrees
 local TURN_SPAN = 6   -- yd before and after the nearest point
 local TURN_KINDS = { road = true, street = true, ["canal walk"] = true, quay = true, ["slime canal walk"] = true,
     ["walk along the lava"] = true }
 
-function logic.turnHint(zone, x, y, facing)
+function logic.turnHint(zone, x, y, facing, spokenAxis)
     local d, i, px, py = logic.nearestLane(zone, x, y)
     if d == nil or not TURN_KINDS[logic.kind(zone, logic.placeOf(zone.lanes[i + 4]))] then
         return nil
@@ -507,8 +510,24 @@ function logic.turnHint(zone, x, y, facing)
     if off > logic.TURN_ACROSS then
         return nil
     end
-    local step = off < logic.TURN_SLIGHT and 0 or off < logic.TURN_MORE and 1 or 2
-    return diff > 0 and step or -step
+    if off < logic.TURN_OFF or (spokenAxis and logic.facingAxis(facing) ~= spokenAxis) then
+        return 0
+    end
+    return diff > 0 and 1 or -1
+end
+
+-- The axis (index into zone.axes) the compass word of a facing lies on: facing north or south is
+-- the north-south axis.
+function logic.facingAxis(facing)
+    return (logic.compassIndex(math.cos(facing), math.sin(facing)) - 1) % 4 + 1
+end
+
+-- The axis a cell value says ("running %s"), or nil.
+function logic.axisOf(zone, value)
+    local code = value % 100
+    if zone.dirs[math.floor(code / 10)] == "running %s" then
+        return code % 10
+    end
 end
 
 -- The place value near a way with its centre line: `value` is the grid's, `onWay` whether the

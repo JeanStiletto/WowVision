@@ -120,9 +120,15 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.turnHint(z, 92, 48, 0), 0)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(5)), 0)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(12)), -1)    -- facing a little west of north
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30)), 2)    -- facing northeast-ish
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30)), 1)    -- facing northeast-ish
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(170)), 1)    -- walking south, 10 degrees off
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(90)), nil)   -- facing across the road
+        -- with the said axis (north to south): only while the facing's compass word is north or
+        -- south; facing northeast the words tell already
+        t:assertEqual(logic.axisOf(z, 211), 1)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(20), 1), -1)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30), 1), 0)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 1), -1)
     end,
 
     ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
