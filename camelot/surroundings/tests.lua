@@ -468,6 +468,39 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(items[1].label, "canal")
     end,
 
+    ["a street leading on from a short opening is a beginning, with the way it leads on"] = function(t)
+        local z = newSquareZone()
+        table.insert(z.places, { "road", "road of Test" })
+        z.grid[1] = "300*2,281*2,600,300*2"   -- the street goes on into a road
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local list = logic.wayBeginnings(z, region)
+        t:assertEqual(#list, 1)
+        t:assertEqual(list[1].label, "street of Test")
+        t:assertEqual(list[1].kind, "street")
+        t:assertEqual(list[1].onward, 1)   -- north: along its axis, away from the square
+        local i, d, dir, b = logic.nearestBeginning(z, region, 78, 35, 30)
+        t:assertEqual(i, 1)
+        t:assertEqual(b, list[1])
+        t:assertEqual(math.floor(d + 0.5), 20)
+        t:assertEqual(dir, 8)
+        t:assertNil(logic.nearestBeginning(z, region, 78, 35, 15))   -- out of reach
+    end,
+
+    ["a street along the square's side and a street leading nowhere are no beginnings"] = function(t)
+        local z = newSquareZone()
+        table.insert(z.places, { "road", "road of Test" })
+        -- along the west side (rows 1 to 3, 20 yd of border), going on into a road at the north
+        z.grid = { "600,300*6", "281,100*5,300", "281,100*5,400", "281,100*5,400", "0*7" }
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        t:assertEqual(#logic.wayBeginnings(z, region), 0)
+        -- the plain test square: its street meets no other way
+        z = newSquareZone()
+        logic.unpack(z)
+        t:assertEqual(#logic.wayBeginnings(z, logic.regionAt(z, 78, 35)), 0)
+    end,
+
     ["a room names its doorways with their fixed direction, the way out first"] = function(t)
         local z = newZone()
         -- common room: the way out (a flat opening: from the room's middle 5, 5 toward 0, 5:

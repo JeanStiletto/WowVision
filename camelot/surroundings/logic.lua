@@ -868,7 +868,8 @@ function logic.regionAt(zone, x, y)
                         byLabel[label] = { class = class, cells = {} }
                         order[#order + 1] = label
                     end
-                    table.insert(byLabel[label].cells, { nr, nc })
+                    -- the border cell and the square's cell beside it (for the way on)
+                    table.insert(byLabel[label].cells, { nr, nc, r, c })
                 end
             end
         end
@@ -975,6 +976,115 @@ function logic.leadsOn(zone, mouth, originLabel)
     end
     mouth.leads = leads
     return leads
+end
+
+logic.BEGIN_MAX = 16   -- yd; a way meeting the square along a longer border runs beside it
+logic.SIDE_KINDS = { square = true, hall = true }   -- ways that do not begin anywhere
+logic.ONWARD_CELLS = 24  -- cells of a way from its opening whose axis says where it leads on
+
+-- Where ways begin on the square: the mouths of streets, roads, bridges and walks (not squares)
+-- that lead on and meet the square along a short border (a street running along the side of the
+-- square shares a long one). Each {mouth, label, kind, x, y (the middle of the opening), onward
+-- (compass index the way leads on from the square, or nil)}. Cached per region.
+function logic.wayBeginnings(zone, region)
+    if region.beginnings then
+        return region.beginnings
+    end
+    local list = {}
+    for _, m in ipairs(region.mouths) do
+        local p = m.points
+        local kind = m.class == "way" and m.cells and m.cells[1]
+            and logic.kind(zone, logic.placeOf((logic.valueAt(zone, cellCentre(zone, m.cells[1][1], m.cells[1][2]))))) or nil
+        local span = 0
+        if kind and not logic.SIDE_KINDS[kind] then
+            for i = 1, #p - 1, 2 do
+                for j = i + 2, #p - 1, 2 do
+                    span = math.max(span, math.sqrt((p[i] - p[j]) ^ 2 + (p[i + 1] - p[j + 1]) ^ 2))
+                end
+            end
+        end
+        if kind and not logic.SIDE_KINDS[kind] and span <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region.label) then
+            -- the middle of the opening: the border point nearest to the border's centre
+            local mx, my, ix, iy, n = 0, 0, 0, 0, #m.cells
+            for _, cell in ipairs(m.cells) do
+                local bx, by = cellCentre(zone, cell[1], cell[2])
+                local sx, sy = cellCentre(zone, cell[3], cell[4])
+                mx, my, ix, iy = mx + bx / n, my + by / n, ix + sx / n, iy + sy / n
+            end
+            local best, bx, by = math.huge, nil, nil
+            for i = 1, #p - 1, 2 do
+                local d = (p[i] - mx) ^ 2 + (p[i + 1] - my) ^ 2
+                if d < best then
+                    best, bx, by = d, p[i], p[i + 1]
+                end
+            end
+            -- the way on: away from the square; along the axis most of the way's first cells
+            -- have (a short bend piece at the opening does not decide it)
+            local vx, vy = mx - ix, my - iy
+            local votes, seen, stack, count = { 0, 0, 0, 0 }, {}, {}, 0
+            for _, cell in ipairs(m.cells) do
+                local key = cell[1] * zone.cols + cell[2]
+                if not seen[key] then
+                    seen[key] = true
+                    stack[#stack + 1] = cell
+                end
+            end
+            while #stack > 0 and count < logic.ONWARD_CELLS do
+                local cell = table.remove(stack, 1)
+                count = count + 1
+                local value = logic.valueAt(zone, cellCentre(zone, cell[1], cell[2]))
+                local code = value % 100
+                if code > 0 and zone.dirs[math.floor(code / 10)] == "running %s" then
+                    votes[code % 10] = votes[code % 10] + 1
+                end
+                for _, s in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+                    local nr, nc = cell[1] + s[1], cell[2] + s[2]
+                    local key = nr * zone.cols + nc
+                    if not seen[key] and not region.cells[key] and nr >= 0 and nr < zone.rows and nc >= 0 and nc < zone.cols then
+                        seen[key] = true
+                        local p2 = zone.places[logic.placeOf((logic.valueAt(zone, cellCentre(zone, nr, nc))))]
+                        if p2 and p2[2] == m.label then
+                            stack[#stack + 1] = { nr, nc }
+                        end
+                    end
+                end
+            end
+            local a, most = nil, 0
+            for k = 1, 4 do
+                if votes[k] > most then
+                    a, most = k, votes[k]
+                end
+            end
+            local onward = nil
+            if a then
+                local ax, ay = logic.compassVector(a)
+                onward = (ax * vx + ay * vy >= 0) and a or a + 4
+            elseif vx ~= 0 or vy ~= 0 then
+                onward = logic.compassIndex(vx, vy)
+            end
+            list[#list + 1] = { mouth = m, label = m.label, kind = kind, x = bx, y = by, onward = onward }
+        end
+    end
+    region.beginnings = list
+    return list
+end
+
+-- The nearest way beginning on the square within `reach` yards (to the middle of its opening):
+-- index, distance, compass index toward it, the beginning.
+function logic.nearestBeginning(zone, region, x, y, reach)
+    local best, bestD = nil, reach
+    local list = logic.wayBeginnings(zone, region)
+    for i, b in ipairs(list) do
+        local d = math.sqrt((b.x - x) ^ 2 + (b.y - y) ^ 2)
+        if d <= bestD then
+            best, bestD = i, d
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    local b = list[best]
+    return best, bestD, logic.compassIndex(b.x - x, b.y - y), b
 end
 
 -- Distance from a position to a mouth's nearest point, and the compass index toward it.

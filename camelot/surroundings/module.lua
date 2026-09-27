@@ -28,8 +28,19 @@ T["%d to the %s"] = true
 T["in to the %s"] = true
 T["out to the %s"] = true
 T["road to the %s"] = true
-T["Announce Entrances"] = true
-T["Entrance Distance (yards)"] = true
+T["Guide to Entrances and Streets"] = true
+T["Guidance Distance (yards)"] = true
+T["on to the %s"] = true
+T["at the %s"] = true
+T["street"] = true
+T["road"] = true
+T["bridge"] = true
+T["fork"] = true
+T["crossing"] = true
+T["quay"] = true
+T["canal walk"] = true
+T["slime canal walk"] = true
+T["walk along the lava"] = true
 T["at the entrance of %s"] = true
 T["at the entrance"] = true
 T["entrance"] = true
@@ -49,6 +60,7 @@ T["canal"] = true
 T["way out"] = true
 T["entrance of %s"] = true
 T["room unknown"] = true
+T["place unknown"] = true
 T["Name What I Bump Into"] = true
 T["wall"] = true
 T["wall of %s"] = true
@@ -88,12 +100,13 @@ settings:add({
     min = 0,
     max = 25,
 })
-settings:add({ key = "entrances", type = "Bool", label = L["Announce Entrances"], default = true })
+-- guidance on foot to building entrances and to where streets begin on a square
+settings:add({ key = "entrances", type = "Bool", label = L["Guide to Entrances and Streets"], default = true })
 settings:add({
-    key = "entranceReach",   -- was entranceDistance (15); a new key so the new default reaches saved settings
+    key = "guideReach",   -- was entranceReach (10), entranceDistance (15): a new key so the new default reaches saved settings
     type = "Number",
-    label = L["Entrance Distance (yards)"],
-    default = 10,
+    label = L["Guidance Distance (yards)"],
+    default = 8,
     min = 3,
     max = 40,
 })
@@ -190,17 +203,17 @@ local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announc
 local CAME_OUT = 3               -- seconds after coming out of a building that it can lead onto a wall-walk
 local EDGE_REPEAT = 1            -- second in which the same edge warning is not said again
 
--- Entrance guidance: within the entrance distance the nearest entrance is said with distance and
--- direction; again whenever the direction word changes (so turning toward it can be followed),
--- and once at the entrance itself. Its name only the first time: until another entrance is named,
--- "entrance, 8 yards to the west".
-local guide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- named: the entrance last said by name
+-- Guidance on foot: within the guidance distance the nearest target (a building entrance, or
+-- where a street begins on a square) is said with distance and direction; again whenever the
+-- direction turns (so turning toward it can be followed), and once at the target itself. Its
+-- name only the first time: until another target is named, "entrance, 8 to the west".
+local guide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- named: the target last said by name
 
--- Roads, bridges and forks are narrow (about 9 to 14 yd including junctions): with the outdoor distance
--- a road crossed straight across would never be announced.
+-- Roads, bridges, forks and city streets are narrow (about 9 to 14 yd including junctions): with the
+-- outdoor distance a road crossed straight across would never be announced.
 -- A road's key is its whole value (road and direction piece), so a bend is a new place like any
 -- other; other places are keyed by the place alone.
-local NARROW = { road = true, bridge = true, fork = true, crossing = true }
+local NARROW = { road = true, bridge = true, fork = true, crossing = true, street = true }
 local ROADS = { road = true, fork = true, crossing = true }
 local ROAD_SIDE_REACH = 12       -- yd; leaving a road says where it is within this
 
@@ -387,17 +400,21 @@ end
 
 -- Warnings that do not wait for the entry distance: a drop edge ahead on a dock, bridge or wall
 -- (on foot), and the nearest way out of city water (swimming).
+-- Guidance targets. One helper says them all (building entrances, where streets begin on a
+-- square, ways out of the water), so every kind follows the same rules.
 -- The text for a guidance target: its name (or the short word), distance and direction, and the
--- way through it (into the building, out of the water) when that differs from the direction to
--- it. `t`: {name, short, at, atName, through
--- (compass index), throughWord ("in to the %s"), d, dir}.
+-- way through it (into the building, out of the water, on along the street) when that differs
+-- from the direction to it. `t`: {name, nameFormat or nameWord (else the name as it is), short,
+-- at (or atText, already worded), atName, through (compass index), throughWord ("in to the %s"),
+-- d, dir, x, y}.
 local function guideText(z, t, named, at)
     local parts = {}
     if at then
-        parts[1] = named and t.name and string.format(L[t.atName], t.name) or L[t.at]
+        parts[1] = named and t.name and string.format(L[t.atName], t.name) or t.atText or L[t.at]
     else
-        parts[1] = named and t.name and (t.nameFormat and string.format(L[t.nameFormat], t.name) or L[t.nameWord])
-            or L[t.short]
+        local name = named and t.name and (t.nameFormat and string.format(L[t.nameFormat], t.name)
+            or t.nameWord and L[t.nameWord] or t.name)
+        parts[1] = name or L[t.short]
         parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), z.compass[t.dir])
     end
     -- the way through: on the first naming, only when it goes another way than the direction to the
@@ -408,10 +425,11 @@ local function guideText(z, t, named, at)
     return table.concat(parts, ", ")
 end
 
--- Guidance to the nearest target within reach (an entrance on foot, a way out of the water while
--- swimming): said with distance and direction; again when the direction has turned (32 degrees
--- off the last said one, after 2 s), and once at it. The name and the way through only until
--- another target of the kind is named: then "entrance, 6 to the north".
+-- Guidance to the nearest target within reach (on foot an entrance or a street's beginning, a
+-- way out of the water while swimming): said with distance and direction; again when the
+-- direction has turned (32 degrees off the last said one, after 2 s), and once at it. The name
+-- and the way through only until another target is named: then "entrance, 6 to the north".
+-- `i`: the target's key, unique among the targets of one guide.
 local function guideTo(z, g, i, t, x, y, kind)
     local now = GetTime()
     local named = g.named ~= i
@@ -429,17 +447,47 @@ local function guideTo(z, g, i, t, x, y, kind)
     end
 end
 
-local function entranceTarget(z, x, y)
-    local i, d, dir = logic.nearestEntrance(z, x, y, module.settings.entranceReach or 10)
+local function entranceTarget(z, x, y, reach)
+    local i, d, dir = logic.nearestEntrance(z, x, y, reach)
     if i == nil then
         return nil
     end
     local e = logic.entrances(z)[i]
-    return i, {
+    return "e" .. i, {
         name = e.text, nameFormat = "entrance of %s", short = "entrance", at = "at the entrance",
         atName = "at the entrance of %s", through = e.inDir, throughWord = "in to the %s",
-        d = d, dir = dir, x = e.x, y = e.y,
+        d = d, dir = dir, x = e.x, y = e.y, kind = "entrance",
     }
+end
+
+-- Where a street (road, bridge, canal walk) begins on the square the player is on; streets that
+-- run along the square's side are no target (see logic.wayBeginnings).
+local function beginningTarget(z, x, y, reach)
+    local square = logic.regionAt(z, x, y) or region
+    if square == nil then
+        return nil
+    end
+    local i, d, dir, b = logic.nearestBeginning(z, square, x, y, reach)
+    if i == nil then
+        return nil
+    end
+    return "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), {
+        name = b.label, short = b.kind, atText = string.format(L["at the %s"], L[b.kind]),
+        atName = "at the %s", through = b.onward, throughWord = "on to the %s",
+        d = d, dir = dir, x = b.x, y = b.y, kind = "way",
+    }
+end
+
+-- The guidance target on foot: the nearest entrance or street beginning within the guidance
+-- distance.
+local function footTarget(z, x, y)
+    local reach = module.settings.guideReach or 8
+    local i, t = entranceTarget(z, x, y, reach)
+    local wi, wt = beginningTarget(z, x, y, reach)
+    if wi and (t == nil or wt.d < t.d) then
+        return wi, wt
+    end
+    return i, t
 end
 
 local function exitTarget(z, x, y)
@@ -455,17 +503,17 @@ local function exitTarget(z, x, y)
     }
 end
 
-local function checkEntrance(z, x, y)
+local function checkGuide(z, x, y)
     if not module.settings.entrances or IsSwimming() then
         guide.index = nil
         return
     end
-    local i, t = entranceTarget(z, x, y)
+    local i, t = footTarget(z, x, y)
     if i == nil then
         guide.index = nil
         return
     end
-    guideTo(z, guide, i, t, x, y, "entrance")
+    guideTo(z, guide, i, t, x, y, t.kind)
 end
 
 -- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
@@ -857,7 +905,7 @@ module:hasUpdate(function(self)
     end
     lastRoom = nil
     checkEdgesAndExits(z, x, y, px, py)
-    checkEntrance(z, x, y)
+    checkGuide(z, x, y)
     local place, value = outdoorValue(z, x, y)
     local previous = outdoor.current
     if outdoor:update(outdoorKey(z, place, value), x, y) then
@@ -978,12 +1026,13 @@ function module:describeAround()
         text = room and roomText(z, room, nil, false) or L["room unknown"]
     else
         local place, value = outdoorValue(z, x, y)
-        text = spotText(z, x, y, place, value, nil, false) or ""
+        -- a spot the data has no place for (a gap in the map) says so, as a room does
+        text = spotText(z, x, y, place, value, nil, false) or L["place unknown"]
         local i, t
         if IsSwimming() then
             i, t = exitTarget(z, x, y)
         elseif self.settings.entrances then
-            i, t = entranceTarget(z, x, y)
+            i, t = footTarget(z, x, y)
         end
         if i then
             text = text .. ", " .. guideText(z, t, true, t.d <= ENTRANCE_AT)
