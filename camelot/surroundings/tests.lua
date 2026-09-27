@@ -96,7 +96,42 @@ local function newLaneZone()
     }
 end
 
+-- A canal walk between a square and the water: 4 rows x 7 columns of 4 yd cells; north edge at
+-- x = 100, west edge at y = 60. Columns 0 and 1 (y 60 to 52) square, 2 to 4 (y 52 to 40) canal walk,
+-- 5 and 6 water (no place). The walk's centre line runs north-south at y = 46: it counts from 2 yd
+-- off the line and stops beyond 4 yd.
+local function newWalkZone()
+    return {
+        key = "walk", map = 0, top = 100, left = 60, cell = 4, rows = 4, cols = 7,
+        dirs = { "running %s" },
+        compass = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" },
+        axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
+        places = { { "square", "square of Test" }, { "canal walk", "canal walk" } },
+        grid = { "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*3,0*2" },
+        lanes = { 100, 46, 84, 46, 211, 20, 40 },
+    }
+end
+
 testRunner:addSuite("Surroundings", {
+    ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
+        local z = newWalkZone()
+        logic.unpack(z)
+        t:assertEqual(logic.laneValue(z, 94, 46, 211, false), 211)
+        -- 4.5 yd off toward the square: the square
+        local v, decided = logic.laneValue(z, 94, 50.5, 211, true)
+        t:assertEqual(v, 100)
+        t:assertEqual(decided, true)
+        -- 4.5 yd off toward the water: nothing beside the walk there, it stays the walk (the grid)
+        v, decided = logic.laneValue(z, 94, 41.5, 211, true)
+        t:assertEqual(v, 211)
+        t:assertEqual(decided, false)
+        -- the square counts until the walk's line is near
+        t:assertEqual(logic.laneValue(z, 94, 49, 211, false), 100)
+        -- only road lines when asked for roads
+        t:assertEqual(logic.nearestLane(z, 94, 46, 12, { road = true }), nil)
+    end,
+
+
     ["the road centre line decides when the road counts, with a gap between on and off"] = function(t)
         local z = newLaneZone()
         logic.unpack(z)

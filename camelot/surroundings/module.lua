@@ -222,24 +222,25 @@ local function isRoadKey(key)
     return type(key) == "string" and key:sub(1, 1) == "r"
 end
 
--- A road, fork or crossing key; `bridge`: bridges count too (one stays on the road coming off one)
-local function isRoadish(key, bridge)
+-- A key of a way with centre lines (road, fork, crossing, city street or walk); `bridge`: bridges
+-- count too (one stays on the way coming off one)
+local function isWay(key, bridge)
     if isRoadKey(key) then
         return true
     end
     local kind = type(key) == "number" and zone and logic.kind(zone, key)
-    return ROADS[kind] or (bridge and kind == "bridge") or false
+    return logic.LANE_KINDS[kind] or (bridge and kind == "bridge") or false
 end
 
--- Whether a road centre line decided the last outdoor value: stepping onto or off the road then
--- counts at once (the lane's enter and leave distances already keep it from flickering).
+-- Whether a centre line decided the last outdoor value: stepping onto or off the way then counts
+-- at once (the lane's enter and leave distances already keep it from flickering).
 local laneDecided = false
 
 outdoor.distanceFor = function(key)
     if key == nil then
         return nil
     end
-    if laneDecided and isRoadish(key) ~= isRoadish(outdoor.current) then
+    if laneDecided and isWay(key) ~= isWay(outdoor.current) then
         return 0
     end
     if isRoadKey(key) or (type(key) == "number" and zone and NARROW[logic.kind(zone, key)]) then
@@ -412,8 +413,8 @@ local function outdoorValue(z, x, y)
     if value == 0 then
         return nil, 0
     end
-    -- near a road centre line the line decides whether the player is on the road
-    value, laneDecided = logic.laneValue(z, x, y, value, isRoadish(outdoor.current, true))
+    -- near a centre line of a road or street the line decides whether the player is on it
+    value, laneDecided = logic.laneValue(z, x, y, value, isWay(outdoor.current, true))
     return logic.placeOf(value), value
 end
 
@@ -662,7 +663,7 @@ local function spotText(z, x, y, place, value, previous, cut)
         -- which may be another one)
         -- toward its centre line where it has one: across the road, so it does not flicker
         local d, dir
-        local ld, _i, lx, ly = logic.nearestLane(z, x, y, ROAD_SIDE_REACH)
+        local ld, _i, lx, ly = logic.nearestLane(z, x, y, ROAD_SIDE_REACH, ROADS)
         if ld then
             d, dir = ld, logic.compassIndex(lx - x, ly - y)
         else
