@@ -516,6 +516,65 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
+-- Where a road leads ahead: from the nearest point on its centre line toward the point on the line
+-- about `look` yd further on, taking the end nearer the facing (radians as in turnHint). The
+-- player's own position across the road does not change it, so walking a little aside is no bend.
+-- Returns the direction (radians, 0 = north, counter-clockwise) and the cell value of the line
+-- there (name and direction piece), or nil (no road with a single direction here; facing across it).
+function logic.wayAhead(zone, x, y, facing, look)
+    local d, i, px, py = logic.nearestLane(zone, x, y)
+    if d == nil or not TURN_KINDS[logic.kind(zone, logic.placeOf(zone.lanes[i + 4]))] then
+        return nil
+    end
+    local L = zone.lanes
+    local dx, dy = L[i + 2] - L[i], L[i + 3] - L[i + 1]
+    local n = math.sqrt(dx * dx + dy * dy)
+    if n == 0 then
+        return nil
+    end
+    dx, dy = dx / n, dy / n
+    local along = dx * math.cos(facing) + dy * math.sin(facing)
+    if math.abs(along) < math.cos(math.rad(logic.TURN_ACROSS)) then
+        return nil
+    end
+    if along < 0 then
+        dx, dy = -dx, -dy
+    end
+    local _a, ia, ax, ay = logic.nearestLane(zone, px + dx * look, py + dy * look, look, LANE_KINDS)
+    if ia == nil or (ax - px) ^ 2 + (ay - py) ^ 2 < 9 then
+        return nil
+    end
+    return math.atan2(ay - py, ax - px), L[ia + 4]
+end
+
+-- A gentle bend: `from` where the road led at the last message, `dir` where it leads now (both from
+-- wayAhead), `facing` as in turnHint, `threshold` degrees. Returns the turn to say (1 left, -1
+-- right, 0 nothing) and whether `dir` becomes the new `from`. The bend counts once the road has
+-- turned `threshold` degrees (more than BEND_RESET: turning round or another road, nothing said),
+-- and is said only while the facing still points at least TURN_OFF degrees the other way from
+-- where the road leads: a player already turned along it (or beyond) hears nothing.
+logic.BEND_RESET = 60   -- degrees
+
+local function degreesBetween(a, b)
+    local d = math.deg(a - b) % 360
+    return d > 180 and d - 360 or d
+end
+
+function logic.bendTurn(from, dir, facing, threshold)
+    local diff = degreesBetween(dir, from)
+    if math.abs(diff) > logic.BEND_RESET then
+        return 0, true
+    end
+    if math.abs(diff) < threshold then
+        return 0, false
+    end
+    local off = degreesBetween(dir, facing)
+    if (off > 0) == (diff > 0) and math.abs(off) >= logic.TURN_OFF then
+        return diff > 0 and 1 or -1, true
+    end
+    return 0, true
+end
+
 -- The axis (index into zone.axes) the compass word of a facing lies on: facing north or south is
 -- the north-south axis.
 function logic.facingAxis(facing)

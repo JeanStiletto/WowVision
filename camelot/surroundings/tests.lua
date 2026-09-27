@@ -131,6 +131,50 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 1), -1)
     end,
 
+    ["where the road leads ahead follows its centre line into a gentle bend"] = function(t)
+        local z = newLaneZone()
+        -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
+        z.lanes = { 100, 48, 90, 48, 211, 20, 40, 90, 48, 80, 44, 211, 20, 40 }
+        logic.unpack(z)
+        local south = math.rad(180)
+        local function degrees(a)
+            return math.deg(a) % 360
+        end
+        -- far before the bend the road leads south
+        local dir, ahead = logic.wayAhead(z, 98, 48, south, 10)
+        t:assertTrue(math.abs(degrees(dir) - 180) < 8)
+        t:assertEqual(ahead, 211)
+        -- nearer, the road ahead has turned left (east, walking south) by more than 15 degrees
+        dir = logic.wayAhead(z, 92, 48, south, 10)
+        t:assertTrue(degrees(dir) - 180 > 15)
+        -- a step aside does not change where the road leads
+        local aside = logic.wayAhead(z, 92, 50, south, 10)
+        t:assertTrue(math.abs(degrees(aside) - degrees(dir)) < 1)
+        -- facing across the road: no direction
+        t:assertEqual(logic.wayAhead(z, 92, 48, math.rad(90), 10), nil)
+    end,
+
+    ["a gentle bend is said only while the facing has not turned along it"] = function(t)
+        local r = math.rad
+        -- walking south (178), the road ahead turns from 180 to 201: turn left
+        t:assertEqual(logic.bendTurn(r(180), r(201), r(178), 15), 1)
+        -- below the threshold: nothing, the reference stays
+        local turn, moveOn = logic.bendTurn(r(180), r(190), r(178), 15)
+        t:assertEqual(turn, 0)
+        t:assertEqual(moveOn, false)
+        -- the road turns right from 155 to 138, the player faces 131 already: nothing, but the
+        -- reference moves on (from a walk: "turn slightly right" here carried the player off)
+        turn, moveOn = logic.bendTurn(r(155), r(138), r(131), 15)
+        t:assertEqual(turn, 0)
+        t:assertEqual(moveOn, true)
+        -- facing only 5 degrees short of the road: close enough, nothing
+        t:assertEqual(logic.bendTurn(r(155), r(138), r(143), 15), 0)
+        -- still facing the old way: turn right
+        t:assertEqual(logic.bendTurn(r(155), r(138), r(155), 15), -1)
+        -- more than 60 degrees: turning round or another road
+        t:assertEqual(logic.bendTurn(r(180), r(260), r(180), 15), 0)
+    end,
+
     ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
         local z = newWalkZone()
         logic.unpack(z)

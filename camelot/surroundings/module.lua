@@ -65,6 +65,7 @@ T["Name What I Bump Into"] = true
 T["Turn Hints on Roads and Streets"] = true
 T["turn slightly left"] = true
 T["turn slightly right"] = true
+T["Turn Hints at Gentle Road Bends (degrees, 0 = off)"] = true
 T["wall"] = true
 T["wall of %s"] = true
 
@@ -144,6 +145,15 @@ settings:add({
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
 -- on stepping onto a road, street or walk: which way to turn to face along it
 settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads and Streets"], default = true })
+-- a road bending less than a new direction's words: which way to turn once it has turned this far
+settings:add({
+    key = "bendHint",
+    type = "Number",
+    label = L["Turn Hints at Gentle Road Bends (degrees, 0 = off)"],
+    default = 15,
+    min = 0,
+    max = 45,
+})
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
@@ -189,6 +199,7 @@ local lastRoom = nil             -- the last announced room, for the interior na
 local room = nil                 -- the room the player is in as far as known (switches at once)
 local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
 local warnedEdges = {}           -- drop edges in reach and warned about (again after stepping out of reach)
+local bendFrom, checkBend        -- gentle road bends (see checkBend)
 local lastEdgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local waterGuide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- ways out of the water, as guide
 local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
@@ -246,6 +257,11 @@ outdoor.distanceFor = function(key)
         return nil
     end
     if laneDecided and isWay(key) ~= isWay(outdoor.current) then
+        return 0
+    end
+    -- from one road piece onto the next (a new direction): at once, so the bend is heard before
+    -- walking straight on carries the player off the road
+    if isRoadKey(key) and isRoadKey(outdoor.current) then
         return 0
     end
     if isRoadKey(key) or (type(key) == "number" and zone and NARROW[logic.kind(zone, key)]) then
@@ -898,6 +914,39 @@ local function checkEdgesAndExits(z, x, y, px, py)
     end
 end
 
+-- Gentle bends: on a road piece, once the road ahead has turned the setting's degrees from where
+-- it led at the last announcement or hint but keeps its direction words (a new direction is an
+-- announcement of its own), which way to turn, unless the player faces that way already. Where the
+-- road leads comes from its centre line, not from the player's steps, so drifting or turning on
+-- the spot says nothing.
+local BEND_LOOK = 10     -- yd along the road ahead
+bendFrom = nil           -- where the road led at the last message (radians), nil: take it anew
+
+checkBend = function(z, x, y)
+    local key = outdoor.current
+    local threshold = module.settings.bendHint or 15
+    local facing = GetPlayerFacing()
+    if not isRoadKey(key) or not module.settings.turnHints or threshold <= 0 or facing == nil then
+        bendFrom = nil
+        return
+    end
+    local dir, ahead = logic.wayAhead(z, x, y, facing, BEND_LOOK)
+    if dir == nil then
+        return
+    end
+    if bendFrom == nil then
+        bendFrom = dir
+        return
+    end
+    local turn, moveOn = logic.bendTurn(bendFrom, dir, facing, threshold)
+    if moveOn then
+        bendFrom = dir
+    end
+    if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 then
+        say(L[TURN_WORDS[turn]], "bend", x, y)
+    end
+end
+
 module:hasUpdate(function(self)
     local now = GetTime()
     if now - lastCheck < CHECK_INTERVAL then
@@ -959,6 +1008,7 @@ module:hasUpdate(function(self)
     if outdoor:update(outdoorKey(z, place, value), x, y) then
         local text, square = spotText(z, x, y, place, value, previous, true)
         region = nil
+        bendFrom = nil
         if square then
             -- on the square: what was said now (its exits, what is close) is not said again on
             -- coming close
@@ -976,6 +1026,7 @@ module:hasUpdate(function(self)
         -- also from the square's edge (a step onto the street beside it does not leave it)
         checkApproach(z, x, y)
     end
+    checkBend(z, x, y)
 end)
 
 roomCandidateNames = function(z, x, y)
