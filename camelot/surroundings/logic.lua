@@ -470,6 +470,47 @@ function logic.nearestLane(zone, x, y, reach, kinds)
     return best, bi, bx, by
 end
 
+-- Which way to turn to face along the way here: the direction of its centre line over about 12 yd
+-- around the nearest point (short stretches alone bend too much), taken the end nearer the
+-- facing. `facing`: radians, 0 = north, counter-clockwise (GetPlayerFacing). Returns -2 (turn
+-- right), -1 (slightly right), 1 (slightly left), 2 (turn left), 0 (along it already), or nil (no
+-- way with a single direction here: a fork, a crossing; or facing across it, crossing over).
+logic.TURN_SLIGHT, logic.TURN_MORE, logic.TURN_ACROSS = 8, 20, 60   -- degrees
+local TURN_SPAN = 6   -- yd before and after the nearest point
+local TURN_KINDS = { road = true, street = true, ["canal walk"] = true, quay = true, ["slime canal walk"] = true,
+    ["walk along the lava"] = true }
+
+function logic.turnHint(zone, x, y, facing)
+    local d, i, px, py = logic.nearestLane(zone, x, y)
+    if d == nil or not TURN_KINDS[logic.kind(zone, logic.placeOf(zone.lanes[i + 4]))] then
+        return nil
+    end
+    local fx, fy = math.cos(facing), math.sin(facing)
+    local _a, _i1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, LANE_KINDS)
+    local _b, _i2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, LANE_KINDS)
+    ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
+    local dx, dy = ax - bx, ay - by
+    if dx * dx + dy * dy < 9 then
+        return nil
+    end
+    local diff = math.deg(math.atan2(dy, dx) - facing) % 360
+    if diff > 180 then
+        diff = diff - 360
+    end
+    -- the way runs both ways: the end nearer the facing
+    if diff > 90 then
+        diff = diff - 180
+    elseif diff < -90 then
+        diff = diff + 180
+    end
+    local off = math.abs(diff)
+    if off > logic.TURN_ACROSS then
+        return nil
+    end
+    local step = off < logic.TURN_SLIGHT and 0 or off < logic.TURN_MORE and 1 or 2
+    return diff > 0 and step or -step
+end
+
 -- The place value near a way with its centre line: `value` is the grid's, `onWay` whether the
 -- player is on a way now (then the leave distance counts, else the enter distance). On the way: the
 -- stretch's value; off it on the grid's cells of a way: the place beside it on the player's side

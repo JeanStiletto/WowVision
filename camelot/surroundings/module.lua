@@ -62,6 +62,11 @@ T["entrance of %s"] = true
 T["room unknown"] = true
 T["place unknown"] = true
 T["Name What I Bump Into"] = true
+T["Turn Hints on Roads and Streets"] = true
+T["turn slightly left"] = true
+T["turn slightly right"] = true
+T["turn left"] = true
+T["turn right"] = true
 T["wall"] = true
 T["wall of %s"] = true
 
@@ -139,6 +144,8 @@ settings:add({
     max = 60,
 })
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
+-- on stepping onto a road, street or walk: which way to turn to face along it
+settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads and Streets"], default = true })
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
@@ -337,7 +344,8 @@ local function logEntry(kind, text, x, y, extra)
     log.entries = trim(log.entries, LOG_MAX)
 end
 
--- A trail point every few yards: "time x y", plus i (indoors), s (swimming) and g (ghost).
+-- A trail point every few yards: "time x y", plus i (indoors), s (swimming), g (ghost) and f with
+-- the facing in degrees (0 = north, counter-clockwise), as one token ("isf270").
 local function logTrail(x, y)
     if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
         return
@@ -347,7 +355,9 @@ local function logTrail(x, y)
         return
     end
     trailX, trailY = x, y
+    local facing = GetPlayerFacing()
     local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "") .. (UnitIsGhost("player") and "g" or "")
+        .. (facing and ("f" .. math.floor(math.deg(facing) + 0.5)) or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
@@ -614,6 +624,7 @@ end
 -- Cliffs and water near an outdoor place: "forest, cliff edge to the west and north". Not on
 -- roads (they come often), not what the place itself is; announcements also leave out what the
 -- player just left (the shore behind them).
+local TURN_WORDS = { [-2] = "turn right", [-1] = "turn slightly right", [1] = "turn slightly left", [2] = "turn left" }
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
 local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
 
@@ -647,6 +658,15 @@ local function spotText(z, x, y, place, value, previous, cut)
         return nil
     end
     local kind = logic.kind(z, place)
+    -- on a road, street or walk: which way to turn to face along it (nothing when already along
+    -- it or facing across it)
+    if module.settings.turnHints and logic.LANE_KINDS[kind] then
+        local facing = GetPlayerFacing()
+        local hint = facing and logic.turnHint(z, x, y, facing)
+        if hint and hint ~= 0 then
+            text = text .. ", " .. L[TURN_WORDS[hint]]
+        end
+    end
     if logic.isAroundPlace(z, value) then
         local region = logic.regionAt(z, x, y)
         if region and module.settings.around then

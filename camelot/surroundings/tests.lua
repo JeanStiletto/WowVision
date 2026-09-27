@@ -113,6 +113,18 @@ local function newWalkZone()
 end
 
 testRunner:addSuite("Surroundings", {
+    ["the turn hint says which way to turn to face along the road"] = function(t)
+        local z = newLaneZone()
+        logic.unpack(z)
+        -- the test road runs north-south; facing is counter-clockwise from north (west = 90)
+        t:assertEqual(logic.turnHint(z, 92, 48, 0), 0)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(5)), 0)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(12)), -1)    -- facing a little west of north
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30)), 2)    -- facing northeast-ish
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(170)), 1)    -- walking south, 10 degrees off
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(90)), nil)   -- facing across the road
+    end,
+
     ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
         local z = newWalkZone()
         logic.unpack(z)
