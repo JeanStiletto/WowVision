@@ -388,7 +388,8 @@ end
 -- Warnings that do not wait for the entry distance: a drop edge ahead on a dock, bridge or wall
 -- (on foot), and the nearest way out of city water (swimming).
 -- The text for a guidance target: its name (or the short word), distance and direction, and the
--- way through it (into the building, out of the water). `t`: {name, short, at, atName, through
+-- way through it (into the building, out of the water) when that differs from the direction to
+-- it. `t`: {name, short, at, atName, through
 -- (compass index), throughWord ("in to the %s"), d, dir}.
 local function guideText(z, t, named, at)
     local parts = {}
@@ -399,8 +400,9 @@ local function guideText(z, t, named, at)
             or L[t.short]
         parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), z.compass[t.dir])
     end
-    -- the way through: on the first naming and at the target itself
-    if t.through and (named or at) then
+    -- the way through: on the first naming, only when it goes another way than the direction to the
+    -- target ("entrance, 6 to the northeast" goes in northeast); at the target itself always
+    if t.through and (at or (named and t.through ~= t.dir)) then
         parts[#parts + 1] = string.format(L[t.throughWord], z.compass[t.through])
     end
     return table.concat(parts, ", ")
