@@ -79,7 +79,51 @@ local function newSquareZone()
     return z
 end
 
+-- A road with its centre line: 5 rows x 6 columns of 4 yd cells; north edge at x = 100, west edge
+-- at y = 60. Forest with a road on columns 2 and 3 (y 52 to 44) in rows 0 to 3; row 4 a bridge
+-- there. The centre line runs north-south at y = 48 from x = 100 to x = 84: the road counts from
+-- 2 yd off the line and stops beyond 4 yd.
+local function newLaneZone()
+    return {
+        key = "lane", map = 0, top = 100, left = 60, cell = 4, rows = 5, cols = 6,
+        dirs = { "running %s" },
+        compass = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" },
+        axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
+        places = { { "forest", "forest" }, { "road", "Test road" }, { "bridge", "bridge" } },
+        grid = { "100*2,211*2,100*2", "100*2,211*2,100*2", "100*2,211*2,100*2", "100*2,211*2,100*2",
+            "100*2,300*2,100*2" },
+        lanes = { 100, 48, 84, 48, 211, 20, 40 },
+    }
+end
+
 testRunner:addSuite("Surroundings", {
+    ["the road centre line decides when the road counts, with a gap between on and off"] = function(t)
+        local z = newLaneZone()
+        logic.unpack(z)
+        -- on the line
+        t:assertEqual(logic.laneValue(z, 94, 48, 211, false), 211)
+        -- 3 yd off, on the grid's road cells: not yet on the road (the forest beside it) ...
+        local v, decided = logic.laneValue(z, 94, 51, 211, false)
+        t:assertEqual(v, 100)
+        t:assertEqual(decided, true)
+        -- ... but still on it when already there
+        t:assertEqual(logic.laneValue(z, 94, 51, 211, true), 211)
+        -- 5 yd off: off the road even from on it
+        t:assertEqual(logic.laneValue(z, 94, 53, 100, true), 100)
+        -- the bridge keeps its own place
+        v, decided = logic.laneValue(z, 82, 48, 300, true)
+        t:assertEqual(v, 300)
+        t:assertEqual(decided, false)
+        -- the nearest point on the line: across the road (3 yd east), past its end the end point
+        local d, _i, px, py = logic.nearestLane(z, 94, 51)
+        t:assertEqual(d, 3)
+        t:assertEqual(logic.compassIndex(px - 94, py - 51), 3)
+        d = logic.nearestLane(z, 103, 48)
+        t:assertEqual(d, 3)
+        t:assertEqual(logic.nearestLane(z, 94, 52, 3), nil)
+    end,
+
+
     ["a position finds its cell value; west and south of the edges is outside"] = function(t)
         local z = newZone()
         logic.unpack(z)

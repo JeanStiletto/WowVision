@@ -222,9 +222,25 @@ local function isRoadKey(key)
     return type(key) == "string" and key:sub(1, 1) == "r"
 end
 
+-- A road, fork or crossing key; `bridge`: bridges count too (one stays on the road coming off one)
+local function isRoadish(key, bridge)
+    if isRoadKey(key) then
+        return true
+    end
+    local kind = type(key) == "number" and zone and logic.kind(zone, key)
+    return ROADS[kind] or (bridge and kind == "bridge") or false
+end
+
+-- Whether a road centre line decided the last outdoor value: stepping onto or off the road then
+-- counts at once (the lane's enter and leave distances already keep it from flickering).
+local laneDecided = false
+
 outdoor.distanceFor = function(key)
     if key == nil then
         return nil
+    end
+    if laneDecided and isRoadish(key) ~= isRoadish(outdoor.current) then
+        return 0
     end
     if isRoadKey(key) or (type(key) == "number" and zone and NARROW[logic.kind(zone, key)]) then
         return module.settings.roadDistance or 3
@@ -392,9 +408,12 @@ local function outdoorValue(z, x, y)
             return logic.placeOf(under), under
         end
     end
+    laneDecided = false
     if value == 0 then
         return nil, 0
     end
+    -- near a road centre line the line decides whether the player is on the road
+    value, laneDecided = logic.laneValue(z, x, y, value, isRoadish(outdoor.current, true))
     return logic.placeOf(value), value
 end
 
@@ -641,7 +660,14 @@ local function spotText(z, x, y, place, value, previous, cut)
     if not ROADS[kind] and (wasRoad or not cut) then
         -- where the road is, to step back onto it (instead of the place's stored nearest road,
         -- which may be another one)
-        local d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
+        -- toward its centre line where it has one: across the road, so it does not flicker
+        local d, dir
+        local ld, _i, lx, ly = logic.nearestLane(z, x, y, ROAD_SIDE_REACH)
+        if ld then
+            d, dir = ld, logic.compassIndex(lx - x, ly - y)
+        else
+            d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
+        end
         if d then
             text = logic.describe(z, value, directions, true) .. ", " .. string.format(L["road to the %s"], z.compass[dir])
         end

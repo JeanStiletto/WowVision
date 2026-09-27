@@ -22,6 +22,9 @@
 -- stepping onto it: pieceCells (row, col, piece: its footprint), access (piece, kind, x, y: 1
 -- from the ground, 2 coming out of a building's rooms) and links (piece a, piece b: joined high
 -- pieces, one walks from one onto the other).
+-- lanes (road centre lines), flat, 7 values each: x1, y1, x2, y2 of a straight stretch, the cell
+-- value of the road there (name and direction piece, or a fork), and the distances from the line
+-- in 0.1 yd within which the road starts to count (enter) and beyond which it stops (leave).
 
 local logic = {}
 WowVision.surroundingsLogic = logic
@@ -120,6 +123,21 @@ function logic.unpack(zone)
     for _, sid in ipairs(zone.waterStructs or {}) do
         zone._waterStruct[sid] = true
     end
+    -- road centre line stretches per grid cell (every cell within LANE_REACH of the stretch)
+    local lanes = {}
+    list = zone.lanes or {}
+    for i = 1, #list - 6, 7 do
+        local x0, x1 = math.min(list[i], list[i + 2]), math.max(list[i], list[i + 2])
+        local y0, y1 = math.min(list[i + 1], list[i + 3]), math.max(list[i + 1], list[i + 3])
+        for r = math.floor((zone.top - x1 - logic.LANE_REACH) / zone.cell), math.floor((zone.top - x0 + logic.LANE_REACH) / zone.cell) do
+            for c = math.floor((zone.left - y1 - logic.LANE_REACH) / zone.cell), math.floor((zone.left - y0 + logic.LANE_REACH) / zone.cell) do
+                local key = r * zone.cols + c
+                lanes[key] = lanes[key] or {}
+                table.insert(lanes[key], i)
+            end
+        end
+    end
+    zone._lanes = lanes
 end
 
 -- Free the unpacked grid when the player leaves the zone.
@@ -136,6 +154,7 @@ function logic.pack(zone)
     zone._regionOf = nil
     zone._objects = nil
     zone._waterStruct = nil
+    zone._lanes = nil
 end
 
 function logic.covers(zone, x, y)
@@ -407,6 +426,83 @@ function logic.nearestOfKinds(zone, x, y, kinds, reach)
         return nil
     end
     return best, logic.compassIndex(bx - x, by - y)
+end
+
+-- Roads follow their centre lines (lanes). Near a centre line the lane decides whether the player
+-- is on the road, not the grid's road cells: the road counts from the stretch's enter distance and
+-- stops beyond its leave distance (in between the state stays), so the road is announced when the
+-- player is on track and left when drifting toward its sides, before the fences and lampposts.
+logic.LANE_REACH = 12        -- yd; farther from every centre line the grid alone decides
+local LANE_ROADS = { road = true, fork = true, crossing = true }
+local LANE_KEEP = { bridge = true }   -- places the lane never replaces
+
+-- The nearest point on a road centre line within `reach` yd (at most LANE_REACH): distance, the
+-- stretch's index in zone.lanes, and the point; nil when there is none.
+function logic.nearestLane(zone, x, y, reach)
+    local r = math.floor((zone.top - x) / zone.cell)
+    local c = math.floor((zone.left - y) / zone.cell)
+    local list = zone._lanes and zone._lanes[r * zone.cols + c]
+    if list == nil then
+        return nil
+    end
+    local L = zone.lanes
+    local best, bi, bx, by = nil, nil, nil, nil
+    for _, i in ipairs(list) do
+        local ax, ay, dx, dy = L[i], L[i + 1], L[i + 2] - L[i], L[i + 3] - L[i + 1]
+        local n = dx * dx + dy * dy
+        local t = n > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / n)) or 0
+        local px, py = ax + t * dx, ay + t * dy
+        local d = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        if best == nil or d < best then
+            best, bi, bx, by = d, i, px, py
+        end
+    end
+    if best == nil or best > math.min(reach or logic.LANE_REACH, logic.LANE_REACH) then
+        return nil
+    end
+    return best, bi, bx, by
+end
+
+-- The place value near a road with its centre line: `value` is the grid's, `onRoad` whether the
+-- player is on the road now (then the leave distance counts, else the enter distance). On the road:
+-- the stretch's value; off it on the grid's road cells: the nearest place beside the road. Returns
+-- the value and whether a lane decided it (false: no centre line near, the grid as it is).
+function logic.laneValue(zone, x, y, value, onRoad)
+    local kind = logic.kind(zone, logic.placeOf(value))
+    if LANE_KEEP[kind] then
+        return value, false
+    end
+    local d, i = logic.nearestLane(zone, x, y)
+    if d == nil then
+        return value, false
+    end
+    local L = zone.lanes
+    if d <= (onRoad and L[i + 6] or L[i + 5]) / 10 then
+        return L[i + 4], true
+    end
+    if not LANE_ROADS[kind] then
+        return value, true
+    end
+    -- beside the road on its grid cells: the nearest cell that is no road
+    local _v, r0, c0 = logic.valueAt(zone, x, y)
+    local best, bv = nil, nil
+    for dr = -3, 3 do
+        for dc = -3, 3 do
+            local cx = zone.top - (r0 + dr + 0.5) * zone.cell
+            local cy = zone.left - (c0 + dc + 0.5) * zone.cell
+            local dd = (cx - x) ^ 2 + (cy - y) ^ 2
+            if best == nil or dd < best then
+                local v = logic.valueAt(zone, cx, cy)
+                if v ~= 0 and not LANE_ROADS[logic.kind(zone, logic.placeOf(v))] then
+                    best, bv = dd, v
+                end
+            end
+        end
+    end
+    if bv == nil then
+        return value, false
+    end
+    return bv, true
 end
 
 function logic.placeOf(value)
