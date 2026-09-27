@@ -581,11 +581,87 @@ function logic.facingAxis(facing)
     return (logic.compassIndex(math.cos(facing), math.sin(facing)) - 1) % 4 + 1
 end
 
+-- The index of the direction template "running %s" in zone.dirs (a way's axis, not a compass
+-- word), found by its English text once; logic.localize keeps it when the words change.
+function logic.runningTemplate(zone)
+    if zone._running == nil then
+        zone._running = false
+        for i, t in ipairs(zone.dirs or {}) do
+            if t == "running %s" then
+                zone._running = i
+            end
+        end
+    end
+    return zone._running
+end
+
 -- The axis a cell value says ("running %s"), or nil.
 function logic.axisOf(zone, value)
     local code = value % 100
-    if zone.dirs[math.floor(code / 10)] == "running %s" then
+    if math.floor(code / 10) == logic.runningTemplate(zone) then
         return code % 10
+    end
+end
+
+-- The spoken words of an axis (index into zone.axes): "north to south" (the hyphenated axis runs
+-- together when spoken); a localized zone brings its own (zone.spokenAxes).
+function logic.axisWords(zone, i)
+    if zone.spokenAxes then
+        return zone.spokenAxes[i]
+    end
+    local word = zone.axes[i]
+    return word and (word:gsub("%-", " to "))
+end
+
+-- Puts the words of the player's language (the zone's `locales` table, written by the exporter
+-- with the same indexes) in place of the English ones: direction templates, compass words, axes,
+-- place labels and their nearest roads, interiors, rooms, structures and objects. What the logic
+-- compares keeps working: kinds stay English keys, "running %s" is found by index, the entrance
+-- rooms are marked first. Once per zone; other languages are dropped.
+function logic.localize(zone, locale)
+    if zone._locale then
+        return
+    end
+    zone._locale = locale
+    logic.runningTemplate(zone)
+    for _, room in ipairs(zone.rooms or {}) do
+        if room[2] == "entrance" then
+            room.entrance = true
+        end
+    end
+    local t = zone.locales and zone.locales[locale]
+    zone.locales = nil
+    if t == nil then
+        return
+    end
+    zone.dirs = t.dirs or zone.dirs
+    zone.compass = t.compass or zone.compass
+    zone.spokenAxes = t.axes
+    for i, p in ipairs(t.places or {}) do
+        local place = zone.places[i]
+        if place then
+            place[2] = p[1] or place[2]
+            if place[3] then
+                place[3] = p[2] or place[3]
+            end
+        end
+    end
+    for i, name in ipairs(t.interiors or {}) do
+        if zone.interiors[i] then
+            zone.interiors[i][1] = name
+        end
+    end
+    for i, name in ipairs(t.rooms or {}) do
+        if zone.rooms[i] then
+            zone.rooms[i][2] = name
+        end
+    end
+    for _, key in ipairs({ "structs", "objectNames" }) do
+        for i, name in ipairs(t[key] or {}) do
+            if zone[key] and zone[key][i] then
+                zone[key][i] = name
+            end
+        end
     end
 end
 
@@ -666,12 +742,12 @@ function logic.describe(zone, value, withDirection, noNearRoad)
     local code = value % 100
     if withDirection and code > 0 then
         local template = zone.dirs[math.floor(code / 10)]
-        local axis = template == "running %s"
-        local word = (axis and zone.axes or zone.compass)[code % 10]
+        local axis = math.floor(code / 10) == logic.runningTemplate(zone)
+        local word = axis and logic.axisWords(zone, code % 10) or zone.compass[code % 10]
         if template and word then
             if axis then
-                -- "road, northwest to southeast": the hyphenated axis runs together when spoken
-                text = text .. ", " .. word:gsub("%-", " to ")
+                -- "road, northwest to southeast"
+                text = text .. ", " .. word
             else
                 text = text .. ", " .. string.format(template, word)
             end
@@ -961,7 +1037,7 @@ function logic.entrances(zone)
         if room and interior then
             local x, y = logic.toWorld(interior, d[4], d[5])
             local text = interior[1]
-            if room[2] ~= "entrance" and room[2] ~= interior[1] then
+            if not room.entrance and room[2] ~= "entrance" and room[2] ~= interior[1] then
                 text = text .. ", " .. room[2]
             end
             local merged = false
@@ -1269,7 +1345,7 @@ function logic.wayBeginnings(zone, region)
                 count = count + 1
                 local value = logic.valueAt(zone, cellCentre(zone, cell[1], cell[2]))
                 local code = value % 100
-                if code > 0 and zone.dirs[math.floor(code / 10)] == "running %s" then
+                if code > 0 and math.floor(code / 10) == logic.runningTemplate(zone) then
                     votes[code % 10] = votes[code % 10] + 1
                 end
                 for _, s in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do

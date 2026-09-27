@@ -398,6 +398,8 @@ local function findZone(x, y, map)
         end
         if found then
             logic.unpack(found)
+            -- the data's words in the client's language (German, French; English stays)
+            logic.localize(found, GetLocale())
         end
         zone = found
         if found then

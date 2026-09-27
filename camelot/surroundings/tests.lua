@@ -663,4 +663,43 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 0 })[1].label, "upstairs landing")
         t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 2 })[1].class, "out")
     end,
+
+    ["the client's language replaces the data's words, the logic keeps working"] = function(t)
+        local z = newZone()
+        z.rooms[3][2] = "entrance"
+        z.locales = {
+            deDE = {
+                dirs = { "Wasser im %s", "tiefes Wasser im %s", "Land im %s", "Abgrund im %s",
+                    "Felswand im %s", "Gebäude im %s", "im %s", "%s" },
+                compass = { "Norden", "Nordosten", "Osten", "Südosten", "Süden", "Südwesten", "Westen", "Nordwesten" },
+                axes = { "Nord nach Süd", "Nordost nach Südwest", "Ost nach West", "Nordwest nach Südost" },
+                places = { { "Wald" }, { "Ufer, Testsee" }, { "Brücke" }, { "offenes Gelände" },
+                    { "tiefes Wasser, Testsee" }, { "beim Brunnen", "Teststraße im Norden" } },
+                interiors = { "Testgasthaus", "Testscheune" },
+                rooms = { "Schankraum", "Obergeschoss", "Eingang", "Scheune" },
+                structs = { "Dock", "Mauer" },
+            },
+        }
+        logic.unpack(z)
+        logic.localize(z, "deDE")
+        t:assertEqual(logic.describe(z, 213, true), "Ufer, Testsee, Wasser im Osten")
+        t:assertEqual(logic.describe(z, 383, true), "Brücke, Ost nach West")
+        t:assertEqual(logic.axisOf(z, 383), 3)
+        t:assertEqual(logic.describe(z, 600, true), "beim Brunnen, Teststraße im Norden")
+        t:assertEqual(logic.describeRoom(z, 1, nil), "Testgasthaus, Schankraum")
+        t:assertEqual(z.structs[2], "Mauer")
+        t:assertEqual(z.rooms[3].entrance, true)
+        t:assertEqual(z.locales, nil)
+        -- once per zone
+        logic.localize(z, "frFR")
+        t:assertEqual(z.places[1][2], "Wald")
+    end,
+
+    ["without the client's language the English words stay"] = function(t)
+        local z = newZone()
+        z.locales = { deDE = { places = { { "Wald" } } } }
+        logic.localize(z, "enUS")
+        t:assertEqual(logic.describe(z, 383, true), "bridge, east to west")
+        t:assertEqual(z.places[1][2], "forest")
+    end,
 })
