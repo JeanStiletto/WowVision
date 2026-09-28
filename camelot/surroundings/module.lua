@@ -8,28 +8,20 @@
 local T = WowVision:translate("enUS")
 T["Surroundings"] = true
 T["Surroundings Announcements"] = true
-T["Announce Open Land"] = true
-T["Announce Directions"] = true
-T["Entry Distance Outdoors (yards)"] = true
-T["Entry Distance Indoors (yards)"] = true
-T["Entry Distance Roads and Bridges (yards)"] = true
 T["Warn at Drop Edges"] = true
-T["Announce Ways Out of the Water"] = true
 T["%s, drop %d yards"] = true
 T["%s, drop into water"] = true
 T["%s, drop into canal"] = true
 T["%s in %d yards, drop into water"] = true
 T["%s in %d yards, drop into canal"] = true
 T["%s in %d yards, drop %d yards"] = true
-T["Look Ahead for Edges (yards)"] = true
 T["way out of the water"] = true
 T["at the way out"] = true
 T["%d to the %s"] = true
 T["in to the %s"] = true
 T["out to the %s"] = true
 T["road to the %s"] = true
-T["Guide to Entrances and Streets"] = true
-T["Guidance Distance (yards)"] = true
+T["Guide to Entrances, Streets and Ways Out"] = true
 T["on to the %s"] = true
 T["at the %s"] = true
 T["street"] = true
@@ -44,8 +36,6 @@ T["walk along the lava"] = true
 T["at the entrance of %s"] = true
 T["at the entrance"] = true
 T["entrance"] = true
-T["Announce What Lies Around"] = true
-T["Approach Distance on Squares (yards)"] = true
 T["Describe Surroundings"] = true
 T["%s to the %s"] = true
 T["%s here"] = true
@@ -53,9 +43,6 @@ T["%s and %s"] = true
 T["water"] = true
 T["cliff edge"] = true
 T["rock wall"] = true
-T["Exits at Most"] = true
-T["Announce Cliffs and Water Nearby"] = true
-T["Cliffs and Water Distance (yards)"] = true
 T["canal"] = true
 T["way out"] = true
 T["entrance of %s"] = true
@@ -65,7 +52,6 @@ T["Name What I Bump Into"] = true
 T["Turn Hints on Roads and Streets"] = true
 T["turn slightly left"] = true
 T["turn slightly right"] = true
-T["Turn Hints at Gentle Road Bends (degrees, 0 = off)"] = true
 T["wall"] = true
 T["wall of %s"] = true
 T["Quieter While a Beacon Guides"] = true
@@ -78,94 +64,26 @@ module:setLabel(L["Surroundings"])
 local CHECK_INTERVAL = 0.2
 
 local settings = module:hasSettings()
-settings:add({ key = "announceOpenLand", type = "Bool", label = L["Announce Open Land"], default = true })
-settings:add({ key = "directions", type = "Bool", label = L["Announce Directions"], default = true })
-settings:add({
-    key = "entryDistance",
-    type = "Number",
-    label = L["Entry Distance Outdoors (yards)"],
-    default = 8,
-    min = 0,
-    max = 40,
-})
-settings:add({
-    key = "roadDistance",
-    type = "Number",
-    label = L["Entry Distance Roads and Bridges (yards)"],
-    default = 3,
-    min = 0,
-    max = 40,
-})
 settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"], default = true })
-settings:add({
-    key = "edgeLookAhead",
-    type = "Number",
-    label = L["Look Ahead for Edges (yards)"],
-    default = 10,
-    min = 0,
-    max = 25,
-})
--- guidance on foot to building entrances and to where streets begin on a square
-settings:add({ key = "entrances", type = "Bool", label = L["Guide to Entrances and Streets"], default = true })
-settings:add({
-    key = "guideReach",   -- was entranceReach (10), entranceDistance (15): a new key so the new default reaches saved settings
-    type = "Number",
-    label = L["Guidance Distance (yards)"],
-    default = 8,
-    min = 3,
-    max = 40,
-})
--- squares say their exits (streets, roads, squares) and, on coming close, water and drops;
--- rooms say their doorways; outdoor places the cliffs and water near them
-settings:add({ key = "around", type = "Bool", label = L["Announce What Lies Around"], default = true })
-settings:add({
-    key = "aroundMax",
-    type = "Number",
-    label = L["Exits at Most"],
-    default = 4,
-    min = 1,
-    max = 10,
-})
-settings:add({
-    key = "approachDistance",
-    type = "Number",
-    label = L["Approach Distance on Squares (yards)"],
-    default = 10,
-    min = 3,
-    max = 30,
-})
-settings:add({ key = "features", type = "Bool", label = L["Announce Cliffs and Water Nearby"], default = true })
-settings:add({
-    key = "featureDistance",
-    type = "Number",
-    label = L["Cliffs and Water Distance (yards)"],
-    default = 25,
-    min = 5,
-    max = 60,
-})
-settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
--- on stepping onto a road, street or walk: which way to turn to face along it
+-- guidance on foot to building entrances and to where streets begin on a square, and while
+-- swimming to the ways out of the water
+settings:add({ key = "guidance", type = "Bool", label = L["Guide to Entrances, Streets and Ways Out"], default = true })
+-- on stepping onto a road, street or walk: which way to turn to face along it; at gentle bends
 settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads and Streets"], default = true })
--- a road bending less than a new direction's words: which way to turn once it has turned this far
-settings:add({
-    key = "bendHint",
-    type = "Number",
-    label = L["Turn Hints at Gentle Road Bends (degrees, 0 = off)"],
-    default = 15,
-    min = 0,
-    max = 45,
-})
 -- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
-settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
-settings:add({
-    key = "roomDistance",
-    type = "Number",
-    label = L["Entry Distance Indoors (yards)"],
-    default = 3,
-    min = 0,
-    max = 20,
-})
+settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
+
+-- Distances and counts, in yards unless said otherwise
+local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
+local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
+local ENTRY_INDOORS = 3 -- ... inside a room
+local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
+local GUIDE_REACH = 8 -- entrances and street beginnings are guided to from this close
+local ITEMS_MAX = 4 -- things said at most on entering a square or a room
+local APPROACH = 10 -- on a square, a street, water or drop not said yet is said this close
+local FEATURE_REACH = 25 -- cliffs and water said with an outdoor place
+local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 
 local alert = module:addAlert({ key = "place", label = L["Surroundings Announcements"] })
 local placeTTS = alert:addOutput({
@@ -194,8 +112,8 @@ function placeTTS:onFire(message)
 end
 
 local zone = nil                 -- the zone data the player is in (unpacked)
-local outdoor = logic.newEntry(8)
-local indoor = logic.newEntry(3)
+local outdoor = logic.newEntry(ENTRY_OUTDOORS)
+local indoor = logic.newEntry(ENTRY_INDOORS)
 local wasIndoors = nil
 local lastCheck = 0
 local lastRoom = nil             -- the last announced room, for the interior name
@@ -279,7 +197,7 @@ outdoor.distanceFor = function(key)
         return 0
     end
     if isRoadKey(key) or (type(key) == "number" and zone and NARROW[logic.kind(zone, key)]) then
-        return module.settings.roadDistance or 3
+        return ENTRY_NARROW
     end
 end
 
@@ -329,7 +247,7 @@ end
 
 local roomCandidateNames
 
--- One log entry: {date, kind ("place", "room", "quiet", "session", "zone", "surr"), text} and
+-- One log entry: {date, kind ("place", "room", "session", "zone", "surr", ...), text} and
 -- the state here.
 local function logEntry(kind, text, x, y, extra)
     local log = logStore()
@@ -555,7 +473,7 @@ end
 -- The guidance target on foot: the nearest entrance or street beginning within the guidance
 -- distance.
 local function footTarget(z, x, y)
-    local reach = module.settings.guideReach or 8
+    local reach = GUIDE_REACH
     local i, t = entranceTarget(z, x, y, reach)
     local wi, wt = beginningTarget(z, x, y, reach)
     if wi and (t == nil or wt.d < t.d) then
@@ -578,7 +496,7 @@ local function exitTarget(z, x, y)
 end
 
 local function checkGuide(z, x, y)
-    if not module.settings.entrances or IsSwimming() then
+    if not module.settings.guidance or IsSwimming() then
         guide.index = nil
         return
     end
@@ -650,7 +568,7 @@ end
 local function squareItems(z, x, y, region, cut, previous)
     local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = z }
     if cut then
-        opts.max = module.settings.aroundMax or 4
+        opts.max = ITEMS_MAX
         opts.cameFrom = keyLabel(z, previous)
     end
     local items = logic.aroundItems(region, x, y, opts)
@@ -658,7 +576,7 @@ local function squareItems(z, x, y, region, cut, previous)
     for _, m in ipairs(region.mouths) do
         said[m] = m.class == "way" or nil
     end
-    for _, item in ipairs(logic.approaching(region, x, y, module.settings.approachDistance or 10, said, logic.ITEM_DIRS)) do
+    for _, item in ipairs(logic.approaching(region, x, y, APPROACH, said, logic.ITEM_DIRS)) do
         items[#items + 1] = item
     end
     -- the building entrances on the square; the announcements leave them to the entrance guidance
@@ -679,7 +597,7 @@ local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true,
 
 local function featuresText(z, x, y, place, previous, cut)
     local kind = logic.kind(z, place)
-    if not module.settings.features or IsSwimming() or FEATURE_SKIP[kind] then
+    if IsSwimming() or FEATURE_SKIP[kind] then
         return nil
     end
     local skip = {}
@@ -690,7 +608,7 @@ local function featuresText(z, x, y, place, previous, cut)
     if before then
         skip[before] = true
     end
-    local items = logic.featuresAround(z, x, y, module.settings.featureDistance or 25, FEATURES, skip)
+    local items = logic.featuresAround(z, x, y, FEATURE_REACH, FEATURES, skip)
     if #items == 0 then
         return nil
     end
@@ -701,8 +619,7 @@ end
 -- close; elsewhere where a road is (within 12 yd, off a road; announcements only on stepping off
 -- one) and the cliffs and water near. Returns the text and the square's region (or nil).
 local function spotText(z, x, y, place, value, previous, cut)
-    local directions = module.settings.directions
-    local text = logic.describe(z, value, directions)
+    local text = logic.describe(z, value, true)
     if text == nil then
         return nil
     end
@@ -712,14 +629,14 @@ local function spotText(z, x, y, place, value, previous, cut)
     -- it or facing across it
     if module.settings.turnHints and logic.LANE_KINDS[kind] and not beaconGuides() then
         local facing = GetPlayerFacing()
-        local hint = facing and logic.turnHint(z, x, y, facing, directions and logic.axisOf(z, value) or nil)
+        local hint = facing and logic.turnHint(z, x, y, facing, logic.axisOf(z, value))
         if hint and hint ~= 0 then
             text = text .. ", " .. L[TURN_WORDS[hint]]
         end
     end
     if logic.isAroundPlace(z, value) then
         local region = logic.regionAt(z, x, y)
-        if region and module.settings.around then
+        if region then
             local items = squareItems(z, x, y, region, cut, previous)
             if #items > 0 then
                 text = text .. ", " .. itemsText(z, items)
@@ -740,7 +657,7 @@ local function spotText(z, x, y, place, value, previous, cut)
             d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
         end
         if d then
-            text = logic.describe(z, value, directions, true) .. ", " .. string.format(L["road to the %s"], z.compass[dir])
+            text = logic.describe(z, value, true, true) .. ", " .. string.format(L["road to the %s"], z.compass[dir])
         end
     end
     local near = featuresText(z, x, y, place, previous, cut)
@@ -755,12 +672,12 @@ end
 -- the doorway the player came through left out first.
 local function roomText(z, id, previous, cut)
     local text = logic.describeRoom(z, id, previous)
-    if text == nil or not module.settings.around then
+    if text == nil then
         return text
     end
     local opts = { dirs = logic.ITEM_DIRS }
     if cut then
-        opts.max = module.settings.aroundMax or 4
+        opts.max = ITEMS_MAX
         opts.cameFrom = previous or 0
     end
     local items = logic.roomDoorways(z, id, opts)
@@ -772,14 +689,14 @@ end
 
 -- On the square: a street, water or square not said yet comes within the approach distance.
 local function checkApproach(z, x, y)
-    if region == nil or not module.settings.around then
+    if region == nil then
         return
     end
     local here = logic.regionAt(z, x, y)
     if here and here ~= region and here.value == region.value then
         region, saidMouths = here, {}
     end
-    local items = logic.approaching(region, x, y, module.settings.approachDistance or 10, saidMouths, logic.ITEM_DIRS)
+    local items = logic.approaching(region, x, y, APPROACH, saidMouths, logic.ITEM_DIRS)
     if #items > 0 then
         say(itemsText(z, items), "near", x, y)
     end
@@ -890,7 +807,7 @@ local function checkEdgesAndExits(z, x, y, px, py)
         -- climbing out at an edge warns again
         warnedEdges = {}
         high = {}
-        if not module.settings.waysOut then
+        if not module.settings.guidance then
             return
         end
         local i, t = exitTarget(z, x, y)
@@ -910,7 +827,7 @@ local function checkEdgesAndExits(z, x, y, px, py)
     if moved >= MOVE_MIN then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
-    local look = module.settings.edgeLookAhead or 10
+    local look = EDGE_LOOK
     local aheadNow = {}
     if vx then
         -- every edge in the path counts as still ahead (not only the one said)
@@ -959,9 +876,8 @@ bendFrom = nil           -- where the road led at the last message (radians), ni
 
 checkBend = function(z, x, y)
     local key = outdoor.current
-    local threshold = module.settings.bendHint or 15
     local facing = GetPlayerFacing()
-    if not isRoadKey(key) or not module.settings.turnHints or threshold <= 0 or facing == nil
+    if not isRoadKey(key) or not module.settings.turnHints or facing == nil
         or beaconGuides() then
         bendFrom = nil
         return
@@ -974,7 +890,7 @@ checkBend = function(z, x, y)
         bendFrom = dir
         return
     end
-    local turn, moveOn = logic.bendTurn(bendFrom, dir, facing, threshold)
+    local turn, moveOn = logic.bendTurn(bendFrom, dir, facing, BEND_THRESHOLD)
     if moveOn then
         bendFrom = dir
     end
@@ -1008,8 +924,6 @@ module:hasUpdate(function(self)
         return
     end
     logTrail(x, y)
-    outdoor.distance = self.settings.entryDistance or 8
-    indoor.distance = self.settings.roomDistance or 3
     local isIndoors = IsIndoors()
     if isIndoors ~= wasIndoors then
         forgetPlace()
@@ -1046,10 +960,7 @@ module:hasUpdate(function(self)
             for _, m in ipairs(square.mouths) do
                 saidMouths[m] = m.class == "way" or nil
             end
-            logic.approaching(square, x, y, self.settings.approachDistance or 10, saidMouths)
-        elseif logic.kind(z, place) == "open land" and not self.settings.announceOpenLand then
-            logEntry("quiet", text, x, y, { walked = round1(outdoor.walked or 0) })
-            return
+            logic.approaching(square, x, y, APPROACH, saidMouths)
         end
         say(text, "place", x, y, outdoor.walked)
     elseif region and outdoor.current == logic.placeOf(region.value) then
@@ -1158,9 +1069,11 @@ function module:describeAround()
         -- a spot the data has no place for (a gap in the map) says so, as a room does
         text = spotText(z, x, y, place, value, nil, false) or L["place unknown"]
         local i, t
-        if IsSwimming() then
+        if not self.settings.guidance then
+            i = nil
+        elseif IsSwimming() then
             i, t = exitTarget(z, x, y)
-        elseif self.settings.entrances then
+        else
             i, t = footTarget(z, x, y)
         end
         if i then
