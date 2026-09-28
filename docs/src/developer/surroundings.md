@@ -1,8 +1,8 @@
 # Surroundings (WoW: Forever)
 
 The surroundings module (`camelot/surroundings/`) describes where the player walks from map
-data prepared offline. The data comes from the separate **WowVision_Surroundings** addon,
-generated from the client's map files by the wv-surroundings tools (`tools/export.py`), one
+data prepared offline. The data comes from the separate **WowVision_Surroundings** addon
+(its own repository, [JeanStiletto/WowVision_Surroundings](https://github.com/JeanStiletto/WowVision_Surroundings)), generated from the client's map files by the wv-surroundings tools (`tools/export.py`), one
 Lua file per zone. The module reads `WowVisionSurroundingsData.zones` and unpacks a zone only
 while the player is in it.
 

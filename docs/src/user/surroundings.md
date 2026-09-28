@@ -6,6 +6,13 @@ the roads and streets, the rooms of buildings, drop edges, and what you bump int
 surroundings are silent. The data currently covers Elwynn Forest with Stormwind, Dun Morogh
 with Ironforge, and Tirisfal Glades with Undercity.
 
+To install the data, download
+[WowVision_Surroundings.zip](https://github.com/JeanStiletto/WowVision_Surroundings/releases/latest/download/WowVision_Surroundings.zip),
+the latest release of the
+[WowVision_Surroundings repository](https://github.com/JeanStiletto/WowVision_Surroundings),
+and extract it into the WoW: Forever client's addons folder, so the files sit in
+`World of Warcraft/_classic_beta_/Interface/AddOns/WowVision_Surroundings`.
+
 Announcements made while walking are spoken by the game's voice 0, not by your speech voice:
 a screen reader would cut its own speech off at every key press.
 

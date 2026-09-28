@@ -612,7 +612,8 @@ module:registerCommand({
         local x, y, _z, map = UnitPosition("player")
         local parts = {}
         if #zones() == 0 then
-            parts[#parts + 1] = "No surroundings data loaded; is the WowVision_Surroundings addon enabled?"
+            parts[#parts + 1] = "No surroundings data loaded; is the WowVision_Surroundings addon installed and enabled? "
+                .. "It is at github.com/JeanStiletto/WowVision_Surroundings"
         elseif x == nil then
             parts[#parts + 1] = "No position here"
         else
