@@ -115,21 +115,26 @@ outdoor.distanceFor = function(key)
     end
 end
 
--- The walk log: every announcement with what `/wv surr` would say there, plus a position trail,
--- in the data addon's SavedVariables (WowVisionSurroundingsLog), so walks can be compared with the
--- data offline after a /reload or logout.
+-- The walk log (/wv surr log on): every announcement with what `/wv surr` would say there, plus a
+-- position trail, kept in WowVisionDump.surroundings, so walks can be compared with the data
+-- offline after a /reload or logout (the walklog tools of wv-surroundings). Off until switched
+-- on, then on until switched off.
 local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 4
 local trailX, trailY = nil, nil
 local sessionLogged = false
 
 local function logStore()
-    local log = WowVisionSurroundingsLog
-    if type(log) ~= "table" then
-        return nil
+    WowVisionDump = WowVisionDump or {}
+    if type(WowVisionDump.surroundings) ~= "table" then
+        WowVisionDump.surroundings = { entries = {}, trail = {} }
     end
-    log.entries = log.entries or {}
-    log.trail = log.trail or {}
-    return log
+    return WowVisionDump.surroundings
+end
+
+-- The log while it is switched on, else nil.
+local function activeLog()
+    local log = WowVisionDump and WowVisionDump.surroundings
+    return type(log) == "table" and log.on and log or nil
 end
 
 local function trim(list, max)
@@ -164,7 +169,7 @@ end
 -- text}, where the player was (the data's cell and its text, the room candidates indoors, the high
 -- pieces the player was on) and the facing in degrees (0 = north, counter-clockwise).
 local function logEntry(kind, text, x, y, extra)
-    local log = logStore()
+    local log = activeLog()
     if log == nil then
         return
     end
@@ -205,7 +210,7 @@ local function logTrail(x, y)
     if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
         return
     end
-    local log = logStore()
+    local log = activeLog()
     if log == nil then
         return
     end
@@ -523,7 +528,7 @@ module:hasUpdate(function(self)
     if x == nil then
         return
     end
-    if not sessionLogged then
+    if not sessionLogged and activeLog() then
         sessionLogged = true
         logEntry("session", GetRealmName() .. ", " .. UnitName("player"), x, y)
     end
@@ -565,14 +570,15 @@ module:hasUpdate(function(self)
     checkBend(z, x, y)
 end)
 
--- /wv surr log [count]: the last announcements; /wv surr log clear empties the log.
+-- /wv surr log on|off switches the walk log; /wv surr log [count] says the last entries;
+-- /wv surr log clear empties it.
 local function speakLog(args)
     local log = logStore()
-    if log == nil then
-        WowVision:speak("No surroundings log; is the WowVision_Surroundings addon enabled?")
+    if args == "on" or args == "off" then
+        log.on = args == "on" or nil
+        WowVision:speak(log.on and "Surroundings log on" or "Surroundings log off")
         return
-    end
-    if args == "clear" then
+    elseif args == "clear" then
         log.entries, log.trail = {}, {}
         trailX, trailY = nil, nil
         WowVision:speak("Surroundings log cleared")
@@ -587,14 +593,14 @@ local function speakLog(args)
     for _, line in ipairs(parts) do
         print(line)
     end
-    WowVision:speak(string.format("%d log entries, %d trail points. ", #log.entries, #log.trail)
+    WowVision:speak(string.format("Log %s, %d entries, %d trail points. ", log.on and "on" or "off", #log.entries, #log.trail)
         .. table.concat(parts, ". "))
 end
 
 -- /wv surr: what the module knows here, spoken and printed.
 module:registerCommand({
     name = "surr",
-    description = "Surroundings: speak the current place or room and the data state; log [count|clear]; around",
+    description = "Surroundings: speak the current place or room and the data state; log on|off|clear|[count]; around",
     func = function(args)
         local sub, rest = (args or ""):match("^(%S*)%s*(.*)$")
         if sub == "log" then
