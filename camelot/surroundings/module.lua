@@ -72,31 +72,19 @@ settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads 
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
 
+-- Announcements made while walking speak with game voice 0, not the player's speech voice: with
+-- an NVDA SAPI voice there, the screen reader cuts its speech off at every key press.
 local alert = module:addAlert({ key = "place", label = L["Surroundings Announcements"] })
-local placeTTS = alert:addOutput({
+alert:addOutput({
     type = "TTS",
     key = "tts",
     label = L["TTS Alert"],
+    voice = 0,
     buildMessage = function(self, message)
         return message.text
     end,
 })
 settings:addRef("place", alert.parameters)
-
--- Announcements made while walking speak with game voice 0, not the player's speech voice: with
--- an NVDA SAPI voice there, the screen reader cuts its speech off at every key press (walking).
--- Same as the minimap scanner's walking announcements.
-local WALK_VOICE = 0
-
-function placeTTS:onFire(message)
-    local text = message.text
-    if text == nil then
-        return
-    end
-    local speech = WowVision.base.speech
-    local volume = math.max(0, math.min(100, speech.settings.speechVolume or 100))
-    C_VoiceChat.SpeakText(WALK_VOICE, WowVision.ttsCacheBust.bust(text), speech.settings.speechRate, volume, false)
-end
 
 local CHECK_INTERVAL = 0.2 -- seconds between two looks at the position
 -- Distances in yards, times in seconds
@@ -112,6 +100,7 @@ local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-wal
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
 local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
+local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (it stops while disabled)
 local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
 local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
@@ -325,8 +314,7 @@ end
 -- A beacon (a route or a straight line) leads the way: the guidance to entrances and street
 -- beginnings and the turn hints on roads and streets stay quiet (setting beaconQuiet).
 local function beaconGuides()
-    local maps = WowVision.base.navigation.maps
-    return module.settings.beaconQuiet and maps ~= nil and maps.path ~= nil
+    return module.settings.beaconQuiet and WowVision.base.navigation.maps:isGuiding()
 end
 
 -- The facing for turn hints, or nil when they are off.
@@ -446,7 +434,7 @@ local function checkApproach(z, x, y)
 end
 
 -- Naming what the player bumps into: when they push against something (the wall detection's
--- "blocked", held for a moment), the object in the way they push (a barrel, a cart, a fence), or
+-- "blocked", held for a moment; nothing while wall detection is disabled), the object in the way they push (a barrel, a cart, a fence), or
 -- the wall of the building ahead ("wall of auction house"), or indoors a wall. Once per bump; the
 -- same thing again only after moving freely for a moment.
 
@@ -483,12 +471,8 @@ local function checkBump(z, x, y, px, py, isIndoors)
         return
     end
     local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
-    local speed = GetUnitSpeed("player")
-    if WowVision.isSecret(speed) then
-        speed = nil
-    end
-    local severity = WowVision.movement:isTranslating() and WowVision.stuckMath.severity(moved, speed, dt) or nil
-    if severity ~= 1 then
+    local walls = WowVision.base.navigation.walls
+    if walls.severity ~= 1 or now - walls.severityAt > BUMP_FRESH then
         bump.ticks = 0
         if moved > 0.2 then
             bump.free = bump.free + dt

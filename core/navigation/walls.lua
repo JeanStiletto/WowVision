@@ -36,6 +36,10 @@ local settings = module:hasSettings()
 settings:addRef("stuck", alert.parameters)
 
 local cadence = stuckMath.newCadence(3)
+
+-- The last graded severity (1 = blocked; nil while moving freely or not judged) and when, for
+-- other modules: the surroundings name what the player is blocked by.
+module.severity, module.severityAt = nil, 0
 local lastCheck = 0
 local lastX, lastY = nil, nil
 local wasTranslating = false
@@ -70,11 +74,13 @@ module:hasUpdate(function(self)
             speed = nil
         end
         local severity = stuckMath.severity(actual, speed, dt)
+        self.severity, self.severityAt = severity, now
         local sound = cadence:sample(severity)
         if sound ~= nil then
             self:fireAlert("stuck", { action = "stuck" .. sound })
         end
     else
+        self.severity, self.severityAt = nil, now
         cadence:sample(nil)
     end
 
