@@ -68,6 +68,7 @@ T["turn slightly right"] = true
 T["Turn Hints at Gentle Road Bends (degrees, 0 = off)"] = true
 T["wall"] = true
 T["wall of %s"] = true
+T["Quieter While a Beacon Guides"] = true
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -154,6 +155,8 @@ settings:add({
     min = 0,
     max = 45,
 })
+-- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
+settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
 settings:add({ key = "waysOut", type = "Bool", label = L["Announce Ways Out of the Water"], default = true })
 settings:add({
     key = "roomDistance",
@@ -425,6 +428,13 @@ local function say(text, kind, x, y, walked, extra)
     logEntry(kind, text, x, y, extra)
 end
 
+-- A beacon (a route or a straight line) leads the way: the guidance to entrances and street
+-- beginnings and the turn hints on roads and streets stay quiet (setting beaconQuiet).
+local function beaconGuides()
+    local maps = WowVision.base.navigation.maps
+    return module.settings.beaconQuiet and maps ~= nil and maps.path ~= nil
+end
+
 -- The outdoor place key and value at a position (while swimming: the water under a bridge, or
 -- the city canal under the streets).
 local function outdoorValue(z, x, y)
@@ -453,14 +463,17 @@ end
 -- from the direction to it. `t`: {name, nameFormat or nameWord (else the name as it is), short,
 -- at (or atText, already worded), atName, through (compass index), throughWord ("in to the %s"),
 -- d, dir, x, y}.
+local function targetName(t, named)
+    return named and t.name and (t.nameFormat and string.format(L[t.nameFormat], t.name)
+        or t.nameWord and L[t.nameWord] or t.name) or L[t.short]
+end
+
 local function guideText(z, t, named, at)
     local parts = {}
     if at then
         parts[1] = named and t.name and string.format(L[t.atName], t.name) or t.atText or L[t.at]
     else
-        local name = named and t.name and (t.nameFormat and string.format(L[t.nameFormat], t.name)
-            or t.nameWord and L[t.nameWord] or t.name)
-        parts[1] = name or L[t.short]
+        parts[1] = targetName(t, named)
         parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), z.compass[t.dir])
     end
     -- the way through: on the first naming, only when it goes another way than the direction to the
@@ -475,9 +488,17 @@ end
 -- way out of the water while swimming): said with distance and direction; again when the
 -- direction has turned (32 degrees off the last said one, after 2 s), and once at it. The name
 -- and the way through only until another target is named: then "entrance, 6 to the north".
--- `i`: the target's key, unique among the targets of one guide.
-local function guideTo(z, g, i, t, x, y, kind)
+-- `i`: the target's key, unique among the targets of one guide. `brief` (a beacon leads): only
+-- that the target is there and its name, once, no distance, direction or "at".
+local function guideTo(z, g, i, t, x, y, kind, brief)
     local now = GetTime()
+    if brief then
+        if g.index ~= i then
+            say(targetName(t, true), kind, x, y)
+            g.index, g.dir, g.at, g.time, g.named = i, t.dir, false, now, i
+        end
+        return
+    end
     local named = g.named ~= i
     if t.d <= ENTRANCE_AT then
         if not (g.index == i and g.at) then
@@ -554,12 +575,17 @@ local function checkGuide(z, x, y)
         guide.index = nil
         return
     end
+    -- a beacon starting or ending: the nearest target is said anew in the other manner, by name
+    local brief = beaconGuides()
+    if brief ~= guide.brief then
+        guide.brief, guide.index, guide.named = brief, nil, nil
+    end
     local i, t = footTarget(z, x, y)
     if i == nil then
         guide.index = nil
         return
     end
-    guideTo(z, guide, i, t, x, y, t.kind)
+    guideTo(z, guide, i, t, x, y, t.kind, brief)
 end
 
 -- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
@@ -677,7 +703,7 @@ local function spotText(z, x, y, place, value, previous, cut)
     -- on a road, street or walk: which way to turn to face along it, only where the words cannot
     -- tell (the facing points the compass way the said direction does); nothing when already along
     -- it or facing across it
-    if module.settings.turnHints and logic.LANE_KINDS[kind] then
+    if module.settings.turnHints and logic.LANE_KINDS[kind] and not beaconGuides() then
         local facing = GetPlayerFacing()
         local hint = facing and logic.turnHint(z, x, y, facing, directions and logic.axisOf(z, value) or nil)
         if hint and hint ~= 0 then
@@ -928,7 +954,8 @@ checkBend = function(z, x, y)
     local key = outdoor.current
     local threshold = module.settings.bendHint or 15
     local facing = GetPlayerFacing()
-    if not isRoadKey(key) or not module.settings.turnHints or threshold <= 0 or facing == nil then
+    if not isRoadKey(key) or not module.settings.turnHints or threshold <= 0 or facing == nil
+        or beaconGuides() then
         bendFrom = nil
         return
     end
