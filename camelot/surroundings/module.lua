@@ -61,8 +61,6 @@ local module = WowVision.base.navigation:createModule("surroundings")
 local L = module.L
 module:setLabel(L["Surroundings"])
 
-local CHECK_INTERVAL = 0.2
-
 local settings = module:hasSettings()
 settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"], default = true })
 -- guidance on foot to building entrances and to where streets begin on a square, and while
@@ -73,17 +71,6 @@ settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads 
 -- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
-
--- Distances and counts, in yards unless said otherwise
-local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
-local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
-local ENTRY_INDOORS = 3 -- ... inside a room
-local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
-local GUIDE_REACH = 8 -- entrances and street beginnings are guided to from this close
-local ITEMS_MAX = 4 -- things said at most on entering a square or a room
-local APPROACH = 10 -- on a square, a street, water or drop not said yet is said this close
-local FEATURE_REACH = 25 -- cliffs and water said with an outdoor place
-local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 
 local alert = module:addAlert({ key = "place", label = L["Surroundings Announcements"] })
 local placeTTS = alert:addOutput({
@@ -111,22 +98,47 @@ function placeTTS:onFire(message)
     C_VoiceChat.SpeakText(WALK_VOICE, WowVision.ttsCacheBust.bust(text), speech.settings.speechRate, volume, false)
 end
 
-local zone = nil                 -- the zone data the player is in (unpacked)
+local CHECK_INTERVAL = 0.2 -- seconds between two looks at the position
+-- Distances in yards, times in seconds
+local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
+local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
+local ENTRY_INDOORS = 3 -- ... inside a room
+local EDGE_REACH = 3 -- a drop edge this close is warned about
+local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
+local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
+local EDGE_REPEAT = 1 -- the same edge warning is not said again within this
+local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead along
+local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-walk this long
+local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
+local GUIDE_REPEAT = 2 -- at least between two guiding announcements
+local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
+local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
+local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
+local BEND_LOOK = 10 -- where a road leads is taken this far ahead
+local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
+
+-- What the module knows about where the player is
+local zone = nil -- the zone data the player is in (unpacked)
 local outdoor = logic.newEntry(ENTRY_OUTDOORS)
 local indoor = logic.newEntry(ENTRY_INDOORS)
+local laneDecided = false -- a centre line decided the last outdoor value (see distanceFor)
 local wasIndoors = nil
 local lastCheck = 0
-local lastRoom = nil             -- the last announced room, for the interior name
-local room = nil                 -- the room the player is in as far as known (switches at once)
-local lastX, lastY = nil, nil    -- the previous position, for walking through doorways
-local warnedEdges = {}           -- drop edges in reach and warned about (again after stepping out of reach)
-local bendFrom, checkBend        -- gentle road bends (see checkBend)
-local lastEdgeText, edgeAt = nil, 0  -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
-local waterGuide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- ways out of the water, as guide
-local high = {}                  -- the high floor pieces (wall-walks, bridge decks) the player is on
-local outAt = nil                -- when the player last came out of a building
-local region = nil               -- the square the player is on (announced), for what comes close
-local saidMouths = {}            -- its streets, water and the like already said on this visit
+local lastX, lastY = nil, nil -- the previous position, for walking through doorways
+local room = nil -- the room the player is in as far as known (switches at once)
+local lastRoom = nil -- the last announced room, for the interior name
+local high = {} -- the high floor pieces (wall-walks, bridge decks) the player is on
+local outAt = nil -- when the player last came out of a building
+local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
+local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
+local region = nil -- the square the player is on (announced), for what comes close
+local saidMouths = {} -- its streets, water and the like already said on this visit
+local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
+-- Guidance: the target last said, the direction said, whether it was "at" it, when, and the
+-- target last said by name
+local guide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- on foot
+local waterGuide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
+local bump = { ticks = 0, key = nil, free = 0, time = nil }
 
 -- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
 -- The place or room there is then said at once.
@@ -139,83 +151,35 @@ local function forgetPlace()
     bendFrom = nil
 end
 
-local BUMP_TICKS = 2             -- checks in a row hard against something (0.4 s) before naming it
-local BUMP_FREE = 1.0            -- seconds moving freely before the same thing is named again
-local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
-local MOVE_MIN = 0.3             -- yd moved in one check (0.2 s) that give a direction to look ahead
-local EDGE_REARM = 0.5           -- yd beyond the reach before the same edge warns again (not on position noise)
-local EXIT_REACH = 25            -- yd to a way out of the water that is announced while swimming
-local ENTRANCE_AT = 3            -- yd from an entrance's centre that count as "at the entrance"
-local ENTRANCE_TURN = 32          -- degrees off the last said direction before a new one is said
-local ENTRANCE_REPEAT = 2        -- seconds at least between two guiding announcements
-local CAME_OUT = 3               -- seconds after coming out of a building that it can lead onto a wall-walk
-local EDGE_REPEAT = 1            -- second in which the same edge warning is not said again
-
--- Guidance on foot: within the guidance distance the nearest target (a building entrance, or
--- where a street begins on a square) is said with distance and direction; again whenever the
--- direction turns (so turning toward it can be followed), and once at the target itself. Its
--- name only the first time: until another target is named, "entrance, 8 to the west".
-local guide = { index = nil, dir = nil, at = false, time = 0, named = nil }   -- named: the target last said by name
-
--- Roads, bridges, forks and city streets are narrow (about 9 to 14 yd including junctions): with the
--- outdoor distance a road crossed straight across would never be announced.
--- A road's key is its whole value (road and direction piece), so a bend is a new place like any
--- other; other places are keyed by the place alone.
-local NARROW = { road = true, bridge = true, fork = true, crossing = true, street = true }
-local ROADS = { road = true, fork = true, crossing = true }
-local ROAD_SIDE_REACH = 12       -- yd; leaving a road says where it is within this
-
--- Keys of road pieces ("r<value>"); canal pieces are keyed "c<value>".
-local function isRoadKey(key)
-    return type(key) == "string" and key:sub(1, 1) == "r"
-end
-
--- A key of a way with centre lines (road, fork, crossing, city street or walk); `bridge`: bridges
--- count too (one stays on the way coming off one)
+-- A way with centre lines (road, fork, crossing, city street or walk); with `bridge` also a bridge
+-- (one stays on the way coming off one).
 local function isWay(key, bridge)
-    if isRoadKey(key) then
-        return true
-    end
-    local kind = type(key) == "number" and zone and logic.kind(zone, key)
+    local kind = logic.kind(zone, logic.keyPlace(key))
     return logic.LANE_KINDS[kind] or (bridge and kind == "bridge") or false
 end
-
--- Whether a centre line decided the last outdoor value: stepping onto or off the way then counts
--- at once (the lane's enter and leave distances already keep it from flickering).
-local laneDecided = false
 
 outdoor.distanceFor = function(key)
     if key == nil then
         return nil
     end
+    -- stepping onto or off a way counts at once where its centre line decided (the line's enter
+    -- and leave distances already keep it from flickering)
     if laneDecided and isWay(key) ~= isWay(outdoor.current) then
         return 0
     end
     -- from one road piece onto the next (a new direction): at once, so the bend is heard before
     -- walking straight on carries the player off the road
-    if isRoadKey(key) and isRoadKey(outdoor.current) then
+    if logic.isRoadKey(key) and logic.isRoadKey(outdoor.current) then
         return 0
     end
-    if isRoadKey(key) or (type(key) == "number" and zone and NARROW[logic.kind(zone, key)]) then
+    if logic.NARROW[logic.kind(zone, logic.keyPlace(key))] then
         return ENTRY_NARROW
     end
 end
 
-local function outdoorKey(z, place, value)
-    local kind = place and logic.kind(z, place)
-    -- a canal is keyed with its direction like a road: a bend is a new place
-    if kind == "canal" then
-        return "c" .. value
-    end
-    if kind == "road" then
-        return "r" .. value
-    end
-    return place
-end
-
--- Log: every announcement (and every place entered but not said) with what `/wv surr` would say,
--- plus a position trail, in the data addon's SavedVariables (WowVisionSurroundingsLog), so walks
--- can be compared with the data offline after a /reload or logout.
+-- The walk log: every announcement with what `/wv surr` would say there, plus a position trail,
+-- in the data addon's SavedVariables (WowVisionSurroundingsLog), so walks can be compared with the
+-- data offline after a /reload or logout.
 local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 4
 local trailX, trailY = nil, nil
 local sessionLogged = false
@@ -245,10 +209,22 @@ local function round1(v)
     return math.floor(v * 10 + 0.5) / 10
 end
 
-local roomCandidateNames
+local function facingDegrees()
+    local facing = GetPlayerFacing()
+    return facing and math.floor(math.deg(facing) + 0.5)
+end
 
--- One log entry: {date, kind ("place", "room", "session", "zone", "surr", ...), text} and
--- the state here.
+local function roomCandidateNames(z, x, y)
+    local names = {}
+    for _, id in ipairs(logic.roomCandidates(z, x, y)) do
+        names[#names + 1] = logic.describeRoom(z, id, nil)
+    end
+    return table.concat(names, "; ")
+end
+
+-- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", ...),
+-- text}, where the player was (the data's cell and its text, the room candidates indoors, the high
+-- pieces the player was on) and the facing in degrees (0 = north, counter-clockwise).
 local function logEntry(kind, text, x, y, extra)
     local log = logStore()
     if log == nil then
@@ -258,7 +234,7 @@ local function logEntry(kind, text, x, y, extra)
     if x then
         e.x, e.y = round1(x), round1(y)
     end
-    if zone and zone._rows and x then
+    if zone and x then
         local value, r, c = logic.valueAt(zone, x, y)
         e.zone, e.r, e.c = zone.key, r, c
         e.cell = logic.describe(zone, value, true)
@@ -268,20 +244,15 @@ local function logEntry(kind, text, x, y, extra)
             e.room = room and logic.describeRoom(zone, room, nil) or nil
         end
     end
-    if IsSwimming() then
-        e.swimming = true
-    end
-    local facing = GetPlayerFacing()
-    if facing then
-        e.facing = math.floor(math.deg(facing) + 0.5)   -- degrees, 0 = north, counter-clockwise
-    end
+    e.swimming = IsSwimming() or nil
+    e.facing = facingDegrees()
     local on = {}
     for piece in pairs(high) do
         on[#on + 1] = piece
     end
     if #on > 0 then
         table.sort(on)
-        e.high = table.concat(on, " ")   -- the high floor pieces the player was on
+        e.high = table.concat(on, " ")
     end
     for k, v in pairs(extra or {}) do
         e[k] = v
@@ -291,7 +262,7 @@ local function logEntry(kind, text, x, y, extra)
 end
 
 -- A trail point every few yards: "time x y", plus i (indoors), s (swimming), g (ghost) and f with
--- the facing in degrees (0 = north, counter-clockwise), as one token ("isf270").
+-- the facing in degrees, as one token ("isf270").
 local function logTrail(x, y)
     if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
         return
@@ -301,9 +272,9 @@ local function logTrail(x, y)
         return
     end
     trailX, trailY = x, y
-    local facing = GetPlayerFacing()
+    local facing = facingDegrees()
     local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "") .. (UnitIsGhost("player") and "g" or "")
-        .. (facing and ("f" .. math.floor(math.deg(facing) + 0.5)) or "")
+        .. (facing and ("f" .. facing) or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
@@ -329,9 +300,7 @@ local function findZone(x, y, map)
             logic.pack(zone)
         end
         if found then
-            logic.unpack(found)
-            -- the data's words in the client's language (German, French; English stays)
-            logic.localize(found, GetLocale())
+            logic.unpack(found, GetLocale())
         end
         zone = found
         if found then
@@ -339,7 +308,7 @@ local function findZone(x, y, map)
         end
         forgetPlace()
         -- the targets are numbered per zone
-        guide.index, guide.named, waterGuide.index, waterGuide.named = nil, nil, nil, nil
+        guide.key, guide.named, waterGuide.key, waterGuide.named = nil, nil, nil, nil
     end
     return zone
 end
@@ -360,345 +329,119 @@ local function beaconGuides()
     return module.settings.beaconQuiet and maps ~= nil and maps.path ~= nil
 end
 
--- The outdoor place key and value at a position (while swimming: the water under a bridge, or
--- the city canal under the streets).
-local function outdoorValue(z, x, y)
-    local value, r, c = logic.valueAt(z, x, y)
-    laneDecided = false
-    if IsSwimming() then
-        local under = logic.underBridge(z, r, c)
-        if under then
-            return logic.placeOf(under), under
-        end
+-- The facing for turn hints, or nil when they are off.
+local function turnFacing()
+    if module.settings.turnHints and not beaconGuides() then
+        return GetPlayerFacing()
     end
-    if value == 0 then
-        return nil, 0
-    end
-    -- near a centre line of a road or street the line decides whether the player is on it
-    value, laneDecided = logic.laneValue(z, x, y, value, isWay(outdoor.current, true))
-    return logic.placeOf(value), value
 end
 
--- Warnings that do not wait for the entry distance: a drop edge ahead on a dock, bridge or wall
--- (on foot), and the nearest way out of city water (swimming).
--- Guidance targets. One helper says them all (building entrances, where streets begin on a
--- square, ways out of the water), so every kind follows the same rules.
--- The text for a guidance target: its name (or the short word), distance and direction, and the
--- way through it (into the building, out of the water, on along the street) when that differs
--- from the direction to it. `t`: {name, nameFormat or nameWord (else the name as it is), short,
--- at (or atText, already worded), atName, through (compass index), throughWord ("in to the %s"),
--- d, dir, x, y}.
-local function targetName(t, named)
-    return named and t.name and (t.nameFormat and string.format(L[t.nameFormat], t.name)
-        or t.nameWord and L[t.nameWord] or t.name) or L[t.short]
-end
-
-local function guideText(z, t, named, at)
-    local parts = {}
-    if at then
-        parts[1] = named and t.name and string.format(L[t.atName], t.name) or t.atText or L[t.at]
-    else
-        parts[1] = targetName(t, named)
-        parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), z.compass[t.dir])
-    end
-    -- the way through: on the first naming, only when it goes another way than the direction to the
-    -- target ("entrance, 6 to the northeast" goes in northeast); at the target itself always
-    if t.through and (at or (named and t.through ~= t.dir)) then
-        parts[#parts + 1] = string.format(L[t.throughWord], z.compass[t.through])
-    end
-    return table.concat(parts, ", ")
-end
-
--- Guidance to the nearest target within reach (on foot an entrance or a street's beginning, a
--- way out of the water while swimming): said with distance and direction; again when the
--- direction has turned (32 degrees off the last said one, after 2 s), and once at it. The name
--- and the way through only until another target is named: then "entrance, 6 to the north".
--- `i`: the target's key, unique among the targets of one guide. `brief` (a beacon leads): only
--- that the target is there and its name, once, no distance, direction or "at".
-local function guideTo(z, g, i, t, x, y, kind, brief)
+-- Guidance to the nearest target within reach (on foot an entrance or a street's beginning, a way
+-- out of the water while swimming): said with distance and direction; again when the direction
+-- has turned (GUIDE_TURN degrees off the last said one, after GUIDE_REPEAT), and once at it. The
+-- name and the way through only until another target is named: then "entrance, 6 to the north".
+-- `brief` (a beacon leads): only that the target is there and its name, once.
+local function guideTo(z, g, t, x, y, brief)
     local now = GetTime()
     if brief then
-        if g.index ~= i then
-            say(targetName(t, true), kind, x, y)
-            g.index, g.dir, g.at, g.time, g.named = i, t.dir, false, now, i
+        if g.key ~= t.key then
+            say(t.name, t.kind, x, y)
+            g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
         end
         return
     end
-    local named = g.named ~= i
-    if t.d <= ENTRANCE_AT then
-        if not (g.index == i and g.at) then
-            say(guideText(z, t, named, true), kind, x, y)
-            g.index, g.dir, g.at, g.time, g.named = i, t.dir, true, now, i
+    local named = g.named ~= t.key
+    if t.d <= logic.GUIDE_AT then
+        if not (g.key == t.key and g.at) then
+            say(logic.guideText(z, t, named, true), t.kind, x, y)
+            g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, true, now, t.key
         end
         return
     end
-    local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > ENTRANCE_TURN
-    if g.index ~= i or (turned and now - g.time >= ENTRANCE_REPEAT) or (g.at and t.d > ENTRANCE_AT + 2) then
-        say(guideText(z, t, named, false), kind, x, y)
-        g.index, g.dir, g.at, g.time, g.named = i, t.dir, false, now, i
+    local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > GUIDE_TURN
+    if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + 2) then
+        say(logic.guideText(z, t, named, false), t.kind, x, y)
+        g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
     end
-end
-
-local function entranceTarget(z, x, y, reach)
-    local i, d, dir = logic.nearestEntrance(z, x, y, reach)
-    if i == nil then
-        return nil
-    end
-    local e = logic.entrances(z)[i]
-    return "e" .. i, {
-        name = e.text, nameFormat = "entrance of %s", short = "entrance", at = "at the entrance",
-        atName = "at the entrance of %s", through = e.inDir, throughWord = "in to the %s",
-        d = d, dir = dir, x = e.x, y = e.y, kind = "entrance",
-    }
-end
-
--- Where a street (road, bridge, canal walk) begins on the square the player is on; streets that
--- run along the square's side are no target (see logic.wayBeginnings).
-local function beginningTarget(z, x, y, reach)
-    local square = logic.regionAt(z, x, y) or region
-    if square == nil then
-        return nil
-    end
-    local i, d, dir, b = logic.nearestBeginning(z, square, x, y, reach)
-    if i == nil then
-        return nil
-    end
-    return "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), {
-        name = b.label, short = b.kind, atText = string.format(L["at the %s"], L[b.kind]),
-        atName = "at the %s", through = b.onward, throughWord = "on to the %s",
-        d = d, dir = dir, x = b.x, y = b.y, kind = "way",
-    }
-end
-
--- The guidance target on foot: the nearest entrance or street beginning within the guidance
--- distance.
-local function footTarget(z, x, y)
-    local reach = GUIDE_REACH
-    local i, t = entranceTarget(z, x, y, reach)
-    local wi, wt = beginningTarget(z, x, y, reach)
-    if wi and (t == nil or wt.d < t.d) then
-        return wi, wt
-    end
-    return i, t
-end
-
-local function exitTarget(z, x, y)
-    local i, d, dir, out = logic.nearestExit(z, x, y, EXIT_REACH)
-    if i == nil then
-        return nil
-    end
-    local k = (i - 1) * 4 + 1
-    return i, {
-        name = true, nameWord = "way out of the water", short = "way out", at = "at the way out",
-        atName = "at the way out", through = out, throughWord = "out to the %s",
-        d = d, dir = dir, x = z.exits[k], y = z.exits[k + 1],
-    }
 end
 
 local function checkGuide(z, x, y)
-    if not module.settings.guidance or IsSwimming() then
-        guide.index = nil
+    if not module.settings.guidance then
+        guide.key = nil
         return
     end
     -- a beacon starting or ending: the nearest target is said anew in the other manner, by name
     local brief = beaconGuides()
     if brief ~= guide.brief then
-        guide.brief, guide.index, guide.named = brief, nil, nil
+        guide.brief, guide.key, guide.named = brief, nil, nil
     end
-    local i, t = footTarget(z, x, y)
-    if i == nil then
-        guide.index = nil
+    local t = logic.footTarget(z, x, y, region)
+    if t == nil then
+        guide.key = nil
         return
     end
-    guideTo(z, guide, i, t, x, y, t.kind, brief)
+    guideTo(z, guide, t, x, y, brief)
 end
 
--- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
-local WORDS = {
-    water = "water", drop = "cliff edge", canal = "canal", out = "way out",
-    ["cliff edge"] = "cliff edge", ["rock wall"] = "rock wall",
-}
-
-local function joinWords(words)
-    local text = words[#words]
-    for i = #words - 1, 1, -1 do
-        text = i == #words - 1 and string.format(L["%s and %s"], words[i], text) or words[i] .. ", " .. text
+-- While swimming: the nearest way out of the water; climbing out at an edge warns again.
+local function checkWater(z, x, y)
+    warnedEdges, high = {}, {}
+    local t = module.settings.guidance and logic.exitTarget(z, x, y)
+    if t then
+        guideTo(z, waterGuide, t, x, y)
+    else
+        waterGuide.key = nil
     end
-    return text
 end
 
-local function itemsText(z, items)
-    local parts = {}
-    for _, item in ipairs(items) do
-        local name = item.label
-        if WORDS[item.class] then
-            name = L[WORDS[item.class]]
-        elseif item.class == "entrance" then
-            name = string.format(L["entrance of %s"], item.label)
-        end
-        if #item.dirs == 0 then
-            parts[#parts + 1] = string.format(L["%s here"], name)
-        else
-            local words = {}
-            for _, dir in ipairs(item.dirs) do
-                words[#words + 1] = z.compass[dir]
-            end
-            parts[#parts + 1] = string.format(L["%s to the %s"], name, joinWords(words))
-        end
+-- Drop edges: the one within reach ahead in the view first, else one in the path with its
+-- distance. An edge warns again after the player is out of its reach and it is no longer in the
+-- path; edges of a wall-walk or a deck high over the ground only while the player is up there.
+local function checkEdges(z, x, y, px, py)
+    logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+    -- the way the player moves (not the facing: strafing and walking back count too)
+    local vx, vy = nil, nil
+    local moved = px and math.sqrt((x - px) ^ 2 + (y - py) ^ 2) or 0
+    if moved >= MOVE_MIN then
+        vx, vy = (x - px) / moved, (y - py) / moved
     end
-    return table.concat(parts, ", ")
-end
-
--- The label of an outdoor key's place (roads are keyed "r<value>").
-local function keyLabel(z, key)
-    if type(key) == "string" then
-        key = logic.placeOf(tonumber(key:sub(2)) or 0)
+    local inPath = {}
+    if vx then
+        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, high, nil, inPath)
     end
-    local p = key and z.places[key]
-    return p and p[2]
-end
-
--- One description of a spot, the same for the announcements and the describe key: what is said
--- depends only on where the player stands and the fixed map, never on how they got there. The
--- announcements (`cut`) may only leave things out: what was just said (the way the player came,
--- `previous`: the outdoor key before) and more than the setting's count.
-
--- A square's exits (streets, roads, squares that lead on; nearest first) and the water, canals
--- and cliff edges within the approach distance.
-local function squareItems(z, x, y, region, cut, previous)
-    local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = z }
-    if cut then
-        opts.max = ITEMS_MAX
-        opts.cameFrom = keyLabel(z, previous)
-    end
-    local items = logic.aroundItems(region, x, y, opts)
-    local said = {}
-    for _, m in ipairs(region.mouths) do
-        said[m] = m.class == "way" or nil
-    end
-    for _, item in ipairs(logic.approaching(region, x, y, APPROACH, said, logic.ITEM_DIRS)) do
-        items[#items + 1] = item
-    end
-    -- the building entrances on the square; the announcements leave them to the entrance guidance
-    if not cut then
-        for _, item in ipairs(logic.aroundItems(region, x, y, { dirs = logic.ITEM_DIRS, classes = { entrance = true } })) do
-            items[#items + 1] = item
+    for i in pairs(warnedEdges) do
+        if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
+            warnedEdges[i] = nil
         end
     end
-    return items
-end
-
--- Cliffs and water near an outdoor place: "forest, cliff edge to the west and north". Not on
--- roads (they come often), not what the place itself is; announcements also leave out what the
--- player just left (the shore behind them).
-local TURN_WORDS = { [-1] = "turn slightly right", [1] = "turn slightly left" }
-local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
-local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
-
-local function featuresText(z, x, y, place, previous, cut)
-    local kind = logic.kind(z, place)
-    if IsSwimming() or FEATURE_SKIP[kind] then
-        return nil
+    if not module.settings.dropEdges then
+        return
     end
-    local skip = {}
-    if FEATURES[kind] then
-        skip[FEATURES[kind]] = true
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
+    local along = nil
+    if i == nil and vx then
+        i, along = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, high, warnedEdges)
     end
-    local before = cut and type(previous) == "number" and FEATURES[logic.kind(z, previous)]
-    if before then
-        skip[before] = true
-    end
-    local items = logic.featuresAround(z, x, y, FEATURE_REACH, FEATURES, skip)
-    if #items == 0 then
-        return nil
-    end
-    return itemsText(z, items)
-end
-
--- The outdoor spot: the place, its direction and nearest road; on a square its exits and what is
--- close; elsewhere where a road is (within 12 yd, off a road; announcements only on stepping off
--- one) and the cliffs and water near. Returns the text and the square's region (or nil).
-local function spotText(z, x, y, place, value, previous, cut)
-    local text = logic.describe(z, value, true)
-    if text == nil then
-        return nil
-    end
-    local kind = logic.kind(z, place)
-    -- on a road, street or walk: which way to turn to face along it, only where the words cannot
-    -- tell (the facing points the compass way the said direction does); nothing when already along
-    -- it or facing across it
-    if module.settings.turnHints and logic.LANE_KINDS[kind] and not beaconGuides() then
-        local facing = GetPlayerFacing()
-        local hint = facing and logic.turnHint(z, x, y, facing, logic.axisOf(z, value))
-        if hint and hint ~= 0 then
-            text = text .. ", " .. L[TURN_WORDS[hint]]
+    if i then
+        local text = logic.edgeText(z, i, along)
+        local now = GetTime()
+        if text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
+            say(text, "edge", x, y)
+            lastEdgeText, edgeAt = text, now
         end
+        warnedEdges[i] = true
     end
-    if logic.isAroundPlace(z, value) then
-        local region = logic.regionAt(z, x, y)
-        if region then
-            local items = squareItems(z, x, y, region, cut, previous)
-            if #items > 0 then
-                text = text .. ", " .. itemsText(z, items)
-            end
-        end
-        return text, region
-    end
-    local wasRoad = isRoadKey(previous) or (type(previous) == "number" and ROADS[logic.kind(z, previous)])
-    if not ROADS[kind] and (wasRoad or not cut) then
-        -- where the road is, to step back onto it (instead of the place's stored nearest road,
-        -- which may be another one)
-        -- toward its centre line where it has one: across the road, so it does not flicker
-        local d, dir
-        local ld, _i, lx, ly = logic.nearestLane(z, x, y, ROAD_SIDE_REACH, ROADS)
-        if ld then
-            d, dir = ld, logic.compassIndex(lx - x, ly - y)
-        else
-            d, dir = logic.nearestOfKinds(z, x, y, ROADS, ROAD_SIDE_REACH)
-        end
-        if d then
-            text = logic.describe(z, value, true, true) .. ", " .. string.format(L["road to the %s"], z.compass[dir])
-        end
-    end
-    local near = featuresText(z, x, y, place, previous, cut)
-    if near then
-        text = text .. ", " .. near
-    end
-    return text, nil
-end
-
--- A room: its name (with the building's when it changes) and its doorways, each with the fixed
--- direction one passes through it leaving the room; announcements at most the setting's count,
--- the doorway the player came through left out first.
-local function roomText(z, id, previous, cut)
-    local text = logic.describeRoom(z, id, previous)
-    if text == nil then
-        return text
-    end
-    local opts = { dirs = logic.ITEM_DIRS }
-    if cut then
-        opts.max = ITEMS_MAX
-        opts.cameFrom = previous or 0
-    end
-    local items = logic.roomDoorways(z, id, opts)
-    if #items > 0 then
-        text = text .. ", " .. itemsText(z, items)
-    end
-    return text
 end
 
 -- On the square: a street, water or square not said yet comes within the approach distance.
 local function checkApproach(z, x, y)
-    if region == nil then
-        return
-    end
     local here = logic.regionAt(z, x, y)
     if here and here ~= region and here.value == region.value then
         region, saidMouths = here, {}
     end
-    local items = logic.approaching(region, x, y, APPROACH, saidMouths, logic.ITEM_DIRS)
-    if #items > 0 then
-        say(itemsText(z, items), "near", x, y)
+    local text = logic.approachText(z, region, x, y, saidMouths)
+    if text then
+        say(text, "near", x, y)
     end
 end
 
@@ -706,12 +449,18 @@ end
 -- "blocked", held for a moment), the object in the way they push (a barrel, a cart, a fence), or
 -- the wall of the building ahead ("wall of auction house"), or indoors a wall. Once per bump; the
 -- same thing again only after moving freely for a moment.
-local bump = { ticks = 0, key = nil, free = 0, time = nil }
 
+-- The movement keys held (f forward, b back, l and r strafe, a autorun), for the log.
+local function movementKeys(flags)
+    return (flags.moveForward and "f" or "") .. (flags.moveBackward and "b" or "")
+        .. (flags.strafeLeft and "l" or "") .. (flags.strafeRight and "r" or "") .. (flags.autorun and "a" or "")
+end
+
+-- The way the player pushes from the movement keys held and the facing, as a unit vector.
 local function pushDirection()
     local facing = GetPlayerFacing()
-    local flags = WowVision.movement and WowVision.movement.flags
-    if facing == nil or flags == nil then
+    local flags = WowVision.movement.flags
+    if facing == nil then
         return nil
     end
     local ahead = ((flags.moveForward or flags.autorun) and 1 or 0) - (flags.moveBackward and 1 or 0)
@@ -735,11 +484,10 @@ local function checkBump(z, x, y, px, py, isIndoors)
     end
     local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
     local speed = GetUnitSpeed("player")
-    if WowVision.isSecret and WowVision.isSecret(speed) then
+    if WowVision.isSecret(speed) then
         speed = nil
     end
-    local translating = WowVision.movement and WowVision.movement:isTranslating()
-    local severity = translating and WowVision.stuckMath.severity(moved, speed, dt) or nil
+    local severity = WowVision.movement:isTranslating() and WowVision.stuckMath.severity(moved, speed, dt) or nil
     if severity ~= 1 then
         bump.ticks = 0
         if moved > 0.2 then
@@ -759,126 +507,35 @@ local function checkBump(z, x, y, px, py, isIndoors)
     if vx == nil then
         return
     end
-    local i = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, isIndoors and room or 0)
+    local o = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, isIndoors and room or 0)
     local text, key
-    if i then
-        text, key = logic.objectName(z, i), i
+    if o then
+        text, key = o.name, o
     elseif isIndoors then
         text, key = L["wall"], "wall"
     else
-        local owner = logic.wallOwner(z, x, y, vx, vy, 2.5)
+        local owner = logic.wallOwner(z, x, y, vx, vy, WALL_REACH)
         if owner then
             text, key = string.format(L["wall of %s"], owner), owner
         end
     end
     if text and key ~= bump.key then
-        -- the movement keys held (f forward, b back, l and r strafe, a autorun): with the facing in
-        -- the entry, the way the player pushed
-        local flags = WowVision.movement.flags
-        local keys = (flags.moveForward and "f" or "") .. (flags.moveBackward and "b" or "")
-            .. (flags.strafeLeft and "l" or "") .. (flags.strafeRight and "r" or "") .. (flags.autorun and "a" or "")
-        say(text, "bump", x, y, nil, { keys = keys })
+        say(text, "bump", x, y, nil, { keys = movementKeys(WowVision.movement.flags) })
     end
     bump.key = key or bump.key
 end
 
--- The direction first, then the drop ("southeast, drop into canal"): the drop already says it is
--- an edge.
-local function edgeText(z, e, ahead)
-    local word = z.compass[e[2]]
-    -- e[4]: 1 into water, 2 into a city canal, 0 a plain drop
-    if ahead then
-        local yards = math.max(1, math.floor(ahead + 0.5))
-        if e[4] == 2 then
-            return string.format(L["%s in %d yards, drop into canal"], word, yards)
-        end
-        return e[4] == 1 and string.format(L["%s in %d yards, drop into water"], word, yards)
-            or string.format(L["%s in %d yards, drop %d yards"], word, yards, e[3])
-    end
-    if e[4] == 2 then
-        return string.format(L["%s, drop into canal"], word)
-    end
-    return e[4] == 1 and string.format(L["%s, drop into water"], word)
-        or string.format(L["%s, drop %d yards"], word, e[3])
-end
-
-local function checkEdgesAndExits(z, x, y, px, py)
-    if IsSwimming() then
-        -- climbing out at an edge warns again
-        warnedEdges = {}
-        high = {}
-        if not module.settings.guidance then
-            return
-        end
-        local i, t = exitTarget(z, x, y)
-        if i then
-            guideTo(z, waterGuide, i, t, x, y, "exit")
-        else
-            waterGuide.index = nil
-        end
-        return
-    end
-    waterGuide.index = nil
-    -- edges of a wall-walk or a deck high over the ground warn only while the player is up there
-    logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
-    -- the way the player moves (not the facing: strafing and walking back count too)
-    local vx, vy = nil, nil
-    local moved = px and math.sqrt((x - px) ^ 2 + (y - py) ^ 2) or 0
-    if moved >= MOVE_MIN then
-        vx, vy = (x - px) / moved, (y - py) / moved
-    end
-    local look = EDGE_LOOK
-    local aheadNow = {}
-    if vx then
-        -- every edge in the path counts as still ahead (not only the one said)
-        local skip = {}
-        while true do
-            local i = logic.edgeAhead(z, x, y, vx, vy, look, high, skip)
-            if i == nil then
-                break
-            end
-            aheadNow[i], skip[i] = true, true
-        end
-    end
-    -- an edge warns again after the player is out of its reach and it is no longer in the path
-    for i in pairs(warnedEdges) do
-        if not aheadNow[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
-            warnedEdges[i] = nil
-        end
-    end
-    if not module.settings.dropEdges then
-        return
-    end
-    -- within reach: the one ahead in the view first; else an edge in the path, with its distance
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
-    local along = nil
-    if i == nil and vx then
-        i, along = logic.edgeAhead(z, x, y, vx, vy, look, high, warnedEdges)
-    end
-    if i then
-        local text = edgeText(z, z.edges[i], along)
-        local now = GetTime()
-        if text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
-            say(text, "edge", x, y)
-            lastEdgeText, edgeAt = text, now
-        end
-        warnedEdges[i] = true
-    end
-end
-
--- Gentle bends: on a road piece, once the road ahead has turned the setting's degrees from where
+-- Gentle bends: on a road piece, once the road ahead has turned BEND_THRESHOLD degrees from where
 -- it led at the last announcement or hint but keeps its direction words (a new direction is an
--- announcement of its own), which way to turn, unless the player faces that way already. Where the
--- road leads comes from its centre line, not from the player's steps, so drifting or turning on
--- the spot says nothing.
-local BEND_LOOK = 10     -- yd along the road ahead
-bendFrom = nil           -- where the road led at the last message (radians), nil: take it anew
+-- announcement of its own), which way to turn, unless the player faces that way already. Where
+-- the road leads comes from its centre line, not from the player's steps, so drifting or turning
+-- on the spot says nothing.
+local TURN_WORDS = { [-1] = "turn slightly right", [1] = "turn slightly left" }
 
-checkBend = function(z, x, y)
+local function checkBend(z, x, y)
     local key = outdoor.current
-    local facing = GetPlayerFacing()
-    if not isRoadKey(key) or not module.settings.turnHints or facing == nil
-        or beaconGuides() then
+    local facing = turnFacing()
+    if not logic.isRoadKey(key) or facing == nil then
         bendFrom = nil
         return
     end
@@ -896,6 +553,24 @@ checkBend = function(z, x, y)
     end
     if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 then
         say(L[TURN_WORDS[turn]], "bend", x, y)
+    end
+end
+
+-- Outdoors: the place, announced after the entry distance; on a square what comes close.
+local function checkPlace(z, x, y)
+    local value
+    value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
+    local previous = outdoor.current
+    if outdoor:update(logic.outdoorKey(z, value), x, y) then
+        local text, square, said = logic.spotText(z, x, y, value, previous,
+            { cut = true, facing = turnFacing(), swimming = IsSwimming() })
+        -- on a square: what was said now (its exits, what is close) is not said again on coming close
+        region, saidMouths = square, said or {}
+        bendFrom = nil
+        say(text, "place", x, y, outdoor.walked)
+    elseif region and outdoor.current == logic.placeOf(region.value) then
+        -- also from the square's edge (a step onto the street beside it does not leave it)
+        checkApproach(z, x, y)
     end
 end
 
@@ -939,44 +614,23 @@ module:hasUpdate(function(self)
             room = found
         end
         if indoor:update(room, x, y) then
-            say(roomText(z, room, lastRoom, true), "room", x, y, indoor.walked)
+            say(logic.roomText(z, room, lastRoom, true), "room", x, y, indoor.walked)
             lastRoom = room
         end
         return
     end
     lastRoom = nil
-    checkEdgesAndExits(z, x, y, px, py)
-    checkGuide(z, x, y)
-    local place, value = outdoorValue(z, x, y)
-    local previous = outdoor.current
-    if outdoor:update(outdoorKey(z, place, value), x, y) then
-        local text, square = spotText(z, x, y, place, value, previous, true)
-        region = nil
-        bendFrom = nil
-        if square then
-            -- on the square: what was said now (its exits, what is close) is not said again on
-            -- coming close
-            region, saidMouths = square, {}
-            for _, m in ipairs(square.mouths) do
-                saidMouths[m] = m.class == "way" or nil
-            end
-            logic.approaching(square, x, y, APPROACH, saidMouths)
-        end
-        say(text, "place", x, y, outdoor.walked)
-    elseif region and outdoor.current == logic.placeOf(region.value) then
-        -- also from the square's edge (a step onto the street beside it does not leave it)
-        checkApproach(z, x, y)
+    if IsSwimming() then
+        guide.key = nil
+        checkWater(z, x, y)
+    else
+        waterGuide.key = nil
+        checkEdges(z, x, y, px, py)
+        checkGuide(z, x, y)
     end
+    checkPlace(z, x, y)
     checkBend(z, x, y)
 end)
-
-roomCandidateNames = function(z, x, y)
-    local names = {}
-    for _, id in ipairs(logic.roomCandidates(z, x, y)) do
-        names[#names + 1] = logic.describeRoom(z, id, nil)
-    end
-    return table.concat(names, "; ")
-end
 
 -- /wv surr log [count]: the last announcements; /wv surr log clear empties the log.
 local function speakLog(args)
@@ -1032,10 +686,9 @@ module:registerCommand({
                 local value, r, c = logic.valueAt(z, x, y)
                 parts[#parts + 1] = string.format("Data %s, cell %d %d", z.label or z.key, r, c)
                 parts[#parts + 1] = "Place: " .. (logic.describe(z, value, true) or "none")
-                local ei, ed, edir = logic.nearestEntrance(z, x, y, 100)
-                if ei then
-                    parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s",
-                        logic.entrances(z)[ei].text, math.floor(ed + 0.5), z.compass[edir])
+                local i, d, dir, e = logic.nearestEntrance(z, x, y, 100)
+                if i then
+                    parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s", e.text, math.floor(d + 0.5), z.compass[dir])
                 end
                 if IsIndoors() then
                     local names = roomCandidateNames(z, x, y)
@@ -1052,32 +705,30 @@ module:registerCommand({
     end,
 })
 
--- The describe key: the place or room here as the announcements describe it, without their cuts.
+-- The describe key: the place or room here as the announcements describe it, without their cuts;
+-- plus the guidance target.
 function module:describeAround()
     local x, y, _z, map = UnitPosition("player")
     local z = x and findZone(x, y, map)
     if z == nil then
         return
     end
-    -- the same description the announcements give here, without their cuts; plus the entrance
-    -- guidance
     local text
     if IsIndoors() then
-        text = room and roomText(z, room, nil, false) or L["room unknown"]
+        text = room and logic.roomText(z, room, nil, false) or L["room unknown"]
     else
-        local place, value = outdoorValue(z, x, y)
+        local swimming = IsSwimming()
+        local value = logic.outdoorValue(z, x, y, swimming, isWay(outdoor.current, true))
         -- a spot the data has no place for (a gap in the map) says so, as a room does
-        text = spotText(z, x, y, place, value, nil, false) or L["place unknown"]
-        local i, t
-        if not self.settings.guidance then
-            i = nil
-        elseif IsSwimming() then
-            i, t = exitTarget(z, x, y)
-        else
-            i, t = footTarget(z, x, y)
+        text = logic.spotText(z, x, y, value, nil, { facing = turnFacing(), swimming = swimming }) or L["place unknown"]
+        local t = nil
+        if self.settings.guidance and swimming then
+            t = logic.exitTarget(z, x, y)
+        elseif self.settings.guidance then
+            t = logic.footTarget(z, x, y, region)
         end
-        if i then
-            text = text .. ", " .. guideText(z, t, true, t.d <= ENTRANCE_AT)
+        if t then
+            text = text .. ", " .. logic.guideText(z, t, true, t.d <= logic.GUIDE_AT)
         end
     end
     say(text, "around", x, y)

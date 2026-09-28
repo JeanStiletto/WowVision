@@ -1,0 +1,173 @@
+-- Surroundings logic: drop edges of structures (docks, bridges, walls, towers, the city water
+-- edges), the high floor pieces they may lie on, and the water: what lies under a bridge and the
+-- ways out of city water.
+--
+-- An edge on a high piece (a gate's wall-walk, a bridge deck over a bank) warns only while the
+-- player is up there. There is no height on Forever, so a piece counts from where the player is
+-- seen stepping onto it: from the ground at an access point, out of a building's rooms, or from a
+-- joined piece; walking under it never counts.
+
+local logic = WowVision.surroundingsLogic
+
+-- The water under a bridge cell (or the canal under a city street), as a cell value, or nil.
+function logic.underBridge(zone, r, c)
+    return zone._index.under[r * zone.cols + c]
+end
+
+-- The nearest way out of the water within `reach` yards: index, distance, compass index toward
+-- it, the exit {x, y, width, out (the compass index one climbs out toward, or nil)}.
+function logic.nearestExit(zone, x, y, reach)
+    return logic.nearestPoint(zone._index.exits, x, y, reach)
+end
+
+logic.ACCESS_REACH = 2.5 -- yd from a place where a high piece is stepped onto from the ground
+logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming out of it
+
+-- Updates the set `on` of the high pieces the player is on: a piece is entered by passing where
+-- it is stepped onto from the ground, where it joins a building the player just came out of
+-- (`cameOut`), or from a joined piece the player is on; it is left by walking off its footprint.
+function logic.updateHigh(zone, on, x, y, cameOut)
+    local ix = zone._index
+    local r, c = logic.cellOf(zone, x, y)
+    for piece in pairs(on) do
+        if not logic.nearCell(zone, ix.pieces, r, c, piece) then
+            on[piece] = nil
+        end
+    end
+    local n = math.ceil(logic.ROOMS_REACH / zone.cell)
+    for dr = -n, n do
+        for dc = -n, n do
+            for _, a in ipairs(ix.access[(r + dr) * zone.cols + c + dc] or {}) do
+                local d = math.sqrt((a.x - x) ^ 2 + (a.y - y) ^ 2)
+                if (a.kind == 1 and d <= logic.ACCESS_REACH) or (a.kind == 2 and cameOut and d <= logic.ROOMS_REACH) then
+                    on[a.piece] = true
+                end
+            end
+        end
+    end
+    local added = true
+    while added do
+        added = false
+        local new = {}
+        for piece in pairs(on) do
+            for _, other in ipairs(ix.links[piece] or {}) do
+                if not on[other] and logic.nearCell(zone, ix.pieces, r, c, other) then
+                    new[#new + 1] = other
+                end
+            end
+        end
+        for _, piece in ipairs(new) do
+            on[piece] = true
+            added = true
+        end
+    end
+    return on
+end
+
+function logic.edge(zone, i)
+    return zone._index.edges[i]
+end
+
+-- Whether edge `i` is looked at from (x, y) at all: not skipped, low or on a piece the player is
+-- on (`on`), and its box within `reach` yards.
+local function edgeCounts(e, i, x, y, reach, on, skip)
+    if (skip and skip[i]) or (e.piece ~= 0 and not (on and on[e.piece])) then
+        return false
+    end
+    local b = e.box
+    return x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach
+end
+
+-- Does the player stand in front of the edge point (q), on the structure's side, not beyond it?
+local function inFront(qx, qy, x, y, fx, fy)
+    return (x - qx) * fx + (y - qy) * fy <= 0.5
+end
+
+-- The drop edge to warn about within `reach` yards: one the player stands in front of, on the
+-- structure's floor; the edge index and distance. With `facing`, an edge ahead (within 90 degrees
+-- of the view) wins over a nearer one beside or behind. `on`: the high pieces the player is on
+-- (see updateHigh); `skip`: a set of edge indexes left out (warned already).
+function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
+    local ix = zone._index
+    local r, c = logic.cellOf(zone, x, y)
+    local vx, vy = nil, nil
+    if facing then
+        vx, vy = math.cos(facing), math.sin(facing)
+    end
+    local best, bestD, ahead, aheadD = nil, reach, nil, reach
+    for i, e in ipairs(ix.edges) do
+        if edgeCounts(e, i, x, y, reach, on, skip) then
+            local fx, fy = logic.compassVector(e.facing)
+            local p = e.points
+            for k = 1, #p - 1, 2 do
+                local qx, qy = p[k], p[k + 1]
+                local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
+                if (d <= bestD or d <= aheadD) and inFront(qx, qy, x, y, fx, fy)
+                    and logic.nearCell(zone, ix.struct, r, c, e.struct) then
+                    if d <= bestD then
+                        best, bestD = i, d
+                    end
+                    -- ahead in the view: toward the point, or, standing on it, toward the drop
+                    local dx, dy = qx - x, qy - y
+                    if d < 0.5 then
+                        dx, dy = fx, fy
+                    end
+                    if vx and d <= aheadD and dx * vx + dy * vy >= 0 then
+                        ahead, aheadD = i, d
+                    end
+                end
+            end
+        end
+    end
+    if ahead then
+        return ahead, aheadD
+    end
+    return best, best and bestD
+end
+
+logic.AHEAD_WIDTH = 1.5 -- yd beside the path
+logic.AHEAD_ANGLE = 0.25 -- cosine: the path turns at most 75 degrees away from the drop
+
+-- A drop edge in the player's path: moving along the unit vector (vx, vy), an edge point at most
+-- `look` yards ahead and AHEAD_WIDTH beside the path, whose drop lies ahead (not running along
+-- the edge), with the player on the structure in front of it. Returns the edge index and the
+-- distance along the path. `on` and `skip` as for nearestEdge; `all` (optional): a set that gets
+-- every edge in the path.
+function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
+    local ix = zone._index
+    if look <= 0 then
+        return nil
+    end
+    local r, c = logic.cellOf(zone, x, y)
+    local best, bestAlong = nil, look
+    for i, e in ipairs(ix.edges) do
+        local fx, fy = logic.compassVector(e.facing)
+        if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(e, i, x, y, look, on, skip) then
+            local p = e.points
+            for k = 1, #p - 1, 2 do
+                local dx, dy = p[k] - x, p[k + 1] - y
+                local along = dx * vx + dy * vy
+                if along > 0 and along <= (all and look or bestAlong) and math.abs(dx * vy - dy * vx) <= logic.AHEAD_WIDTH
+                    and inFront(p[k], p[k + 1], x, y, fx, fy) and logic.nearCell(zone, ix.struct, r, c, e.struct) then
+                    if all then
+                        all[i] = true
+                    end
+                    if along <= bestAlong then
+                        best, bestAlong = i, along
+                    end
+                end
+            end
+        end
+    end
+    return best, best and bestAlong
+end
+
+-- Distance from a position to the nearest point of edge `i`.
+function logic.edgeDistance(zone, i, x, y)
+    local p = zone._index.edges[i].points
+    local best = math.huge
+    for k = 1, #p - 1, 2 do
+        best = math.min(best, math.sqrt((x - p[k]) ^ 2 + (y - p[k + 1]) ^ 2))
+    end
+    return best
+end
