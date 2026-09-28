@@ -128,19 +128,25 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
--- Where a road leads ahead: from the nearest point on its centre line toward the point on the line
--- about `look` yards further on, taking the end nearer the facing. The player's own position
+-- Where a road or street leads ahead: from the nearest point on its centre line toward the point
+-- on the line about `look` yards further on, taking the end nearer the facing. The player's own position
 -- across the road does not change it, so walking a little aside is no bend. Returns the direction
 -- (radians like a facing) and the cell value of the line there, or nil (no way with one direction
 -- here; facing across it).
 function logic.wayAhead(zone, x, y, facing, look)
-    local d, lane, px, py = directedLane(zone, x, y)
+    local d, _lane, px, py = directedLane(zone, x, y)
     if d == nil then
         return nil
     end
-    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+    -- the way's direction here from the line about TURN_SPAN yd before and after the nearest point
+    -- (as turnHint), not from the one stretch there: a city street's line has short bits at forks
+    local fx, fy = math.cos(facing), math.sin(facing)
+    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
+    local dx, dy = ax - bx, ay - by
     local n = math.sqrt(dx * dx + dy * dy)
-    if n == 0 then
+    if n < MIN_SPAN then
         return nil
     end
     dx, dy = dx / n, dy / n

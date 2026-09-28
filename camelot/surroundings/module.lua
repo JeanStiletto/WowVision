@@ -107,9 +107,9 @@ outdoor.distanceFor = function(key)
     if laneDecided and isWay(key) ~= isWay(outdoor.current) then
         return 0
     end
-    -- from one road piece onto the next (a new direction): at once, so the bend is heard before
-    -- walking straight on carries the player off the road
-    if logic.isRoadKey(key) and logic.isRoadKey(outdoor.current) then
+    -- from one road or street piece onto the next (a new direction): at once, so the bend is heard
+    -- before walking straight on carries the player off the way
+    if logic.isWayKey(key) and logic.isWayKey(outdoor.current) then
         return 0
     end
     if logic.NARROW[logic.kind(zone, logic.keyPlace(key))] then
@@ -468,11 +468,13 @@ end
 -- it led at the last announcement or hint but keeps its direction words (a new direction is an
 -- announcement of its own), which way to turn, unless the player faces that way already. Where
 -- the road leads comes from its centre line, not from the player's steps, so drifting or turning
--- on the spot says nothing.
+-- on the spot says nothing. Not on city streets: a wide street has several centre lines side by
+-- side (around planters and stalls), and where it leads 10 yd ahead jumps between them (a replay
+-- of the Trade District walk gave 20 hints in 4 minutes); a street's new direction is still said.
 local function checkBend(z, x, y)
     local key = outdoor.current
     local facing = turnFacing()
-    if not logic.isRoadKey(key) or facing == nil then
+    if not logic.isWayKey(key) or not logic.ROADS[logic.kind(z, logic.keyPlace(key))] or facing == nil then
         bendFrom = nil
         return
     end

@@ -21,10 +21,15 @@ a screen reader would cut its own speech off at every key press.
 - **Outdoors**, each place you walk into: "forest", "shore of Crystal Lake, water to the
   north", "Goldshire road, north to south". A place counts only after you have walked a few
   yards inside it (on roads and streets 3 yards, elsewhere 8), so walking along a border does
-  not flicker. Roads and city streets follow their centre lines, so drifting toward the side of
-  a road is heard as leaving it.
+  not flicker. Roads and city streets (canal walks too) follow the same rules: they follow
+  their centre lines, so drifting toward the side of a road or street is heard as leaving it,
+  and a new direction is said at once.
 - Next to a place, the **cliffs and water** near it ("forest, cliff edge to the west"), and
-  after stepping off a road, where the road is ("open land, road to the northwest").
+  after stepping off a road or street, where it is ("open land, road to the northwest";
+  in a city "grass, street to the east"). The terrain between a city's streets is "grass".
+- A **dead end**: the stretch of a street or walk from which the only way on is back the way
+  you came is called "dead end" instead of its street name ("dead end, northwest to
+  southeast").
 - **On a city square**, its ways on ("square of Trade District, street to The Canals to the
   east"), and water, canals and drops as you come close to them.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
@@ -35,9 +40,10 @@ a screen reader would cut its own speech off at every key press.
 - **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. While swimming, the nearest way out of the
-  water.
+  water; one that only leads onto a ledge or into a dead end says so ("way out of the water to
+  a dead end").
 - **Turn hints** on roads and streets: "turn slightly left" when the direction words cannot
-  tell you that you are facing a little off the road, and at gentle bends.
+  tell you that you are facing a little off the way, and at gentle bends of a road.
 - **Bumps**: when wall detection finds you blocked, what you are pushing against ("wagon",
   "wall of auction house", indoors "wall"). This needs the wall detection module enabled.
 

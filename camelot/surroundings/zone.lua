@@ -24,7 +24,10 @@ logic.WAYS = set("street", "square", "hall", "road", "fork", "crossing", "bridge
 logic.LANE_KINDS = set("road", "fork", "crossing", "street", "quay", "canal walk", "slime canal walk",
     "walk along the lava") -- ways with centre lines
 logic.TURN_KINDS = set("road", "street", "quay", "canal walk", "slime canal walk", "walk along the lava") -- ... with one direction
-logic.NARROW = set("road", "bridge", "fork", "crossing", "street") -- counted after a short walk inside
+-- counted after a short walk inside: bridges and every way with a centre line (streets and walks
+-- follow the road rules)
+logic.NARROW = set("road", "bridge", "fork", "crossing", "street", "quay", "canal walk", "slime canal walk",
+    "walk along the lava")
 logic.WATER = set("deep water", "shore")
 logic.DROPS = set("cliff edge")
 
@@ -415,6 +418,12 @@ function logic.unpack(zone, locale)
         local out = list[i + 3]
         ix.exits[#ix.exits + 1] = { x = list[i], y = list[i + 1], width = list[i + 2], out = out ~= 0 and out or nil }
     end
+    -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
+    for _, i in ipairs(zone.deadExits or {}) do
+        if ix.exits[i] then
+            ix.exits[i].dead = true
+        end
+    end
 
     -- objects, in the bucket of every cell their footprint's circle touches
     ix.objects = {}
@@ -524,8 +533,9 @@ function logic.describe(zone, value, withDirection, noNearRoad)
 end
 
 -- Outdoor keys ------------------------------------------------------------------------------------
--- What the entry rule compares outdoors: the place id; a road piece "r<value>" and a canal piece
--- "c<value>" are keyed with their direction, so a bend is a new place like any other.
+-- What the entry rule compares outdoors: the place id; a piece of a way with one direction (a
+-- road, a city street or walk: TURN_KINDS) "r<value>" and a canal piece "c<value>" are keyed with
+-- their direction, so a bend is a new place like any other; streets follow the road rules.
 
 function logic.outdoorKey(zone, value)
     if value == 0 then
@@ -534,13 +544,14 @@ function logic.outdoorKey(zone, value)
     local kind = logic.kindOf(zone, value)
     if kind == "canal" then
         return "c" .. value
-    elseif kind == "road" then
+    elseif logic.TURN_KINDS[kind] then
         return "r" .. value
     end
     return logic.placeOf(value)
 end
 
-function logic.isRoadKey(key)
+-- A key of a way with one direction (a road, street or walk piece).
+function logic.isWayKey(key)
     return type(key) == "string" and key:sub(1, 1) == "r"
 end
 

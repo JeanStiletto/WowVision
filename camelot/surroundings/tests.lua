@@ -710,7 +710,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.outdoorKey(z, 100), 1)
         t:assertEqual(logic.outdoorKey(z, 211), "r211")
         t:assertNil(logic.outdoorKey(z, 0))
-        t:assertEqual(logic.isRoadKey("r211"), true)
+        t:assertEqual(logic.isWayKey("r211"), true)
         t:assertEqual(logic.keyPlace("r211"), 2)
         t:assertEqual(logic.keyLabel(z, "r211"), "Test road")
         t:assertEqual(logic.keyLabel(z, 3), "bridge")
@@ -758,6 +758,29 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.footTarget(z, 20, 5))   -- beyond the guidance reach
         target = logic.exitTarget(z, 95, 30)
         t:assertEqual(logic.guideText(z, target, true, false), "way out of the water, 10 to the east, out to the north")
+    end,
+
+    ["a way out of the water onto floor that joins nothing says it leads to a dead end"] = function(t)
+        local z = newZone()
+        z.deadExits = { 1 }
+        logic.unpack(z)
+        local target = logic.exitTarget(z, 95, 30)
+        t:assertEqual(logic.guideText(z, target, true, false), "way out of the water to a dead end, 10 to the east, out to the north")
+        t:assertEqual(logic.guideText(z, target, false, false), "way out to a dead end, 10 to the east")
+        t:assertEqual(logic.guideText(z, target, false, true), "at the way out to a dead end, out to the north")
+    end,
+
+    ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)
+        local z = newWalkZone()
+        z.places[1] = { "grass", "grass" }
+        logic.unpack(z)
+        t:assertEqual(logic.outdoorKey(z, 211), "r211")
+        t:assertEqual(logic.isWayKey(logic.outdoorKey(z, 211)), true)
+        -- stepped off the walk onto the grass, 11 yd west of its centre line
+        t:assertEqual(logic.spotText(z, 92, 57, 100, "r211", { cut = true }), "grass, street to the east")
+        -- the describe key says it too; an announcement coming from elsewhere does not
+        t:assertEqual(logic.spotText(z, 92, 57, 100, nil, {}), "grass, street to the east")
+        t:assertEqual(logic.spotText(z, 92, 57, 100, nil, { cut = true }), "grass")
     end,
 
     ["a room says its doorways, at most the count, the way the player came left out first"] = function(t)

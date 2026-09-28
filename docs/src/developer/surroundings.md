@@ -54,6 +54,8 @@ Each zone file calls `addon.addZone{...}` with:
   under a street, said while swimming.
 - `exits`: x, y, width, out quadruples: ways out of city water; out is the compass index one
   climbs out toward (0 = unknown).
+- `deadExits`: 1-based indexes into the ways out that lead onto floor joining nothing, or into
+  a dead end (decided offline with the heights; optional).
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
 - `edges`: per drop edge `{structure, facing (compass index of the drop), drop yards, into

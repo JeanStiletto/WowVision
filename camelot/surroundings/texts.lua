@@ -9,7 +9,7 @@ local L = WowVision:getLocale()
 local ITEMS_MAX = 4 -- things said at most on entering a square or a room
 local APPROACH = 10 -- yd; on a square, a street, water or drop not said yet is said this close
 local FEATURE_REACH = 25 -- yd; cliffs and water said with an outdoor place
-local ROAD_SIDE_REACH = 12 -- yd; off a road, where it is is said within this
+local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said within this
 local GUIDE_REACH = 8 -- yd; entrances and street beginnings are guided to from this close
 local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
 logic.GUIDE_AT = 3 -- yd from a target that count as being at it
@@ -20,6 +20,13 @@ local NAMED_CLASSES = { way = true, room = true, entrance = true }
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
 -- places that say no cliffs and water: roads (they come often) and the water itself
 local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
+-- the ways with centre lines that are no road: city streets and walks ("street to the east")
+local STREETS = {}
+for kind in pairs(logic.LANE_KINDS) do
+    if not logic.ROADS[kind] then
+        STREETS[kind] = true
+    end
+end
 
 -- "a", "a and b", "a, b and c"
 function logic.joinWords(words)
@@ -126,16 +133,20 @@ function logic.footTarget(zone, x, y, square)
     return t
 end
 
--- The nearest way out of the water within reach, while swimming.
+-- The nearest way out of the water within reach, while swimming; one onto floor that joins
+-- nothing or into a dead end says so.
 function logic.exitTarget(zone, x, y)
     local i, d, dir, exit = logic.nearestExit(zone, x, y, EXIT_REACH)
     if i == nil then
         return nil
     end
+    local dead = exit.dead
     return {
         key = i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
-        name = L["way out of the water"], short = L["way out"],
-        atName = L["at the way out"], at = L["at the way out"],
+        name = dead and L["way out of the water to a dead end"] or L["way out of the water"],
+        short = dead and L["way out to a dead end"] or L["way out"],
+        atName = dead and L["at the way out to a dead end"] or L["at the way out"],
+        at = dead and L["at the way out to a dead end"] or L["at the way out"],
         through = exit.out, throughFormat = L["out to the %s"],
     }
 end
@@ -206,8 +217,8 @@ end
 
 -- The outdoor spot of a cell value: the place, its direction and nearest road; on a road, street
 -- or walk which way to turn to face along it (with `opts.facing`), only where the words cannot
--- tell; on a square its exits and what is close; elsewhere where a road is (within
--- ROAD_SIDE_REACH, off a road; announcements only on stepping off one) and the cliffs and water
+-- tell; on a square its exits and what is close; elsewhere where a road or street is (within
+-- ROAD_SIDE_REACH, off a way; announcements only on stepping off one) and the cliffs and water
 -- near (not while `opts.swimming`). opts.cut: an announcement (see the top). Returns the text, and
 -- on a square its region and the set of its mouths said now.
 function logic.spotText(zone, x, y, value, previous, opts)
@@ -235,19 +246,26 @@ function logic.spotText(zone, x, y, value, previous, opts)
         end
         return text, region, said
     end
-    local wasRoad = logic.ROADS[logic.kind(zone, logic.keyPlace(previous))]
-    if not logic.ROADS[kind] and (wasRoad or not opts.cut) then
-        -- toward the road's centre line where it has one: across the road, so it does not flicker
-        local d, dir
-        local ld, _lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.ROADS)
+    -- off a way: where the nearest road or street is (the same rule for both; in a city the word
+    -- is street)
+    local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
+    if not logic.LANE_KINDS[kind] and (wasWay or not opts.cut) then
+        -- toward the way's centre line where it has one: across the way, so it does not flicker
+        local d, dir, street
+        local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
-            d, dir = ld, logic.compassIndex(lx - x, ly - y)
+            d, dir, street = ld, logic.compassIndex(lx - x, ly - y), not logic.ROADS[lane.kind]
         else
             d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
+            local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
+            if sd and (d == nil or sd < d) then
+                d, dir, street = sd, sdir, true
+            end
         end
         if d then
             -- instead of the place's stored nearest road, which may be another one
-            text = logic.describe(zone, value, true, true) .. ", " .. string.format(L["road to the %s"], zone.compass[dir])
+            local format = street and L["street to the %s"] or L["road to the %s"]
+            text = logic.describe(zone, value, true, true) .. ", " .. string.format(format, zone.compass[dir])
         end
     end
     local near = not opts.swimming and featuresText(zone, x, y, kind, previous, opts.cut)
