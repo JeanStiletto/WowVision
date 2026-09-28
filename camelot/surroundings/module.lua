@@ -210,6 +210,17 @@ local outAt = nil                -- when the player last came out of a building
 local region = nil               -- the square the player is on (announced), for what comes close
 local saidMouths = {}            -- its streets, water and the like already said on this visit
 
+-- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
+-- The place or room there is then said at once.
+local function forgetPlace()
+    outdoor:reset()
+    indoor:reset()
+    room, lastRoom = nil, nil
+    high, warnedEdges = {}, {}
+    region, saidMouths = nil, {}
+    bendFrom = nil
+end
+
 local BUMP_TICKS = 2             -- checks in a row hard against something (0.4 s) before naming it
 local BUMP_FREE = 1.0            -- seconds moving freely before the same thing is named again
 local EDGE_REACH = 3             -- yd from a drop edge where the warning comes
@@ -408,13 +419,9 @@ local function findZone(x, y, map)
         if found then
             logEntry("zone", found.label or found.key, x, y)
         end
-        outdoor:reset()
-        indoor:reset()
-        lastRoom, room = nil, nil
-        high = {}
-        region = nil
-        warnedEdges = {}
-        guide.named, waterGuide.named = nil, nil
+        forgetPlace()
+        -- the targets are numbered per zone
+        guide.index, guide.named, waterGuide.index, waterGuide.named = nil, nil, nil, nil
     end
     return zone
 end
@@ -439,13 +446,13 @@ end
 -- the city canal under the streets).
 local function outdoorValue(z, x, y)
     local value, r, c = logic.valueAt(z, x, y)
+    laneDecided = false
     if IsSwimming() then
         local under = logic.underBridge(z, r, c)
         if under then
             return logic.placeOf(under), under
         end
     end
-    laneDecided = false
     if value == 0 then
         return nil, 0
     end
@@ -984,10 +991,8 @@ module:hasUpdate(function(self)
     lastCheck = now
     -- a ghost walks back to the body by the same rules; only a flight pauses the announcements
     if UnitOnTaxi("player") then
-        outdoor:reset()
-        indoor:reset()
-        room, lastX = nil, nil
-        high = {}
+        forgetPlace()
+        lastX, lastY = nil, nil
         return
     end
     local x, y, _z, map = UnitPosition("player")
@@ -1007,11 +1012,7 @@ module:hasUpdate(function(self)
     indoor.distance = self.settings.roomDistance or 3
     local isIndoors = IsIndoors()
     if isIndoors ~= wasIndoors then
-        -- going in or out: the new side speaks its place or room at once
-        outdoor:reset()
-        indoor:reset()
-        room = nil
-        high = {}
+        forgetPlace()
         outAt = (wasIndoors and not isIndoors) and now or nil
         wasIndoors = isIndoors
     end
