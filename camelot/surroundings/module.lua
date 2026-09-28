@@ -1,9 +1,9 @@
--- Surroundings (experimental, WoW: Forever): speaks the outdoor place the player enters ("forest",
--- "shore of Crystal Lake, water to the north", "bridge, running east-west") and, indoors, the
--- room ("Lion's Pride Inn, common room"). The data comes from the separate WowVision_Surroundings
--- addon (generated offline from the map files by wv-surroundings); without it the module is
--- silent. A place counts only after the player has moved some yards inside it, so walking along
--- a border does not flicker.
+-- Surroundings (WoW: Forever): describes where the player walks, from the WowVision_Surroundings
+-- data addon (without it the module is silent). Outdoors the place entered ("forest", "shore of
+-- Crystal Lake, water to the north", "road, north to south"), on a square its ways on, indoors
+-- the room and its doorways; drop edges, guidance to entrances, street beginnings and ways out
+-- of the water, turn hints on roads, and what the player bumps into. The logic and the texts are
+-- in the other files of this folder (docs/src/developer/surroundings.md).
 
 local logic = WowVision.surroundingsLogic
 local module = WowVision.base.navigation:createModule("surroundings")
@@ -48,9 +48,11 @@ local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead a
 local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-walk this long
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
+local GUIDE_AWAY = 2 -- beyond "at" a target before it is guided to again
 local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
 local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (it stops while disabled)
 local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
+local BUMP_MOVING = 0.2 -- moved in one look that counts as moving freely
 local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
@@ -60,7 +62,7 @@ local zone = nil -- the zone data the player is in (unpacked)
 local outdoor = logic.newEntry(ENTRY_OUTDOORS)
 local indoor = logic.newEntry(ENTRY_INDOORS)
 local laneDecided = false -- a centre line decided the last outdoor value (see distanceFor)
-local wasIndoors = nil
+local wasIndoors = nil -- indoors at the last look (nil before the first)
 local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
 local room = nil -- the room the player is in as far as known (switches at once)
@@ -301,7 +303,7 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > GUIDE_TURN
-    if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + 2) then
+    if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
         say(logic.guideText(z, t, named, false), t.kind, x, y)
         g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
     end
@@ -387,11 +389,6 @@ local function checkApproach(z, x, y)
     end
 end
 
--- Naming what the player bumps into: when they push against something (the wall detection's
--- "blocked", held for a moment; nothing while wall detection is disabled), the object in the way they push (a barrel, a cart, a fence), or
--- the wall of the building ahead ("wall of auction house"), or indoors a wall. Once per bump; the
--- same thing again only after moving freely for a moment.
-
 -- The movement keys held (f forward, b back, l and r strafe, a autorun), for the log.
 local function movementKeys(flags)
     return (flags.moveForward and "f" or "") .. (flags.moveBackward and "b" or "")
@@ -416,6 +413,10 @@ local function pushDirection()
     return vx / len, vy / len
 end
 
+-- Naming what the player bumps into: when they push against something (the wall detection's
+-- "blocked", held for a moment; nothing while wall detection is disabled), the object in the way
+-- they push (a barrel, a cart, a fence), or the wall of the building ahead ("wall of auction
+-- house"), or indoors a wall. Once per bump; the same thing again only after moving freely.
 local function checkBump(z, x, y, px, py, isIndoors)
     local now = GetTime()
     local dt = bump.time and now - bump.time or nil
@@ -428,7 +429,7 @@ local function checkBump(z, x, y, px, py, isIndoors)
     local walls = WowVision.base.navigation.walls
     if walls.severity ~= 1 or now - walls.severityAt > BUMP_FRESH then
         bump.ticks = 0
-        if moved > 0.2 then
+        if moved > BUMP_MOVING then
             bump.free = bump.free + dt
             if bump.free >= BUMP_FREE then
                 bump.key = nil
@@ -468,8 +469,6 @@ end
 -- announcement of its own), which way to turn, unless the player faces that way already. Where
 -- the road leads comes from its centre line, not from the player's steps, so drifting or turning
 -- on the spot says nothing.
-local TURN_WORDS = { [-1] = "turn slightly right", [1] = "turn slightly left" }
-
 local function checkBend(z, x, y)
     local key = outdoor.current
     local facing = turnFacing()
@@ -490,7 +489,7 @@ local function checkBend(z, x, y)
         bendFrom = dir
     end
     if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 then
-        say(L[TURN_WORDS[turn]], "bend", x, y)
+        say(logic.turnText(turn), "bend", x, y)
     end
 end
 

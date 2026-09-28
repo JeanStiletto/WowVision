@@ -16,7 +16,6 @@ logic.GUIDE_AT = 3 -- yd from a target that count as being at it
 
 -- The names of the item classes that are their own word; the others (ways, rooms) carry a name.
 local NAMED_CLASSES = { way = true, room = true, entrance = true }
-local TURN_WORDS = { [-1] = "turn slightly right", [1] = "turn slightly left" }
 -- the kinds said as cliffs and water near an outdoor place, and their words
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
 -- places that say no cliffs and water: roads (they come often) and the water itself
@@ -72,6 +71,11 @@ function logic.edgeText(zone, i, ahead)
         return string.format(L[texts[2]], word, yards, e.drop)
     end
     return string.format(L[texts[1]], word, e.drop)
+end
+
+-- A turn hint: 1 left, -1 right.
+function logic.turnText(turn)
+    return turn > 0 and L["turn slightly left"] or L["turn slightly right"]
 end
 
 -- Guidance targets -------------------------------------------------------------------------------
@@ -215,7 +219,7 @@ function logic.spotText(zone, x, y, value, previous, opts)
     if opts.facing and logic.LANE_KINDS[kind] then
         local hint = logic.turnHint(zone, x, y, opts.facing, logic.axisOf(zone, value))
         if hint and hint ~= 0 then
-            text = text .. ", " .. L[TURN_WORDS[hint]]
+            text = text .. ", " .. logic.turnText(hint)
         end
     end
     if logic.isAroundPlace(zone, value) then

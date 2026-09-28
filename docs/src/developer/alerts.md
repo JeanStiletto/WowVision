@@ -57,6 +57,11 @@ alert:addOutput({
 })
 ```
 
+With `voice = <index>` the text is spoken by the game with that TTS voice (at the speech
+module's rate and volume) instead of through the speech module, and the interrupt setting is
+not offered. Meant for announcements made while walking: a screen reader cuts its own speech
+off at every key press.
+
 ### Sound
 
 ```lua

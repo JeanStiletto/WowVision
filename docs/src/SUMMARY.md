@@ -12,6 +12,7 @@
 - [Chat](./user/chat.md)
 - [Settings & the WowVision Menu](./user/settings.md)
 - [Commands](./user/commands.md)
+- [Surroundings (WoW: Forever)](./user/surroundings.md)
 
 # Developer Guide
 
@@ -23,3 +24,4 @@
 - [Alerts & Outputs](./developer/alerts.md)
 - [Graph UI Framework](./developer/graph-ui.md)
 - [Chat Links Under Lockdown](./developer/chat-links-lockdown.md)
+- [Surroundings (WoW: Forever)](./developer/surroundings.md)
