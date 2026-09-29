@@ -505,10 +505,11 @@ local function checkBend(z, x, y)
 end
 
 -- On a city street or walk (not a road: there the user turned too early on words said ahead):
--- the next piece's direction AHEAD_LOOK yd before it, once, with the distance ("northeast to
--- southwest in 10 yards"), so there is time to turn where a street ends at the water and goes on
--- to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water). Stepping
--- onto that piece then says nothing more.
+-- the next piece AHEAD_LOOK yd before it, once, said as on entering it ("street to Cathedral
+-- Square, northeast to southwest"; no distance, the user found it spam and stops and turns on
+-- hearing it), so there is time to turn where a street ends at the water and goes on to the side
+-- (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water). Stepping onto that
+-- piece then says nothing more.
 local function checkAhead(z, x, y)
     local key = outdoor.current
     local facing = GetPlayerFacing()
@@ -518,15 +519,14 @@ local function checkAhead(z, x, y)
     if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
         aheadKey = nil
     end
-    local current = tonumber(key:sub(2))
-    local value, yards = logic.pieceAhead(z, x, y, facing, current, logic.AHEAD_LOOK)
+    local value, yards = logic.pieceAhead(z, x, y, facing, tonumber(key:sub(2)), logic.AHEAD_LOOK)
     if value == nil or yards < logic.AHEAD_MIN then
         return
     end
     local nextKey = logic.outdoorKey(z, value)
     if nextKey ~= aheadKey then
         aheadKey, aheadX, aheadY = nextKey, x, y
-        say(logic.aheadText(z, value, current, yards), "ahead", x, y)
+        say(logic.describe(z, value, true), "ahead", x, y)
     end
 end
 
