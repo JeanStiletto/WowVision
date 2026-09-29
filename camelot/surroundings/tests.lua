@@ -782,6 +782,20 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(items[1].label, "square of B")
     end,
 
+    ["a square touching this one beside the street that leads to it is said only as the street"] = function(t)
+        local z = newZone()
+        -- square A on columns 0 to 2; square B on columns 4 and 5 and, rows 0 and 1, on column 3
+        -- too (touching A); a street on column 3, rows 2 and 3, from A to B
+        z.rows = 4
+        z.places = { { "square", "square of A" }, { "square", "square of B" }, { "street", "street to B" } }
+        z.grid = { "100*3,200*3", "100*3,200*3", "100*3,300,200*2", "100*3,300,200*2" }
+        logic.unpack(z)
+        local region = logic.regionAt(z, 85, 45)
+        local items = logic.aroundItems(region, 85, 45, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "street to B")
+    end,
+
     ["on a city walk the next piece is found ahead"] = function(t)
         local z = newWalkZone()
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own

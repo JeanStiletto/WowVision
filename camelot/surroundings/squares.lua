@@ -16,6 +16,9 @@ logic.BEGIN_MAX = 16 -- yd; a way meeting the square along a longer border runs 
 logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where it leads on
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
+-- yd; a neighbouring square whose border lies this close to the opening of a street that leads to
+-- it is that street's connection: only the street is said (see logic.sameWayMouths)
+logic.SAME_WAY = 15
 
 -- Does a cell value belong to a place that says what lies around it?
 function logic.isAroundPlace(zone, value)
@@ -127,7 +130,7 @@ function logic.regionAt(zone, x, y)
     end, cells)
     local region = {
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
-        mouths = findMouths(zone, cells, list),
+        mouths = logic.sameWayMouths(zone, findMouths(zone, cells, list)),
     }
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
@@ -145,6 +148,70 @@ end
 local function labelAtCell(zone, r, c)
     local p = logic.place(zone, logic.placeOf(logic.valueAtCell(zone, r, c)))
     return p and p.label, p and p.kind
+end
+
+-- Does the way behind a mouth reach the place `place` (a place id): the cells of the mouth's
+-- thing joined to it, and the cells beside them. Cached per mouth and place.
+local function wayReaches(zone, mouth, place)
+    mouth.reaches = mouth.reaches or {}
+    if mouth.reaches[place] ~= nil then
+        return mouth.reaches[place]
+    end
+    local found, count = false, 0
+    logic.flood(zone, mouth.cells or {}, function(r, c)
+        if labelAtCell(zone, r, c) == mouth.label then
+            return true
+        end
+        if logic.placeOf(logic.valueAtCell(zone, r, c)) == place then
+            found = true
+        end
+        return false
+    end, function()
+        count = count + 1
+        return found or count > logic.LEADS_MAX
+    end)
+    mouth.reaches[place] = found
+    return found
+end
+
+local function mouthsApart(a, b)
+    local best = math.huge
+    for i = 1, #a.points - 1, 2 do
+        for j = 1, #b.points - 1, 2 do
+            best = math.min(best, math.sqrt((a.points[i] - b.points[j]) ^ 2 + (a.points[i + 1] - b.points[j + 1]) ^ 2))
+        end
+    end
+    return best
+end
+
+-- A square's mouths without the neighbouring squares that touch it within SAME_WAY yd of the
+-- opening of a street (not a square) that leads to them: the street is the connection. On the flat
+-- grid each square reaches a few yards past its floor, so two squares seemed to touch right beside
+-- the street joining them, and both were said in the same direction (user 2026-09-29: "left and
+-- right of the street is already place").
+function logic.sameWayMouths(zone, mouths)
+    local kept = {}
+    for _, m in ipairs(mouths) do
+        local cell = m.class == "way" and m.cells and m.cells[1]
+        local value = cell and logic.valueAtCell(zone, cell[1], cell[2])
+        local same = false
+        if value and logic.SQUARES[logic.kindOf(zone, value)] then
+            local place = logic.placeOf(value)
+            for _, w in ipairs(mouths) do
+                local wc = w ~= m and w.class == "way" and w.cells and w.cells[1]
+                local wv = wc and logic.valueAtCell(zone, wc[1], wc[2])
+                if wv and not logic.SQUARES[logic.kindOf(zone, wv)] and mouthsApart(m, w) <= logic.SAME_WAY
+                    and wayReaches(zone, w, place) then
+                    same = true
+                    break
+                end
+            end
+        end
+        if not same then
+            kept[#kept + 1] = m
+        end
+    end
+    return kept
 end
 
 -- Does the way behind a square's mouth lead on: does the thing (all cells of that name joined to
