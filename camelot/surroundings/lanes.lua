@@ -7,7 +7,9 @@
 local logic = WowVision.surroundingsLogic
 
 local LANE_KEEP = { bridge = true } -- places a lane never replaces
-local BESIDE_STEP, BESIDE_REACH = 2, 12 -- yd; looking outward from the line for what is beside the way
+-- yd; looking outward from the player for what is beside the way (12 announced a square 10 yd away
+-- from the middle of a canal street, Stormwind 2026-09-29)
+local BESIDE_STEP, BESIDE_REACH = 2, 6
 local ROAD_SIDE_CELLS = 3 -- cells searched beside a road for the nearest place that is no road
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
