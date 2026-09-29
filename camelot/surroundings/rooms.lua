@@ -436,6 +436,47 @@ function logic.nearestDoorway(zone, roomId, x, y, reach, skip)
     return best, bestDoor, bx, by, bestDoor.a == roomId and bestDoor.b or bestDoor.a
 end
 
+-- Halls the game calls outdoors (IsIndoors() false, one may mount there): Ironforge's big halls,
+-- almost all of the Undercity. Their rooms carry the UI map one stands on in them (hallMap).
+-- Is `uiMap` (C_Map.GetBestMapForUnit) the map of such a hall in this zone?
+function logic.isHallMap(zone, uiMap)
+    local ix = zone._index
+    if ix.hallMaps == nil then
+        ix.hallMaps, ix.hallRooms = {}, {}
+        for id, room in ipairs(ix.rooms) do
+            if room.hallMap then
+                ix.hallMaps[room.hallMap] = true
+                ix.hallRooms[#ix.hallRooms + 1] = id
+            end
+        end
+    end
+    return uiMap ~= nil and ix.hallMaps[uiMap] == true
+end
+
+-- Is the player in such a hall: its floor within ROOM_SLACK, while the game's map is the hall's.
+-- The game gives no height, but its map does: in the Ironforge halls it is Ironforge's, on the
+-- ground above the Undercity Tirisfal's.
+function logic.inHall(zone, x, y, uiMap)
+    if not logic.isHallMap(zone, uiMap) then
+        return false
+    end
+    local ix = zone._index
+    local margin = logic.ROOM_SLACK
+    for _, id in ipairs(ix.hallRooms) do
+        local room = ix.rooms[id]
+        if room.hallMap == uiMap then
+            local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
+            local b = room.boxes
+            for i = 1, #b - 3, 4 do
+                if vx >= b[i] - margin and vx <= b[i + 2] + margin and vy >= b[i + 1] - margin and vy <= b[i + 3] + margin then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Is the player in the indoor layer: in a room it covers, or, where the room is unknown (stacked
 -- floors), where the layer has a place and every room candidate is covered?
 function logic.inLayer(layer, roomId, x, y)

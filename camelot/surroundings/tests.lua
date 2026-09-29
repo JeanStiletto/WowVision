@@ -615,6 +615,19 @@ testRunner:addSuite("Surroundings", {
         t:assertFalse(logic.sameRoomName(z, 1, 4))             -- another building
     end,
 
+    ["a hall the game calls outdoors counts while the game's map is the hall's"] = function(t)
+        local z = newZone()
+        z.rooms[4].g = 1455   -- the barn: a hall like Ironforge's, on UI map 1455
+        logic.unpack(z)
+        t:assertTrue(logic.isHallMap(z, 1455))
+        t:assertFalse(logic.isHallMap(z, 1426))
+        t:assertFalse(logic.isHallMap(z, nil))
+        t:assertTrue(logic.inHall(z, 35, 5, 1455))
+        t:assertTrue(logic.inHall(z, 41.5, 5, 1455))           -- within the slack
+        t:assertFalse(logic.inHall(z, 35, 5, 1426))            -- the game's map elsewhere: the ground above
+        t:assertFalse(logic.inHall(z, 5, 5, 1455))             -- the inn is no such hall
+    end,
+
     ["a rotated building frame turns world positions into building positions"] = function(t)
         -- a building turned 90 degrees at world (100, 200): m = {{0,-1},{1,0}}, ox = 100, oy = 200
         local frame = { ox = 100, oy = 200, scale = 1, m00 = 0, m01 = -1, m10 = 1, m11 = 0 }

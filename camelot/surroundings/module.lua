@@ -59,6 +59,7 @@ local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 local STOP_REARM = 3 -- walked off every stop before the same stop is said again
+local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
 
 -- What the module knows about where the player is
 local zone = nil -- the zone data the player is in (unpacked)
@@ -90,6 +91,38 @@ local guide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- on 
 local waterGuide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
 local bump = { ticks = 0, key = nil, free = 0, time = nil }
 local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
+-- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
+-- was last near; nil = not in such a hall
+local hallGap = nil
+
+-- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
+-- on the ground above the Undercity Tirisfal's).
+local function gameMap()
+    return C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or nil
+end
+
+-- Is the player in a hall the game calls outdoors (IsIndoors() is false in all of Ironforge's big
+-- halls, user's walk 2026-09-29): its floor here while the game's map is the hall's. Short gaps in
+-- the floor data (HALL_GAP) keep it; leaving the city changes the game's map.
+local function updateHall(z, x, y, px, py)
+    local uiMap = gameMap()
+    if logic.inHall(z, x, y, uiMap) then
+        hallGap = 0
+    elseif hallGap and px and logic.isHallMap(z, uiMap) then
+        hallGap = hallGap + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        if hallGap > HALL_GAP then
+            hallGap = nil
+        end
+    else
+        hallGap = nil
+    end
+    return hallGap ~= nil
+end
+
+-- Indoors: as the game says, or in one of the halls it calls outdoors (as of the last look).
+local function isInside()
+    return IsIndoors() or hallGap ~= nil
+end
 
 -- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
 -- The place or room there is then said at once.
@@ -213,8 +246,9 @@ local function logEntry(kind, text, x, y, extra)
         local value, r, c = logic.valueAt(zone, x, y)
         e.zone, e.r, e.c = zone.key, r, c
         e.cell = logic.describe(zone, value, true)
-        if IsIndoors() then
+        if isInside() then
             e.indoors = true
+            e.hall = hallGap ~= nil or nil
             e.candidates = roomCandidateNames(zone, x, y)
             e.room = room and logic.describeRoom(zone, room, nil) or nil
             local layer = logic.layer(zone)
@@ -240,8 +274,8 @@ local function logEntry(kind, text, x, y, extra)
     log.entries = trim(log.entries, LOG_MAX)
 end
 
--- A trail point every few yards: "time x y", plus i (indoors), s (swimming), g (ghost) and f with
--- the facing in degrees, as one token ("isf270").
+-- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
+-- outdoors), s (swimming), g (ghost) and f with the facing in degrees, as one token ("isf270").
 local function logTrail(x, y)
     if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
         return
@@ -252,7 +286,8 @@ local function logTrail(x, y)
     end
     trailX, trailY = x, y
     local facing = facingDegrees()
-    local flags = (IsIndoors() and "i" or "") .. (IsSwimming() and "s" or "") .. (UnitIsGhost("player") and "g" or "")
+    local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
+        .. (UnitIsGhost("player") and "g" or "")
         .. (facing and ("f" .. facing) or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
@@ -650,15 +685,16 @@ module:hasUpdate(function(self)
     if z == nil then
         return
     end
+    local px, py = lastX, lastY
+    lastX, lastY = x, y
+    local inHall = updateHall(z, x, y, px, py)
     logTrail(x, y)
-    local isIndoors = IsIndoors()
+    local isIndoors = IsIndoors() or inHall
     if isIndoors ~= wasIndoors then
         forgetPlace()
         outAt = (wasIndoors and not isIndoors) and now or nil
         wasIndoors = isIndoors
     end
-    local px, py = lastX, lastY
-    lastX, lastY = x, y
     checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
         local found = logic.resolveRoom(z, x, y, room, px, py)
@@ -796,11 +832,14 @@ module:registerCommand({
                 if i then
                     parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s", e.text, math.floor(d + 0.5), z.compass[dir])
                 end
-                local stop = logic.stopAt(z, x, y, IsIndoors() and roomsHere(z, x, y) or nil)
+                local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
                 if stop then
                     parts[#parts + 1] = "Stop: " .. logic.stopText(z, stop, x, y)
                 end
-                if IsIndoors() then
+                -- the game's own word on inside: IsIndoors, and its map (the halls it calls outdoors)
+                parts[#parts + 1] = string.format("Game: %s, map %s%s", IsIndoors() and "indoors" or "outdoors",
+                    tostring(gameMap()), hallGap and ", in a hall" or "")
+                if isInside() then
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
                     parts[#parts + 1] = "Current room: " .. (room and logic.describeRoom(z, room, nil) or "unknown")
@@ -830,7 +869,7 @@ function module:describeAround()
     end
     local text
     local layer = logic.layer(z)
-    if IsIndoors() and layerMode and layer then
+    if isInside() and layerMode and layer then
         -- a big hall of the indoor layer: as a place outdoors
         local value = logic.outdoorValue(layer, x, y, false, isWay(outdoor.current, true))
         text = logic.spotText(layer, x, y, value, nil, { facing = turnFacing() }) or L["place unknown"]
@@ -838,7 +877,7 @@ function module:describeAround()
         if t then
             text = text .. ", " .. logic.guideText(layer, t, true, t.d <= logic.GUIDE_AT)
         end
-    elseif IsIndoors() then
+    elseif isInside() then
         text = room and logic.roomText(z, room, nil, false, x, y) or L["room unknown"]
         local t = room and self.settings.guidance and logic.roomDoorTarget(z, room, x, y)
         if t then
@@ -860,7 +899,7 @@ function module:describeAround()
         end
     end
     -- where one waits for a ship, zeppelin, lift or tram
-    local stop = logic.stopAt(z, x, y, IsIndoors() and roomsHere(z, x, y) or nil)
+    local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
     if stop then
         text = text .. ", " .. logic.stopText(z, stop, x, y)
     end
