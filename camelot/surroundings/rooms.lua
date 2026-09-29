@@ -368,15 +368,16 @@ function logic.roomDoorways(zone, roomId, opts)
 end
 
 -- The nearest doorway of a big room (isBigRoom) within `reach` yards of the player: distance, the
--- door, its world x and y, the room behind it (0 = outside); or nil.
-function logic.nearestDoorway(zone, roomId, x, y, reach)
+-- door, its world x and y, the room behind it (0 = outside); or nil. `skip` (optional): a door
+-- left out.
+function logic.nearestDoorway(zone, roomId, x, y, reach, skip)
     if not logic.isBigRoom(zone, roomId) then
         return nil
     end
     local best, bestDoor, bx, by = reach, nil, nil, nil
     for _, door in ipairs(zone._index.doorsOf[roomId] or {}) do
         local dx, dy = logic.doorWorld(zone, door)
-        if dx then
+        if dx and door ~= skip then
             local d = math.sqrt((dx - x) ^ 2 + (dy - y) ^ 2)
             if d <= best then
                 best, bestDoor, bx, by = d, door, dx, dy

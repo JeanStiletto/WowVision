@@ -70,6 +70,9 @@ local lastX, lastY = nil, nil -- the previous position, for walking through door
 local room = nil -- the room the player is in as far as known (switches at once)
 local lastRoom = nil -- the last announced room, for the interior name
 local layerMode = false -- in one of the big halls of the indoor layer: its places, not the room
+-- the doorway the player came into the room by, left out of the doorway guidance until they were
+-- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
+local entryRoom, entryDoor, entryAway = nil, nil, false
 local high = {} -- the high floor pieces (wall-walks, bridge decks) the player is on
 local outAt = nil -- when the player last came out of a building
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
@@ -337,7 +340,7 @@ local function guideTo(z, g, t, x, y, brief)
     end
 end
 
-local function checkGuide(z, x, y, roomId)
+local function checkGuide(z, x, y, roomId, skipDoor)
     if not module.settings.guidance then
         guide.key = nil
         return
@@ -350,7 +353,7 @@ local function checkGuide(z, x, y, roomId)
     -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
     local t
     if roomId then
-        t = logic.roomDoorTarget(z, roomId, x, y)
+        t = logic.roomDoorTarget(z, roomId, x, y, skipDoor)
     else
         t = logic.footTarget(z, x, y, region)
     end
@@ -656,12 +659,25 @@ module:hasUpdate(function(self)
             layerMode = false
             forgetWays()
         end
+        if room ~= entryRoom then
+            -- a new room: the doorway just walked through (a big room's, within reach)
+            entryRoom, entryDoor, entryAway = room, nil, false
+            if room then
+                local _d, door = logic.nearestDoorway(z, room, x, y, logic.DOOR_REACH + 1)
+                entryDoor = door
+            end
+        end
         if indoor:update(room, x, y) then
             say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
             lastRoom = room
         end
-        if room then
-            checkGuide(z, x, y, room)
+        -- only a big room guides to its doorways (a small one leaves the entrance guidance as it was)
+        if room and logic.isBigRoom(z, room) then
+            if entryDoor and not entryAway then
+                local dx, dy = logic.doorWorld(z, entryDoor)
+                entryAway = dx == nil or (dx - x) ^ 2 + (dy - y) ^ 2 > logic.GUIDE_REACH ^ 2
+            end
+            checkGuide(z, x, y, room, not entryAway and entryDoor or nil)
         end
         return
     end

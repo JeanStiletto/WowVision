@@ -11,6 +11,7 @@ local APPROACH = 10 -- yd; on a square, a street, water or drop not said yet is 
 local FEATURE_REACH = 25 -- yd; cliffs and water said with an outdoor place
 local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said within this
 local GUIDE_REACH = 8 -- yd; entrances and street beginnings are guided to from this close
+logic.GUIDE_REACH = GUIDE_REACH
 local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
 logic.GUIDE_AT = 3 -- yd from a target that count as being at it
 
@@ -129,9 +130,10 @@ local function entranceTarget(zone, x, y, reach)
 end
 
 -- In a big room (logic.isBigRoom), the nearest of its doorways within reach, as a guidance target:
--- the room behind it by name, the way through it leaving the room.
-function logic.roomDoorTarget(zone, roomId, x, y)
-    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH)
+-- the room behind it by name, the way through it leaving the room. `skip` (optional): a door left
+-- out (the one the player just came in by).
+function logic.roomDoorTarget(zone, roomId, x, y, skip)
+    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH, skip)
     if d == nil then
         return nil
     end
