@@ -586,6 +586,35 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.resolveRoom(z, 50, 50, 1))
     end,
 
+    ["no floor right under the player: a floor within the slack names the room (the tram over its pit)"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        -- the barn's floor ends at x = 40: 1.5 yd beyond it no floor is under the player
+        t:assertEqual(#logic.roomCandidates(z, 41.5, 5), 0)
+        t:assertEqual(logic.resolveRoom(z, 41.5, 5, 1), 4)     -- left the common room's area: the barn
+        t:assertNil(logic.resolveRoom(z, 43, 5, 1))            -- 3 yd off: nothing
+    end,
+
+    ["no floor under the player but still in the current room's area: stay in it"] = function(t)
+        local z = newZone()
+        -- the barn's floor in two pieces with a gap from x 34 to 36; the back room reaches into it
+        z.rooms[4][4] = { 30, 0, 34, 10, 36, 0, 40, 10 }
+        z.rooms[3][4] = { 11, 0, 20, 10, 35, 11, 35.5, 11.5 }
+        logic.unpack(z)
+        t:assertTrue(logic.inRoomArea(z, 4, 35, 5))
+        t:assertEqual(logic.resolveRoom(z, 35, 9.8, 4), 4)     -- the back room's floor is near, the barn's area holds
+        t:assertNil(logic.resolveRoom(z, 35, 9.8, 1))          -- coming from elsewhere: two floors near, unknown
+    end,
+
+    ["rooms differing only by their number are one name"] = function(t)
+        local z = newZone()
+        z.rooms[3][2] = "common room 2"
+        logic.unpack(z)
+        t:assertTrue(logic.sameRoomName(z, 1, 3))              -- common room, common room 2
+        t:assertFalse(logic.sameRoomName(z, 1, 2))             -- common room, upstairs landing
+        t:assertFalse(logic.sameRoomName(z, 1, 4))             -- another building
+    end,
+
     ["a rotated building frame turns world positions into building positions"] = function(t)
         -- a building turned 90 degrees at world (100, 200): m = {{0,-1},{1,0}}, ox = 100, oy = 200
         local frame = { ox = 100, oy = 200, scale = 1, m00 = 0, m01 = -1, m10 = 1, m11 = 0 }

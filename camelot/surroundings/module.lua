@@ -699,7 +699,13 @@ module:hasUpdate(function(self)
             end
         end
         if indoor:update(room, x, y) then
-            say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
+            local text = logic.roomText(z, room, lastRoom, true, x, y)
+            if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
+                -- the next numbered section of the same thing (tram tunnel 6, 7...): only logged
+                logEntry("room", text, x, y, { walked = round1(indoor.walked), same = true })
+            else
+                say(text, "room", x, y, indoor.walked)
+            end
             lastRoom = room
         end
         -- only a big room guides to its doorways (a small one leaves the entrance guidance as it was)

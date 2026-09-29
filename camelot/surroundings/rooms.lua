@@ -91,16 +91,62 @@ function logic.roomCandidates(zone, x, y, margin)
     return found
 end
 
+logic.ROOM_SLACK = 2.0 -- yd; where no floor lies right under the player, a floor this close counts
+
+-- Is the position within a room's area: the box around all its floor pieces (building frame)?
+function logic.inRoomArea(zone, roomId, x, y)
+    local ix = zone._index
+    local room = ix.rooms[roomId]
+    if room == nil then
+        return false
+    end
+    if room.area == nil then
+        local b = room.boxes
+        local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+        for i = 1, #b - 3, 4 do
+            x0, y0 = math.min(x0, b[i]), math.min(y0, b[i + 1])
+            x1, y1 = math.max(x1, b[i + 2]), math.max(y1, b[i + 3])
+        end
+        room.area = { x0, y0, x1, y1 }
+    end
+    local a = room.area
+    local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
+    return vx >= a[1] and vx <= a[3] and vy >= a[2] and vy <= a[4]
+end
+
+-- Do two rooms of one building differ only by their number ("tram tunnel 6", "tram tunnel 7")?
+-- Then walking from one into the other says nothing (user 2026-09-29: only when the name really
+-- changes).
+function logic.sameRoomName(zone, a, b)
+    local rooms = zone._index.rooms
+    local ra, rb = rooms[a], rooms[b]
+    if ra == nil or rb == nil or ra.interior ~= rb.interior then
+        return false
+    end
+    return ra.name:gsub("%s+%d+$", "") == rb.name:gsub("%s+%d+$", "")
+end
+
 -- The room at a position: walking through a doorway of the current room leads into the room
 -- behind it; otherwise the only candidate; or, where floors stack, the current room if it is a
 -- candidate, else the one candidate joined to the current room by a door; else nil (unknown,
--- better quiet than wrong). px, py: the previous position (optional).
+-- better quiet than wrong). Where no floor lies under the player, the floors within ROOM_SLACK are
+-- the candidates (user 2026-09-29: riding the tram over its pit, the tunnel floor runs 1.4 yd to the
+-- side of the car; leaving the station into the tunnel's area is enough). px, py: the previous
+-- position (optional).
 function logic.resolveRoom(zone, x, y, current, px, py)
     local crossed = logic.crossedDoor(zone, current, px, py, x, y)
     if crossed ~= nil then
         return crossed ~= 0 and crossed or nil
     end
     local cands = logic.roomCandidates(zone, x, y)
+    if #cands == 0 then
+        -- still within the area of the room one is in: stay (the tram's underwater tunnel has floor
+        -- under the rail only here and there, the tunnel sections beside it overlap its area)
+        if current ~= nil and logic.inRoomArea(zone, current, x, y) then
+            return current
+        end
+        cands = logic.roomCandidates(zone, x, y, logic.ROOM_SLACK)
+    end
     if #cands == 0 then
         return nil
     end
