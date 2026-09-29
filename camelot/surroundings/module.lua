@@ -62,6 +62,8 @@ local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
 local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
 local PASSED_SAME = 4 -- a guidance target this close to that doorway is that doorway
+local MOAT_NEAR = 8 -- down in a moat the player stays in it while a moat cell is this near
+local MOAT_OUT = 4 -- walking this near a moat's way out takes the player out of it
 
 -- What the module knows about where the player is
 local zone = nil -- the zone data the player is in (unpacked)
@@ -100,6 +102,10 @@ local hallGap = nil
 -- player was once farther than the guidance reach from it (user 2026-09-29: "Ausgang, 6 Meter im
 -- Nordosten" right after going out through it)
 local passed = nil
+-- Down in a moat (Ironforge's Commons): its floor reaches under the walkways beside it, where the
+-- map (no height) has the walkway; so once in it the player stays in it until walking out at its
+-- way out or leaving its area, as on a high piece
+local inMoat = false
 
 -- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
 -- on the ground above the Undercity Tirisfal's).
@@ -140,6 +146,7 @@ local function forgetPlace()
     region, saidMouths = nil, {}
     bendFrom, aheadKey, leftWay = nil, nil, nil
     layerMode = false
+    inMoat = false
 end
 
 -- Forget the place on the ways (outdoors, or the indoor layer's): stepping between a room and the
@@ -410,6 +417,43 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     guideTo(z, guide, t, x, y, brief)
 end
 
+-- The value of the nearest moat cell within `reach` yards of the player, or nil.
+local function moatNear(layer, x, y, reach)
+    local n = math.ceil(reach / layer.cell)
+    local best, bestD = nil, nil
+    for dr = -n, n do
+        for dc = -n, n do
+            local v = logic.valueAt(layer, x + dr * layer.cell, y + dc * layer.cell)
+            if v and v ~= 0 and logic.kind(layer, logic.placeOf(v)) == "moat" then
+                local d = dr * dr + dc * dc
+                if bestD == nil or d < bestD then
+                    best, bestD = v, d
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- Down in a moat? On a moat cell the player is; once in it, still while a moat cell is near,
+-- until walking near its way out. Returns the moat's value while in it.
+local function updateMoat(layer, x, y)
+    local v = logic.valueAt(layer, x, y)
+    if v and v ~= 0 and logic.kind(layer, logic.placeOf(v)) == "moat" then
+        inMoat = true
+        return v
+    end
+    if not inMoat then
+        return nil
+    end
+    local near = moatNear(layer, x, y, MOAT_NEAR)
+    if near == nil or logic.nearestExit(layer, x, y, MOAT_OUT) then
+        inMoat = false
+        return nil
+    end
+    return near
+end
+
 -- Walked through a doorway (the room, the big hall or inside and outside changed, or a doorway of
 -- the room was crossed): the nearest doorway within PASSED_REACH is the one passed.
 local function notePassed(z, x, y)
@@ -479,6 +523,11 @@ local function checkEdges(z, x, y, px, py, rooms)
     local along = nil
     if i == nil and vx then
         i, along = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, warnedEdges)
+    end
+    if i and inMoat and logic.edge(z, i).into == 4 then
+        -- down in the moat: the walkway's edge above is no drop
+        warnedEdges[i] = true
+        i = nil
     end
     if i then
         local text = logic.edgeText(z, i, along)
@@ -669,9 +718,13 @@ local function roomsHere(z, x, y)
 end
 
 -- Outdoors: the place, announced after the entry distance; on a square what comes close.
-local function checkPlace(z, x, y)
+local function checkPlace(z, x, y, forced)
     local value
-    value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
+    if forced then
+        value, laneDecided = forced, false
+    else
+        value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
+    end
     local previous = outdoor.current
     if outdoor:update(logic.outdoorKey(z, value), x, y) then
         leftWay = logic.isWayKey(previous) and previous or nil
@@ -758,8 +811,21 @@ module:hasUpdate(function(self)
                 notePassed(z, x, y)
             end
             lastRoom = room or lastRoom
-            checkGuide(layer, x, y)
-            checkPlace(layer, x, y)
+            local moat = updateMoat(layer, x, y)
+            if moat then
+                -- down in a moat: its way out, as out of a canal (user 2026-09-29)
+                guide.key = nil
+                local t = module.settings.guidance and logic.exitTarget(layer, x, y, true)
+                if t then
+                    guideTo(layer, waterGuide, t, x, y)
+                else
+                    waterGuide.key = nil
+                end
+            else
+                waterGuide.key = nil
+                checkGuide(layer, x, y)
+            end
+            checkPlace(layer, x, y, moat)
             checkAhead(layer, x, y)
             checkStop(z, x, y, px, py, here)
             return

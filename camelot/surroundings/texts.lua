@@ -13,6 +13,7 @@ local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said with
 local GUIDE_REACH = 8 -- yd; entrances and street beginnings are guided to from this close
 logic.GUIDE_REACH = GUIDE_REACH
 local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
+local MOAT_EXIT_REACH = 300 -- yd; a moat's way out, from anywhere down in it (the Commons' moat is a ring)
 logic.GUIDE_AT = 3 -- yd from a target that count as being at it
 
 -- The names of the item classes that are their own word; the others (ways, rooms) carry a name.
@@ -64,12 +65,13 @@ end
 -- A drop edge, short (user 2026-09-29: every word counts in the moment before a fall; distances
 -- are always yards): the direction and what lies below ("southeast, canal"); with `ahead` (yd
 -- along the path) the distance first ("9 southwest, canal"). Per edge's `into`: a plain drop with
--- its depth ("north, drop 12"), water, a city canal, lava (Ironforge).
+-- its depth ("north, drop 12"), water, a city canal, lava (Ironforge), a moat (Ironforge's Commons).
 local EDGE_TEXTS = {
     [0] = { "%s, drop %d", "%d %s, drop %d" },
     [1] = { "%s, water", "%d %s, water" },
     [2] = { "%s, canal", "%d %s, canal" },
     [3] = { "%s, lava", "%d %s, lava" },
+    [4] = { "%s, moat", "%d %s, moat" },
 }
 
 function logic.edgeText(zone, i, ahead)
@@ -174,15 +176,16 @@ end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
 -- nothing or into a dead end says so.
-function logic.exitTarget(zone, x, y)
-    local i, d, dir, exit = logic.nearestExit(zone, x, y, EXIT_REACH)
+function logic.exitTarget(zone, x, y, moat)
+    local i, d, dir, exit = logic.nearestExit(zone, x, y, moat and MOAT_EXIT_REACH or EXIT_REACH)
     if i == nil then
         return nil
     end
     local dead = exit.dead
+    local name = moat and L["way out of the moat"] or L["way out of the water"]
     return {
         key = i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
-        name = dead and L["way out of the water to a dead end"] or L["way out of the water"],
+        name = dead and L["way out of the water to a dead end"] or name,
         short = dead and L["way out to a dead end"] or L["way out"],
         atName = dead and L["at the way out to a dead end"] or L["at the way out"],
         at = dead and L["at the way out to a dead end"] or L["at the way out"],

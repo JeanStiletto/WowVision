@@ -418,6 +418,18 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.nearestExit(z, 95, 60, 25))
     end,
 
+    ["a moat: its edge says moat, its way out is found from anywhere down in it"] = function(t)
+        local z = newZone()
+        z.edges[1][4] = 4   -- the dock's edge now drops into a moat
+        logic.unpack(z)
+        t:assertEqual(logic.edgeText(z, 1), "north, moat")
+        t:assertEqual(logic.edgeText(z, 1, 6.2), "6 north, moat")
+        t:assertNil(logic.exitTarget(z, 95, 60))                       -- as a swimmer: too far
+        local target = logic.exitTarget(z, 95, 60, true)               -- down in the moat: 40 yd away
+        t:assertEqual(target.name, "way out of the moat")
+        t:assertEqual(target.through, 1)
+    end,
+
     ["a drop edge warns only on the structure, in front of the edge"] = function(t)
         local z = newZone()
         logic.unpack(z)

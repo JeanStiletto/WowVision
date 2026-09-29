@@ -541,7 +541,7 @@ function logic.unpackLayer(zone)
         cell = zone.cell, rows = zone.rows, cols = zone.cols, dirs = zone.dirs, compass = zone.compass,
         axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
-        structCells = src.structCells, edges = src.edges, interiors = zone.interiors, rooms = zone.rooms,
+        structCells = src.structCells, edges = src.edges, exits = src.exits, interiors = zone.interiors, rooms = zone.rooms,
         doors = zone.doors, _worded = true, _running = zone._running, parent = zone,
     }
     logic.unpack(layer)
