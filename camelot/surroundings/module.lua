@@ -1,8 +1,9 @@
 -- Surroundings (WoW: Forever): describes where the player walks, from the WowVision_Surroundings
 -- data addon (without it the module is silent). Outdoors the place entered ("forest", "shore of
 -- Crystal Lake, water to the north", "road, north to south"), on a square its ways on, indoors
--- the room and its doorways; drop edges, guidance to entrances, street beginnings and ways out
--- of the water, turn hints on roads, and what the player bumps into. The logic and the texts are
+-- the room and its doorways, and in a city's big halls (the indoor layer: Ironforge) the same as
+-- on its streets; drop edges, guidance to entrances, street beginnings and ways out of the water,
+-- turn hints on roads, and what the player bumps into. The logic and the texts are
 -- in the other files of this folder (docs/src/developer/surroundings.md).
 
 local logic = WowVision.surroundingsLogic
@@ -68,6 +69,7 @@ local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
 local room = nil -- the room the player is in as far as known (switches at once)
 local lastRoom = nil -- the last announced room, for the interior name
+local layerMode = false -- in one of the big halls of the indoor layer: its places, not the room
 local high = {} -- the high floor pieces (wall-walks, bridge decks) the player is on
 local outAt = nil -- when the player last came out of a building
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
@@ -90,6 +92,16 @@ local function forgetPlace()
     indoor:reset()
     room, lastRoom = nil, nil
     high, warnedEdges = {}, {}
+    region, saidMouths = nil, {}
+    bendFrom, aheadKey, leftWay = nil, nil, nil
+    layerMode = false
+end
+
+-- Forget the place on the ways (outdoors, or the indoor layer's): stepping between a room and the
+-- indoor layer says the new one at once.
+local function forgetWays()
+    outdoor:reset()
+    indoor:reset()
     region, saidMouths = nil, {}
     bendFrom, aheadKey, leftWay = nil, nil, nil
 end
@@ -199,6 +211,10 @@ local function logEntry(kind, text, x, y, extra)
             e.indoors = true
             e.candidates = roomCandidateNames(zone, x, y)
             e.room = room and logic.describeRoom(zone, room, nil) or nil
+            local layer = logic.layer(zone)
+            if layerMode and layer then
+                e.layer = logic.describe(layer, logic.valueAt(layer, x, y), true)
+            end
         end
     end
     e.swimming = IsSwimming() or nil
@@ -359,8 +375,14 @@ end
 -- Drop edges: the one within reach ahead in the view first, else one in the path with its
 -- distance. An edge warns again after the player is out of its reach and it is no longer in the
 -- path; edges of a wall-walk or a deck high over the ground only while the player is up there.
-local function checkEdges(z, x, y, px, py)
-    logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+-- Indoors (the indoor layer's edges) `rooms` is the set of rooms the player may be in: an edge
+-- inside warns only in the room its floor belongs to (its piece), as a high piece's edge.
+local function checkEdges(z, x, y, px, py, rooms)
+    local on = rooms
+    if on == nil then
+        logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+        on = high
+    end
     -- the way the player moves (not the facing: strafing and walking back count too)
     local vx, vy = nil, nil
     local moved = px and math.sqrt((x - px) ^ 2 + (y - py) ^ 2) or 0
@@ -369,7 +391,7 @@ local function checkEdges(z, x, y, px, py)
     end
     local inPath = {}
     if vx then
-        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, high, nil, inPath)
+        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, nil, inPath)
     end
     for i in pairs(warnedEdges) do
         if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
@@ -379,10 +401,10 @@ local function checkEdges(z, x, y, px, py)
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, GetPlayerFacing(), warnedEdges)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, on, GetPlayerFacing(), warnedEdges)
     local along = nil
     if i == nil and vx then
-        i, along = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, high, warnedEdges)
+        i, along = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, warnedEdges)
     end
     if i then
         local text = logic.edgeText(z, i, along)
@@ -603,6 +625,37 @@ module:hasUpdate(function(self)
         if found ~= nil then
             room = found
         end
+        local layer = logic.layer(z)
+        if layer then
+            -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
+            -- has), each in the room its floor belongs to: this room, or while it is unknown
+            -- (stacked floors) any room here
+            local here = {}
+            if room then
+                here[room] = true
+            else
+                for _, id in ipairs(logic.roomCandidates(z, x, y)) do
+                    here[id] = true
+                end
+            end
+            checkEdges(layer, x, y, px, py, here)
+        end
+        if layer and logic.inLayer(layer, room, x, y) then
+            -- a big hall: its pieces, as the city's streets
+            if not layerMode then
+                layerMode = true
+                forgetWays()
+            end
+            lastRoom = room or lastRoom
+            checkGuide(layer, x, y)
+            checkPlace(layer, x, y)
+            checkAhead(layer, x, y)
+            return
+        end
+        if layerMode then
+            layerMode = false
+            forgetWays()
+        end
         if indoor:update(room, x, y) then
             say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
             lastRoom = room
@@ -690,6 +743,11 @@ module:registerCommand({
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
                     parts[#parts + 1] = "Current room: " .. (room and logic.describeRoom(z, room, nil) or "unknown")
+                    local layer = logic.layer(z)
+                    if layer then
+                        parts[#parts + 1] = "Indoor layer: " .. (logic.describe(layer, logic.valueAt(layer, x, y), true) or "none")
+                            .. (layerMode and ", in use" or ", not in use")
+                    end
                 end
             end
         end
@@ -710,7 +768,16 @@ function module:describeAround()
         return
     end
     local text
-    if IsIndoors() then
+    local layer = logic.layer(z)
+    if IsIndoors() and layerMode and layer then
+        -- a big hall of the indoor layer: as a place outdoors
+        local value = logic.outdoorValue(layer, x, y, false, isWay(outdoor.current, true))
+        text = logic.spotText(layer, x, y, value, nil, { facing = turnFacing() }) or L["place unknown"]
+        local t = self.settings.guidance and logic.footTarget(layer, x, y, region)
+        if t then
+            text = text .. ", " .. logic.guideText(layer, t, true, t.d <= logic.GUIDE_AT)
+        end
+    elseif IsIndoors() then
         text = room and logic.roomText(z, room, nil, false, x, y) or L["room unknown"]
         local t = room and self.settings.guidance and logic.roomDoorTarget(z, room, x, y)
         if t then

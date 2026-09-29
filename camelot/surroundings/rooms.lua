@@ -3,6 +3,7 @@
 -- doorway. Doorways to outside are the building entrances.
 
 local logic = WowVision.surroundingsLogic
+local L = WowVision:getLocale()
 
 -- A world position in a building's frame {ox, oy, scale, m00, m01, m10, m11}: world x = ox -
 -- scale * (m00 vx + m01 vy), world y = oy - scale * (m10 vx + m11 vy). Room boxes are stored in
@@ -175,12 +176,61 @@ end
 
 logic.ENTRANCE_MERGE = 4 -- yd; doorways of one building closer than this are one entrance
 
+-- The entrances of the indoor layer: the doorways from a room it covers into a room it does not
+-- (a shop, a passage, stairs) or outside. Each as an entrance (see logic.entrances): a room with a
+-- name of its own (a shop, the bank) is "entrance of" it; another room is said by its name alone
+-- (plain: "passage of Ironforge"), outside as the way out; inDir: the way through it, leaving the
+-- hall. Doorways of one text closer than ENTRANCE_MERGE are one.
+local function layerEntrances(layer)
+    local ix = layer._index
+    local covered = ix.covered
+    local list = {}
+    for _, door in ipairs(ix.doors) do
+        local aIn, bIn = covered[door.a] or false, covered[door.b] or false
+        local interior = ix.interiors[door.interior]
+        if aIn ~= bIn and interior then
+            local hall = aIn and door.a or door.b
+            local beyond = aIn and door.b or door.a
+            local room = ix.rooms[beyond]
+            local text, plain, wayOut
+            if beyond == 0 then
+                text, plain, wayOut = L["way outside"], true, true
+            elseif room then
+                text = logic.describeRoom(layer, beyond, hall)
+                plain = not room.named
+            end
+            if text then
+                local x, y = logic.toWorld(interior, door.x, door.y)
+                local merged = false
+                for _, e in ipairs(list) do
+                    if e.text == text and (e.x - x) ^ 2 + (e.y - y) ^ 2 < logic.ENTRANCE_MERGE ^ 2 then
+                        merged = true
+                        break
+                    end
+                end
+                if not merged then
+                    list[#list + 1] = {
+                        x = x, y = y, text = text, building = text, plain = plain, wayOut = wayOut,
+                        inDir = logic.doorwayDirection(layer, door, hall),
+                    }
+                end
+            end
+        end
+    end
+    return list
+end
+
 -- The entrances: the doorways between outside and a room, in world yards, built once per zone.
 -- Each {x, y, text, building, inDir}: the building, and the room behind unless it is just the
--- entrance; inDir: the compass index one goes in toward (the room's way out, reversed).
+-- entrance; inDir: the compass index one goes in toward (the room's way out, reversed). In the
+-- indoor layer: the doorways out of its halls (layerEntrances).
 function logic.entrances(zone)
     local ix = zone._index
     if ix.entrances then
+        return ix.entrances
+    end
+    if ix.covered then
+        ix.entrances = layerEntrances(zone)
         return ix.entrances
     end
     local list = {}
@@ -337,4 +387,26 @@ function logic.nearestDoorway(zone, roomId, x, y, reach)
         return nil
     end
     return best, bestDoor, bx, by, bestDoor.a == roomId and bestDoor.b or bestDoor.a
+end
+
+-- Is the player in the indoor layer: in a room it covers, or, where the room is unknown (stacked
+-- floors), where the layer has a place and every room candidate is covered?
+function logic.inLayer(layer, roomId, x, y)
+    local covered = layer._index.covered
+    if roomId ~= nil then
+        return covered[roomId] or false
+    end
+    if logic.valueAt(layer, x, y) == 0 then
+        return false
+    end
+    local cands = logic.roomCandidates(layer, x, y)
+    if #cands == 0 then
+        return false
+    end
+    for _, id in ipairs(cands) do
+        if not covered[id] then
+            return false
+        end
+    end
+    return true
 end

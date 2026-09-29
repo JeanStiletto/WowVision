@@ -116,6 +116,10 @@ local function entranceTarget(zone, x, y, reach)
     if i == nil then
         return nil
     end
+    if e.plain then
+        -- in the indoor layer: a doorway into a passage, stairs, or out
+        return doorwayTarget("e" .. i, d, dir, e.x, e.y, not e.wayOut and e.text or nil, e.inDir)
+    end
     return {
         key = "e" .. i, kind = "entrance", d = d, dir = dir, x = e.x, y = e.y,
         name = string.format(L["entrance of %s"], e.text), short = L["entrance"],
@@ -219,7 +223,8 @@ local function squareItems(zone, x, y, region, cut, previous, said)
         items[#items + 1] = item
     end
     if not cut then
-        for _, item in ipairs(logic.aroundItems(region, x, y, { dirs = logic.ITEM_DIRS, classes = { entrance = true } })) do
+        local classes = { entrance = true, room = true }
+        for _, item in ipairs(logic.aroundItems(region, x, y, { dirs = logic.ITEM_DIRS, classes = classes })) do
             items[#items + 1] = item
         end
     end

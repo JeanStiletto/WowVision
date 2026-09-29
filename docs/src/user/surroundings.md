@@ -37,10 +37,22 @@ a screen reader would cut its own speech off at every key press.
 - **On a city square**, its ways on ("square of Trade District, street to The Canals to the
   east"), and water, canals and drops as you come close to them.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
-  north, kitchen to the east". The building's name is said when you enter it.
+  north, kitchen to the east". The building's name is said when you enter it. A long, narrow
+  room says which way it runs ("passage of Ironforge, north to south"); winding stairs say which
+  way they turn going up ("stairs of Ironforge, winding, turns left going up"). In a big room
+  the doorways are said from where you stand, nearest first, and within 8 yards of one you are
+  guided to it like to an entrance ("shop, 6 to the west").
+- **The big halls of a city** (Ironforge, the Undercity quarters) are described like its
+  streets and squares: their pieces with their directions ("walk along the lava, north to
+  south"), what lies around a hall, the doorways into shops and passages as entrances
+  ("entrance of Stonebrow's Clothier, 5 to the east", "passage of Ironforge, 6 to the north"),
+  and the edges down to lava and water.
+- **Docks and piers** are ways like streets: "quay of Stormwind Harbor, north to south",
+  "pier of Stormwind Harbor"; the wide parts of a dock are a square ("dock of Stormwind
+  Harbor") that says its piers and quays. The water under them is said only while swimming.
 - **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
-  lies below ("southeast, canal", "north, water", "east, drop 12"); ahead of you the distance
-  in yards first ("9 southwest, canal").
+  lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava");
+  ahead of you the distance in yards first ("9 southwest, canal").
 - **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. While swimming, the nearest way out of the

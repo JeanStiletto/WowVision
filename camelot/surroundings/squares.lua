@@ -133,7 +133,8 @@ function logic.regionAt(zone, x, y)
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
         if logic.nearCell(zone, cells, er, ec, true) then
-            table.insert(region.mouths, { label = e.building, class = "entrance", points = { e.x, e.y } })
+            -- in the indoor layer a passage or the way out is said by its name alone
+            table.insert(region.mouths, { label = e.building, class = e.plain and "room" or "entrance", points = { e.x, e.y } })
         end
     end
     for key in pairs(cells) do
@@ -428,12 +429,12 @@ function logic.wayMouths(region)
 end
 
 -- Mouths of the region not yet said (`said`, a set kept by the caller) that the player has come
--- within `reach` yards of, nearest first, as items; they are marked said. Entrances are left to
--- the entrance guidance.
+-- within `reach` yards of, nearest first, as items; they are marked said. Entrances and doorways
+-- are left to the entrance guidance.
 function logic.approaching(region, x, y, reach, said, maxDirs)
     local found = {}
     for _, m in ipairs(region.mouths) do
-        if not said[m] and m.class ~= "entrance" then
+        if not said[m] and m.class ~= "entrance" and m.class ~= "room" then
             local f = mouthFound(m, x, y)
             if f.d <= reach then
                 said[m] = true

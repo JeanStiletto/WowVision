@@ -62,7 +62,7 @@ Each zone file calls `addon.addZone{...}` with:
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
 - `edges`: per drop edge `{structure, facing (compass index of the drop), drop yards, into
-  (0 a plain drop, 1 water, 2 a city canal), piece, x1, y1, x2, y2, ...}`: points about 2
+  (0 a plain drop, 1 water, 2 a city canal, 3 lava), piece, x1, y1, x2, y2, ...}`: points about 2
   yards apart along the edge.
 - High floor pieces (wall-walks, bridge decks one can walk under): an edge with piece 0 lies
   low; otherwise it warns only after the player was seen stepping onto that piece.
@@ -78,9 +78,23 @@ Each zone file calls `addon.addZone{...}` with:
 - `interiors`: `{name, ox, oy, scale, m00, m01, m10, m11}`: a building and its frame. World
   x = ox - scale * (m00 vx + m01 vy), world y = oy - scale * (m10 vx + m11 vy).
 - `rooms`: `{interior, name, kind, floor boxes {x0, y0, x1, y1, ...}, outline box
-  (optional)}`, in the building's frame.
+  (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional)}`,
+  in the building's frame. `a`: the axis (index into `axes`) a long, narrow room runs along;
+  `w`: its floor winds up turning left (1, counter-clockwise seen from above) or right (-1);
+  `s`: the room has a name of its own (a shop: "entrance of" it from a hall). A room of at least
+  `logic.BIG_ROOM` sq yd says and guides to its doorways from the player's position.
 - `doors`: `{room a, room b (0 = outside), interior, x, y, nx, ny, side of room a (0 = a
   flat opening)}`, in the building's frame.
+- `indoor` (optional): the indoor layer, the big halls of a city (Ironforge, the Undercity
+  quarters) cut into pieces like its streets: `rooms` (the room ids it covers), `grid` (same
+  frame and places as the zone's), `lanes`, `noContact`, `structs`, `waterStructs`,
+  `structCells` and `edges` (the edges of floors inside: lava, water, canals; they warn in every
+  room). `logic.unpack` makes it a zone of its own (`logic.layer(zone)`) that shares the zone's
+  words, places, interiors, rooms and doors; its entrances are the doorways from a covered room
+  into one that is not (a shop by "entrance of", a passage by its name, the way outside). While
+  the player is in a covered room (`logic.inLayer`), the module runs the outdoor rules on it.
+- Docks and piers are ways: kinds `quay` and `pier` (a spur that joins one other piece), the wide
+  parts `square` ("dock of ..."); the water under them is in `bridgeUnder`.
 - `locales`: per client language the words with the same indexes as the English lists
   (`dirs`, `compass`, `axes`, `places` as `{label, road}`, `interiors`, `rooms`, `structs`,
   `objectNames`). Unpacking puts them in place once and drops the other languages.

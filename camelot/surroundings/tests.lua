@@ -112,7 +112,105 @@ local function newWalkZone()
     }
 end
 
+-- A city hall with an indoor layer: newZone's grid and places plus a hall place; one interior
+-- (frame = world) with a great hall of 1200 sq yd (x 80 to 100, y 10 to 40), a shop west of it
+-- (y 40 to 50), a passage south of it running north-south (x 70 to 80, y 0 to 10) and winding
+-- stairs; doors: hall to shop at x 90, y 40; hall to passage at x 80, y 5; outside to the hall at
+-- x 100, y 25. The layer covers the hall: rows 0 and 1 hall; a lava edge of the hall at x 72 facing south.
+local function newHallZone()
+    local z = newZone()
+    table.insert(z.places, { "hall", "great hall of Test" }) -- place 7
+    table.insert(z.places, { "pier", "pier of Test" }) -- place 8
+    z.interiors = { { "Test City", 0, 0, 1, -1, 0, 0, -1 } }
+    z.rooms = {
+        { 1, "great hall", "large hall", { 80, 10, 100, 40 }, f = 1200 },
+        { 1, "shop", "room", { 80, 40, 100, 50 }, f = 150, s = 1 },
+        { 1, "passage", "corridor", { 70, 0, 80, 10 }, f = 90, a = 1 },
+        { 1, "stairs", "stairs", { 70, 50, 80, 60 }, f = 40, w = -1 },
+    }
+    z.doors = {
+        { 1, 2, 1, 90, 40, 0, 1, -1 },
+        { 1, 3, 1, 80, 5, 1, 0, 1 },
+        { 0, 1, 1, 100, 25, 0, 0, 0 },
+    }
+    z.indoor = {
+        rooms = { 1 },
+        grid = { "700*6", "700*6", "0*6" },
+        lanes = {},
+        structs = { "Test City" }, waterStructs = { 1 },
+        structCells = { 1, 1, 1, 1, 2, 1 },
+        edges = { { 1, 5, 80, 3, 1, 72, 20, 72, 22 } }, -- its floor belongs to the great hall (room 1)
+    }
+    return z
+end
+
 testRunner:addSuite("Surroundings", {
+    ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        t:assertEqual(layer ~= nil, true)
+        t:assertEqual(logic.inLayer(layer, 1, 95, 25), true)
+        t:assertEqual(logic.inLayer(layer, 2, 85, 45), false)
+        t:assertEqual(logic.inLayer(layer, nil, 95, 25), true)
+        t:assertEqual(logic.inLayer(layer, nil, 85, 45), false)
+        -- the layer's places are the zone's
+        t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
+    end,
+
+    ["the indoor layer's doorways: a shop by entrance, a passage by name, the way outside"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        local texts = {}
+        for _, e in ipairs(logic.entrances(layer)) do
+            texts[#texts + 1] = e.text .. (e.plain and " (plain)" or "")
+        end
+        t:assertEqual(table.concat(texts, "; "), "shop; passage (plain); way outside (plain)")
+        local shop = logic.footTarget(layer, 90, 36, nil)
+        t:assertEqual(logic.guideText(layer, shop, true, false), "entrance of shop, 4 to the west")
+        local passage = logic.footTarget(layer, 84, 6, nil)
+        t:assertEqual(logic.guideText(layer, passage, true, false), "passage, 4 to the south")
+        t:assertEqual(logic.guideText(layer, passage, false, true), "at the doorway, through to the south")
+    end,
+
+    ["lava edges of the indoor layer warn like drop edges"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        -- it warns in its own room only (the flat grid holds every level)
+        t:assertEqual(logic.nearestEdge(layer, 74, 21, 3, { [1] = true }, nil, nil), 1)
+        t:assertEqual(logic.nearestEdge(layer, 74, 21, 3, { [3] = true }, nil, nil), nil)
+        t:assertEqual(logic.edgeText(layer, 1), "south, lava")
+        t:assertEqual(logic.edgeText(layer, 1, 6.2), "6 south, lava")
+    end,
+
+    ["a big room says its doorways from where the player stands, nearest first"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        t:assertEqual(logic.roomText(z, 1, nil, false, 95, 25),
+            "Test City, great hall, way out to the north, shop to the west, passage to the southeast")
+        -- without a position (or in a small room) the fixed directions stay
+        t:assertEqual(logic.roomText(z, 3, 1, false, 75, 5), "passage, north to south, great hall to the north")
+        -- guidance to the nearest doorway of the big room
+        local target = logic.roomDoorTarget(z, 1, 96, 25)
+        t:assertEqual(logic.guideText(z, target, true, false), "way outside, 4 to the north")
+        t:assertEqual(logic.roomDoorTarget(z, 3, 76, 6), nil)
+    end,
+
+    ["winding stairs say which way they turn going up"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        t:assertEqual(logic.roomText(z, 4, 1, false), "stairs, winding, turns right going up")
+    end,
+
+    ["a pier is a way with a direction, like a street"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        t:assertEqual(logic.outdoorKey(z, 881), "r881")
+        t:assertEqual(logic.describe(z, 881, true), "pier of Test, north to south")
+    end,
+
     ["the turn hint says which way to turn to face along the road"] = function(t)
         local z = newLaneZone()
         logic.unpack(z)

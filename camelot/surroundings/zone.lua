@@ -91,6 +91,9 @@ function logic.valueAtCell(zone, r, c)
         return 0
     end
     local row = zone._index.rows[r + 1]
+    if row == nil then
+        return 0
+    end
     local starts = row.starts
     local lo, hi = 1, #starts
     while lo < hi do
@@ -495,6 +498,39 @@ function logic.unpack(zone, locale)
     end
 
     ix.regionOf = {} -- squares found so far, per cell key
+
+    if zone.indoor then
+        ix.layer = logic.unpackLayer(zone)
+    end
+end
+
+-- The indoor layer (zone.indoor): the big halls of a city (Ironforge's, the Undercity quarters)
+-- cut into pieces like its streets, on a grid of their own, with centre lines and the edges of their
+-- floors (lava, water). Unpacked as a zone of its own that shares the frame, the words, the places
+-- and the rooms of `zone`; `covered` is the set of rooms whose floor it holds; its entrances are the
+-- doorways from those rooms into the others (see layerEntrances).
+function logic.unpackLayer(zone)
+    local src = zone.indoor
+    local layer = {
+        key = zone.key .. "/indoor", label = zone.label, map = zone.map, top = zone.top, left = zone.left,
+        cell = zone.cell, rows = zone.rows, cols = zone.cols, dirs = zone.dirs, compass = zone.compass,
+        axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
+        lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        structCells = src.structCells, edges = src.edges, interiors = zone.interiors, rooms = zone.rooms,
+        doors = zone.doors, _worded = true, _running = zone._running, parent = zone,
+    }
+    logic.unpack(layer)
+    local covered = {}
+    for _, id in ipairs(src.rooms or {}) do
+        covered[id] = true
+    end
+    layer._index.covered = covered
+    return layer
+end
+
+-- The indoor layer of a zone (unpacked), or nil.
+function logic.layer(zone)
+    return zone._index and zone._index.layer
 end
 
 -- Frees the unpacked data when the player leaves the zone.
