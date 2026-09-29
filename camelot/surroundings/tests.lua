@@ -742,8 +742,8 @@ testRunner:addSuite("Surroundings", {
     ["a drop edge says its direction first, then the drop; ahead with its distance"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        t:assertEqual(logic.edgeText(z, 1), "north, drop into water")
-        t:assertEqual(logic.edgeText(z, 2, 7.6), "south in 8 yards, drop 12 yards")
+        t:assertEqual(logic.edgeText(z, 1), "north, water")
+        t:assertEqual(logic.edgeText(z, 2, 7.6), "8 south, drop 12")
     end,
 
     ["guidance names a target once, and the way through only where it differs"] = function(t)

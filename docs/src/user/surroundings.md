@@ -38,15 +38,15 @@ a screen reader would cut its own speech off at every key press.
   east"), and water, canals and drops as you come close to them.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it.
-- **Drop edges** on docks, bridges, walls and canal sides: the direction first, then the drop
-  ("southeast, drop into canal"; ahead of you with the distance, "north in 6 yards, drop 12
-  yards").
+- **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
+  lies below ("southeast, canal", "north, water", "east, drop 12"); ahead of you the distance
+  in yards first ("9 southwest, canal").
 - **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. While swimming, the nearest way out of the
   water; one that only leads onto a ledge or into a dead end says so ("way out of the water to
   a dead end").
-- **Turn hints** on roads and streets: "turn slightly left" when the direction words cannot
+- **Turn hints** on roads and streets: "left" or "right" when the direction words cannot
   tell you that you are facing a little off the way, and at gentle bends of a road.
 - **Bumps**: when wall detection finds you blocked, what you are pushing against ("wagon",
   "wall of auction house", indoors "wall"). This needs the wall detection module enabled.

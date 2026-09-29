@@ -62,6 +62,7 @@ local zone = nil -- the zone data the player is in (unpacked)
 local outdoor = logic.newEntry(ENTRY_OUTDOORS)
 local indoor = logic.newEntry(ENTRY_INDOORS)
 local laneDecided = false -- a centre line decided the last outdoor value (see distanceFor)
+local leftWay = nil -- the way piece the player last stepped off (back onto it only after a few yards)
 local wasIndoors = nil -- indoors at the last look (nil before the first)
 local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
@@ -90,7 +91,7 @@ local function forgetPlace()
     room, lastRoom = nil, nil
     high, warnedEdges = {}, {}
     region, saidMouths = nil, {}
-    bendFrom, aheadKey = nil, nil
+    bendFrom, aheadKey, leftWay = nil, nil, nil
 end
 
 -- A way with centre lines (road, fork, crossing, city street or walk); with `bridge` also a bridge
@@ -117,9 +118,11 @@ outdoor.distanceFor = function(key)
         return 0
     end
     -- from one road or street piece onto the next (a new direction): at once, so the bend is heard
-    -- before walking straight on carries the player off the way
-    if logic.isWayKey(key) and logic.isWayKey(outdoor.current) then
-        return 0
+    -- before walking straight on carries the player off the way; back onto the piece just left
+    -- only after a few yards (along the seam of two pieces the directions switched four times in
+    -- a second, Stormwind 2026-09-29)
+    if logic.isWayKey(key) and logic.isWayKey(outdoor.current) and key ~= outdoor.current then
+        return key == leftWay and ENTRY_NARROW or 0
     end
     if logic.NARROW[logic.kind(zone, logic.keyPlace(key))] then
         return ENTRY_NARROW
@@ -536,6 +539,7 @@ local function checkPlace(z, x, y)
     value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
     local previous = outdoor.current
     if outdoor:update(logic.outdoorKey(z, value), x, y) then
+        leftWay = logic.isWayKey(previous) and previous or nil
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming() })
         -- on a square: what was said now (its exits, what is close) is not said again on coming close

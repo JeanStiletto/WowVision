@@ -60,13 +60,14 @@ function logic.itemsText(zone, items)
     return table.concat(parts, ", ")
 end
 
--- A drop edge: the direction first, then the drop ("southeast, drop into canal"; the drop already
--- says it is an edge); with `ahead` (yd along the path) its distance. Per edge's `into`: a plain
--- drop, into water, into a city canal; each said beside it and ahead.
+-- A drop edge, short (user 2026-09-29: every word counts in the moment before a fall; distances
+-- are always yards): the direction and what lies below ("southeast, canal"); with `ahead` (yd
+-- along the path) the distance first ("9 southwest, canal"). Per edge's `into`: a plain drop with
+-- its depth ("north, drop 12"), water, a city canal.
 local EDGE_TEXTS = {
-    [0] = { "%s, drop %d yards", "%s in %d yards, drop %d yards" },
-    [1] = { "%s, drop into water", "%s in %d yards, drop into water" },
-    [2] = { "%s, drop into canal", "%s in %d yards, drop into canal" },
+    [0] = { "%s, drop %d", "%d %s, drop %d" },
+    [1] = { "%s, water", "%d %s, water" },
+    [2] = { "%s, canal", "%d %s, canal" },
 }
 
 function logic.edgeText(zone, i, ahead)
@@ -75,14 +76,14 @@ function logic.edgeText(zone, i, ahead)
     local word = zone.compass[e.facing]
     if ahead then
         local yards = math.max(1, math.floor(ahead + 0.5))
-        return string.format(L[texts[2]], word, yards, e.drop)
+        return string.format(L[texts[2]], yards, word, e.drop)
     end
     return string.format(L[texts[1]], word, e.drop)
 end
 
 -- A turn hint: 1 left, -1 right.
 function logic.turnText(turn)
-    return turn > 0 and L["turn slightly left"] or L["turn slightly right"]
+    return turn > 0 and L["left"] or L["right"]
 end
 
 -- Guidance targets -------------------------------------------------------------------------------
