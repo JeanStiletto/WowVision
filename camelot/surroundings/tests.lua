@@ -770,6 +770,19 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, true), "at the way out to a dead end, out to the north")
     end,
 
+    ["on a city walk the next piece is said ahead, with its distance"] = function(t)
+        local z = newWalkZone()
+        -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
+        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 88, 46, 84, 42, 212, 20, 40 }
+        logic.unpack(z)
+        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK)
+        t:assertEqual(value, 212)
+        t:assertEqual(yards, 10)
+        t:assertEqual(logic.aheadText(z, value, 211, yards), "northeast to southwest in 10 yards")
+        -- walking north, away from it: nothing ahead
+        t:assertNil(logic.pieceAhead(z, 96, 46, 0, 211, logic.AHEAD_LOOK))
+    end,
+
     ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)
         local z = newWalkZone()
         z.places[1] = { "grass", "grass" }

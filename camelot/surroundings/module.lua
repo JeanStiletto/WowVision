@@ -74,6 +74,8 @@ local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbo
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
 local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
+local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
+local aheadX, aheadY = nil, nil -- where it was said: walking far from there forgets it
 -- Guidance: the target last said, the direction said, whether it was "at" it, when, and the
 -- target last said by name
 local guide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- on foot
@@ -88,7 +90,7 @@ local function forgetPlace()
     room, lastRoom = nil, nil
     high, warnedEdges = {}, {}
     region, saidMouths = nil, {}
-    bendFrom = nil
+    bendFrom, aheadKey = nil, nil
 end
 
 -- A way with centre lines (road, fork, crossing, city street or walk); with `bridge` also a bridge
@@ -101,6 +103,13 @@ end
 outdoor.distanceFor = function(key)
     if key == nil then
         return nil
+    end
+    -- out of the water onto land only after a few yards on it: bobbing at a canal's edge switched
+    -- "street" and "canal" every half second (Stormwind 2026-09-29); falling in is said at once
+    local here = logic.kind(zone, logic.keyPlace(outdoor.current))
+    local there = logic.kind(zone, logic.keyPlace(key))
+    if (here == "canal" or logic.WATER[here]) and not (there == "canal" or logic.WATER[there]) then
+        return ENTRY_NARROW
     end
     -- stepping onto or off a way counts at once where its centre line decided (the line's enter
     -- and leave distances already keep it from flickering)
@@ -495,6 +504,32 @@ local function checkBend(z, x, y)
     end
 end
 
+-- On a city street or walk (not a road: there the user turned too early on words said ahead):
+-- the next piece's direction AHEAD_LOOK yd before it, once, with the distance ("northeast to
+-- southwest in 10 yards"), so there is time to turn where a street ends at the water and goes on
+-- to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water). Stepping
+-- onto that piece then says nothing more.
+local function checkAhead(z, x, y)
+    local key = outdoor.current
+    local facing = GetPlayerFacing()
+    if not logic.isWayKey(key) or logic.ROADS[logic.kind(z, logic.keyPlace(key))] or facing == nil then
+        return
+    end
+    if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
+        aheadKey = nil
+    end
+    local current = tonumber(key:sub(2))
+    local value, yards = logic.pieceAhead(z, x, y, facing, current, logic.AHEAD_LOOK)
+    if value == nil or yards < logic.AHEAD_MIN then
+        return
+    end
+    local nextKey = logic.outdoorKey(z, value)
+    if nextKey ~= aheadKey then
+        aheadKey, aheadX, aheadY = nextKey, x, y
+        say(logic.aheadText(z, value, current, yards), "ahead", x, y)
+    end
+end
+
 -- Outdoors: the place, announced after the entry distance; on a square what comes close.
 local function checkPlace(z, x, y)
     local value
@@ -506,7 +541,13 @@ local function checkPlace(z, x, y)
         -- on a square: what was said now (its exits, what is close) is not said again on coming close
         region, saidMouths = square, said or {}
         bendFrom = nil
-        say(text, "place", x, y, outdoor.walked)
+        if outdoor.current == aheadKey then
+            -- said before reaching it (checkAhead): only logged
+            logEntry("place", text, x, y, { walked = round1(outdoor.walked), early = true })
+        else
+            say(text, "place", x, y, outdoor.walked)
+        end
+        aheadKey = nil
     elseif region and outdoor.current == logic.placeOf(region.value) then
         -- also from the square's edge (a step onto the street beside it does not leave it)
         checkApproach(z, x, y)
@@ -568,6 +609,7 @@ module:hasUpdate(function(self)
         checkGuide(z, x, y)
     end
     checkPlace(z, x, y)
+    checkAhead(z, x, y)
     checkBend(z, x, y)
 end)
 

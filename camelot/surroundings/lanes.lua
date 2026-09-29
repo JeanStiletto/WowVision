@@ -164,6 +164,48 @@ function logic.wayAhead(zone, x, y, facing, look)
     return math.atan2(ay - py, ax - px), aheadLane.value
 end
 
+logic.AHEAD_LOOK = 12 -- yd; on a city street or walk the next piece is said this far before it
+logic.AHEAD_MIN = 4 -- yd; a next piece closer than this is left to its own announcement
+local AHEAD_STEP = 2 -- yd between the looks ahead along the way
+local AHEAD_REACH = 6 -- yd; a centre line this close to a look ahead is the way there
+
+-- The next piece ahead on a city street or walk: from the nearest point on its centre line, along
+-- the way (its direction there, the end nearer the facing, as wayAhead), every AHEAD_STEP yd up
+-- to `look`, the nearest centre line there; the first one of another value than `current` (the
+-- cell value of the piece the player is on) is the next piece. Where a street ends at the water
+-- and goes on to the side, the line beside the water's edge is found from the looks past its end.
+-- Returns its cell value and the yards to it, or nil (none within look, facing across the way).
+function logic.pieceAhead(zone, x, y, facing, current, look)
+    local d, _lane, px, py = directedLane(zone, x, y)
+    if d == nil then
+        return nil
+    end
+    local fx, fy = math.cos(facing), math.sin(facing)
+    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
+    local dx, dy = ax - bx, ay - by
+    local n = math.sqrt(dx * dx + dy * dy)
+    if n < MIN_SPAN then
+        return nil
+    end
+    dx, dy = dx / n, dy / n
+    local along = dx * fx + dy * fy
+    if math.abs(along) < math.cos(math.rad(logic.TURN_ACROSS)) then
+        return nil
+    end
+    if along < 0 then
+        dx, dy = -dx, -dy
+    end
+    for s = AHEAD_STEP, look, AHEAD_STEP do
+        local _d, lane = logic.nearestLane(zone, px + dx * s, py + dy * s, AHEAD_REACH)
+        if lane and lane.value ~= current then
+            return lane.value, s
+        end
+    end
+    return nil
+end
+
 logic.BEND_RESET = 60 -- degrees; more is turning round or another road
 
 -- A gentle bend: `from` where the road led at the last message, `dir` where it leads now (both from

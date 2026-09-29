@@ -170,6 +170,23 @@ function logic.guideText(zone, t, named, at)
     return table.concat(parts, ", ")
 end
 
+-- The next piece of a city street or walk, said before it: its direction ("northeast to southwest
+-- in 10 yards") when it is the same street, else its name and direction ("dead end, north to south
+-- in 8 yards").
+function logic.aheadText(zone, value, current, yards)
+    local words
+    local axis = logic.axisOf(zone, value)
+    if logic.placeOf(value) == logic.placeOf(current) and axis then
+        words = logic.axisWords(zone, axis)
+    else
+        words = logic.describe(zone, value, true, true)
+    end
+    if words == nil then
+        return nil
+    end
+    return string.format(L["%s in %d yards"], words, math.max(1, math.floor(yards + 0.5)))
+end
+
 -- Spots -------------------------------------------------------------------------------------------
 
 -- A square's exits (streets, roads, squares that lead on; nearest first) and the water, canals

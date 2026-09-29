@@ -23,7 +23,11 @@ a screen reader would cut its own speech off at every key press.
   yards inside it (on roads and streets 3 yards, elsewhere 8), so walking along a border does
   not flicker. Roads and city streets (canal walks too) follow the same rules: they follow
   their centre lines, so drifting toward the side of a road or street is heard as leaving it,
-  and a new direction is said at once.
+  and a new direction is said at once. On a city street or canal walk the next piece's
+  direction is said 12 yards before it, with the distance ("northeast to southwest in 10
+  yards"), so there is time to turn where a street ends at the water and goes on to the side;
+  stepping onto it then says nothing more. Coming out of the water, the place on land is said
+  after 3 yards on it.
 - Next to a place, the **cliffs and water** near it ("forest, cliff edge to the west"), and
   after stepping off a road or street, where it is ("open land, road to the northwest";
   in a city "grass, street to the east"). The terrain between a city's streets is "grass".
