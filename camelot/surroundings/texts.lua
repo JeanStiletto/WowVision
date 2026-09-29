@@ -63,11 +63,12 @@ end
 -- A drop edge, short (user 2026-09-29: every word counts in the moment before a fall; distances
 -- are always yards): the direction and what lies below ("southeast, canal"); with `ahead` (yd
 -- along the path) the distance first ("9 southwest, canal"). Per edge's `into`: a plain drop with
--- its depth ("north, drop 12"), water, a city canal.
+-- its depth ("north, drop 12"), water, a city canal, lava (Ironforge).
 local EDGE_TEXTS = {
     [0] = { "%s, drop %d", "%d %s, drop %d" },
     [1] = { "%s, water", "%d %s, water" },
     [2] = { "%s, canal", "%d %s, canal" },
+    [3] = { "%s, lava", "%d %s, lava" },
 }
 
 function logic.edgeText(zone, i, ahead)
