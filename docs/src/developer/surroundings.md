@@ -56,6 +56,9 @@ Each zone file calls `addon.addZone{...}` with:
   climbs out toward (0 = unknown).
 - `deadExits`: 1-based indexes into the ways out that lead onto floor joining nothing, or into
   a dead end (decided offline with the heights; optional).
+- `noContact`: row, column, row, column quadruples: neighbouring cells of two squares with no
+  walkable crossing between them (decided offline with the heights; optional). Such cells are
+  no border between the squares.
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
 - `edges`: per drop edge `{structure, facing (compass index of the drop), drop yards, into

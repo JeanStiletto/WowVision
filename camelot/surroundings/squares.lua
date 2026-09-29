@@ -16,9 +16,6 @@ logic.BEGIN_MAX = 16 -- yd; a way meeting the square along a longer border runs 
 logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where it leads on
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
--- yd; a neighbouring square whose border lies this close to the opening of a street that leads to
--- it is that street's connection: only the street is said (see logic.sameWayMouths)
-logic.SAME_WAY = 15
 
 -- Does a cell value belong to a place that says what lies around it?
 function logic.isAroundPlace(zone, value)
@@ -59,7 +56,8 @@ local function findMouths(zone, cells, list)
         for _, s in ipairs(logic.STEPS) do
             local nr, nc = r + s[1], c + s[2]
             local key = nr * zone.cols + nc
-            if not cells[key] and not seen[key] and logic.inGrid(zone, nr, nc) then
+            local noContact = zone._index.noContact[(r * zone.cols + c) * zone.rows * zone.cols + key]
+            if not cells[key] and not seen[key] and not noContact and logic.inGrid(zone, nr, nc) then
                 seen[key] = true
                 local label, class = borderThing(zone, logic.valueAtCell(zone, nr, nc), key)
                 if label then
@@ -130,7 +128,7 @@ function logic.regionAt(zone, x, y)
     end, cells)
     local region = {
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
-        mouths = logic.sameWayMouths(zone, findMouths(zone, cells, list)),
+        mouths = findMouths(zone, cells, list),
     }
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
@@ -141,6 +139,7 @@ function logic.regionAt(zone, x, y)
     for key in pairs(cells) do
         ix.regionOf[key] = region
     end
+    region.mouths = logic.withoutSideStreets(zone, region)
     return region
 end
 
@@ -150,64 +149,78 @@ local function labelAtCell(zone, r, c)
     return p and p.label, p and p.kind
 end
 
--- Does the way behind a mouth reach the place `place` (a place id): the cells of the mouth's
--- thing joined to it, and the cells beside them. Cached per mouth and place.
-local function wayReaches(zone, mouth, place)
-    mouth.reaches = mouth.reaches or {}
-    if mouth.reaches[place] ~= nil then
-        return mouth.reaches[place]
+-- The squares a street touches along its length (regions), and whether it touches any other way
+-- (another street, a walk, a bridge; not a dead end, which leads nowhere): then it leads on.
+-- Cached per mouth.
+local function streetTouches(zone, mouth)
+    if mouth.touches then
+        return mouth.touches, mouth.touchesWay
     end
-    local found, count = false, 0
+    local squares, other, count = {}, false, 0
     logic.flood(zone, mouth.cells or {}, function(r, c)
-        if labelAtCell(zone, r, c) == mouth.label then
+        local label, kind = labelAtCell(zone, r, c)
+        if label == mouth.label then
             return true
         end
-        if logic.placeOf(logic.valueAtCell(zone, r, c)) == place then
-            found = true
+        if logic.SQUARES[kind] then
+            local x, y = logic.cellCentre(zone, r, c)
+            local region = logic.regionAt(zone, x, y)
+            if region then
+                squares[region] = true
+            end
+        elseif logic.WAYS[kind] and not logic.place(zone, logic.placeOf(logic.valueAtCell(zone, r, c))).deadEnd then
+            other = true
         end
         return false
     end, function()
         count = count + 1
-        return found or count > logic.LEADS_MAX
+        return other or count > logic.LEADS_MAX
     end)
-    mouth.reaches[place] = found
-    return found
+    mouth.touches, mouth.touchesWay = squares, other or count > logic.LEADS_MAX
+    return mouth.touches, mouth.touchesWay
 end
 
-local function mouthsApart(a, b)
-    local best = math.huge
-    for i = 1, #a.points - 1, 2 do
-        for j = 1, #b.points - 1, 2 do
-            best = math.min(best, math.sqrt((a.points[i] - b.points[j]) ^ 2 + (a.points[i + 1] - b.points[j + 1]) ^ 2))
-        end
-    end
-    return best
-end
-
--- A square's mouths without the neighbouring squares that touch it within SAME_WAY yd of the
--- opening of a street (not a square) that leads to them: the street is the connection. On the flat
--- grid each square reaches a few yards past its floor, so two squares seemed to touch right beside
--- the street joining them, and both were said in the same direction (user 2026-09-29: "left and
--- right of the street is already place").
-function logic.sameWayMouths(zone, mouths)
-    local kept = {}
-    for _, m in ipairs(mouths) do
+-- A square's mouths without its side streets: a street that reaches nothing but this square and
+-- squares this one opens onto directly (their shared border can be walked across: the export's
+-- noContact), at least one of them, is a strip along the side of the open space or a second way
+-- beside the opening (user 2026-09-29: the Mage Quarter's square and the Wizard's Sanctum's are one
+-- plaza, the street between them runs along its edge; the harbour's square and the Canals' meet
+-- over 40 yd, a street beside them joins the same two). A street touching any other way or square
+-- leads on and stays; so do dead ends and streets touching this square only.
+function logic.withoutSideStreets(zone, region)
+    local direct = {}
+    for _, m in ipairs(region.mouths) do
         local cell = m.class == "way" and m.cells and m.cells[1]
-        local value = cell and logic.valueAtCell(zone, cell[1], cell[2])
-        local same = false
-        if value and logic.SQUARES[logic.kindOf(zone, value)] then
-            local place = logic.placeOf(value)
-            for _, w in ipairs(mouths) do
-                local wc = w ~= m and w.class == "way" and w.cells and w.cells[1]
-                local wv = wc and logic.valueAtCell(zone, wc[1], wc[2])
-                if wv and not logic.SQUARES[logic.kindOf(zone, wv)] and mouthsApart(m, w) <= logic.SAME_WAY
-                    and wayReaches(zone, w, place) then
-                    same = true
-                    break
-                end
+        if cell and logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] then
+            local x, y = logic.cellCentre(zone, cell[1], cell[2])
+            local other = logic.regionAt(zone, x, y)
+            if other then
+                direct[other] = true
             end
         end
-        if not same then
+    end
+    local kept = {}
+    for _, m in ipairs(region.mouths) do
+        local side = false
+        local cell = m.class == "way" and m.cells and m.cells[1]
+        if cell and next(direct) and not logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] then
+            local squares, leadsOther = streetTouches(zone, m)
+            if not leadsOther then
+                local neighbour = false
+                side = true
+                for other in pairs(squares) do
+                    if other ~= region then
+                        if direct[other] then
+                            neighbour = true
+                        else
+                            side = false
+                        end
+                    end
+                end
+                side = side and neighbour
+            end
+        end
+        if not side then
             kept[#kept + 1] = m
         end
     end

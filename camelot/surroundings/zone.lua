@@ -265,6 +265,12 @@ local function prepareWords(zone, locale)
             room.entrance = true
         end
     end
+    -- dead ends (decided offline with the heights), known by their English name
+    for _, place in ipairs(zone.places or {}) do
+        if place[2] == "dead end" then
+            place.deadEnd = true
+        end
+    end
     local t = zone.locales and zone.locales[locale]
     zone.locales = nil
     if t == nil then
@@ -351,7 +357,7 @@ function logic.unpack(zone, locale)
 
     ix.places = {}
     for id, p in pairs(zone.places) do
-        ix.places[id] = { kind = p[1], label = p[2], road = p[3] }
+        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false }
     end
 
     -- water under a bridge (or a city canal under the streets), said while swimming
@@ -419,6 +425,16 @@ function logic.unpack(zone, locale)
         ix.exits[#ix.exits + 1] = { x = list[i], y = list[i + 1], width = list[i + 2], out = out ~= 0 and out or nil }
     end
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
+    -- neighbouring cells of two squares with no walkable crossing between them (decided offline
+    -- with the heights): no border between the two squares
+    ix.noContact = {}
+    local cells = zone.rows * zone.cols
+    list = zone.noContact or {}
+    for i = 1, #list - 3, 4 do
+        local a, b = list[i] * zone.cols + list[i + 1], list[i + 2] * zone.cols + list[i + 3]
+        ix.noContact[a * cells + b] = true
+        ix.noContact[b * cells + a] = true
+    end
     for _, i in ipairs(zone.deadExits or {}) do
         if ix.exits[i] then
             ix.exits[i].dead = true

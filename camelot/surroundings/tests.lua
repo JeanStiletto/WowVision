@@ -782,16 +782,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(items[1].label, "square of B")
     end,
 
-    ["a square touching this one beside the street that leads to it is said only as the street"] = function(t)
-        local z = newZone()
+    ["a street beside the opening to a square it only joins is a side street"] = function(t)
         -- square A on columns 0 to 2; square B on columns 4 and 5 and, rows 0 and 1, on column 3
-        -- too (touching A); a street on column 3, rows 2 and 3, from A to B
-        z.rows = 4
-        z.places = { { "square", "square of A" }, { "square", "square of B" }, { "street", "street to B" } }
-        z.grid = { "100*3,200*3", "100*3,200*3", "100*3,300,200*2", "100*3,300,200*2" }
-        logic.unpack(z)
-        local region = logic.regionAt(z, 85, 45)
-        local items = logic.aroundItems(region, 85, 45, { classes = { way = true }, leading = true, zone = z })
+        -- too (touching A); a street on column 3, rows 2 and 3, joining only A and B
+        local function zoneWith(noContact)
+            local z = newZone()
+            z.rows = 4
+            z.places = { { "square", "square of A" }, { "square", "square of B" }, { "street", "street to B" } }
+            z.grid = { "100*3,200*3", "100*3,200*3", "100*3,300,200*2", "100*3,300,200*2" }
+            z.noContact = noContact
+            logic.unpack(z)
+            local region = logic.regionAt(z, 85, 45)
+            return logic.aroundItems(region, 85, 45, { classes = { way = true }, leading = true, zone = z })
+        end
+        -- one can walk from A into B: the opening is the way, the street is left out
+        local items = zoneWith(nil)
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "square of B")
+        -- the heights say A and B do not touch there: the street is the way to B
+        items = zoneWith({ 0, 2, 0, 3, 1, 2, 1, 3 })
         t:assertEqual(#items, 1)
         t:assertEqual(items[1].label, "street to B")
     end,
