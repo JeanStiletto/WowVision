@@ -313,16 +313,25 @@ local function mouthFound(m, x, y)
     return { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
 end
 
+-- A neighbouring square or hall is a place of its own: it counts even where it meets no other way
+-- (the square before the Cathedral of Light lies between two parts of an unnamed square and the
+-- cathedral; it was dropped as leading nowhere, 2026-09-29). leadsOn is for streets and ramps.
+local function isSquareMouth(zone, m)
+    local cell = m.cells and m.cells[1]
+    return cell ~= nil and logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] or false
+end
+
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
 -- opts (all optional): max (items), cameFrom (the label that goes first when there are more),
 -- dirs (directions per item at most), classes (a set: only these classes), leading (with zone:
--- only ways that lead on, see leadsOn).
+-- only ways that lead on, see leadsOn; squares always).
 function logic.aroundItems(region, x, y, opts)
     opts = opts or {}
     local found = {}
     for _, m in ipairs(region.mouths) do
         if (opts.classes == nil or opts.classes[m.class])
-            and not (opts.leading and m.class == "way" and not logic.leadsOn(opts.zone, m, region.label)) then
+            and not (opts.leading and m.class == "way" and not isSquareMouth(opts.zone, m)
+                and not logic.leadsOn(opts.zone, m, region.label)) then
             found[#found + 1] = mouthFound(m, x, y)
         end
     end

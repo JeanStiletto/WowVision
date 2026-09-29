@@ -770,6 +770,18 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, true), "at the way out to a dead end, out to the north")
     end,
 
+    ["a neighbouring square is an exit even where it meets no other way"] = function(t)
+        local z = newZone()
+        -- square A on columns 0 to 2, square B (touching nothing else) on columns 3 to 5
+        z.places = { { "square", "square of A" }, { "square", "square of B" } }
+        z.grid = { "100*3,200*3", "100*3,200*3", "100*3,200*3" }
+        logic.unpack(z)
+        local region = logic.regionAt(z, 85, 45)
+        local items = logic.aroundItems(region, 85, 45, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "square of B")
+    end,
+
     ["on a city walk the next piece is found ahead"] = function(t)
         local z = newWalkZone()
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
