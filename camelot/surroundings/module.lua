@@ -321,7 +321,7 @@ local function guideTo(z, g, t, x, y, brief)
     end
 end
 
-local function checkGuide(z, x, y)
+local function checkGuide(z, x, y, roomId)
     if not module.settings.guidance then
         guide.key = nil
         return
@@ -331,7 +331,13 @@ local function checkGuide(z, x, y)
     if brief ~= guide.brief then
         guide.brief, guide.key, guide.named = brief, nil, nil
     end
-    local t = logic.footTarget(z, x, y, region)
+    -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
+    local t
+    if roomId then
+        t = logic.roomDoorTarget(z, roomId, x, y)
+    else
+        t = logic.footTarget(z, x, y, region)
+    end
     if t == nil then
         guide.key = nil
         return
@@ -598,8 +604,11 @@ module:hasUpdate(function(self)
             room = found
         end
         if indoor:update(room, x, y) then
-            say(logic.roomText(z, room, lastRoom, true), "room", x, y, indoor.walked)
+            say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
             lastRoom = room
+        end
+        if room then
+            checkGuide(z, x, y, room)
         end
         return
     end
@@ -702,7 +711,11 @@ function module:describeAround()
     end
     local text
     if IsIndoors() then
-        text = room and logic.roomText(z, room, nil, false) or L["room unknown"]
+        text = room and logic.roomText(z, room, nil, false, x, y) or L["room unknown"]
+        local t = room and self.settings.guidance and logic.roomDoorTarget(z, room, x, y)
+        if t then
+            text = text .. ", " .. logic.guideText(z, t, true, t.d <= logic.GUIDE_AT)
+        end
     else
         local swimming = IsSwimming()
         local value = logic.outdoorValue(z, x, y, swimming, isWay(outdoor.current, true))

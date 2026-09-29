@@ -472,9 +472,12 @@ function logic.unpack(zone, locale)
     end
     ix.rooms = {}
     for i, room in ipairs(zone.rooms or {}) do
+        -- axis: the way the room runs (index into zone.axes) when it is long and narrow; winding: its
+        -- floor winds up turning left (1) or right (-1); floor: sq yd; named: a name of its own (a shop)
         ix.rooms[i] = {
             interior = room[1], name = room[2], kind = room[3], boxes = room[4], outline = room[5],
-            entrance = room.entrance or false,
+            entrance = room.entrance or false, axis = room.a, winding = room.w, floor = room.f or 0,
+            named = room.s == 1,
         }
     end
     -- doors between rooms (0 = outside), and per room its doors and the rooms they join

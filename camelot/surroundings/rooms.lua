@@ -231,23 +231,57 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     return room.name
 end
 
+logic.BIG_ROOM = 800 -- sq yd; in a room this big its doorways are said from where the player stands
+
+-- Is the room big (BIG_ROOM)? There its doorways are said and guided to from the player's position.
+function logic.isBigRoom(zone, roomId)
+    local room = zone._index.rooms[roomId]
+    return room ~= nil and room.floor >= logic.BIG_ROOM
+end
+
+-- A doorway's centre in world yards.
+function logic.doorWorld(zone, door)
+    local interior = zone._index.interiors[door.interior]
+    if interior == nil then
+        return nil
+    end
+    return logic.toWorld(interior, door.x, door.y)
+end
+
 -- The doorways of a room as items {label, class ("room" or "way out"), dirs}: the room behind each
 -- (or the way out) with the fixed direction of its doorways (doorwayDirection); the way out first,
--- then the other rooms in the data's order, so a room always says the same. opts (optional): max
--- (items), dirs (directions per item); cameFrom: the room the player came from (a room id,
--- 0 = outside), left out first when there are more than max.
+-- then the other rooms in the data's order, so a room always says the same. In a big room
+-- (isBigRoom), given the player's position (opts.x, opts.y), instead the direction from the player
+-- to each doorway (none closer than HERE), nearest first (user 2026-09-29: "exit northeast" said the
+-- side of a 90 yd hall). opts (optional): max (items), dirs (directions per item); cameFrom: the
+-- room the player came from (a room id, 0 = outside), left out first when there are more than max.
 function logic.roomDoorways(zone, roomId, opts)
     opts = opts or {}
     local ix = zone._index
     if ix.rooms[roomId] == nil then
         return {}
     end
+    local fromPlayer = opts.x ~= nil and logic.isBigRoom(zone, roomId)
     local doors = ix.doorsOf[roomId] or {}
     local ordered = {}
-    for _, outside in ipairs({ true, false }) do
+    if fromPlayer then
+        local dist = {}
         for _, door in ipairs(doors) do
-            if (door.a == 0 or door.b == 0) == outside then
+            local dx, dy = logic.doorWorld(zone, door)
+            if dx then
+                dist[door] = math.sqrt((dx - opts.x) ^ 2 + (dy - opts.y) ^ 2)
                 ordered[#ordered + 1] = door
+            end
+        end
+        table.sort(ordered, function(a, b)
+            return dist[a] < dist[b]
+        end)
+    else
+        for _, outside in ipairs({ true, false }) do
+            for _, door in ipairs(doors) do
+                if (door.a == 0 or door.b == 0) == outside then
+                    ordered[#ordered + 1] = door
+                end
             end
         end
     end
@@ -268,8 +302,39 @@ function logic.roomDoorways(zone, roomId, opts)
                 byLabel[label] = item
                 items[#items + 1] = item
             end
-            logic.addDir(item, logic.doorwayDirection(zone, door, roomId), opts.dirs)
+            local dir
+            if fromPlayer then
+                local dx, dy = logic.doorWorld(zone, door)
+                if (dx - opts.x) ^ 2 + (dy - opts.y) ^ 2 >= logic.HERE ^ 2 then
+                    dir = logic.compassIndex(dx - opts.x, dy - opts.y)
+                end
+            else
+                dir = logic.doorwayDirection(zone, door, roomId)
+            end
+            logic.addDir(item, dir, opts.dirs)
         end
     end
     return logic.capItems(items, opts.max, cameLabel)
+end
+
+-- The nearest doorway of a big room (isBigRoom) within `reach` yards of the player: distance, the
+-- door, its world x and y, the room behind it (0 = outside); or nil.
+function logic.nearestDoorway(zone, roomId, x, y, reach)
+    if not logic.isBigRoom(zone, roomId) then
+        return nil
+    end
+    local best, bestDoor, bx, by = reach, nil, nil, nil
+    for _, door in ipairs(zone._index.doorsOf[roomId] or {}) do
+        local dx, dy = logic.doorWorld(zone, door)
+        if dx then
+            local d = math.sqrt((dx - x) ^ 2 + (dy - y) ^ 2)
+            if d <= best then
+                best, bestDoor, bx, by = d, door, dx, dy
+            end
+        end
+    end
+    if bestDoor == nil then
+        return nil
+    end
+    return best, bestDoor, bx, by, bestDoor.a == roomId and bestDoor.b or bestDoor.a
 end

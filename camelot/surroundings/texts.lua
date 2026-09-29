@@ -92,6 +92,25 @@ end
 -- index from the player), name and short (its text the first time and after), atName and at (at the
 -- target), through (the compass index of the way through it) and throughFormat}.
 
+-- A doorway target: into the room `label` (the way out when `label` is nil), `through` the
+-- compass index of the way through it.
+local function doorwayTarget(key, d, dir, x, y, label, through)
+    if label == nil then
+        return {
+            key = key, kind = "doorway", d = d, dir = dir, x = x, y = y,
+            name = L["way outside"], short = L["way outside"], atName = L["at the way outside"],
+            at = L["at the way outside"],
+            through = through, throughFormat = L["out to the %s"],
+        }
+    end
+    return {
+        key = key, kind = "doorway", d = d, dir = dir, x = x, y = y,
+        name = label, short = L["doorway"],
+        atName = string.format(L["at the doorway to %s"], label), at = L["at the doorway"],
+        through = through, throughFormat = L["through to the %s"],
+    }
+end
+
 local function entranceTarget(zone, x, y, reach)
     local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach)
     if i == nil then
@@ -103,6 +122,18 @@ local function entranceTarget(zone, x, y, reach)
         atName = string.format(L["at the entrance of %s"], e.text), at = L["at the entrance"],
         through = e.inDir, throughFormat = L["in to the %s"],
     }
+end
+
+-- In a big room (logic.isBigRoom), the nearest of its doorways within reach, as a guidance target:
+-- the room behind it by name, the way through it leaving the room.
+function logic.roomDoorTarget(zone, roomId, x, y)
+    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH)
+    if d == nil then
+        return nil
+    end
+    local label = beyond ~= 0 and logic.describeRoom(zone, beyond, roomId) or nil
+    return doorwayTarget(string.format("d%.1f,%.1f", door.x, door.y), d, logic.compassIndex(dx - x, dy - y), dx, dy,
+        label, logic.doorwayDirection(zone, door, roomId))
 end
 
 -- Where a street (road, bridge, canal walk) begins on the square the player is on (or, just off
@@ -277,15 +308,23 @@ function logic.spotText(zone, x, y, value, previous, opts)
     return text
 end
 
--- A room: its name (with the building's when it changes) and its doorways, each with the fixed
--- direction one passes through it leaving the room; announcements (`cut`) at most ITEMS_MAX, the
--- doorway the player came through left out first.
-function logic.roomText(zone, id, previous, cut)
+-- A room: its name (with the building's when it changes), the way it runs when it is long and
+-- narrow ("passage of Ironforge, north to south") or which way its winding stairs turn, and its
+-- doorways, each with the fixed direction one passes through it leaving the room, or in a big room
+-- the direction from the player (x, y) to it; announcements (`cut`) at most ITEMS_MAX, the doorway
+-- the player came through left out first.
+function logic.roomText(zone, id, previous, cut, x, y)
     local text = logic.describeRoom(zone, id, previous)
     if text == nil then
         return nil
     end
-    local opts = { dirs = logic.ITEM_DIRS }
+    local room = zone._index.rooms[id]
+    if room.winding then
+        text = text .. ", " .. (room.winding > 0 and L["winding, turns left going up"] or L["winding, turns right going up"])
+    elseif room.axis then
+        text = text .. ", " .. logic.axisWords(zone, room.axis)
+    end
+    local opts = { dirs = logic.ITEM_DIRS, x = x, y = y }
     if cut then
         opts.max = ITEMS_MAX
         opts.cameFrom = previous or 0
