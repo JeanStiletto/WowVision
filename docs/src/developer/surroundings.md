@@ -24,6 +24,7 @@ tested in `tests.lua`:
   begin on it, items around a place, cliffs and water near an outdoor place.
 - `objects.lua`: objects one bumps into, whose wall it is.
 - `texts.lua`: every spoken text: places, squares, rooms, drop edges, guidance targets.
+- `stops.lua`: where one waits for a ship, zeppelin, lift or tram, and which way it will be.
 
 `module.lua` is the WoW side: settings, the alert, the update loop (every 0.2 s), the walk
 log, `/wv surr` and the describe key.
@@ -93,11 +94,24 @@ Each zone file calls `addon.addZone{...}` with:
   words, places, interiors, rooms and doors; its entrances are the doorways from a covered room
   into one that is not (a shop by "entrance of", a passage by its name, the way outside). While
   the player is in a covered room (`logic.inLayer`), the module runs the outdoor rules on it.
+- `stops` (optional): where one waits for something that moves: `{kind, destination, room (0 =
+  outdoors), cells {row, column, ...}, segments {x1, y1, x2, y2, ...}}`. Kinds `ship`,
+  `zeppelin`, `tram` (with a destination: "wait for the ship to Auberdine"), `lift up`, `lift down`;
+  the cells are the waiting floor (the dock edge beside a ship, a lift's landing, a tram platform
+  along the cars); the segments are where the vehicle stands (a ship along its heading, a lift's
+  car as a point, a tram's cars along the track); the direction said is toward the nearest point
+  of each, from where the player stands ("ship to the southwest"). An outdoor stop counts only
+  outdoors, a stop in a room only in that room (the room the player is in, or the candidates
+  while it is unknown). The module says a stop on stepping onto it, again only after the player
+  walked 3 yards off every stop; the describe key and `/wv surr` add it.
+- A map made of one building (the Deeprun Tram, map 369) has an empty grid: rooms, doors,
+  objects, stops, and its platforms' drop edges into the pits under the tracks as the indoor
+  layer's `edges` (piece = the platform's room), with no layer grid or rooms.
 - Docks and piers are ways: kinds `quay` and `pier` (a spur that joins one other piece), the wide
   parts `square` ("dock of ..."); the water under them is in `bridgeUnder`.
 - `locales`: per client language the words with the same indexes as the English lists
   (`dirs`, `compass`, `axes`, `places` as `{label, road}`, `interiors`, `rooms`, `structs`,
-  `objectNames`). Unpacking puts them in place once and drops the other languages.
+  `objectNames`, `stops` as the destinations). Unpacking puts them in place once and drops the other languages.
 
 ## Walk log
 

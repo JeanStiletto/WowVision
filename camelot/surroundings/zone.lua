@@ -308,6 +308,12 @@ local function prepareWords(zone, locale)
             end
         end
     end
+    -- the stops' destinations
+    for i, name in ipairs(t.stops or {}) do
+        if zone.stops and zone.stops[i] then
+            zone.stops[i][2] = name
+        end
+    end
 end
 
 -- Calls `add(cellKey, value)` for each (row, column, value) triple of a flat list.
@@ -498,6 +504,24 @@ function logic.unpack(zone, locale)
     end
 
     ix.regionOf = {} -- squares found so far, per cell key
+
+    -- stops (where one waits for a ship, zeppelin, lift or tram): {kind, destination, room, cells,
+    -- segments}; the stops on each cell
+    ix.stops, ix.stopCells = {}, {}
+    for i, s in ipairs(zone.stops or {}) do
+        local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, targets = {} }
+        local t = s[5] or {}
+        for k = 1, #t - 3, 4 do
+            stop.targets[#stop.targets + 1] = { t[k], t[k + 1], t[k + 2], t[k + 3] }
+        end
+        ix.stops[i] = stop
+        local cells = s[4] or {}
+        for k = 1, #cells - 1, 2 do
+            local key = cells[k] * zone.cols + cells[k + 1]
+            ix.stopCells[key] = ix.stopCells[key] or {}
+            table.insert(ix.stopCells[key], i)
+        end
+    end
 
     if zone.indoor then
         ix.layer = logic.unpackLayer(zone)

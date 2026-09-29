@@ -3,7 +3,8 @@
 -- Crystal Lake, water to the north", "road, north to south"), on a square its ways on, indoors
 -- the room and its doorways, and in a city's big halls (the indoor layer: Ironforge) the same as
 -- on its streets; drop edges, guidance to entrances, street beginnings and ways out of the water,
--- turn hints on roads, and what the player bumps into. The logic and the texts are
+-- turn hints on roads, what the player bumps into, and where to wait for a ship, zeppelin, lift or
+-- the Deeprun Tram. The logic and the texts are
 -- in the other files of this folder (docs/src/developer/surroundings.md).
 
 local logic = WowVision.surroundingsLogic
@@ -57,6 +58,7 @@ local BUMP_MOVING = 0.2 -- moved in one look that counts as moving freely
 local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
+local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 
 -- What the module knows about where the player is
 local zone = nil -- the zone data the player is in (unpacked)
@@ -87,6 +89,7 @@ local aheadX, aheadY = nil, nil -- where it was said: walking far from there for
 local guide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- on foot
 local waterGuide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
 local bump = { ticks = 0, key = nil, free = 0, time = nil }
+local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
 
 -- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
 -- The place or room there is then said at once.
@@ -283,8 +286,9 @@ local function findZone(x, y, map)
             logEntry("zone", found.label or found.key, x, y)
         end
         forgetPlace()
-        -- the targets are numbered per zone
+        -- the targets and stops are numbered per zone
         guide.key, guide.named, waterGuide.key, waterGuide.named = nil, nil, nil, nil
+        stopSaid, stopOut = nil, 0
     end
     return zone
 end
@@ -564,6 +568,39 @@ local function checkAhead(z, x, y)
     end
 end
 
+-- Stops: stepping onto the floor where one waits for a ship, zeppelin, lift or tram says so and
+-- which way it will be ("wait for the ship to Auberdine, ship to the southwest"); the same stop
+-- again only after the player walked STOP_REARM yards off every stop (a step off the edge of the
+-- area and back is quiet). `rooms`: indoors the set of rooms the player may be in, nil outdoors.
+local function checkStop(z, x, y, px, py, rooms)
+    local i = logic.stopAt(z, x, y, rooms)
+    if i then
+        stopOut = 0
+        if i ~= stopSaid then
+            say(logic.stopText(z, i, x, y), "stop", x, y)
+            stopSaid = i
+        end
+    elseif stopSaid and px then
+        stopOut = stopOut + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        if stopOut >= STOP_REARM then
+            stopSaid = nil
+        end
+    end
+end
+
+-- Indoors: the rooms the player may be in: the room when known, else the candidates here.
+local function roomsHere(z, x, y)
+    local here = {}
+    if room then
+        here[room] = true
+    else
+        for _, id in ipairs(logic.roomCandidates(z, x, y)) do
+            here[id] = true
+        end
+    end
+    return here
+end
+
 -- Outdoors: the place, announced after the entry distance; on a square what comes close.
 local function checkPlace(z, x, y)
     local value
@@ -629,18 +666,11 @@ module:hasUpdate(function(self)
             room = found
         end
         local layer = logic.layer(z)
+        local here = roomsHere(z, x, y)
         if layer then
             -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
             -- has), each in the room its floor belongs to: this room, or while it is unknown
             -- (stacked floors) any room here
-            local here = {}
-            if room then
-                here[room] = true
-            else
-                for _, id in ipairs(logic.roomCandidates(z, x, y)) do
-                    here[id] = true
-                end
-            end
             checkEdges(layer, x, y, px, py, here)
         end
         if layer and logic.inLayer(layer, room, x, y) then
@@ -653,6 +683,7 @@ module:hasUpdate(function(self)
             checkGuide(layer, x, y)
             checkPlace(layer, x, y)
             checkAhead(layer, x, y)
+            checkStop(z, x, y, px, py, here)
             return
         end
         if layerMode then
@@ -679,6 +710,7 @@ module:hasUpdate(function(self)
             end
             checkGuide(z, x, y, room, not entryAway and entryDoor or nil)
         end
+        checkStop(z, x, y, px, py, here)
         return
     end
     lastRoom = nil
@@ -693,6 +725,9 @@ module:hasUpdate(function(self)
     checkPlace(z, x, y)
     checkAhead(z, x, y)
     checkBend(z, x, y)
+    if not IsSwimming() then
+        checkStop(z, x, y, px, py, nil)
+    end
 end)
 
 -- /wv surr log on|off switches the walk log; /wv surr log [count] says the last entries;
@@ -755,6 +790,10 @@ module:registerCommand({
                 if i then
                     parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s", e.text, math.floor(d + 0.5), z.compass[dir])
                 end
+                local stop = logic.stopAt(z, x, y, IsIndoors() and roomsHere(z, x, y) or nil)
+                if stop then
+                    parts[#parts + 1] = "Stop: " .. logic.stopText(z, stop, x, y)
+                end
                 if IsIndoors() then
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
@@ -813,6 +852,11 @@ function module:describeAround()
         if t then
             text = text .. ", " .. logic.guideText(z, t, true, t.d <= logic.GUIDE_AT)
         end
+    end
+    -- where one waits for a ship, zeppelin, lift or tram
+    local stop = logic.stopAt(z, x, y, IsIndoors() and roomsHere(z, x, y) or nil)
+    if stop then
+        text = text .. ", " .. logic.stopText(z, stop, x, y)
     end
     say(text, "around", x, y)
 end

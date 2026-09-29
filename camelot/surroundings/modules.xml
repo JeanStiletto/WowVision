@@ -11,6 +11,7 @@
   <Script file="squares.lua" />
   <Script file="objects.lua" />
   <Script file="texts.lua" />
+  <Script file="stops.lua" />
   <Script file="module.lua" />
 
 </Ui>

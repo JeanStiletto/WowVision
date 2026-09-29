@@ -952,4 +952,36 @@ testRunner:addSuite("Surroundings", {
         text = logic.spotText(z, 78, 35, 100, nil, {})
         t:assertEqual(text, "square of Test, street of Test to the north, entrance of Test Bank to the southeast")
     end,
+
+    ["a stop says what to wait for and which way it will be; outdoors only open floor, indoors its room"] = function(t)
+        local z = newZone()
+        -- a ship lying along x = 75 south of row 1 (y 40 to 20); a lift in the back room (room 3)
+        -- whose car stands at x 95, y 5, its landing the cell of row 0, column 5
+        z.stops = {
+            { "ship", "Test Harbor", 0, { 1, 1, 1, 2 }, { 75, 40, 75, 20 } },
+            { "lift down", "", 3, { 0, 5 }, { 95, 5, 95, 5 } },
+        }
+        z.locales = { deDE = { stops = { "Testhafen", "" } } }
+        logic.unpack(z)
+        local i = logic.stopAt(z, 85, 35, nil)
+        t:assertEqual(i, 1)
+        t:assertEqual(logic.stopText(z, i, 85, 35), "wait for the ship to Test Harbor, ship to the south")
+        -- beyond the ship's end it lies to the southeast
+        t:assertEqual(logic.stopText(z, i, 85, 45), "wait for the ship to Test Harbor, ship to the southeast")
+        -- a stop in a room: not outdoors, only in its room
+        t:assertEqual(logic.stopAt(z, 95, 5, nil), nil)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [1] = true }), nil)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [3] = true }), 2)
+        t:assertEqual(logic.stopText(z, 2, 95, 9), "wait for the lift down, lift to the east")
+        -- no stop off its cells
+        t:assertEqual(logic.stopAt(z, 75, 35, nil), nil)
+    end,
+
+    ["a stop's destination comes in the client's language"] = function(t)
+        local z = newZone()
+        z.stops = { { "tram", "Stormwind City", 0, { 1, 0 }, { 80, 50, 80, 58 } } }
+        z.locales = { deDE = { stops = { "Sturmwind" } } }
+        logic.unpack(z, "deDE")
+        t:assertEqual(logic.stopText(z, 1, 85, 55), "wait for the tram to Sturmwind, tram to the south")
+    end,
 })
