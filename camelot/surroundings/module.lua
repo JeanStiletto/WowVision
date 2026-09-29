@@ -60,6 +60,8 @@ local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
+local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
+local PASSED_SAME = 4 -- a guidance target this close to that doorway is that doorway
 
 -- What the module knows about where the player is
 local zone = nil -- the zone data the player is in (unpacked)
@@ -94,6 +96,10 @@ local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player w
 -- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
 -- was last near; nil = not in such a hall
 local hallGap = nil
+-- The doorway just walked through {x, y}: not said again (it is a doorway on both sides) until the
+-- player was once farther than the guidance reach from it (user 2026-09-29: "Ausgang, 6 Meter im
+-- Nordosten" right after going out through it)
+local passed = nil
 
 -- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
 -- on the ground above the Undercity Tirisfal's).
@@ -396,11 +402,37 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     else
         t = logic.footTarget(z, x, y, region)
     end
-    if t == nil then
+    -- the doorway just walked through stays quiet (said again as new once the player left it)
+    if t == nil or (passed and (t.x - passed.x) ^ 2 + (t.y - passed.y) ^ 2 <= PASSED_SAME ^ 2) then
         guide.key = nil
         return
     end
     guideTo(z, guide, t, x, y, brief)
+end
+
+-- Walked through a doorway (the room, the big hall or inside and outside changed, or a doorway of
+-- the room was crossed): the nearest doorway within PASSED_REACH is the one passed.
+local function notePassed(z, x, y)
+    local best, bx, by = PASSED_REACH ^ 2, nil, nil
+    for _, door in ipairs(z._index.doors or {}) do
+        local dx, dy = logic.doorWorld(z, door)
+        if dx then
+            local d = (dx - x) ^ 2 + (dy - y) ^ 2
+            if d <= best then
+                best, bx, by = d, dx, dy
+            end
+        end
+    end
+    if bx then
+        passed = { x = bx, y = by }
+    end
+end
+
+-- Forget the doorway passed once the player was farther than the guidance reach from it.
+local function updatePassed(x, y)
+    if passed and (x - passed.x) ^ 2 + (y - passed.y) ^ 2 > logic.GUIDE_REACH ^ 2 then
+        passed = nil
+    end
 end
 
 -- While swimming: the nearest way out of the water; climbing out at an edge warns again.
@@ -690,16 +722,25 @@ module:hasUpdate(function(self)
     local inHall = updateHall(z, x, y, px, py)
     logTrail(x, y)
     local isIndoors = IsIndoors() or inHall
+    updatePassed(x, y)
     if isIndoors ~= wasIndoors then
+        if wasIndoors ~= nil then
+            notePassed(z, x, y)
+        end
         forgetPlace()
         outAt = (wasIndoors and not isIndoors) and now or nil
         wasIndoors = isIndoors
     end
     checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
+        local before = room
+        local crossed = logic.crossedDoor(z, room, px, py, x, y)
         local found = logic.resolveRoom(z, x, y, room, px, py)
         if found ~= nil then
             room = found
+        end
+        if crossed ~= nil or (before ~= nil and room ~= before) then
+            notePassed(z, x, y)
         end
         local layer = logic.layer(z)
         local here = roomsHere(z, x, y)
@@ -714,6 +755,7 @@ module:hasUpdate(function(self)
             if not layerMode then
                 layerMode = true
                 forgetWays()
+                notePassed(z, x, y)
             end
             lastRoom = room or lastRoom
             checkGuide(layer, x, y)
@@ -725,6 +767,7 @@ module:hasUpdate(function(self)
         if layerMode then
             layerMode = false
             forgetWays()
+            notePassed(z, x, y)
         end
         if room ~= entryRoom then
             -- a new room: the doorway just walked through (a big room's, within reach)
