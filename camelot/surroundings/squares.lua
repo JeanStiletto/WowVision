@@ -229,20 +229,31 @@ function logic.withoutSideStreets(zone, region)
     return kept
 end
 
--- Does the way behind a square's mouth lead on: does the thing (all cells of that name joined to
--- the mouth) meet another way than itself and the square? The ramps from the Valley of Heroes down
--- to the moat banks do not (they end at the shore); a street to the next district does. Cached.
-function logic.leadsOn(zone, mouth, originLabel)
+-- Does the way behind a square's mouth lead on: does the thing (the cells of its pieces joined to
+-- the mouth) meet another way than itself and the square's own region? The ramps from the Valley
+-- of Heroes down to the moat banks do not (they end at the shore); a street to the next district
+-- does. Pieces, not names: a district's streets and squares share a name, and the lane through
+-- Stormwind's gate joins the forecourt to the Trade District, both "square of Trade District"
+-- (user's walk 2026-09-30 22:15, the lane was dropped as leading nowhere). Cached.
+function logic.leadsOn(zone, mouth, region)
     if mouth.leads ~= nil then
         return mouth.leads
     end
+    local own = {}
+    for _, m in ipairs(mouth.cells or {}) do
+        own[logic.placeOf(logic.valueAtCell(zone, m[1], m[2]))] = true
+    end
     local leads, count = false, 0
-    logic.flood(zone, mouth.cells or {}, function(r, c)
-        local label, kind = labelAtCell(zone, r, c)
-        if label ~= mouth.label and label and label ~= originLabel and logic.WAYS[kind] then
+    logic.flood(zone, mouth.cells or {}, function(r, c, key)
+        local value = logic.valueAtCell(zone, r, c)
+        local place = value ~= 0 and logic.placeOf(value) or nil
+        if own[place] then
+            return true
+        end
+        if place and not region.cells[key] and logic.WAYS[logic.kind(zone, place)] then
             leads = true
         end
-        return label == mouth.label
+        return false
     end, function()
         count = count + 1
         if count > logic.LEADS_MAX then
@@ -306,7 +317,7 @@ function logic.wayBeginnings(zone, region)
     local list = {}
     for _, m in ipairs(region.mouths) do
         local kind = m.class == "way" and m.cells[1] and select(2, labelAtCell(zone, m.cells[1][1], m.cells[1][2]))
-        if kind and not logic.SQUARES[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region.label) then
+        if kind and not logic.SQUARES[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
             -- the middle of the opening: the border point nearest to the border's centre
             local mx, my, ix, iy, n = 0, 0, 0, 0, #m.cells
             for _, cell in ipairs(m.cells) do
@@ -413,7 +424,7 @@ function logic.aroundItems(region, x, y, opts)
     for _, m in ipairs(region.mouths) do
         if (opts.classes == nil or opts.classes[m.class])
             and not (opts.leading and m.class == "way" and not isSquareMouth(opts.zone, m)
-                and not logic.leadsOn(opts.zone, m, region.label)) then
+                and not logic.leadsOn(opts.zone, m, region)) then
             found[#found + 1] = mouthFound(m, x, y)
         end
     end
