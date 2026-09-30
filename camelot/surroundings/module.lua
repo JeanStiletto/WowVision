@@ -631,9 +631,10 @@ end
 -- it led at the last announcement or hint but keeps its direction words (a new direction is an
 -- announcement of its own), which way to turn, unless the player faces that way already. Where
 -- the road leads comes from its centre line, not from the player's steps, so drifting or turning
--- on the spot says nothing. Not on city streets: a wide street has several centre lines side by
--- side (around planters and stalls), and where it leads 10 yd ahead jumps between them (a replay
--- of the Trade District walk gave 20 hints in 4 minutes); a street's new direction is still said.
+-- on the spot says nothing. Not on city streets yet, although roads and streets should follow the
+-- same rules (user 2026-09-30): where two centre lines lie close (a wide street, a bay beside it)
+-- where the way leads jumps between them; a replay of all walks with streets included gave 183
+-- hints instead of 9, "right, left" every second in the bay beside the griffon ramp.
 local function checkBend(z, x, y)
     local key = outdoor.current
     local facing = turnFacing()
@@ -658,16 +659,16 @@ local function checkBend(z, x, y)
     end
 end
 
--- On a city street or walk (not a road: there the user turned too early on words said ahead):
--- the next piece AHEAD_LOOK yd before it, once, said as on entering it ("street to Cathedral
--- Square, northeast to southwest"; no distance, the user found it spam and stops and turns on
--- hearing it), so there is time to turn where a street ends at the water and goes on to the side
--- (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water). Stepping onto that
--- piece then says nothing more.
+-- On a way (a road, a city street or walk; the same rules for both, user 2026-09-30: the careful
+-- one of the streets for all): the next piece AHEAD_LOOK yd before it, once, said as on entering it
+-- ("street to Cathedral Square, northeast to southwest"; no distance, the user found it spam and
+-- stops and turns on hearing it), so there is time to turn where a street ends at the water and
+-- goes on to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water).
+-- Stepping onto that piece then says nothing more.
 local function checkAhead(z, x, y)
     local key = outdoor.current
     local facing = GetPlayerFacing()
-    if not logic.isWayKey(key) or logic.ROADS[logic.kind(z, logic.keyPlace(key))] or facing == nil then
+    if not logic.isWayKey(key) or facing == nil then
         return
     end
     if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
