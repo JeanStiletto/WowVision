@@ -45,10 +45,13 @@ end
 local WALL_STEP = 0.5 -- yd between the points looked at ahead
 
 -- Whose wall the player pushes against from outside: the interior whose room floor or outline lies
--- just ahead (within `reach` yards along the vector), or a structure with drop edges (a gate, a
--- wall, a pier) whose floor lies there. Returns the name or nil.
+-- just ahead (within `reach` yards along the vector), a structure with drop edges (a gate, a
+-- wall, a pier) whose floor lies there, or the side of a ramp or stairs the player does not stand
+-- on (the Dwarven District bank's ramp stands 4 yd over the street beside it). Returns the name
+-- (and "side" for a ramp or stairs) or nil.
 function logic.wallOwner(zone, x, y, vx, vy, reach)
     local ix = zone._index
+    local here = logic.valueAt(zone, x, y)
     for k = WALL_STEP, reach, WALL_STEP do
         local px, py = x + vx * k, y + vy * k
         local id = logic.roomCandidates(zone, px, py, 0)[1] or logic.roomOutlineAt(zone, px, py)
@@ -60,6 +63,10 @@ function logic.wallOwner(zone, x, y, vx, vy, reach)
         local struct = ix.struct[r * zone.cols + c]
         if struct and not ix.waterStructs[struct] then
             return zone.structs[struct]
+        end
+        local value = logic.valueAtCell(zone, r, c)
+        if value ~= 0 and logic.placeOf(value) ~= logic.placeOf(here) and logic.CLIMBS[logic.kindOf(zone, value)] then
+            return logic.place(zone, logic.placeOf(value)).label, "side"
         end
     end
     return nil
