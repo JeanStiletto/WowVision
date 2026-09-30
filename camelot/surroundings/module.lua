@@ -409,6 +409,10 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     else
         t = logic.footTarget(z, x, y, region)
     end
+    -- not the beginning of the way the player is on (stepping out of a street onto its square)
+    if t and t.kind == "way" and logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name then
+        t = nil
+    end
     -- the doorway just walked through stays quiet (said again as new once the player left it)
     if t == nil or (passed and (t.x - passed.x) ^ 2 + (t.y - passed.y) ^ 2 <= PASSED_SAME ^ 2) then
         guide.key = nil
@@ -468,13 +472,23 @@ local function notePassed(z, x, y)
         end
     end
     if bx then
-        passed = { x = bx, y = by }
+        passed = { x = bx, y = by, reach = logic.GUIDE_REACH }
     end
 end
 
--- Forget the doorway passed once the player was farther than the guidance reach from it.
+-- Stepped off a way onto a square: the beginning of that way the player came out of stays quiet,
+-- as a doorway walked through does, until the player is beyond its guidance reach (the lane
+-- through Stormwind's gate is guided to from 17 yd; user 2026-09-30).
+local function notePassedBeginning(z, x, y, square, wayKey)
+    local _i, _d, _dir, b = logic.nearestBeginning(z, square, x, y, logic.GUIDE_REACH)
+    if b and b.label == logic.keyLabel(z, wayKey) then
+        passed = { x = b.x, y = b.y, reach = logic.GUIDE_REACH + b.span / 2 }
+    end
+end
+
+-- Forget the doorway or beginning passed once the player was farther than its guidance reach.
 local function updatePassed(x, y)
-    if passed and (x - passed.x) ^ 2 + (y - passed.y) ^ 2 > logic.GUIDE_REACH ^ 2 then
+    if passed and (x - passed.x) ^ 2 + (y - passed.y) ^ 2 > passed.reach ^ 2 then
         passed = nil
     end
 end
@@ -733,6 +747,9 @@ local function checkPlace(z, x, y, forced)
             { cut = true, facing = turnFacing(), swimming = IsSwimming() })
         -- on a square: what was said now (its exits, what is close) is not said again on coming close
         region, saidMouths = square, said or {}
+        if leftWay and square then
+            notePassedBeginning(z, x, y, square, leftWay)
+        end
         bendFrom = nil
         if outdoor.current == aheadKey then
             -- said before reaching it (checkAhead): only logged

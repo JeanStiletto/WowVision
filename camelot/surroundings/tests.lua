@@ -793,14 +793,16 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(b, list[1])
         t:assertEqual(math.floor(d + 0.5), 20)
         t:assertEqual(dir, 8)
-        t:assertNil(logic.nearestBeginning(z, region, 78, 35, 15))   -- out of reach
+        -- reached from the reach plus half the opening's width (10 yd here)
+        t:assertNil(logic.nearestBeginning(z, region, 78, 35, 10))   -- 15: out of reach
+        t:assertEqual(logic.nearestBeginning(z, region, 78, 35, 16), 1)   -- 21
     end,
 
     ["a street along the square's side and a street leading nowhere are no beginnings"] = function(t)
         local z = newSquareZone()
         table.insert(z.places, { "road", "road of Test" })
-        -- along the west side (rows 1 to 3, 20 yd of border), going on into a road at the north
-        z.grid = { "600,300*6", "281,100*5,300", "281,100*5,400", "281,100*5,400", "0*7" }
+        -- along the west side (rows 1 to 4, 30 yd of border), going on into a road at the north
+        z.grid = { "600,300*6", "281,100*5,300", "281,100*5,400", "281,100*5,400", "281,100*5,400" }
         logic.unpack(z)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(#logic.wayBeginnings(z, region), 0)
