@@ -30,12 +30,19 @@ a screen reader would cut its own speech off at every key press.
   after 3 yards on it.
 - Next to a place, the **cliffs and water** near it ("forest, cliff edge to the west"), and
   after stepping off a road or street, where it is ("open land, road to the northwest";
-  in a city "grass, street to the east"). The terrain between a city's streets is "grass".
+  in a city "Trade District, street to the east", or "grass, street to the east" where there
+  really is grass). The open ground between a city's streets is called by its district; where
+  the district is a square of its own name (Cathedral Square), it is part of that square.
 - A **dead end**: the stretch of a street or walk from which the only way on is back the way
   you came is called "dead end" instead of its street name ("dead end, northwest to
   southeast").
 - **On a city square**, its ways on ("square of Trade District, street to The Canals to the
-  east"), and water, canals and drops as you come close to them.
+  east"), and water, canals and drops as you come close to them. Where a street's paved lane
+  crosses a square to another street, you can follow the street across it; stepping off the lane
+  says the square again.
+- **Ramps and stairs** in the open parts of a city are ways of their own, said with the way up:
+  "ramp to the bank, up to the northeast", "stairs of Mage Quarter, up to the west". One that
+  leads to a building's door is named after it. On a square they are listed with its other ways.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it. A long, narrow
   room says which way it runs ("passage of Ironforge, north to south"); winding stairs say which
@@ -61,7 +68,8 @@ a screen reader would cut its own speech off at every key press.
 - **Turn hints** on roads and streets: "left" or "right" when the direction words cannot
   tell you that you are facing a little off the way, and at gentle bends of a road.
 - **Bumps**: when wall detection finds you blocked, what you are pushing against ("wagon",
-  "wall of auction house", indoors "wall"). This needs the wall detection module enabled.
+  "wall of auction house", indoors "wall"); beside a raised ramp or stairs its side ("ramp to the
+  bank, side"). This needs the wall detection module enabled.
 
 ## Keys and commands
 

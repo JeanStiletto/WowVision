@@ -616,9 +616,9 @@ local function checkBump(z, x, y, px, py, isIndoors)
     elseif isIndoors then
         text, key = L["wall"], "wall"
     else
-        local owner = logic.wallOwner(z, x, y, vx, vy, WALL_REACH)
+        local owner, what = logic.wallOwner(z, x, y, vx, vy, WALL_REACH)
         if owner then
-            text, key = string.format(L["wall of %s"], owner), owner
+            text, key = string.format(what == "side" and L["%s, side"] or L["wall of %s"], owner), owner
         end
     end
     if text and key ~= bump.key then

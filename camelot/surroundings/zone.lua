@@ -20,14 +20,18 @@ end
 logic.ROADS = set("road", "fork", "crossing")
 logic.SQUARES = set("square", "hall") -- places that say what lies around them; no way begins there
 logic.WAYS = set("street", "square", "hall", "road", "fork", "crossing", "bridge", "quay", "pier", "canal walk",
-    "slime canal walk", "walk along the lava")
+    "slime canal walk", "walk along the lava", "ramp", "stairs")
 logic.LANE_KINDS = set("road", "fork", "crossing", "street", "quay", "pier", "canal walk", "slime canal walk",
-    "walk along the lava") -- ways with centre lines
-logic.TURN_KINDS = set("road", "street", "quay", "pier", "canal walk", "slime canal walk", "walk along the lava") -- ... with one direction
+    "walk along the lava", "ramp", "stairs") -- ways with centre lines
+logic.TURN_KINDS = set("road", "street", "quay", "pier", "canal walk", "slime canal walk", "walk along the lava",
+    "ramp", "stairs") -- ... with one direction
 -- counted after a short walk inside: bridges and every way with a centre line (streets and walks
 -- follow the road rules)
 logic.NARROW = set("road", "bridge", "fork", "crossing", "street", "quay", "pier", "canal walk", "slime canal walk",
-    "walk along the lava")
+    "walk along the lava", "ramp", "stairs")
+-- a city's outdoor ramps and stairs (said with the way up: "ramp, up to the northeast"); their
+-- sides are named when bumped into from beside them
+logic.CLIMBS = set("ramp", "stairs")
 logic.WATER = set("deep water", "shore")
 logic.DROPS = set("cliff edge")
 

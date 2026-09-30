@@ -1038,4 +1038,34 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z, "deDE")
         t:assertEqual(logic.stopText(z, 1, 85, 55), "wait for the tram to Sturmwind, tram to the south")
     end,
+
+    ["a ramp is a way keyed like a street, said with the way up; its side is named when bumped"] = function(t)
+        local z = newWalkZone()
+        -- the walk's columns (y 52 to 40) are a ramp rising to the northeast
+        z.dirs = { "running %s", "up to the %s" }
+        z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
+        z.grid = { "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2" }
+        z.lanes = { 100, 46, 84, 46, 222, 20, 40 }
+        logic.unpack(z)
+        t:assertEqual(logic.outdoorKey(z, 222), "r222")
+        t:assertEqual(logic.describe(z, 222, true), "ramp to the bank, up to the northeast")
+        -- on the square beside it, pushing east against its side
+        local owner, what = logic.wallOwner(z, 94, 53, 0, -1, 2.5)
+        t:assertEqual(owner, "ramp to the bank")
+        t:assertEqual(what, "side")
+        -- on the ramp itself its own cells are no side
+        t:assertNil(logic.wallOwner(z, 94, 46, 0, -1, 2.5))
+    end,
+
+    ["a street's lane across a square: on the line the street, off it the square"] = function(t)
+        local z = newWalkZone()
+        z.places = { { "square", "square of Test" }, { "street", "street of Test" } }
+        -- the whole grid is square; the street's lane crosses it north-south at y = 50
+        z.grid = { "100*7", "100*7", "100*7", "100*7" }
+        z.lanes = { 100, 50, 84, 50, 211, 20, 40 }
+        logic.unpack(z)
+        t:assertEqual((logic.outdoorValue(z, 92, 50, false, false)), 211)
+        -- 6 yd off the line, past its leave distance: the square again
+        t:assertEqual((logic.outdoorValue(z, 92, 44, false, true)), 100)
+    end,
 })
