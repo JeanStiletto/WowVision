@@ -691,7 +691,7 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z)
         t:assertEqual(logic.isAroundPlace(z, 100), true)
         t:assertEqual(logic.isAroundPlace(z, 281), false)   -- a street with a direction
-        t:assertEqual(logic.isAroundPlace(z, 200), true)    -- a street without one
+        t:assertEqual(logic.isAroundPlace(z, 200), false)   -- a street without one: a way, as a road
         t:assertEqual(logic.isAroundPlace(z, 300), false)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(logic.regionAt(z, 65, 55), region)    -- the same square, cached
