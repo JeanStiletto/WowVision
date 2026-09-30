@@ -17,13 +17,14 @@ logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
 
--- Does a cell value belong to a place that says what lies around it?
+-- Does a cell value belong to a place that says what lies around it? Only squares and halls: a
+-- street without a direction (a piece without centre line) is a way like a road without one (one
+-- rule for roads and streets, user 2026-09-30).
 function logic.isAroundPlace(zone, value)
     if value == nil or value == 0 then
         return false
     end
-    local kind = logic.kindOf(zone, value)
-    return logic.SQUARES[kind] or (kind == "street" and value % 100 == 0) or false
+    return logic.SQUARES[logic.kindOf(zone, value)] or false
 end
 
 -- The thing a border cell shows: label and class ("way" with the place's label; "water", "cliff
