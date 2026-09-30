@@ -488,6 +488,23 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(exits[1].label, "street of Test")
     end,
 
+    ["a street to another piece of the same square leads on"] = function(t)
+        -- the lane through Stormwind's gate: forecourt and district are both "square of Trade
+        -- District" (one place), joined only by the street; the street is an exit of the forecourt
+        local z = newSquareZone()
+        z.grid[1] = "300,100*5,300"
+        z.grid[2] = "300*2,281*2,300*3"
+        z.grid[3] = "300,100*5,300"
+        z.grid[4] = "300,100*5,400"
+        z.grid[5] = "0*7"
+        logic.unpack(z)
+        local region = logic.regionAt(z, 68, 35)
+        t:assertEqual(region.cells[0 * z.cols + 1], nil)   -- the far piece is not this region
+        local exits = logic.aroundItems(region, 68, 35, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#exits, 1)
+        t:assertEqual(exits[1].label, "street of Test")
+    end,
+
     ["cliffs and water near a place: nearest first, directions not neighbours on the compass"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)
