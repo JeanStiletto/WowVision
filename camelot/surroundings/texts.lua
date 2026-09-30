@@ -158,8 +158,10 @@ local function beginningTarget(zone, x, y, reach, square)
     return {
         key = "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), kind = "way", d = d, dir = dir,
         x = b.x, y = b.y,
-        name = b.label, short = L[b.kind],
-        atName = string.format(L["at the %s"], b.label), at = string.format(L["at the %s"], L[b.kind]),
+        -- always by name: "street here" says nothing on a square (user 2026-09-30), an opening is
+        -- one of few, unlike the entrances along it
+        name = b.label, short = b.label,
+        atName = string.format(L["at the %s"], b.label), at = string.format(L["at the %s"], b.label),
         through = b.onward, throughFormat = L["on to the %s"],
     }
 end
