@@ -36,7 +36,9 @@ log, `/wv surr` and the describe key.
   north-south, northeast-southwest, east-west, northwest-southeast.
 - A facing (`GetPlayerFacing`) is in radians, 0 = north, counter-clockwise.
 - Kinds are the data's English keys ("road", "canal walk", "deep water"); the words spoken
-  come from the zone (localized) or from the locale strings.
+  come from the zone (localized) or from the locale strings. A city's outdoor ramps and stairs
+  are the kinds "ramp" and "stairs" (`logic.CLIMBS`): ways with centre lines keyed like streets;
+  `wallOwner` names their side when bumped into from beside them.
 
 ## Zone data
 
@@ -45,8 +47,8 @@ Each zone file calls `addon.addZone{...}` with:
 - `key`, `label`, `map`: the map id `UnitPosition` returns.
 - `top`, `left`, `cell`, `rows`, `cols`: the grid. Row 0 lies at world x = `top` (north),
   column 0 at world y = `left` (west); cells are `cell` yards wide.
-- `dirs`: direction templates ("water to the %s", "running %s"); `compass`: the 8 compass
-  words; `axes`: the 4 axis words ("north-south").
+- `dirs`: direction templates ("water to the %s", "running %s", "up to the %s" for a ramp's or
+  stairs' way up); `compass`: the 8 compass words; `axes`: the 4 axis words ("north-south").
 - `places`: `{kind, label, nearest road (optional)}` per place id.
 - `grid`: one run-length string per row, `"value*count,value,..."`. A value is
   place id * 100 + direction code; the code is template index * 10 + word index (a compass
