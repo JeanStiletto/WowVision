@@ -10,7 +10,6 @@ local LANE_KEEP = { bridge = true } -- places a lane never replaces
 -- yd; looking outward from the player for what is beside the way (12 announced a square 10 yd away
 -- from the middle of a canal street, Stormwind 2026-09-29)
 local BESIDE_STEP, BESIDE_REACH = 2, 6
-local ROAD_SIDE_CELLS = 3 -- cells searched beside a road for the nearest place that is no road
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
@@ -18,13 +17,27 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 -- and the point; nil when there is none. `skip`: a lane left out.
 function logic.nearestLane(zone, x, y, reach, kinds, skip)
     local r, c = logic.cellOf(zone, x, y)
-    local list = zone._index.lanes[r * zone.cols + c]
+    local ix = zone._index
+    local list = ix.lanes[r * zone.cols + c]
     if list == nil then
         return nil
     end
+    -- a raised piece's lines count only up on it, and up on one over other floor the lower
+    -- floor's lines do not (zone.stacked, logic.setOn)
+    local on = ix.on
+    local underHigh = false
+    local alts = on and ix.stacked and ix.stacked[r * zone.cols + c]
+    if alts then
+        for _, a in ipairs(alts) do
+            if on[a.piece] then
+                underHigh = true
+            end
+        end
+    end
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip then
+        local level = (lane.piece == 0 and not underHigh) or (lane.piece ~= 0 and on and on[lane.piece])
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level then
             local ax, ay, dx, dy = lane.x1, lane.y1, lane.x2 - lane.x1, lane.y2 - lane.y1
             local n = dx * dx + dy * dy
             local t = n > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / n)) or 0
@@ -62,7 +75,10 @@ function logic.laneValue(zone, x, y, value, onWay)
     if not logic.LANE_KINDS[kind] then
         return value, true
     end
-    -- beside the way: outward from the line through the player, the first place that is no way
+    -- beside the way: outward from the line through the player, the first place that is no way;
+    -- with none within reach the way goes on (roads and streets alike, user 2026-10-01: roads
+    -- also looked 3 cells around for any place that is no road and left the road from deep
+    -- inside its cells, "group of trees, road to the east" every 70 yd on the Goldshire road)
     local ux, uy = (x - px) / d, (y - py) / d
     for step = 0, BESIDE_REACH, BESIDE_STEP do
         local v = logic.valueAt(zone, x + ux * step, y + uy * step)
@@ -70,16 +86,7 @@ function logic.laneValue(zone, x, y, value, onWay)
             return v, true
         end
     end
-    if not logic.ROADS[kind] then
-        return value, false
-    end
-    local near, _x, _y, other = logic.nearestCell(zone, x, y, ROAD_SIDE_CELLS, nil, function(v)
-        return v ~= 0 and not logic.ROADS[logic.kindOf(zone, v)]
-    end)
-    if near == nil then
-        return value, false
-    end
-    return other, true
+    return value, false
 end
 
 logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees

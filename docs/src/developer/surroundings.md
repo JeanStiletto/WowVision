@@ -67,14 +67,22 @@ Each zone file calls `addon.addZone{...}` with:
 - `edges`: per drop edge `{structure, facing (compass index of the drop), drop yards, into
   (0 a plain drop, 1 water, 2 a city canal, 3 lava), piece, x1, y1, x2, y2, ...}`: points about 2
   yards apart along the edge.
-- High floor pieces (wall-walks, bridge decks one can walk under): an edge with piece 0 lies
-  low; otherwise it warns only after the player was seen stepping onto that piece.
-  `pieceCells`: row, column, piece triples (footprints); `access`: piece, kind, x, y
-  (kind 1 stepped onto from the ground, 2 out of a building's rooms); `links`: pairs of joined
-  pieces.
-- `lanes`: centre line stretches, 7 values each: x1, y1, x2, y2, the cell value there, and
-  the distances from the line in 0.1 yards within which the way starts to count (enter) and
-  beyond which it stops (leave).
+- High floor pieces (wall-walks, bridge decks one can walk under, a city's raised floors): an
+  edge with piece 0 lies low; otherwise it warns only after the player was seen stepping onto
+  that piece. `pieceCells`: row, column, piece triples (footprints); `access`: piece, kind, x,
+  y (kind 1 stepped onto from the ground, 2 out of a building's rooms); `links`: pairs of
+  joined pieces. `piecePlaces` (optional): piece, place id pairs, the places of the floor up on
+  the piece: a step from the ground counts only from a cell painted with one of them.
+- `stacked` (optional): row, column, piece, value up, value below: cells where a high piece
+  lies over other floor (decided offline with the heights: the landing of a ramp over the bay
+  beside it). The grid holds one value per cell; `logic.valueAtCell` returns the value up
+  while the module counts the player on that piece (`logic.setOn`), else the value below, so
+  every lookup (places, squares, guidance) follows the level the player is on.
+- `lanes`: centre line stretches, `laneFields` values each (7 in older files, 8 now): x1, y1,
+  x2, y2, the cell value there, the distances from the line in 0.1 yards within which the way
+  starts to count (enter) and beyond which it stops (leave), and the high piece the stretch
+  runs on (0 = none): such a stretch counts only up on its piece, and over a stacked cell the
+  lower floor's stretches do not count while the player is up.
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).

@@ -89,8 +89,9 @@ function logic.covers(zone, x, y)
     return logic.inGrid(zone, logic.cellOf(zone, x, y))
 end
 
--- The cell value of a grid cell (0 = no data): place id * 100 + direction code.
-function logic.valueAtCell(zone, r, c)
+-- The painted cell value of a grid cell (0 = no data): place id * 100 + direction code; where
+-- floors stack, the level the export painted (mostly the lowest).
+function logic.paintedAtCell(zone, r, c)
     if not logic.inGrid(zone, r, c) then
         return 0
     end
@@ -109,6 +110,39 @@ function logic.valueAtCell(zone, r, c)
         end
     end
     return row.values[lo]
+end
+
+-- The cell value of a grid cell: the painted one, but where a raised piece of floor lies over
+-- other floor (zone.stacked, decided offline with the heights: the landing at the griffon ramp
+-- over the bay beside the ramp's foot) the raised piece's value while the player is counted on
+-- it (logic.setOn: the high pieces of edges.lua, entered where they are stepped onto), else the
+-- lower floor's. So every lookup follows the level the player is on.
+function logic.valueAtCell(zone, r, c)
+    local v = logic.paintedAtCell(zone, r, c)
+    local ix = zone._index
+    local alts = ix.stacked and ix.stacked[r * zone.cols + c]
+    if alts == nil then
+        return v
+    end
+    local on = ix.on
+    if on then
+        for _, a in ipairs(alts) do
+            if on[a.piece] then
+                return a.on
+            end
+        end
+    end
+    return alts[1].off
+end
+
+-- The set of high pieces the player is on (edges.lua updateHigh), shared with every lookup.
+function logic.setOn(zone, on)
+    zone._index.on = on
+end
+
+-- Forgets the squares found so far: their flood depends on the level the player is on.
+function logic.forgetRegions(zone)
+    zone._index.regionOf = {}
 end
 
 -- The cell value at a world position, plus row and column.
@@ -404,6 +438,21 @@ function logic.unpack(zone, locale)
         ix.access[key] = ix.access[key] or {}
         table.insert(ix.access[key], a)
     end
+    -- cells where a raised piece lies over other floor: per cell the pieces with the value up on
+    -- them and the value below (valueAtCell); per piece the place ids of the floor on it
+    ix.stacked = {}
+    list = zone.stacked or {}
+    for i = 1, #list - 4, 5 do
+        local key = list[i] * zone.cols + list[i + 1]
+        ix.stacked[key] = ix.stacked[key] or {}
+        table.insert(ix.stacked[key], { piece = list[i + 2], on = list[i + 3], off = list[i + 4] })
+    end
+    ix.piecePlaces = {}
+    list = zone.piecePlaces or {}
+    for i = 1, #list - 1, 2 do
+        ix.piecePlaces[list[i]] = ix.piecePlaces[list[i]] or {}
+        ix.piecePlaces[list[i]][list[i + 1]] = true
+    end
     ix.links = {}
     list = zone.links or {}
     for i = 1, #list - 1, 2 do
@@ -470,10 +519,12 @@ function logic.unpack(zone, locale)
     -- centre line stretches, in the bucket of every cell within LANE_REACH of them
     ix.lanes = {}
     list = zone.lanes or {}
-    for i = 1, #list - 6, 7 do
+    local stride = zone.laneFields or 7   -- 8 since 2026-10-01: the raised piece the stretch runs on
+    for i = 1, #list - stride + 1, stride do
         local lane = {
             x1 = list[i], y1 = list[i + 1], x2 = list[i + 2], y2 = list[i + 3], value = list[i + 4],
             kind = logic.kindOf(zone, list[i + 4]), enter = list[i + 5] / 10, leave = list[i + 6] / 10,
+            piece = stride >= 8 and list[i + 7] or 0,
         }
         addToCells(zone, ix.lanes, math.min(lane.x1, lane.x2), math.max(lane.x1, lane.x2),
             math.min(lane.y1, lane.y2), math.max(lane.y1, lane.y2), logic.LANE_REACH, lane)
