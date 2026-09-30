@@ -20,8 +20,13 @@ logic.GUIDE_AT = 3 -- yd from a target that count as being at it
 local NAMED_CLASSES = { way = true, room = true, entrance = true }
 -- the kinds said as cliffs and water near an outdoor place, and their words
 local FEATURES = { ["cliff edge"] = "cliff edge", ["cliff foot"] = "rock wall", ["deep water"] = "water", shore = "water" }
--- places that say no cliffs and water: roads (they come often) and the water itself
-local FEATURE_SKIP = { road = true, fork = true, crossing = true, bridge = true, ["deep water"] = true, canal = true }
+-- places that say no cliffs and water: the ways (they come often; roads and streets alike, one
+-- rule set, user 2026-10-01: a street said "rock wall to the northeast" where a road stays short)
+-- and the water itself
+local FEATURE_SKIP = { bridge = true, ["deep water"] = true, canal = true }
+for kind in pairs(logic.LANE_KINDS) do
+    FEATURE_SKIP[kind] = true
+end
 -- the ways with centre lines that are no road: city streets and walks ("street to the east")
 local STREETS = {}
 for kind in pairs(logic.LANE_KINDS) do

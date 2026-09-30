@@ -983,10 +983,68 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z)
         local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK)
         t:assertEqual(value, 212)
-        t:assertEqual(yards, 10)
+        -- the distance along the line (8 yd to the bend, then onto the next stretch)
+        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 9.4)
         t:assertEqual(logic.describe(z, value, true), "canal walk, northeast to southwest")
         -- walking north, away from it: nothing ahead
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 211, logic.AHEAD_LOOK))
+    end,
+
+    ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
+        local z = newWalkZone()
+        -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
+        -- square's value (100), below it the walk's (211); stepped onto from the ground at x 90,
+        -- y 50; its line runs at y = 48 over the walk's line at y = 46
+        z.stacked = { 2, 2, 1, 100, 211, 2, 3, 1, 100, 211 }
+        z.piecePlaces = { 1, 2 }
+        z.pieceCells = { 2, 2, 1, 2, 3, 1 }
+        z.access = { 1, 1, 90, 50 }
+        z.laneFields = 8
+        z.lanes = { 100, 46, 84, 46, 211, 20, 40, 0, 92, 48, 88, 48, 100, 20, 40, 1 }
+        logic.unpack(z)
+        local high = {}
+        logic.setOn(z, high)
+        -- below: the walk and its line
+        t:assertEqual(logic.valueAt(z, 90, 50), 211)
+        local _d, lane = logic.nearestLane(z, 90, 47)
+        t:assertEqual(lane.value, 211)
+        -- stepping onto the landing: its value, its line; the walk's line below does not count
+        local _on, changed = logic.updateHigh(z, high, 90, 50)
+        t:assertEqual(high[1], true)
+        t:assertEqual(changed, true)
+        t:assertEqual(logic.valueAt(z, 90, 50), 100)
+        _d, lane = logic.nearestLane(z, 90, 47)
+        t:assertEqual(lane.value, 100)
+        _on, changed = logic.updateHigh(z, high, 90, 50)
+        t:assertEqual(changed, false)
+        -- off its footprint: below again
+        logic.updateHigh(z, high, 90, 58)
+        t:assertNil(high[1])
+        t:assertEqual(logic.valueAt(z, 90, 50), 211)
+        -- a step onto it counts only from a cell painted with its own floor: with the square
+        -- (place 1) as its floor, the walk's cell is not
+        z.piecePlaces = { 1, 1 }
+        logic.pack(z)
+        logic.unpack(z)
+        logic.setOn(z, high)
+        logic.updateHigh(z, high, 90, 50)
+        t:assertNil(high[1])
+    end,
+
+    ["the next piece ahead is one the line leads onto, not a line beside it"] = function(t)
+        local z = newWalkZone()
+        -- the walk's line ends at x = 88; a stretch of another piece runs 5 yd beside it (y = 51)
+        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 92, 51, 84, 51, 212, 20, 40 }
+        logic.unpack(z)
+        -- walking south along the line: it ends, the line beside it is no next piece
+        t:assertNil(logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK))
+        -- a stretch meeting the line's end is
+        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 88, 46, 88, 30, 212, 20, 40 }
+        logic.pack(z)
+        logic.unpack(z)
+        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK)
+        t:assertEqual(value, 212)
+        t:assertEqual(yards, 8)
     end,
 
     ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)

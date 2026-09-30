@@ -20,27 +20,49 @@ function logic.nearestExit(zone, x, y, reach)
     return logic.nearestPoint(zone._index.exits, x, y, reach)
 end
 
-logic.ACCESS_REACH = 2.5 -- yd from a place where a high piece is stepped onto from the ground
+-- yd; a step (the move since the last look) passing this close to a place where a high piece is
+-- stepped onto from the ground counts (the places lie about 2 yd apart along the step's line; 2.5
+-- yd around the player counted a bay 2 yd beside the griffon ramp as the ramp, "8 deep" there)
+logic.ACCESS_REACH = 1.5
 logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming out of it
+
+-- The distance from (qx, qy) to the segment (ax, ay)-(bx, by).
+local function segmentDistance(qx, qy, ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    local n = dx * dx + dy * dy
+    local t = n > 0 and math.max(0, math.min(1, ((qx - ax) * dx + (qy - ay) * dy) / n)) or 0
+    return math.sqrt((ax + t * dx - qx) ^ 2 + (ay + t * dy - qy) ^ 2)
+end
 
 -- Updates the set `on` of the high pieces the player is on: a piece is entered by passing where
 -- it is stepped onto from the ground, where it joins a building the player just came out of
 -- (`cameOut`), or from a joined piece the player is on; it is left by walking off its footprint.
-function logic.updateHigh(zone, on, x, y, cameOut)
+-- A step from the ground counts only from a cell painted with the piece's own floor
+-- (zone.piecePlaces): not from the bay under the landing at the griffon ramp's foot, 2 yd from
+-- where the ramp rises (a false "8 deep" there, user's walk 2026-09-30). `px, py`: the position
+-- at the last look (the step from there counts). Returns the set and whether it changed.
+function logic.updateHigh(zone, on, x, y, cameOut, px, py)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
+    local changed = false
     for piece in pairs(on) do
         if not logic.nearCell(zone, ix.pieces, r, c, piece) then
             on[piece] = nil
+            changed = true
         end
     end
+    local painted = logic.placeOf(logic.paintedAtCell(zone, r, c))
     local n = math.ceil(logic.ROOMS_REACH / zone.cell)
     for dr = -n, n do
         for dc = -n, n do
             for _, a in ipairs(ix.access[(r + dr) * zone.cols + c + dc] or {}) do
                 local d = math.sqrt((a.x - x) ^ 2 + (a.y - y) ^ 2)
-                if (a.kind == 1 and d <= logic.ACCESS_REACH) or (a.kind == 2 and cameOut and d <= logic.ROOMS_REACH) then
+                local own = ix.piecePlaces and ix.piecePlaces[a.piece]
+                local fromGround = a.kind == 1 and (own == nil or own[painted])
+                    and segmentDistance(a.x, a.y, px or x, py or y, x, y) <= logic.ACCESS_REACH
+                if (fromGround or (a.kind == 2 and cameOut and d <= logic.ROOMS_REACH)) and not on[a.piece] then
                     on[a.piece] = true
+                    changed = true
                 end
             end
         end
@@ -58,10 +80,10 @@ function logic.updateHigh(zone, on, x, y, cameOut)
         end
         for _, piece in ipairs(new) do
             on[piece] = true
-            added = true
+            added, changed = true, true
         end
     end
-    return on
+    return on, changed
 end
 
 function logic.edge(zone, i)

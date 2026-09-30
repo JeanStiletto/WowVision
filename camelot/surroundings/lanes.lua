@@ -10,21 +10,34 @@ local LANE_KEEP = { bridge = true } -- places a lane never replaces
 -- yd; looking outward from the player for what is beside the way (12 announced a square 10 yd away
 -- from the middle of a canal street, Stormwind 2026-09-29)
 local BESIDE_STEP, BESIDE_REACH = 2, 6
-local ROAD_SIDE_CELLS = 3 -- cells searched beside a road for the nearest place that is no road
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
--- and the point; nil when there is none.
-function logic.nearestLane(zone, x, y, reach, kinds)
+-- and the point; nil when there is none. `skip`: a lane left out.
+function logic.nearestLane(zone, x, y, reach, kinds, skip)
     local r, c = logic.cellOf(zone, x, y)
-    local list = zone._index.lanes[r * zone.cols + c]
+    local ix = zone._index
+    local list = ix.lanes[r * zone.cols + c]
     if list == nil then
         return nil
     end
+    -- a raised piece's lines count only up on it, and up on one over other floor the lower
+    -- floor's lines do not (zone.stacked, logic.setOn)
+    local on = ix.on
+    local underHigh = false
+    local alts = on and ix.stacked and ix.stacked[r * zone.cols + c]
+    if alts then
+        for _, a in ipairs(alts) do
+            if on[a.piece] then
+                underHigh = true
+            end
+        end
+    end
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        if kinds == nil or kinds[lane.kind] then
+        local level = (lane.piece == 0 and not underHigh) or (lane.piece ~= 0 and on and on[lane.piece])
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level then
             local ax, ay, dx, dy = lane.x1, lane.y1, lane.x2 - lane.x1, lane.y2 - lane.y1
             local n = dx * dx + dy * dy
             local t = n > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / n)) or 0
@@ -62,7 +75,10 @@ function logic.laneValue(zone, x, y, value, onWay)
     if not logic.LANE_KINDS[kind] then
         return value, true
     end
-    -- beside the way: outward from the line through the player, the first place that is no way
+    -- beside the way: outward from the line through the player, the first place that is no way;
+    -- with none within reach the way goes on (roads and streets alike, user 2026-10-01: roads
+    -- also looked 3 cells around for any place that is no road and left the road from deep
+    -- inside its cells, "group of trees, road to the east" every 70 yd on the Goldshire road)
     local ux, uy = (x - px) / d, (y - py) / d
     for step = 0, BESIDE_REACH, BESIDE_STEP do
         local v = logic.valueAt(zone, x + ux * step, y + uy * step)
@@ -70,16 +86,7 @@ function logic.laneValue(zone, x, y, value, onWay)
             return v, true
         end
     end
-    if not logic.ROADS[kind] then
-        return value, false
-    end
-    local near, _x, _y, other = logic.nearestCell(zone, x, y, ROAD_SIDE_CELLS, nil, function(v)
-        return v ~= 0 and not logic.ROADS[logic.kindOf(zone, v)]
-    end)
-    if near == nil then
-        return value, false
-    end
-    return other, true
+    return value, false
 end
 
 logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
@@ -166,27 +173,27 @@ function logic.wayAhead(zone, x, y, facing, look)
     return math.atan2(ay - py, ax - px), aheadLane.value
 end
 
-logic.AHEAD_LOOK = 12 -- yd; on a city street or walk the next piece is said this far before it
+logic.AHEAD_LOOK = 12 -- yd; on a way the next piece is said this far before it
 logic.AHEAD_MIN = 4 -- yd; a next piece closer than this is left to its own announcement
 local AHEAD_STEP = 2 -- yd between the looks ahead along the way
-local AHEAD_REACH = 6 -- yd; a centre line this close to a look ahead is the way there
+-- yd; a look ahead finds the line's next stretch this close to it (stretches of one line meet
+-- end to end; a line beside it farther off is another way: 6 yd found parallel fragments and
+-- the lines of a bay beside the way, said as the next piece and never entered, Stormwind 2026-09-30)
+local AHEAD_JOIN = 3
 
--- The next piece ahead on a city street or walk: from the nearest point on its centre line, along
--- the way (its direction there, the end nearer the facing, as wayAhead), every AHEAD_STEP yd up
--- to `look`, the nearest centre line there; the first one of another value than `current` (the
--- cell value of the piece the player is on) is the next piece. Where a street ends at the water
--- and goes on to the side, the line beside the water's edge is found from the looks past its end.
--- Returns its cell value and the yards to it, or nil (none within look, facing across the way).
-function logic.pieceAhead(zone, x, y, facing, current, look)
-    local d, _lane, px, py = directedLane(zone, x, y)
+-- The next piece ahead on a way: from the nearest point on its centre line, along the line in
+-- the direction of `heading` (radians; the way one moves), every AHEAD_STEP yd up to `look`,
+-- following the line from stretch to stretch (each look moves to the nearest point of the
+-- stretch found, so bends are followed and a line that ends says nothing); the first stretch of
+-- another value than `current` (the cell value of the piece the player is on) is the next piece.
+-- Returns its cell value and the yards to it, or nil (none within look, the heading across the way).
+function logic.pieceAhead(zone, x, y, heading, current, look)
+    local d, lane, px, py = directedLane(zone, x, y)
     if d == nil then
         return nil
     end
-    local fx, fy = math.cos(facing), math.sin(facing)
-    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
-    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
-    ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
-    local dx, dy = ax - bx, ay - by
+    local fx, fy = math.cos(heading), math.sin(heading)
+    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
     local n = math.sqrt(dx * dx + dy * dy)
     if n < MIN_SPAN then
         return nil
@@ -199,11 +206,40 @@ function logic.pieceAhead(zone, x, y, facing, current, look)
     if along < 0 then
         dx, dy = -dx, -dy
     end
-    for s = AHEAD_STEP, look, AHEAD_STEP do
-        local _d, lane = logic.nearestLane(zone, px + dx * s, py + dy * s, AHEAD_REACH)
-        if lane and lane.value ~= current then
-            return lane.value, s
+    local walked, last = 0, lane
+    for _ = 1, math.ceil(2 * look / AHEAD_STEP) do
+        local qx, qy = px + dx * AHEAD_STEP, py + dy * AHEAD_STEP
+        local _d, next, nx, ny = logic.nearestLane(zone, qx, qy, AHEAD_JOIN, logic.LANE_KINDS)
+        if next == nil then
+            return nil
         end
+        local step = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2)
+        if step < 0.5 and next == last then
+            -- the stretch's end: the one meeting it there (a corner), else the line ends
+            _d, next, nx, ny = logic.nearestLane(zone, qx, qy, AHEAD_JOIN, logic.LANE_KINDS, last)
+            if next == nil then
+                return nil
+            end
+            step = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2)
+        end
+        walked = walked + step
+        if next.value ~= current then
+            return next.value, walked
+        end
+        if walked >= look then
+            return nil
+        end
+        -- on along the stretch found, the way that keeps the heading
+        local ex, ey = next.x2 - next.x1, next.y2 - next.y1
+        local en = math.sqrt(ex * ex + ey * ey)
+        if en > 0 then
+            ex, ey = ex / en, ey / en
+            if ex * dx + ey * dy < 0 then
+                ex, ey = -ex, -ey
+            end
+            dx, dy = ex, ey
+        end
+        px, py, last = nx, ny, next
     end
     return nil
 end

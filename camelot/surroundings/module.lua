@@ -58,6 +58,7 @@ local BUMP_MOVING = 0.2 -- moved in one look that counts as moving freely
 local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
+local BEND_WALK = 10 -- walked on the way since the last announcement or hint before a bend is said
 local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
 local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
@@ -80,13 +81,21 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
-local high = {} -- the high floor pieces (wall-walks, bridge decks) the player is on
+local high = {} -- the high floor pieces (wall-walks, bridge decks, raised city floors) the player is on
+
+-- Empties a set in place (the zone's lookups hold the same table: logic.setOn).
+local function wipeSet(set)
+    for k in pairs(set) do
+        set[k] = nil
+    end
+end
 local outAt = nil -- when the player last came out of a building
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
 local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
+local bendWalked = 0 -- walked on the way since the last announcement or bend hint
 local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
 local aheadX, aheadY = nil, nil -- where it was said: walking far from there forgets it
 -- Guidance: the target last said, the direction said, whether it was "at" it, when, and the
@@ -142,7 +151,8 @@ local function forgetPlace()
     outdoor:reset()
     indoor:reset()
     room, lastRoom = nil, nil
-    high, warnedEdges = {}, {}
+    wipeSet(high)
+    warnedEdges = {}
     region, saidMouths = nil, {}
     bendFrom, aheadKey, leftWay = nil, nil, nil
     layerMode = false
@@ -328,6 +338,7 @@ local function findZone(x, y, map)
         end
         if found then
             logic.unpack(found, GetLocale())
+            logic.setOn(found, high)
         end
         zone = found
         if found then
@@ -495,7 +506,8 @@ end
 
 -- While swimming: the nearest way out of the water; climbing out at an edge warns again.
 local function checkWater(z, x, y)
-    warnedEdges, high = {}, {}
+    warnedEdges = {}
+    wipeSet(high)
     local t = module.settings.guidance and logic.exitTarget(z, x, y)
     if t then
         guideTo(z, waterGuide, t, x, y)
@@ -512,7 +524,11 @@ end
 local function checkEdges(z, x, y, px, py, rooms)
     local on = rooms
     if on == nil then
-        logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT)
+        local _on, changed = logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
+        if changed then
+            -- the squares found so far were flooded on the old level
+            logic.forgetRegions(z)
+        end
         on = high
     end
     -- the way the player moves (not the facing: strafing and walking back count too)
@@ -641,20 +657,24 @@ local function checkBump(z, x, y, px, py, isIndoors)
     bump.key = key or bump.key
 end
 
--- Gentle bends: on a road piece, once the road ahead has turned BEND_THRESHOLD degrees from where
--- it led at the last announcement or hint but keeps its direction words (a new direction is an
+-- Gentle bends: on a way, once the way ahead has turned BEND_THRESHOLD degrees from where it led
+-- at the last announcement or hint but keeps its direction words (a new direction is an
 -- announcement of its own), which way to turn, unless the player faces that way already. Where
--- the road leads comes from its centre line, not from the player's steps, so drifting or turning
--- on the spot says nothing. Not on city streets yet, although roads and streets should follow the
--- same rules (user 2026-09-30): where two centre lines lie close (a wide street, a bay beside it)
--- where the way leads jumps between them; a replay of all walks with streets included gave 183
--- hints instead of 9, "right, left" every second in the bay beside the griffon ramp.
-local function checkBend(z, x, y)
+-- the way leads comes from its centre line, not from the player's steps, so drifting or turning
+-- on the spot says nothing. Roads and streets alike (one rule set, user 2026-10-01): with the
+-- streets' lines drawn from the painted way and pruned over the whole floor, the close parallel
+-- lines that made the hints jump (183 instead of 9 in a replay, 2026-09-30) are gone.
+local function checkBend(z, x, y, px, py)
     local key = outdoor.current
     local facing = turnFacing()
-    if not logic.isWayKey(key) or not logic.ROADS[logic.kind(z, logic.keyPlace(key))] or facing == nil then
-        bendFrom = nil
+    if not logic.isWayKey(key) or facing == nil then
+        bendFrom, bendWalked = nil, 0
         return
+    end
+    -- only after walking on along the way: turning about on the spot, where several short
+    -- lines meet (the foot of the griffon ramp: six hints in 40 s in a replay), says nothing
+    if px then
+        bendWalked = bendWalked + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
     end
     local dir, ahead = logic.wayAhead(z, x, y, facing, BEND_LOOK)
     if dir == nil then
@@ -668,8 +688,9 @@ local function checkBend(z, x, y)
     if moveOn then
         bendFrom = dir
     end
-    if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 then
+    if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 and bendWalked >= BEND_WALK then
         say(logic.turnText(turn), "bend", x, y)
+        bendWalked = 0
     end
 end
 
@@ -678,17 +699,24 @@ end
 -- ("street to Cathedral Square, northeast to southwest"; no distance, the user found it spam and
 -- stops and turns on hearing it), so there is time to turn where a street ends at the water and
 -- goes on to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water).
--- Stepping onto that piece then says nothing more.
-local function checkAhead(z, x, y)
+-- Stepping onto that piece then says nothing more. Looked for along the way one MOVES, only while
+-- moving: taken from the facing it spoke on every turn on the spot, a different piece each time
+-- among the short lines at the griffon ramp's foot (nine lines in 50 s, user's walk 2026-09-30),
+-- and it kept talking while a beacon led (then the beacon says where to go).
+local function checkAhead(z, x, y, px, py)
     local key = outdoor.current
-    local facing = GetPlayerFacing()
-    if not logic.isWayKey(key) or facing == nil then
+    if not logic.isWayKey(key) or px == nil or beaconGuides() then
         return
     end
     if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
         aheadKey = nil
     end
-    local value, yards = logic.pieceAhead(z, x, y, facing, tonumber(key:sub(2)), logic.AHEAD_LOOK)
+    local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+    if moved < MOVE_MIN then
+        return
+    end
+    local heading = math.atan2(y - py, x - px)
+    local value, yards = logic.pieceAhead(z, x, y, heading, tonumber(key:sub(2)), logic.AHEAD_LOOK)
     if value == nil or yards < logic.AHEAD_MIN then
         return
     end
@@ -750,7 +778,7 @@ local function checkPlace(z, x, y, forced)
         if leftWay and square then
             notePassedBeginning(z, x, y, square, leftWay)
         end
-        bendFrom = nil
+        bendFrom, bendWalked = nil, 0
         if outdoor.current == aheadKey then
             -- said before reaching it (checkAhead): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), early = true })
@@ -844,7 +872,7 @@ module:hasUpdate(function(self)
                 checkGuide(layer, x, y)
             end
             checkPlace(layer, x, y, moat)
-            checkAhead(layer, x, y)
+            checkAhead(layer, x, y, px, py)
             checkStop(z, x, y, px, py, here)
             return
         end
@@ -892,8 +920,8 @@ module:hasUpdate(function(self)
         checkGuide(z, x, y)
     end
     checkPlace(z, x, y)
-    checkAhead(z, x, y)
-    checkBend(z, x, y)
+    checkAhead(z, x, y, px, py)
+    checkBend(z, x, y, px, py)
     if not IsSwimming() then
         checkStop(z, x, y, px, py, nil)
     end
