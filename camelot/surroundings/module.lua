@@ -678,17 +678,24 @@ end
 -- ("street to Cathedral Square, northeast to southwest"; no distance, the user found it spam and
 -- stops and turns on hearing it), so there is time to turn where a street ends at the water and
 -- goes on to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water).
--- Stepping onto that piece then says nothing more.
-local function checkAhead(z, x, y)
+-- Stepping onto that piece then says nothing more. Looked for along the way one MOVES, only while
+-- moving: taken from the facing it spoke on every turn on the spot, a different piece each time
+-- among the short lines at the griffon ramp's foot (nine lines in 50 s, user's walk 2026-09-30),
+-- and it kept talking while a beacon led (then the beacon says where to go).
+local function checkAhead(z, x, y, px, py)
     local key = outdoor.current
-    local facing = GetPlayerFacing()
-    if not logic.isWayKey(key) or facing == nil then
+    if not logic.isWayKey(key) or px == nil or beaconGuides() then
         return
     end
     if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
         aheadKey = nil
     end
-    local value, yards = logic.pieceAhead(z, x, y, facing, tonumber(key:sub(2)), logic.AHEAD_LOOK)
+    local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+    if moved < MOVE_MIN then
+        return
+    end
+    local heading = math.atan2(y - py, x - px)
+    local value, yards = logic.pieceAhead(z, x, y, heading, tonumber(key:sub(2)), logic.AHEAD_LOOK)
     if value == nil or yards < logic.AHEAD_MIN then
         return
     end
@@ -844,7 +851,7 @@ module:hasUpdate(function(self)
                 checkGuide(layer, x, y)
             end
             checkPlace(layer, x, y, moat)
-            checkAhead(layer, x, y)
+            checkAhead(layer, x, y, px, py)
             checkStop(z, x, y, px, py, here)
             return
         end
@@ -892,7 +899,7 @@ module:hasUpdate(function(self)
         checkGuide(z, x, y)
     end
     checkPlace(z, x, y)
-    checkAhead(z, x, y)
+    checkAhead(z, x, y, px, py)
     checkBend(z, x, y)
     if not IsSwimming() then
         checkStop(z, x, y, px, py, nil)
