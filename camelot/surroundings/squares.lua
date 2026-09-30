@@ -12,7 +12,9 @@ logic.MOUTH_MIN = 2 -- border cells at least that make a thing worth saying (abo
 logic.MOUTH_GAP = 2 -- cells; border pieces of one thing closer than this are one mouth
 logic.REGION_MAX = 20000 -- cells; a flood fill stops there
 logic.LEADS_MAX = 5000 -- cells a way is followed to see where it leads; farther counts as leading on
-logic.BEGIN_MAX = 16 -- yd; a way meeting the square along a longer border runs beside it
+logic.BEGIN_MAX = 24 -- yd; a way meeting the square along a longer border runs beside it (Stormwind's
+-- 78 squares, 2026-09-30: 21 real openings of streets, stairs, ramps and quays span 16 to 24 yd,
+-- the lane through the gate 18; the ways along a side start above 24)
 logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where it leads on
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
@@ -266,10 +268,13 @@ function logic.leadsOn(zone, mouth, region)
 end
 
 -- The way a way leads on from a square's mouth: along the axis most of its first cells have (a
--- short bend piece at the opening does not decide it), away from the square (`vx`, `vy`: from the
--- square into the opening); without an axis, that direction itself. A compass index, or nil.
+-- short bend piece at the opening does not decide it), toward where those cells lie from the
+-- opening (not the border's own direction: a mouth in a corner of the square has square cells
+-- south and west of it, and the lane through Stormwind's gate said "on to the southeast" while it
+-- runs north); without an axis, that direction itself, or `vx`, `vy` (from the square into the
+-- opening) when the cells lie on the opening. A compass index, or nil.
 local function onwardDirection(zone, region, mouth, vx, vy)
-    local votes, count = { 0, 0, 0, 0 }, 0
+    local votes, count, sx, sy = { 0, 0, 0, 0 }, 0, 0, 0
     logic.flood(zone, mouth.cells, function(r, c, key)
         return not region.cells[key] and labelAtCell(zone, r, c) == mouth.label
     end, function(r, c)
@@ -277,9 +282,21 @@ local function onwardDirection(zone, region, mouth, vx, vy)
         if axis then
             votes[axis] = votes[axis] + 1
         end
-        count = count + 1
+        local cx, cy = logic.cellCentre(zone, r, c)
+        sx, sy, count = sx + cx, sy + cy, count + 1
         return count >= logic.ONWARD_CELLS
     end, nil, true)
+    if count > 0 then
+        local mx, my, n = 0, 0, #mouth.cells
+        for _, cell in ipairs(mouth.cells) do
+            local bx, by = logic.cellCentre(zone, cell[1], cell[2])
+            mx, my = mx + bx / n, my + by / n
+        end
+        local dx, dy = sx / count - mx, sy / count - my
+        if dx * dx + dy * dy >= zone.cell * zone.cell then
+            vx, vy = dx, dy
+        end
+    end
     local best, most = nil, 0
     for axis = 1, 4 do
         if votes[axis] > most then
@@ -288,8 +305,14 @@ local function onwardDirection(zone, region, mouth, vx, vy)
     end
     if best then
         local ax, ay = logic.compassVector(best)
-        return (ax * vx + ay * vy >= 0) and best or best + 4
-    elseif vx ~= 0 or vy ~= 0 then
+        local len = math.sqrt(vx * vx + vy * vy)
+        local along = len > 0 and (ax * vx + ay * vy) / len or 1
+        -- the cells lie across the axis rather than along it (a bent lane from a corner mouth)
+        if math.abs(along) >= 0.5 then
+            return along >= 0 and best or best + 4
+        end
+    end
+    if vx ~= 0 or vy ~= 0 then
         return logic.compassIndex(vx, vy)
     end
     return nil
@@ -334,7 +357,7 @@ function logic.wayBeginnings(zone, region)
                 end
             end
             list[#list + 1] = {
-                mouth = m, label = m.label, kind = kind, x = bx, y = by,
+                mouth = m, label = m.label, kind = kind, x = bx, y = by, span = mouthSpan(m),
                 onward = onwardDirection(zone, region, m, mx - ix, my - iy),
             }
         end
@@ -343,10 +366,24 @@ function logic.wayBeginnings(zone, region)
     return list
 end
 
--- The nearest way beginning on the square within `reach` yards (to the middle of its opening):
--- index, distance, compass index toward it, the beginning.
+-- The nearest way beginning on the square within reach (to the middle of its opening): `reach`
+-- yards beyond half the opening's width, so a wide opening is guided to from as far as a doorway
+-- is from its threshold (the 18 yd lane through Stormwind's gate from 17 yd, a 6 yd street from
+-- 11; user 2026-09-30: with 8 yd for all, the lane was entered before a word was said). Index,
+-- distance, compass index toward it, the beginning.
 function logic.nearestBeginning(zone, region, x, y, reach)
-    return logic.nearestPoint(logic.wayBeginnings(zone, region), x, y, reach)
+    local best, bestD, bestDir = nil, math.huge, nil
+    local list = logic.wayBeginnings(zone, region)
+    for i, b in ipairs(list) do
+        local d = math.sqrt((b.x - x) ^ 2 + (b.y - y) ^ 2)
+        if d <= reach + b.span / 2 and d < bestD then
+            best, bestD, bestDir = i, d, logic.compassIndex(b.x - x, b.y - y)
+        end
+    end
+    if best then
+        return best, bestD, bestDir, list[best]
+    end
+    return nil
 end
 
 -- Distance from a position to a mouth's nearest point, and the compass index toward it.
