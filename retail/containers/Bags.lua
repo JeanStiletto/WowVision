@@ -21,8 +21,8 @@ local ControlId = graph.ControlId
 -- INDIVIDUAL mode is one frame per bag: one tab stop per bag, the bag slot
 -- button first, then the slots in order, as on classic. The game opens
 -- only the bags it was asked for (the backpack key alone opens just the
--- backpack), so the bags still closed follow as a bar of their slot
--- buttons: Enter on one opens that bag.
+-- backpack); Open All Bags, Shift plus the backpack key by default, opens
+-- every bag, exactly as sighted players use it.
 --
 -- After the bags each frame contributes its own stops: the search box (an
 -- edit box, alone in its stop), then the frame's controls -- the bag menu
@@ -150,7 +150,7 @@ local function renderBag(builder, frame, bagID, buttons)
     builder:popContext()
 end
 
--- A bar of bag slot buttons, one row, under its own stop: the shown
+-- The bag slot buttons as one row under their own stop: the shown
 -- buttons of the bags the filter accepts. False when none qualifies.
 local function renderBagBar(builder, key, label, idPrefix, include)
     local entries = {}
@@ -269,11 +269,8 @@ function Bags:renderGraph(builder)
     local frames = shownContainerFrames()
     -- Bags shown as their own frame alongside the combined grid.
     local separateBags = {}
-    local combined = false
     for _, frame in ipairs(frames) do
-        if frame.IsCombinedBagContainer ~= nil and frame:IsCombinedBagContainer() then
-            combined = true
-        else
+        if not (frame.IsCombinedBagContainer ~= nil and frame:IsCombinedBagContainer()) then
             separateBags[frame:GetID()] = true
         end
     end
@@ -288,12 +285,5 @@ function Bags:renderGraph(builder)
             end
         end
         renderFrameControls(builder, frame, frameKey)
-    end
-    -- Individual mode: the bags not open yet, so they can be opened from
-    -- here (the backpack key opens only the backpack).
-    if not combined then
-        renderBagBar(builder, "closedBags", L["Closed Bags"], "closedBag:", function(bagID)
-            return not separateBags[bagID]
-        end)
     end
 end

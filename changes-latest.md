@@ -28,7 +28,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * Updated the addon architecture and toc files to support the WoW Forever beta.
 * fixed a number of issues with the options window introduced in WoW Forever.
 * Added support for the character pane, including the equipment manager.
-* Bags in individual mode: the bags that are still closed follow the open ones as a "Closed Bags" bar, so a bag can be opened from the keyboard (the backpack key opens only the backpack). The keyring reads as a bag with its own slot button.
+* The keyring on WoW: Forever reads as a bag with its own slot button.
 * The four locked backpack slots an account without an authenticator is shown are no longer read as empty slots; the Add Slots button stays in the bag controls.
 * Added support for the bank: pages and bank types as tabs, one tab stop per bank tab, the bank bag slots, search, sort, money and the purchase of the next bag.
 * Known issue: I tried to support nearby quests and quest givers, but the functions to retrieve this data appear to be bugged in the Forever client.
