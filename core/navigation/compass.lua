@@ -303,11 +303,27 @@ function module:onEnable()
         end
         local direction = self:getDirection(angle)
         if direction and direction ~= self.direction then
+            local hour = self:clockMode() and self:getHour(angle) or nil
             directionAlert:fire({
                 angle = angle,
                 direction = direction,
-                hour = self:clockMode() and self:getHour(angle) or nil,
+                hour = hour,
             })
+            -- the voice output has files for the compass words only: with the hours, it speaks
+            -- the number itself unless the TTS output already does
+            if hour and directionAlert.enabled then
+                local voiceOn, ttsOn = false, false
+                for _, output in ipairs(directionAlert.outputs) do
+                    if output.key == "voice" and output.enabled then
+                        voiceOn = true
+                    elseif output.key == "tts" and output.enabled then
+                        ttsOn = true
+                    end
+                end
+                if voiceOn and not ttsOn then
+                    WowVision:speak(tostring(hour))
+                end
+            end
         end
         self.angle, self.direction = angle, direction
 
