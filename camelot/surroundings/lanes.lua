@@ -11,8 +11,8 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
--- and the point; nil when there is none. `skip`: a lane left out.
-function logic.nearestLane(zone, x, y, reach, kinds, skip)
+-- and the point; nil when there is none. `skip`: a lane left out; `place`: only lanes of that place.
+function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
     local r, c = logic.cellOf(zone, x, y)
     local ix = zone._index
     local list = ix.lanes[r * zone.cols + c]
@@ -34,7 +34,8 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip)
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
         local level = (lane.piece == 0 and not underHigh) or (lane.piece ~= 0 and on and on[lane.piece])
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level then
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level
+            and (place == nil or logic.placeOf(lane.value) == place) then
             local ax, ay, dx, dy = lane.x1, lane.y1, lane.x2 - lane.x1, lane.y2 - lane.y1
             local n = dx * dx + dy * dy
             local t = n > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / n)) or 0
@@ -80,12 +81,21 @@ function logic.laneValue(zone, x, y, value, onWay)
         return value, false
     end
     local d, lane = logic.nearestLane(zone, x, y)
-    if d == nil then
-        return value, false
+    if d ~= nil then
+        local enter, leave = logic.laneWidths(lane, x, y)
+        if d <= (onWay and leave or enter) then
+            return lane.value, true
+        end
     end
-    local enter, leave = logic.laneWidths(lane, x, y)
-    if d <= (onWay and leave or enter) then
-        return lane.value, true
+    -- a cell of a way with one direction but no direction code (a scrap of the way too small for a
+    -- centre line: six cells at the foot of the Trade District ramp said "street, right" with no
+    -- direction, user 2026-10-01): the value of the same way's nearest line within reach, so the
+    -- scrap speaks and is keyed as one piece with it
+    if logic.TURN_KINDS[kind] and logic.codeOf(value) == 0 then
+        local _sd, same = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, logic.placeOf(value))
+        if same then
+            value = same.value
+        end
     end
     return value, not logic.LANE_KINDS[kind]
 end
