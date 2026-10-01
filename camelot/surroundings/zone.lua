@@ -773,7 +773,7 @@ function logic.unpackLayer(zone)
     local src = zone.indoor
     local layer = {
         key = zone.key .. "/indoor", label = zone.label, map = zone.map, top = zone.top, left = zone.left,
-        cell = zone.cell, rows = zone.rows, cols = zone.cols, dirs = zone.dirs, dirsClock = zone.dirsClock,
+        cell = zone.cell, rows = zone.rows, cols = zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, interiors = zone.interiors, rooms = zone.rooms,
