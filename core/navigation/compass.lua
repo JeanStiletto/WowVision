@@ -4,6 +4,20 @@ module:setLabel(L["Compass"])
 local pi = math.pi
 local settings = module:hasSettings()
 
+-- How WowVision names a direction, here and in every module that speaks one (surroundings): the
+-- 8 compass words, or the 12 hours of a clock laid on the map (12 = north, 3 = east), said as
+-- bare numbers ("12", not "12 o'clock"; user 2026-10-01: shorter, and finer than the words).
+settings:add({
+    key = "directions",
+    type = "Choice",
+    label = L["Directions"],
+    default = "compass",
+    choices = {
+        { label = L["Compass Words"], value = "compass" },
+        { label = L["Clock Hours"], value = "clock" },
+    },
+})
+
 local directionAlert = module:addAlert({
     key = "direction",
     label = L["Speak Compass Direction"],
@@ -14,6 +28,10 @@ directionAlert:addOutput({
     key = "voice",
     label = L["Voice Alert"],
     getPath = function(self, message)
+        if message.hour then
+            -- no voice files for hours: the TTS output speaks them
+            return nil
+        end
         return "Path", "directions/" .. message.direction .. ".mp3"
     end,
 })
@@ -24,6 +42,9 @@ directionAlert:addOutput({
     label = L["TTS Alert"],
     enabled = false,
     buildMessage = function(self, message)
+        if message.hour then
+            return tostring(message.hour)
+        end
         return L[message.direction]
     end,
 })
@@ -216,9 +237,27 @@ settings:addRef("flyingEnded", flyingEndedAlert.parameters)
 settings:addRef("swimming", swimmingAlert.parameters)
 settings:addRef("diving", divingAlert.parameters)
 
+-- The clock hour (1..12) of a facing (radians, counter-clockwise from north) on a north-up clock.
+function module:getHour(angle)
+    if angle == nil then
+        return nil
+    end
+    local bearing = (360 - math.deg(angle)) % 360
+    local hour = math.floor((bearing + 15) / 30) % 12
+    return hour == 0 and 12 or hour
+end
+
+-- Whether directions are spoken as clock hours (the Directions setting).
+function module:clockMode()
+    return self.settings.directions == "clock"
+end
+
 function module:getDirection(angle)
     if angle == nil then
         return nil
+    end
+    if self:clockMode() then
+        return "hour" .. self:getHour(angle)
     end
     if angle >= 15 * pi / 8 or angle < pi / 8 then
         return "north"
@@ -267,6 +306,7 @@ function module:onEnable()
             directionAlert:fire({
                 angle = angle,
                 direction = direction,
+                hour = self:clockMode() and self:getHour(angle) or nil,
             })
         end
         self.angle, self.direction = angle, direction
