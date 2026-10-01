@@ -566,12 +566,29 @@ local function prepareWords(zone, locale)
     end
 end
 
+-- Calls `add(...)` with the `n` values of each record of a flat list (nil: no records).
+local function eachRecord(list, n, add)
+    list = list or {}
+    for i = 1, #list - n + 1, n do
+        add(unpack(list, i, i + n - 1))
+    end
+end
+
 -- Calls `add(cellKey, value)` for each (row, column, value) triple of a flat list.
 local function eachCellTriple(zone, list, add)
-    list = list or {}
-    for i = 1, #list - 2, 3 do
-        add(list[i] * zone.cols + list[i + 1], list[i + 2])
+    eachRecord(list, 3, function(r, c, value)
+        add(r * zone.cols + c, value)
+    end)
+end
+
+-- Appends `item` to the list at `key` of `buckets` (made when missing).
+local function addToBucket(buckets, key, item)
+    local bucket = buckets[key]
+    if bucket == nil then
+        bucket = {}
+        buckets[key] = bucket
     end
+    bucket[#bucket + 1] = item
 end
 
 -- Puts `item` into the bucket of every cell the box (x0..x1, y0..y1, widened by `margin` yards)
@@ -579,9 +596,7 @@ end
 local function addToCells(zone, buckets, x0, x1, y0, y1, margin, item)
     for r = math.floor((zone.top - x1 - margin) / zone.cell), math.floor((zone.top - x0 + margin) / zone.cell) do
         for c = math.floor((zone.left - y1 - margin) / zone.cell), math.floor((zone.left - y0 + margin) / zone.cell) do
-            local key = r * zone.cols + c
-            buckets[key] = buckets[key] or {}
-            table.insert(buckets[key], item)
+            addToBucket(buckets, r * zone.cols + c, item)
         end
     end
 end
@@ -643,38 +658,26 @@ function logic.unpack(zone, locale)
         ix.pieces[key][piece] = true
     end)
     ix.access = {}
-    local list = zone.access or {}
-    for i = 1, #list - 3, 4 do
-        local a = { piece = list[i], kind = list[i + 1], x = list[i + 2], y = list[i + 3] }
-        local r, c = logic.cellOf(zone, a.x, a.y)
-        local key = r * zone.cols + c
-        ix.access[key] = ix.access[key] or {}
-        table.insert(ix.access[key], a)
-    end
+    eachRecord(zone.access, 4, function(piece, kind, x, y)
+        local r, c = logic.cellOf(zone, x, y)
+        addToBucket(ix.access, r * zone.cols + c, { piece = piece, kind = kind, x = x, y = y })
+    end)
     -- cells where a raised piece lies over other floor: per cell the pieces with the value up on
     -- them and the value below (valueAtCell); per piece the place ids of the floor on it
     ix.stacked = {}
-    list = zone.stacked or {}
-    for i = 1, #list - 4, 5 do
-        local key = list[i] * zone.cols + list[i + 1]
-        ix.stacked[key] = ix.stacked[key] or {}
-        table.insert(ix.stacked[key], { piece = list[i + 2], on = list[i + 3], off = list[i + 4] })
-    end
+    eachRecord(zone.stacked, 5, function(r, c, piece, on, off)
+        addToBucket(ix.stacked, r * zone.cols + c, { piece = piece, on = on, off = off })
+    end)
     ix.piecePlaces = {}
-    list = zone.piecePlaces or {}
-    for i = 1, #list - 1, 2 do
-        ix.piecePlaces[list[i]] = ix.piecePlaces[list[i]] or {}
-        ix.piecePlaces[list[i]][list[i + 1]] = true
-    end
+    eachRecord(zone.piecePlaces, 2, function(piece, place)
+        ix.piecePlaces[piece] = ix.piecePlaces[piece] or {}
+        ix.piecePlaces[piece][place] = true
+    end)
     ix.links = {}
-    list = zone.links or {}
-    for i = 1, #list - 1, 2 do
-        local a, b = list[i], list[i + 1]
-        ix.links[a] = ix.links[a] or {}
-        ix.links[b] = ix.links[b] or {}
-        table.insert(ix.links[a], b)
-        table.insert(ix.links[b], a)
-    end
+    eachRecord(zone.links, 2, function(a, b)
+        addToBucket(ix.links, a, b)
+        addToBucket(ix.links, b, a)
+    end)
 
     -- drop edges with a box each, so the edge search skips the far ones (cities have hundreds)
     ix.edges = {}
@@ -701,76 +704,63 @@ function logic.unpack(zone, locale)
     -- x, y, the climb's cell value, and (climbFeetFields 4) the line's bearing up the climb in
     -- degrees (0 north, clockwise): the way through at the foot, finer than the compass word
     ix.climbFeet = {}
-    list = zone.climbFeet or {}
-    local stride = zone.climbFeetFields or 3
-    for i = 1, #list - stride + 1, stride do
-        local x, y, value = list[i], list[i + 1], list[i + 2]
-        local bearing = stride >= 4 and list[i + 3] or nil
-        local twin = false
+    local feetStride = zone.climbFeetFields or 3
+    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing)
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
-                twin = true
+                return
             end
         end
-        if not twin then
-            ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = bearing }
-        end
-    end
+        ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil }
+    end)
 
     ix.exits = {}
-    list = zone.exits or {}
-    for i = 1, #list - 3, 4 do
-        local out = list[i + 3]
+    eachRecord(zone.exits, 4, function(x, y, width, out)
         -- out: the angle one climbs out toward, -1 unknown
-        ix.exits[#ix.exits + 1] = { x = list[i], y = list[i + 1], width = list[i + 2], out = out >= 0 and out or nil }
-    end
+        ix.exits[#ix.exits + 1] = { x = x, y = y, width = width, out = out >= 0 and out or nil }
+    end)
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
-    -- neighbouring cells of two squares with no walkable crossing between them (decided offline
-    -- with the heights): no border between the two squares
-    ix.noContact = {}
-    local cells = zone.rows * zone.cols
-    list = zone.noContact or {}
-    for i = 1, #list - 3, 4 do
-        local a, b = list[i] * zone.cols + list[i + 1], list[i + 2] * zone.cols + list[i + 3]
-        ix.noContact[a * cells + b] = true
-        ix.noContact[b * cells + a] = true
-    end
     for _, i in ipairs(zone.deadExits or {}) do
         if ix.exits[i] then
             ix.exits[i].dead = true
         end
     end
+    -- neighbouring cells of two squares with no walkable crossing between them (decided offline
+    -- with the heights): no border between the two squares
+    ix.noContact = {}
+    local cells = zone.rows * zone.cols
+    eachRecord(zone.noContact, 4, function(r1, c1, r2, c2)
+        local a, b = r1 * zone.cols + c1, r2 * zone.cols + c2
+        ix.noContact[a * cells + b] = true
+        ix.noContact[b * cells + a] = true
+    end)
 
     -- objects, in the bucket of every cell their footprint's circle touches
     ix.objects = {}
-    list = zone.objects or {}
-    for i = 1, #list - 6, 7 do
+    eachRecord(zone.objects, 7, function(x, y, halfLength, halfWidth, angle, name, room)
         local o = {
-            x = list[i], y = list[i + 1], halfLength = list[i + 2] / 10, halfWidth = list[i + 3] / 10,
-            angle = math.rad(list[i + 4]), name = zone.objectNames and zone.objectNames[list[i + 5]],
-            room = list[i + 6],
+            x = x, y = y, halfLength = halfLength / 10, halfWidth = halfWidth / 10, angle = math.rad(angle),
+            name = zone.objectNames and zone.objectNames[name], room = room,
         }
-        local reach = math.sqrt(list[i + 2] ^ 2 + list[i + 3] ^ 2) / 10
-        addToCells(zone, ix.objects, o.x, o.x, o.y, o.y, reach, o)
-    end
+        addToCells(zone, ix.objects, x, x, y, y, math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10, o)
+    end)
 
     -- centre line stretches, in the bucket of every cell within LANE_REACH of them
     ix.lanes = {}
-    list = zone.lanes or {}
     -- 8 since 2026-10-01: the raised piece the stretch runs on; 10: the widths per side (enter and
     -- leave left of the stretch's direction, then right: a wall on one side no longer narrows the other)
     local stride = zone.laneFields or 7
     local wide = stride >= 10
-    for i = 1, #list - stride + 1, stride do
+    eachRecord(zone.lanes, stride, function(x1, y1, x2, y2, value, enter, leave, f8, f9, f10)
         local lane = {
-            x1 = list[i], y1 = list[i + 1], x2 = list[i + 2], y2 = list[i + 3], value = list[i + 4],
-            kind = logic.kindOf(zone, list[i + 4]), enter = list[i + 5] / 10, leave = list[i + 6] / 10,
-            enter2 = (wide and list[i + 7] or list[i + 5]) / 10, leave2 = (wide and list[i + 8] or list[i + 6]) / 10,
-            piece = (wide and list[i + 9]) or (stride >= 8 and list[i + 7]) or 0,
+            x1 = x1, y1 = y1, x2 = x2, y2 = y2, value = value, kind = logic.kindOf(zone, value),
+            enter = enter / 10, leave = leave / 10,
+            enter2 = (wide and f8 or enter) / 10, leave2 = (wide and f9 or leave) / 10,
+            piece = (wide and f10) or (stride >= 8 and f8) or 0,
         }
-        addToCells(zone, ix.lanes, math.min(lane.x1, lane.x2), math.max(lane.x1, lane.x2),
-            math.min(lane.y1, lane.y2), math.max(lane.y1, lane.y2), logic.LANE_REACH, lane)
-    end
+        addToCells(zone, ix.lanes, math.min(x1, x2), math.max(x1, x2), math.min(y1, y2), math.max(y1, y2),
+            logic.LANE_REACH, lane)
+    end)
 
     ix.interiors = {}
     for i, f in ipairs(zone.interiors or {}) do
@@ -813,17 +803,13 @@ function logic.unpack(zone, locale)
     ix.stops, ix.stopCells = {}, {}
     for i, s in ipairs(zone.stops or {}) do
         local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, targets = {} }
-        local t = s[5] or {}
-        for k = 1, #t - 3, 4 do
-            stop.targets[#stop.targets + 1] = { t[k], t[k + 1], t[k + 2], t[k + 3] }
-        end
+        eachRecord(s[5], 4, function(x1, y1, x2, y2)
+            stop.targets[#stop.targets + 1] = { x1, y1, x2, y2 }
+        end)
         ix.stops[i] = stop
-        local cells = s[4] or {}
-        for k = 1, #cells - 1, 2 do
-            local key = cells[k] * zone.cols + cells[k + 1]
-            ix.stopCells[key] = ix.stopCells[key] or {}
-            table.insert(ix.stopCells[key], i)
-        end
+        eachRecord(s[4], 2, function(r, c)
+            addToBucket(ix.stopCells, r * zone.cols + c, i)
+        end)
     end
 
     if zone.indoor then
