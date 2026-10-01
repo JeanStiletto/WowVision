@@ -416,13 +416,18 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     end
     -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
     local t
+    local prefer = guide.key and guide.x and { x = guide.x, y = guide.y } or nil
     if roomId then
-        t = logic.roomDoorTarget(z, roomId, x, y, skipDoor)
+        t = logic.roomDoorTarget(z, roomId, x, y, skipDoor, prefer)
     else
-        t = logic.footTarget(z, x, y, region, guide.key and guide.x and { x = guide.x, y = guide.y } or nil)
+        t = logic.footTarget(z, x, y, region, prefer)
     end
     -- not the beginning of the way the player is on (stepping out of a street onto its square)
     if t and t.kind == "way" and logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name then
+        t = nil
+    end
+    -- not the foot of the climb the player is on (going up it)
+    if t and t.kind == "climb" and outdoor.current and logic.keyPlace(outdoor.current) == logic.placeOf(t.value) then
         t = nil
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)

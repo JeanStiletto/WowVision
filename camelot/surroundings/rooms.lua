@@ -416,11 +416,14 @@ end
 -- The nearest doorway of a big room (isBigRoom) within `reach` yards of the player: distance, the
 -- door, its world x and y, the room behind it (0 = outside); or nil. `skip` (optional): a door
 -- left out.
-function logic.nearestDoorway(zone, roomId, x, y, reach, skip)
+-- `prefer` {x, y}: the doorway guided to last stays the target unless another is nearer by more
+-- than GUIDE_STICK (Ironforge's Great Forge, 2026-10-01: seven doorway lines in 30 s).
+function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer)
     if not logic.isBigRoom(zone, roomId) then
         return nil
     end
     local best, bestDoor, bx, by = reach, nil, nil, nil
+    local kept, keptD, kx, ky = nil, nil, nil, nil
     for _, door in ipairs(zone._index.doorsOf[roomId] or {}) do
         local dx, dy = logic.doorWorld(zone, door)
         if dx and door ~= skip then
@@ -428,7 +431,13 @@ function logic.nearestDoorway(zone, roomId, x, y, reach, skip)
             if d <= best then
                 best, bestDoor, bx, by = d, door, dx, dy
             end
+            if d <= reach and logic.samePoint({ x = dx, y = dy }, prefer) then
+                kept, keptD, kx, ky = door, d, dx, dy
+            end
         end
+    end
+    if kept and bestDoor ~= kept and best > keptD - logic.GUIDE_STICK then
+        best, bestDoor, bx, by = keptD, kept, kx, ky
     end
     if bestDoor == nil then
         return nil

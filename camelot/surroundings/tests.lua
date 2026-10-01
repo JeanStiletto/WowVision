@@ -999,6 +999,28 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, false), "3 east")
     end,
 
+    ["a climb's foot on the way is guided to like an entrance"] = function(t)
+        local z = newWalkZone()
+        z.dirs = { "running %s", "up to the %s" }
+        z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
+        z.grid = { "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2" }
+        z.lanes = {}
+        -- the ramp's foot at (92, 44), the ramp rising to the northeast
+        z.climbFeet = { 92, 44, 222 }
+        logic.unpack(z)
+        -- 6 yd west of the foot (y 50): the ramp by name with its rise, then only the yards and
+        -- the direction, at it only the rise
+        local target = logic.footTarget(z, 92, 50)
+        t:assertEqual(target.kind, "climb")
+        t:assertEqual(logic.guideText(z, target, true, false), "ramp to the bank, 6 to the east, up to the northeast")
+        t:assertEqual(logic.guideText(z, target, false, false), "6 east")
+        t:assertEqual(logic.guideText(z, target, false, true), "up to the northeast")
+        target = logic.footTarget(z, 92, 45.5)
+        t:assertEqual(logic.atTarget(z, target, 92, 45.5), true)
+        -- beyond the reach: nothing
+        t:assertNil(logic.footTarget(z, 92, 58))
+    end,
+
     ["the guidance target stays unless another is clearly nearer"] = function(t)
         local list = { { x = 0, y = 0 }, { x = 10, y = 0 } }
         -- nearer to the second by 1 yd, the first guided to last: the first stays

@@ -498,6 +498,14 @@ function logic.unpack(zone, locale)
         }
     end
 
+    -- the feet of ramps and stairs joined to the way below (export.join_climbs): guidance targets
+    -- on the way, as entrances are
+    ix.climbFeet = {}
+    list = zone.climbFeet or {}
+    for i = 1, #list - 2, 3 do
+        ix.climbFeet[#ix.climbFeet + 1] = { x = list[i], y = list[i + 1], value = list[i + 2] }
+    end
+
     ix.exits = {}
     list = zone.exits or {}
     for i = 1, #list - 3, 4 do
