@@ -121,7 +121,7 @@ local function newHallZone()
     local z = newZone()
     table.insert(z.places, { "hall", "great hall of Test" }) -- place 7
     table.insert(z.places, { "pier", "pier of Test" }) -- place 8
-    z.interiors = { { "Test City", 0, 0, 1, -1, 0, 0, -1 } }
+    z.interiors = { { "Test City", 0, 0, 1, -1, 0, 0, -1, c = 1 } } -- the city itself: its name is the zone's
     z.rooms = {
         { 1, "great hall", "large hall", { 80, 10, 100, 40 }, f = 1200 },
         { 1, "shop", "room", { 80, 40, 100, 50 }, f = 150, s = 1 },
@@ -189,7 +189,7 @@ testRunner:addSuite("Surroundings", {
         local z = newHallZone()
         logic.unpack(z)
         t:assertEqual(logic.roomText(z, 1, nil, false, 95, 25),
-            "Test City, great hall, way out to the north, shop to the west, passage to the southeast")
+            "great hall, way out to the north, shop to the west, passage to the southeast")
         -- without a position (or in a small room) the fixed directions stay
         t:assertEqual(logic.roomText(z, 3, 1, false, 75, 5), "passage, north to south, great hall to the north")
         -- guidance to the nearest doorway of the big room
@@ -768,6 +768,13 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describeRoom(z, 1, nil), "Test Inn, common room")
         t:assertEqual(logic.describeRoom(z, 3, 1), "back room")
         t:assertEqual(logic.describeRoom(z, 4, 3), "Test Barn, barn")
+    end,
+
+    ["a room of the city's own complex never names the city"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        t:assertEqual(logic.describeRoom(z, 1, nil), "great hall")
+        t:assertEqual(logic.describeRoom(z, 2, 1), "shop")
     end,
 
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)

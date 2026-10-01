@@ -98,8 +98,10 @@ Each zone file calls `addon.addZone{...}` with:
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
-- `interiors`: `{name, ox, oy, scale, m00, m01, m10, m11}`: a building and its frame. World
-  x = ox - scale * (m00 vx + m01 vy), world y = oy - scale * (m10 vx + m11 vy).
+- `interiors`: `{name, ox, oy, scale, m00, m01, m10, m11, c = 1 (optional)}`: a building and
+  its frame. World x = ox - scale * (m00 vx + m01 vy), world y = oy - scale * (m10 vx + m11 vy).
+  `c = 1` marks a city's own complex or a map that is one building (Ironforge, the Deeprun
+  Tram): it is named after its zone, which the player knows, so its rooms are said without it.
 - `rooms`: `{interior, name, kind, floor boxes {x0, y0, x1, y1, ...}, outline box
   (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional)}`,
   in the building's frame. `a`: the axis (index into `axes`) a long, narrow room runs along;

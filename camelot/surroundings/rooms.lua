@@ -339,8 +339,10 @@ function logic.describeRoom(zone, roomId, previousRoomId)
         return nil
     end
     local previous = previousRoomId and ix.rooms[previousRoomId]
-    if previous == nil or previous.interior ~= room.interior then
-        local interior = ix.interiors[room.interior]
+    local interior = ix.interiors[room.interior]
+    -- a city's own complex (Ironforge) is named after the zone the player knows: never said
+    local city = interior ~= nil and interior.city
+    if not city and (previous == nil or previous.interior ~= room.interior) then
         return (interior and interior.name or "") .. ", " .. room.name
     end
     return room.name

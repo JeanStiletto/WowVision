@@ -725,7 +725,10 @@ function logic.unpack(zone, locale)
 
     ix.interiors = {}
     for i, f in ipairs(zone.interiors or {}) do
-        ix.interiors[i] = { name = f[1], ox = f[2], oy = f[3], scale = f[4], m00 = f[5], m01 = f[6], m10 = f[7], m11 = f[8] }
+        -- city: a city's own complex or a map that is one building (Ironforge, the Deeprun Tram),
+        -- named after its zone, which the player knows: a room in it is said without that name
+        ix.interiors[i] = { name = f[1], ox = f[2], oy = f[3], scale = f[4], m00 = f[5], m01 = f[6], m10 = f[7], m11 = f[8],
+            city = f.c == 1 }
     end
     ix.rooms = {}
     for i, room in ipairs(zone.rooms or {}) do
