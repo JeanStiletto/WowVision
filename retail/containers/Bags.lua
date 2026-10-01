@@ -74,12 +74,33 @@ function Bags:isOpen()
     return #shownContainerFrames() > 0
 end
 
+-- The backpack of an account without an authenticator draws four extra
+-- slots that cannot hold anything (the client marks them extended; the
+-- Add Slots button sits on them). They are not slots, so they are not
+-- read.
+local function usableSlot(itemButton)
+    if not itemButton:IsShown() then
+        return false
+    end
+    return not (itemButton.IsExtended ~= nil and itemButton:IsExtended())
+end
+
+local function usableSlots(buttons)
+    local list = {}
+    for _, itemButton in ipairs(buttons or {}) do
+        if usableSlot(itemButton) then
+            tinsert(list, itemButton)
+        end
+    end
+    return list
+end
+
 -- The frame's shown item buttons grouped by bag id, slots ascending.
 local function slotsByBag(frame)
     local groups = {}
     local order = {}
     for _, itemButton in ipairs(frame.Items or {}) do
-        if itemButton:IsShown() then
+        if usableSlot(itemButton) then
             local bagID = itemButton.GetBagID ~= nil and itemButton:GetBagID() or frame:GetID()
             local list = groups[bagID]
             if list == nil then
@@ -163,7 +184,7 @@ end
 local function renderGrid(builder, frame, frameKey, separateBags)
     builder:beginStop(frameKey .. ":grid")
     builder:pushContext(frameKey .. ":grid", L["Bags"])
-    local rows = module.renderSlots(builder, frame.Items or {})
+    local rows = module.renderSlots(builder, usableSlots(frame.Items))
     if rows == 0 then
         builder:addItem(ControlId.structural(frameKey .. ":empty"), nodes.text({ label = L["Empty"] }))
     end
