@@ -1005,9 +1005,11 @@ testRunner:addSuite("Surroundings", {
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
         z.grid = { "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2" }
         z.lanes = {}
-        -- the ramp's foot at (92, 44), the ramp rising to the northeast
-        z.climbFeet = { 92, 44, 222 }
+        -- the ramp's foot at (92, 44), the ramp rising to the northeast; a second foot of the
+        -- same ramp 2 yd away is the same target
+        z.climbFeet = { 92, 44, 222, 90, 44, 222 }
         logic.unpack(z)
+        t:assertEqual(#z._index.climbFeet, 1)
         -- 6 yd west of the foot (y 50): the ramp by name with its rise, then only the yards and
         -- the direction, at it only the rise
         local target = logic.footTarget(z, 92, 50)

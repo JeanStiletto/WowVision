@@ -392,6 +392,7 @@ local function addToCells(zone, buckets, x0, x1, y0, y1, margin, item)
 end
 
 logic.LANE_REACH = 12 -- yd; farther from every centre line the grid alone decides
+logic.FEET_APART = 8 -- yd; two feet of one climb closer than this are one guidance target
 
 -- Unpacks a zone on entry (once; `locale`: the client's language): the grid rows as runs, and the
 -- flat lists of the data as named records with lookups per grid cell, all in zone._index.
@@ -500,10 +501,21 @@ function logic.unpack(zone, locale)
 
     -- the feet of ramps and stairs joined to the way below (export.join_climbs): guidance targets
     -- on the way, as entrances are
+    -- (a climb with two line ends at its foot has two feet a yard or two apart: one target, else
+    -- the guidance named the ramp to Thane's Boots anew at every step, replay of 2026-10-01)
     ix.climbFeet = {}
     list = zone.climbFeet or {}
     for i = 1, #list - 2, 3 do
-        ix.climbFeet[#ix.climbFeet + 1] = { x = list[i], y = list[i + 1], value = list[i + 2] }
+        local x, y, value = list[i], list[i + 1], list[i + 2]
+        local twin = false
+        for _, f in ipairs(ix.climbFeet) do
+            if f.value == value and (f.x - x) ^ 2 + (f.y - y) ^ 2 <= logic.FEET_APART ^ 2 then
+                twin = true
+            end
+        end
+        if not twin then
+            ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value }
+        end
     end
 
     ix.exits = {}
