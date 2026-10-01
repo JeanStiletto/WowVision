@@ -426,8 +426,8 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     if t and t.kind == "way" and logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name then
         t = nil
     end
-    -- not the foot of the climb the player is on (going up it)
-    if t and t.kind == "climb" and outdoor.current and logic.keyPlace(outdoor.current) == logic.placeOf(t.value) then
+    -- not the foot of a climb the player is past (going up it)
+    if t and t.kind == "climb" and logic.pastTarget(z, t, x, y) then
         t = nil
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)

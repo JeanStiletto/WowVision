@@ -239,6 +239,16 @@ logic.GUIDE_SIDE_CLIMB = 1.0
 -- not lead into the wall beside the door (user 2026-10-01 at the Hall of Champions: "at the
 -- entrance" 2.6 yd beside the doorway, then the wall three times); at a climb's foot within
 -- GUIDE_SIDE_CLIMB of its line, which the data gives in degrees (finer than the compass word).
+-- The unit vector of the way through a target: the data's bearing (degrees, 0 north, 90 east)
+-- where it has one, else the compass word.
+local function throughVector(t)
+    if t.bearing then
+        local a = math.rad(t.bearing)
+        return math.cos(a), -math.sin(a)   -- 0 north (+x), 90 east (-y)
+    end
+    return logic.compassVector(t.through)
+end
+
 function logic.atTarget(zone, t, x, y)
     if t.d > logic.GUIDE_AT then
         return false
@@ -246,20 +256,21 @@ function logic.atTarget(zone, t, x, y)
     if t.kind == "way" or not t.through then
         return true
     end
-    local fx, fy, side
-    if t.kind == "climb" then
-        side = logic.GUIDE_SIDE_CLIMB
-        if t.bearing then
-            local a = math.rad(t.bearing)
-            fx, fy = math.cos(a), -math.sin(a)   -- 0 north (+x), 90 east (-y)
-        end
-    else
-        side = logic.GUIDE_SIDE
-    end
-    if not fx then
-        fx, fy = logic.compassVector(t.through)
-    end
+    local fx, fy = throughVector(t)
+    local side = t.kind == "climb" and logic.GUIDE_SIDE_CLIMB or logic.GUIDE_SIDE
     return math.abs((t.x - x) * fy - (t.y - y) * fx) <= side
+end
+
+-- Is the player past a climb's foot: more than GUIDE_AT yards beyond it along the way up? Then
+-- the foot is no target any more (user 2026-10-01: the foot was dropped as soon as the place
+-- said "ramp", which the junction stretch did 2 yd before the foot, so "hinauf nach Südosten"
+-- never came).
+function logic.pastTarget(zone, t, x, y)
+    if not t.through then
+        return false
+    end
+    local fx, fy = throughVector(t)
+    return (x - t.x) * fx + (y - t.y) * fy > logic.GUIDE_AT
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins

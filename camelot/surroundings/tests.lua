@@ -1036,6 +1036,12 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.atTarget(z, target, 91.25, 45.3), true)
         target = logic.footTarget(z, 93.3, 44.75)
         t:assertEqual(logic.atTarget(z, target, 93.3, 44.75), false)
+        -- the foot stays the target until the player is more than 3 yd past it up the line
+        t:assertEqual(logic.pastTarget(z, target, 93.3, 44.75), false)
+        target = logic.footTarget(z, 94, 40.5)   -- 4 yd up the line (bearing 60)
+        t:assertEqual(logic.pastTarget(z, target, 94, 40.5), true)
+        target = logic.footTarget(z, 90, 47.5)   -- 4 yd before the foot
+        t:assertEqual(logic.pastTarget(z, target, 90, 47.5), false)
     end,
 
     ["the guidance target stays unless another is clearly nearer"] = function(t)
