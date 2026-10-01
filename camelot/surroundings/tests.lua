@@ -737,7 +737,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(#list, 1)
         t:assertEqual(list[1].text, "Test Inn, common room")
         -- a flat opening: the common room's way out is south (from its middle), so one goes in north
-        t:assertEqual(logic.wordIndex(list[1].inDir), 1)   -- (the angle itself is a few degrees off north)
+        t:assertTrue(logic.angleGap(list[1].inDir, 0) < 10)   -- north, a few degrees off (an angle, not an index)
         t:assertEqual(list[1].x, 0)
         t:assertEqual(list[1].y, 5)
         local i, d, dir = logic.nearestEntrance(z, 10, 5, 15)

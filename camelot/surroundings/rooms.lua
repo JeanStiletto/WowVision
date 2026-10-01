@@ -268,7 +268,7 @@ end
 
 -- The entrances: the doorways between outside and a room, in world yards, built once per zone.
 -- Each {x, y, text, building, inDir}: the building, and the room behind unless it is just the
--- entrance; inDir: the compass index one goes in toward (the room's way out, reversed). In the
+-- entrance; inDir: the angle one goes in toward (the room's way out, reversed). In the
 -- indoor layer: the doorways out of its halls (layerEntrances).
 function logic.entrances(zone)
     local ix = zone._index
@@ -299,7 +299,7 @@ function logic.entrances(zone)
             end
             if not merged then
                 local out = logic.doorwayDirection(zone, door, inside)
-                list[#list + 1] = { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 3) % 8 + 1 }
+                list[#list + 1] = { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 }
             end
         end
     end
