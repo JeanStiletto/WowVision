@@ -79,15 +79,28 @@ local EDGE_TEXTS = {
     [4] = { "%s, moat", "%d %s, moat" },
 }
 
-function logic.edgeText(zone, i, ahead)
+-- `x, y`: the player; with them an edge with a depth per point says the depth at its nearest
+-- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot).
+function logic.edgeText(zone, i, ahead, x, y)
     local e = logic.edge(zone, i)
     local texts = EDGE_TEXTS[e.into] or EDGE_TEXTS[0]
     local word = zone.compass[e.facing]
+    local drop = e.drop
+    if e.drops and x then
+        local p, best = e.points, math.huge
+        for k = 1, #p - 1, 2 do
+            local d = (x - p[k]) ^ 2 + (y - p[k + 1]) ^ 2
+            local at = e.drops[(k + 1) / 2]
+            if at and d < best then
+                best, drop = d, at
+            end
+        end
+    end
     if ahead then
         local yards = math.max(1, math.floor(ahead + 0.5))
-        return string.format(L[texts[2]], yards, word, e.drop)
+        return string.format(L[texts[2]], yards, word, drop)
     end
-    return string.format(L[texts[1]], word, e.drop)
+    return string.format(L[texts[1]], word, drop)
 end
 
 -- A turn hint: 1 left, -1 right.

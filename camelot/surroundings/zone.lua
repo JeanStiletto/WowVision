@@ -476,6 +476,7 @@ function logic.unpack(zone, locale)
         end
         ix.edges[i] = {
             struct = e[1], facing = e[2], drop = e[3], into = e[4], piece = e[5], points = points,
+            drops = e.d, -- the depth per point (a ramp's side edge: 2 yd at the foot, 9 at the top), or nil
             box = { x0, x1, y0, y1 },
         }
     end
@@ -519,12 +520,16 @@ function logic.unpack(zone, locale)
     -- centre line stretches, in the bucket of every cell within LANE_REACH of them
     ix.lanes = {}
     list = zone.lanes or {}
-    local stride = zone.laneFields or 7   -- 8 since 2026-10-01: the raised piece the stretch runs on
+    -- 8 since 2026-10-01: the raised piece the stretch runs on; 10: the widths per side (enter and
+    -- leave left of the stretch's direction, then right: a wall on one side no longer narrows the other)
+    local stride = zone.laneFields or 7
+    local wide = stride >= 10
     for i = 1, #list - stride + 1, stride do
         local lane = {
             x1 = list[i], y1 = list[i + 1], x2 = list[i + 2], y2 = list[i + 3], value = list[i + 4],
             kind = logic.kindOf(zone, list[i + 4]), enter = list[i + 5] / 10, leave = list[i + 6] / 10,
-            piece = stride >= 8 and list[i + 7] or 0,
+            enter2 = (wide and list[i + 7] or list[i + 5]) / 10, leave2 = (wide and list[i + 8] or list[i + 6]) / 10,
+            piece = (wide and list[i + 9]) or (stride >= 8 and list[i + 7]) or 0,
         }
         addToCells(zone, ix.lanes, math.min(lane.x1, lane.x2), math.max(lane.x1, lane.x2),
             math.min(lane.y1, lane.y2), math.max(lane.y1, lane.y2), logic.LANE_REACH, lane)
