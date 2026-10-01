@@ -1017,10 +1017,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, true, false), "ramp to the bank, 6 to the east, up to the northeast")
         t:assertEqual(logic.guideText(z, target, false, false), "6 east")
         t:assertEqual(logic.guideText(z, target, false, true), "up to the northeast")
-        target = logic.footTarget(z, 92, 45.5)
-        t:assertEqual(logic.atTarget(z, target, 92, 45.5), true)
+        target = logic.footTarget(z, 92, 44.8)
+        t:assertEqual(logic.atTarget(z, target, 92, 44.8), true)
+        -- 1.2 yd beside the line through the foot (north-west of it): not at it, still
+        -- "1 southeast" (never "0")
+        target = logic.footTarget(z, 92.85, 44.85)
+        t:assertEqual(logic.atTarget(z, target, 92.85, 44.85), false)
+        t:assertEqual(logic.guideText(z, target, false, false), "1 southeast")
         -- beyond the reach: nothing
         t:assertNil(logic.footTarget(z, 92, 58))
+        -- with the line's bearing in the data (climbFeetFields 4): the ramp really runs at 60
+        -- degrees, so 1.5 yd back along that line is at the foot, 1.5 yd beside the line is not
+        z.climbFeetFields = 4
+        z.climbFeet = { 92, 44, 222, 60 }
+        logic.pack(z)
+        logic.unpack(z)
+        target = logic.footTarget(z, 91.25, 45.3)
+        t:assertEqual(logic.atTarget(z, target, 91.25, 45.3), true)
+        target = logic.footTarget(z, 93.3, 44.75)
+        t:assertEqual(logic.atTarget(z, target, 93.3, 44.75), false)
     end,
 
     ["the guidance target stays unless another is clearly nearer"] = function(t)
