@@ -27,15 +27,25 @@ tested in `tests.lua`:
 - `texts.lua`: every spoken text: places, squares, rooms, drop edges, guidance targets.
 - `stops.lua`: where one waits for a ship, zeppelin, lift or tram, and which way it will be.
 
-`module.lua` is the WoW side: settings, the alert, the update loop (every 0.2 s), the walk
-log, `/wv surr` and the describe key.
+`module.lua` is the WoW side: settings, the alert, the update loop (every 0.2 s:
+`updateIndoors`, `updateLayer` for the indoor layer's halls, `updateOutdoors`), the walk log,
+`/wv surr` and the describe key.
 
 ## Conventions
 
 - A world offset is (dx north, dy west), as `UnitPosition` gives x and y.
-- Compass indexes run from 1 = north clockwise to 8 = northwest; axes 1 to 4 are
-  north-south, northeast-southwest, east-west, northwest-southeast.
+- A direction is an angle in degrees clockwise from north (0..359; an axis, both ways of a
+  street, 0..179). The words come last: `logic.dirWord` (the 8 compass words, or the 12 clock
+  hours with `logic.clock`), `logic.axisWords`, `logic.sameDir` (two angles that come out as one
+  word), `logic.finishText` (places the "o'clock").
 - A facing (`GetPlayerFacing`) is in radians, 0 = north, counter-clockwise.
+- Geometry lives in `zone.lua`: `logic.dist`, `logic.dist2`, `logic.segmentPoint`,
+  `logic.nearestOfPoints`, and `logic.nearestPoint` for lists of records with x and y, which
+  carries the guidance's stick rule (`logic.sticks`, `GUIDE_STICK`): the target guided to last
+  stays unless another is clearly nearer. Use these rather than writing the arithmetic again.
+- Derived data lives under `zone._index` (`ix`), built by `logic.unpack` from the data's flat
+  lists (`eachRecord`) and dropped by `logic.pack`; lookups per grid cell are buckets keyed
+  `row * cols + col`.
 - Kinds are the data's English keys ("road", "canal walk", "deep water"); the words spoken
   come from the zone (localized) or from the locale strings. A city's outdoor ramps and stairs
   are the kinds "ramp" and "stairs" (`logic.CLIMBS`): ways with centre lines keyed like streets;
@@ -77,8 +87,9 @@ Each zone file calls `addon.addZone{...}` with:
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
 - `edges`: per drop edge `{structure, facing (the angle of the drop), drop yards, into
-  (0 a plain drop, 1 water, 2 a city canal, 3 lava), piece, x1, y1, x2, y2, ...}`: points about 2
-  yards apart along the edge.
+  (0 a plain drop, 1 water, 2 a city canal, 3 lava, 4 a moat), piece, x1, y1, x2, y2, ...}`:
+  points about 2 yards apart along the edge; `d = {...}` (optional) the depth per point (a
+  ramp's side edge: 2 yd at the foot, 9 at the top).
 - High floor pieces (wall-walks, bridge decks one can walk under, a city's raised floors): an
   edge with piece 0 lies low; otherwise it warns only after the player was seen stepping onto
   that piece. `pieceCells`: row, column, piece triples (footprints); `access`: piece, kind, x,
@@ -90,11 +101,17 @@ Each zone file calls `addon.addZone{...}` with:
   beside it). The grid holds one value per cell; `logic.valueAtCell` returns the value up
   while the module counts the player on that piece (`logic.setOn`), else the value below, so
   every lookup (places, squares, guidance) follows the level the player is on.
-- `lanes`: centre line stretches, `laneFields` values each (7 in older files, 8 now): x1, y1,
-  x2, y2, the cell value there, the distances from the line in 0.1 yards within which the way
-  starts to count (enter) and beyond which it stops (leave), and the high piece the stretch
-  runs on (0 = none): such a stretch counts only up on its piece, and over a stacked cell the
-  lower floor's stretches do not count while the player is up.
+- `lanes`: centre line stretches, `laneFields` values each (10 now; 7 and 8 in older files):
+  x1, y1, x2, y2, the cell value there, the distances from the line in 0.1 yards within which
+  the way starts to count (enter) and beyond which it stops (leave) left of the stretch's
+  direction, the same two right of it (a wall on one side no longer narrows the other), and the
+  high piece the stretch runs on (0 = none): such a stretch counts only up on its piece, and
+  over a stacked cell the lower floor's stretches do not count while the player is up. 8-field
+  files have one width pair and the piece; 7-field files the width pair alone.
+- `climbFeet`: the feet of ramps and stairs joined to the way below, `climbFeetFields` values
+  each (4; 3 in older files): x, y, the climb's cell value, and the bearing up the climb in
+  degrees. Guidance targets on the way, like entrances; two feet of one climb closer than
+  `logic.FEET_APART` are one target.
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
@@ -104,7 +121,7 @@ Each zone file calls `addon.addZone{...}` with:
   Tram): it is named after its zone, which the player knows, so its rooms are said without it.
 - `rooms`: `{interior, name, kind, floor boxes {x0, y0, x1, y1, ...}, outline box
   (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional)}`,
-  in the building's frame. `a`: the axis (index into `axes`) a long, narrow room runs along;
+  in the building's frame. `a`: the axis angle (0..179) a long, narrow room runs along;
   `w`: its floor winds up turning left (1, counter-clockwise seen from above) or right (-1);
   `s`: the room has a name of its own (a shop: "entrance of" it from a hall). A room of at least
   `logic.BIG_ROOM` sq yd says and guides to its doorways from the player's position.
@@ -141,5 +158,7 @@ Each zone file calls `addon.addZone{...}` with:
 
 `/wv surr log on` keeps every announcement (with the data's cell and text there, the room
 candidates, the facing) and a position trail every 4 yards in `WowVisionDump.surroundings`,
-until `/wv surr log off`. The walklog tools in wv-surroundings replay a log against the data
-offline.
+until `/wv surr log off`. `tools/walklog/module.lua` in wv-surroundings replays a log through
+this module itself (stand-ins for the WoW API) and prints what it would say, so a change to the
+module or the data can be heard offline on a real walk, and a refactor can be checked for
+byte-identical output over every logged walk.
