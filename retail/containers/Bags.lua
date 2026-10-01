@@ -19,13 +19,21 @@ local ControlId = graph.ControlId
 -- individual mode.
 --
 -- INDIVIDUAL mode is one frame per bag: one tab stop per bag, the bag slot
--- button first, then the slots in order, as on classic.
+-- button first, then the slots in order, as on classic. The game opens
+-- only the bags it was asked for (the backpack key alone opens just the
+-- backpack), so the bags still closed follow as a bar of their slot
+-- buttons: Enter on one opens that bag.
 --
 -- After the bags each frame contributes its own stops: the search box (an
 -- edit box, alone in its stop), then the frame's controls -- the bag menu
 -- (filters, cleanup, mode switch: a modern dropdown), the sort button,
 -- money, and the extra-slots purchase button when offered.
+--
+-- WoW: Forever adds the keyring as a held bag (bag id Enum.BagIndex.Keyring,
+-- its own frame in both modes) with KeyRingButton as its slot button.
 local Bags = WowVision.components.createType("containers", { key = "RetailBags" })
+
+local KEYRING_ID = KEYRING_CONTAINER or (Enum.BagIndex ~= nil and Enum.BagIndex.Keyring) or nil
 
 local BAG_SLOT_BUTTONS = {
     [0] = "MainMenuBarBackpackButton",
@@ -35,6 +43,19 @@ local BAG_SLOT_BUTTONS = {
     [4] = "CharacterBag3Slot",
     [5] = "CharacterReagentBag0Slot",
 }
+
+-- Every held bag, in bar order: backpack, bags, reagent bag, keyring.
+local HELD_BAG_IDS = { 0, 1, 2, 3, 4, 5 }
+if KEYRING_ID ~= nil then
+    tinsert(HELD_BAG_IDS, KEYRING_ID)
+end
+
+local function bagSlotButton(bagID)
+    if KEYRING_ID ~= nil and bagID == KEYRING_ID then
+        return KeyRingButton
+    end
+    return _G[BAG_SLOT_BUTTONS[bagID] or ""]
+end
 
 local function shownContainerFrames()
     local frames = {}
@@ -84,6 +105,9 @@ local function bagLabel(bagID)
         if bagID == 0 then
             return BACKPACK_TOOLTIP or L["Bags"]
         end
+        if KEYRING_ID ~= nil and bagID == KEYRING_ID then
+            return KEYRING or L["Keyring"]
+        end
         return L["Bags"] .. " " .. bagID
     end
     return name
@@ -94,7 +118,7 @@ local function renderBag(builder, frame, bagID, buttons)
     builder:beginStop("bag:" .. bagID)
     -- Keyed: two identical bags must not share a context identity.
     builder:pushContext("bag:" .. bagID, label)
-    local slotButton = _G[BAG_SLOT_BUTTONS[bagID] or ""]
+    local slotButton = bagSlotButton(bagID)
     if slotButton ~= nil then
         builder:addItem(
             ControlId.structural("bagButton:" .. bagID),
@@ -103,6 +127,33 @@ local function renderBag(builder, frame, bagID, buttons)
     end
     module.renderSlots(builder, buttons)
     builder:popContext()
+end
+
+-- A bar of bag slot buttons, one row, under its own stop: the shown
+-- buttons of the bags the filter accepts. False when none qualifies.
+local function renderBagBar(builder, key, label, idPrefix, include)
+    local entries = {}
+    for _, bagID in ipairs(HELD_BAG_IDS) do
+        local slotButton = bagSlotButton(bagID)
+        if slotButton ~= nil and slotButton:IsShown() and include(bagID) then
+            tinsert(entries, { bagID = bagID, button = slotButton })
+        end
+    end
+    if #entries == 0 then
+        return false
+    end
+    builder:beginStop(key)
+    builder:pushContext(key, label)
+    builder:startRow()
+    for _, entry in ipairs(entries) do
+        builder:addItem(
+            ControlId.structural(idPrefix .. entry.bagID),
+            module.itemSlotNode(entry.button, L["Bag Slot"] .. " " .. bagLabel(entry.bagID))
+        )
+    end
+    builder:endRow()
+    builder:popContext()
+    return true
 end
 
 -- One grid for a combined frame: plain rows, no bag boundaries, exactly
@@ -125,27 +176,17 @@ local function renderGrid(builder, frame, frameKey, separateBags)
     -- reader who starts top-left and works down.
 
     -- The bag slot buttons as one bar after the grid. A bag the game
-    -- still shows as its own frame (the reagent bag does, even in
-    -- combined mode) keeps its slot button with that frame.
-    builder:beginStop(frameKey .. ":bagSlots")
-    builder:pushContext(frameKey .. ":bagSlots", L["Bag Slots"])
-    builder:startRow()
-    local any = false
-    for bagID = 0, 5 do
-        local slotButton = _G[BAG_SLOT_BUTTONS[bagID] or ""]
-        if slotButton ~= nil and slotButton:IsShown() and not separateBags[bagID] then
-            any = true
-            builder:addItem(
-                ControlId.structural("bagButton:" .. bagID),
-                module.itemSlotNode(slotButton, L["Bag Slot"] .. " " .. bagLabel(bagID))
-            )
-        end
-    end
+    -- still shows as its own frame (the reagent bag and the keyring do,
+    -- even in combined mode) keeps its slot button with that frame.
+    local any = renderBagBar(builder, frameKey .. ":bagSlots", L["Bag Slots"], "bagButton:", function(bagID)
+        return not separateBags[bagID]
+    end)
     if not any then
+        builder:beginStop(frameKey .. ":bagSlots")
+        builder:pushContext(frameKey .. ":bagSlots", L["Bag Slots"])
         builder:addItem(ControlId.structural(frameKey .. ":noBagSlots"), nodes.text({ label = L["Empty"] }))
+        builder:popContext()
     end
-    builder:endRow()
-    builder:popContext()
 end
 
 local function moneyText()
@@ -207,8 +248,11 @@ function Bags:renderGraph(builder)
     local frames = shownContainerFrames()
     -- Bags shown as their own frame alongside the combined grid.
     local separateBags = {}
+    local combined = false
     for _, frame in ipairs(frames) do
-        if not (frame.IsCombinedBagContainer ~= nil and frame:IsCombinedBagContainer()) then
+        if frame.IsCombinedBagContainer ~= nil and frame:IsCombinedBagContainer() then
+            combined = true
+        else
             separateBags[frame:GetID()] = true
         end
     end
@@ -223,5 +267,12 @@ function Bags:renderGraph(builder)
             end
         end
         renderFrameControls(builder, frame, frameKey)
+    end
+    -- Individual mode: the bags not open yet, so they can be opened from
+    -- here (the backpack key opens only the backpack).
+    if not combined then
+        renderBagBar(builder, "closedBags", L["Closed Bags"], "closedBag:", function(bagID)
+            return not separateBags[bagID]
+        end)
     end
 end
