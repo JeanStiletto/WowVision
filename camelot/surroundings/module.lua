@@ -76,6 +76,7 @@ local wasIndoors = nil -- indoors at the last look (nil before the first)
 local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
 local room = nil -- the room the player is in as far as known (switches at once)
+local roomByDoor = false -- ... entered through one of its doorways: it holds over stacked floors (logic.resolveRoom)
 local lastRoom = nil -- the last announced room, for the interior name
 local layerMode = false -- in one of the big halls of the indoor layer: its places, not the room
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
@@ -150,7 +151,7 @@ end
 local function forgetPlace()
     outdoor:reset()
     indoor:reset()
-    room, lastRoom = nil, nil
+    room, lastRoom, roomByDoor = nil, nil, false
     wipeSet(high)
     warnedEdges = {}
     region, saidMouths = nil, {}
@@ -867,8 +868,11 @@ module:hasUpdate(function(self)
     if isIndoors then
         local before = room
         local crossed = logic.crossedDoor(z, room, px, py, x, y)
-        local found = logic.resolveRoom(z, x, y, room, px, py)
+        local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor)
         if found ~= nil then
+            if found ~= room then
+                roomByDoor = crossed ~= nil
+            end
             room = found
         end
         if crossed ~= nil or (before ~= nil and room ~= before) then

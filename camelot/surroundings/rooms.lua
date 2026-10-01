@@ -132,13 +132,24 @@ end
 -- better quiet than wrong). Where no floor lies under the player, the floors within ROOM_SLACK are
 -- the candidates (user 2026-09-29: riding the tram over its pit, the tunnel floor runs 1.4 yd to the
 -- side of the car; leaving the station into the tunnel's area is enough). px, py: the previous
--- position (optional).
-function logic.resolveRoom(zone, x, y, current, px, py)
+-- position (optional). byDoor: the current room was entered through one of its doorways; it then
+-- holds as long as its floor is within ROOM_SLACK, even where only another room's floor lies right
+-- under the player (Northshire Abbey 2026-10-01: on the stairs the gallery's floor box over them
+-- was the only one found a step after the door, so the stairs were lost and the bell tower's door,
+-- a door of the stairs, was never checked).
+function logic.resolveRoom(zone, x, y, current, px, py, byDoor)
     local crossed = logic.crossedDoor(zone, current, px, py, x, y)
     if crossed ~= nil then
         return crossed ~= 0 and crossed or nil
     end
     local cands = logic.roomCandidates(zone, x, y)
+    if byDoor and current ~= nil then
+        for _, id in ipairs(logic.roomCandidates(zone, x, y, logic.ROOM_SLACK)) do
+            if id == current then
+                return current
+            end
+        end
+    end
     if #cands == 0 then
         -- still within the area of the room one is in: stay (the tram's underwater tunnel has floor
         -- under the rail only here and there, the tunnel sections beside it overlap its area)

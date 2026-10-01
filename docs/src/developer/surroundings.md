@@ -19,7 +19,8 @@ tested in `tests.lua`:
 - `lanes.lua`: centre lines of roads and streets: whether the player is on the way, turn
   hints, where a road leads, gentle bends.
 - `rooms.lua`: building frames, rooms without a height (stacked floors resolved by the
-  doorway walked through), doorways, entrances.
+  doorway walked through; a room entered that way holds while its floor is within
+  `logic.ROOM_SLACK`, `resolveRoom`'s `byDoor`), doorways, entrances.
 - `squares.lua`: the region of a square (flood fill), what borders it (mouths), where ways
   begin on it, items around a place, cliffs and water near an outdoor place.
 - `objects.lua`: objects one bumps into, whose wall it is.

@@ -729,6 +729,20 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.crossedDoor(z, 3, 30, 5, 29, 5))          -- far from any doorway
     end,
 
+    ["a room entered through a doorway holds while its floor is near, even over another room's floor"] = function(t)
+        local z = newZone()
+        -- the landing's floor shrunk to a patch in the common room's middle (the Abbey's stairs:
+        -- a stair surface of two big triangles came out as dots)
+        z.rooms[2][4] = { 4, 4, 6, 6 }
+        logic.unpack(z)
+        t:assertEqual(logic.resolveRoom(z, 5, 7, 1, 5, 3), 2)             -- up the stairs through their door
+        t:assertEqual(logic.resolveRoom(z, 7.5, 5, 2, 5, 5), 1)           -- a step on: only the common room's floor
+        t:assertEqual(logic.resolveRoom(z, 7.5, 5, 2, 5, 5, true), 2)     -- ... but entered by the door: the stairs hold
+        t:assertEqual(logic.resolveRoom(z, 9, 5, 2, 7.5, 5, true), 1)     -- 3 yd off their floor: left them
+        t:assertEqual(logic.resolveRoom(z, 15, 5, 1, 14, 5, true), 3)     -- holding never blocks a clear room elsewhere
+        t:assertEqual(logic.resolveRoom(z, 5, 3, 2, 5, 7, true), 1)       -- a doorway crossing still wins
+    end,
+
     ["entrances: doorways to outside in world yards, with the room unless it is the entrance"] = function(t)
         local z = newZone()
         logic.unpack(z)

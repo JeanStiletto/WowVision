@@ -46,7 +46,13 @@ a screen reader would cut its own speech off at every key press.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it. A long, narrow
   room says which way it runs ("passage of Ironforge, north to south"); winding stairs say which
-  way they turn going up ("stairs of Ironforge, winding, turns left going up"). In a big room
+  way they turn going up ("stairs of Ironforge, winding, turns left going up"). Rooms without a
+  name of their own say their floor ("room, floor 1"), the room they stand over when a named one
+  carries the same word ("Main Hall, floor 1" is the gallery over the Main Hall), or their
+  direction when several share a word ("entrance" has the door, "entrance northeast" lies
+  behind it); stairs are named by where they lead up to ("stairs to the bell tower"). A room
+  entered through a doorway stays the room until the next doorway or until its floor is left,
+  so narrow stairs over a hall are not lost to the hall's floor below. In a big room
   the doorways are said from where you stand, nearest first, and within 8 yards of one you are
   guided to it like to an entrance ("shop, 6 to the west").
 - **The big halls of a city** (Ironforge, the Undercity quarters) are described like its
