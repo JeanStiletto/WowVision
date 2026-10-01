@@ -17,7 +17,13 @@ local state = {
     snapshot = nil,
     waiting = false,
     screen = nil,
+    -- Token of the pending "continuing" close, nil when none is pending.
+    pendingClose = nil,
 }
+
+-- How long a close flagged as continuing may wait for the next page before
+-- the window is given up as closed.
+local CONTINUING_GRACE = 1.0
 
 local function takeSnapshot()
     state.snapshot = {
@@ -58,21 +64,73 @@ pcall(eventFrame.RegisterEvent, eventFrame, "GOSSIP_OPTIONS_REFRESHED")
 -- gating it on the refresh event's absence left retail waiting out the
 -- timeout on every page. A close flagged as continuing (retail, between
 -- pages of one conversation) keeps the snapshot and the pending state.
-eventFrame:SetScript("OnEvent", function(frame, event, interactionIsContinuing)
+--
+-- The continuing flag is not a promise of a next page. The modern client
+-- (retail and WoW: Forever) also sets it when the conversation hands over
+-- to another interaction (trainer, flight master, merchant, quest giver),
+-- and Forever sets it when the game itself closes the gossip (Escape,
+-- walking away). No GOSSIP_SHOW ever follows those, and the window would
+-- stay open as a ghost until reload. So a continuing close only holds the
+-- window until the next page arrives, another interaction opens, or a
+-- short grace period runs out, whichever comes first.
+local function clearState()
+    state.snapshot = nil
+    state.waiting = false
+    state.screen = nil
+    state.pendingClose = nil
+end
+
+local function giveUp()
+    clearState()
+    WowVision.UIHost.windowManager:closeWindow("gossip")
+end
+
+local function beginContinuingClose()
+    state.waiting = true
+    local token = {}
+    state.pendingClose = token
+    C_Timer.After(CONTINUING_GRACE, function()
+        if state.pendingClose == token then
+            giveUp()
+        end
+    end)
+end
+
+-- Another interaction took over the conversation.
+local function handOver()
+    if state.pendingClose ~= nil then
+        giveUp()
+    end
+end
+
+eventFrame:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
+eventFrame:RegisterEvent("QUEST_GREETING")
+eventFrame:RegisterEvent("QUEST_DETAIL")
+eventFrame:RegisterEvent("QUEST_PROGRESS")
+eventFrame:RegisterEvent("QUEST_COMPLETE")
+
+eventFrame:SetScript("OnEvent", function(frame, event, arg1)
     if event == "GOSSIP_CLOSED" then
-        if interactionIsContinuing then
-            state.waiting = true
+        if arg1 then
+            beginContinuingClose()
         else
-            state.snapshot = nil
-            state.waiting = false
-            state.screen = nil
+            clearState()
         end
     elseif event == "GOSSIP_OPTIONS_REFRESHED" then
+        state.pendingClose = nil
         refresh()
     elseif event == "GOSSIP_SHOW" then
+        state.pendingClose = nil
         if state.waiting or state.snapshot == nil then
             refresh()
         end
+    elseif event == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" then
+        if arg1 ~= Enum.PlayerInteractionType.Gossip then
+            handOver()
+        end
+    else
+        -- One of the quest events.
+        handOver()
     end
 end)
 
@@ -169,6 +227,7 @@ module:registerWindow({
     closeEvent = "GOSSIP_CLOSED",
     -- Retail closes and reshows between pages of one conversation; the
     -- window stays open across that so the page change reads as a refresh.
+    -- The event handler above closes it itself when no page follows.
     shouldClose = function(interactionIsContinuing)
         return not interactionIsContinuing
     end,
