@@ -22,12 +22,16 @@ local ControlId = graph.ControlId
 -- button first, then the slots in order, as on classic. The game opens
 -- only the bags it was asked for (the backpack key alone opens just the
 -- backpack); Open All Bags, Shift plus the backpack key by default, opens
--- every bag, exactly as sighted players use it.
+-- every bag, exactly as sighted players use it. Each bag's own menu (its
+-- filters, cleanup and the mode switch) hangs on the bag slot entry's
+-- context menu, so the frames' controls stop carries only what the game
+-- puts on that frame: search, sort, money and Add Slots all live on the
+-- backpack, so the other bags add no stops of their own.
 --
--- After the bags each frame contributes its own stops: the search box (an
--- edit box, alone in its stop), then the frame's controls -- the bag menu
--- (filters, cleanup, mode switch: a modern dropdown), the sort button,
--- money, and the extra-slots purchase button when offered.
+-- After the bags each frame contributes its own stops when it has any: the
+-- search box (an edit box, alone in its stop), then the frame's controls --
+-- the combined frame's bag menu (one submenu per bag: a modern dropdown),
+-- the sort button, money, and the extra-slots purchase button when offered.
 --
 -- WoW: Forever adds the keyring as a held bag (bag id Enum.BagIndex.Keyring,
 -- its own frame in both modes) with KeyRingButton as its slot button.
@@ -134,6 +138,44 @@ local function bagLabel(bagID)
     return name
 end
 
+-- What either click on a bag slot button does: the game places the held
+-- item in that bag, otherwise toggles the bag, which from inside the open
+-- bag means closing it.
+local function bagSlotClickLabel()
+    if CursorHasItem() then
+        return L["Place Item"]
+    end
+    return L["Close Bag"]
+end
+
+-- The bag's own slot button as the first entry of its bag, with the bag's
+-- menu (the frame's portrait dropdown: filters, cleanup, mode switch) as
+-- an extra context action, since the clicks themselves only close the bag.
+local function bagSlotEntry(frame, slotButton, label)
+    local vtable = module.itemSlotNode(slotButton, label, { left = bagSlotClickLabel, right = bagSlotClickLabel })
+    if vtable == nil then
+        return nil
+    end
+    local menuButton = frame.PortraitButton
+    if menuButton ~= nil then
+        local clickActions = vtable.contextActions
+        vtable.contextActions = function(add)
+            clickActions(add)
+            add({
+                label = L["Bag Menu"],
+                onActivate = function()
+                    if menuButton.OpenMenu ~= nil then
+                        menuButton:OpenMenu()
+                    elseif menuButton.Click ~= nil then
+                        menuButton:Click()
+                    end
+                end,
+            })
+        end
+    end
+    return vtable
+end
+
 local function renderBag(builder, frame, bagID, buttons)
     local label = bagLabel(bagID)
     builder:beginStop("bag:" .. bagID)
@@ -143,7 +185,7 @@ local function renderBag(builder, frame, bagID, buttons)
     if slotButton ~= nil then
         builder:addItem(
             ControlId.structural("bagButton:" .. bagID),
-            module.itemSlotNode(slotButton, L["Bag Slot"] .. " " .. label)
+            bagSlotEntry(frame, slotButton, L["Bag Slot"] .. " " .. label)
         )
     end
     module.renderSlots(builder, buttons)
@@ -230,20 +272,28 @@ local function renderFrameControls(builder, frame, frameKey)
         )
     end
 
-    builder:beginStop(frameKey .. ":controls")
-    builder:pushContext(frameKey .. ":controls", L["Bag Controls"])
-    if frame.PortraitButton ~= nil then
-        builder:addItem(
+    -- Collected first: a frame with nothing to offer (an individual bag
+    -- other than the backpack) contributes no stop at all.
+    local items = {}
+    local function item(id, node)
+        if node ~= nil then
+            tinsert(items, { id = id, node = node })
+        end
+    end
+    -- A single bag's menu hangs on its bag slot entry; the combined frame's
+    -- menu (one submenu per bag) has no such entry and stays here.
+    if frame.PortraitButton ~= nil and frame.IsCombinedBagContainer ~= nil and frame:IsCombinedBagContainer() then
+        item(
             ControlId.forObject(frame.PortraitButton),
             nodes.proxyDropdown({ target = frame.PortraitButton, label = L["Bag Menu"] })
         )
     end
     local sortButton = BagItemAutoSortButton
     if sortButton ~= nil and sortButton:GetParent() == frame then
-        builder:addItem(ControlId.forObject(sortButton), nodes.proxyButton({ target = sortButton, label = L["Sort Bags"] }))
+        item(ControlId.forObject(sortButton), nodes.proxyButton({ target = sortButton, label = L["Sort Bags"] }))
     end
     if frame.MoneyFrame ~= nil and frame.MoneyFrame:IsShown() then
-        builder:addItem(
+        item(
             ControlId.structural(frameKey .. ":money"),
             nodes.text({
                 label = function()
@@ -257,10 +307,18 @@ local function renderFrameControls(builder, frame, frameKey)
         )
     end
     if frame.AddSlotsButton ~= nil then
-        builder:addItem(
+        item(
             ControlId.forObject(frame.AddSlotsButton),
             nodes.proxyButton({ target = frame.AddSlotsButton, label = L["Add Slots"] })
         )
+    end
+    if #items == 0 then
+        return
+    end
+    builder:beginStop(frameKey .. ":controls")
+    builder:pushContext(frameKey .. ":controls", L["Bag Controls"])
+    for _, entry in ipairs(items) do
+        builder:addItem(entry.id, entry.node)
     end
     builder:popContext()
 end
