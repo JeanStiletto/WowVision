@@ -248,7 +248,7 @@ end
 local function roomCandidateNames(z, x, y)
     local names = {}
     for _, id in ipairs(logic.roomCandidates(z, x, y)) do
-        names[#names + 1] = logic.describeRoom(z, id, nil)
+        names[#names + 1] = logic.finishText(logic.describeRoom(z, id, nil))
     end
     return table.concat(names, "; ")
 end
@@ -268,15 +268,15 @@ local function logEntry(kind, text, x, y, extra)
     if zone and x then
         local value, r, c = logic.valueAt(zone, x, y)
         e.zone, e.r, e.c = zone.key, r, c
-        e.cell = logic.describe(zone, value, true)
+        e.cell = logic.finishText(logic.describe(zone, value, true))
         if isInside() then
             e.indoors = true
             e.hall = hallGap ~= nil or nil
             e.candidates = roomCandidateNames(zone, x, y)
-            e.room = room and logic.describeRoom(zone, room, nil) or nil
+            e.room = room and logic.finishText(logic.describeRoom(zone, room, nil)) or nil
             local layer = logic.layer(zone)
             if layerMode and layer then
-                e.layer = logic.describe(layer, logic.valueAt(layer, x, y), true)
+                e.layer = logic.finishText(logic.describe(layer, logic.valueAt(layer, x, y), true))
             end
         end
     end
@@ -320,6 +320,30 @@ local function zones()
     return WowVisionSurroundingsData and WowVisionSurroundingsData.zones or {}
 end
 
+-- The data format this module reads (zone.format): 2 carries directions as angles. Data of
+-- another format is left alone, and said once (the data addon and WowVision are switched
+-- together: branch clock-directions on both).
+local FORMAT = 2
+local formatWarned = false
+local function formatFits(z)
+    if (z.format or 1) == FORMAT then
+        return true
+    end
+    if not formatWarned then
+        formatWarned = true
+        WowVision:speak(string.format("Surroundings data %s has format %d, this WowVision reads format %d; "
+            .. "switch the data addon and WowVision to the same branch", z.key or "?", z.format or 1, FORMAT))
+    end
+    return false
+end
+
+-- Clock hours or compass words: the compass module's Directions setting, shared by every
+-- direction WowVision speaks.
+local function updateWords()
+    local compass = WowVision.base.navigation.compass
+    logic.clock = compass ~= nil and compass.settings.directions == "clock"
+end
+
 -- The registered zone covering the position; unpack it, free the one left behind.
 local function findZone(x, y, map)
     if zone and zone.map == map and logic.covers(zone, x, y) then
@@ -327,7 +351,7 @@ local function findZone(x, y, map)
     end
     local found = nil
     for _, z in ipairs(zones()) do
-        if z.map == map and logic.covers(z, x, y) then
+        if z.map == map and logic.covers(z, x, y) and formatFits(z) then
             found = z
             break
         end
@@ -353,6 +377,7 @@ local function findZone(x, y, map)
 end
 
 local function say(text, kind, x, y, walked, extra)
+    text = logic.finishText(text)
     if text and text ~= "" then
         module:fireAlert("place", { text = text })
     end
@@ -694,8 +719,9 @@ local function checkBend(z, x, y, px, py)
     if moveOn then
         bendFrom = dir
     end
-    if turn ~= 0 and ahead % 100 == tonumber(key:sub(2)) % 100 and bendWalked >= BEND_WALK then
-        say(logic.turnText(turn), "bend", x, y)
+    if turn ~= 0 and logic.outdoorKey(z, ahead, key) == key and bendWalked >= BEND_WALK then
+        -- (dir is a facing-like angle: radians counter-clockwise; the words take degrees clockwise)
+        say(logic.bendText(z, turn, (360 - math.deg(dir)) % 360), "bend", x, y)
         bendWalked = 0
     end
 end
@@ -722,11 +748,11 @@ local function checkAhead(z, x, y, px, py)
         return
     end
     local heading = math.atan2(y - py, x - px)
-    local value, yards = logic.pieceAhead(z, x, y, heading, tonumber(key:sub(2)), logic.AHEAD_LOOK)
+    local value, yards = logic.pieceAhead(z, x, y, heading, key, logic.AHEAD_LOOK)
     if value == nil or yards < logic.AHEAD_MIN then
         return
     end
-    local nextKey = logic.outdoorKey(z, value)
+    local nextKey = logic.outdoorKey(z, value, key)
     if nextKey ~= aheadKey then
         aheadKey, aheadX, aheadY = nextKey, x, y
         say(logic.describe(z, value, true), "ahead", x, y)
@@ -775,7 +801,7 @@ local function checkPlace(z, x, y, forced)
         value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
     end
     local previous = outdoor.current
-    if outdoor:update(logic.outdoorKey(z, value), x, y) then
+    if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y) then
         leftWay = logic.isWayKey(previous) and previous or nil
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming() })
@@ -814,6 +840,7 @@ module:hasUpdate(function(self)
     if x == nil then
         return
     end
+    updateWords()
     if not sessionLogged and activeLog() then
         sessionLogged = true
         logEntry("session", GetRealmName() .. ", " .. UnitName("player"), x, y)
@@ -988,14 +1015,15 @@ module:registerCommand({
             else
                 local value, r, c = logic.valueAt(z, x, y)
                 parts[#parts + 1] = string.format("Data %s, cell %d %d", z.label or z.key, r, c)
-                parts[#parts + 1] = "Place: " .. (logic.describe(z, value, true) or "none")
+                parts[#parts + 1] = "Place: " .. (logic.finishText(logic.describe(z, value, true)) or "none")
                 local i, d, dir, e = logic.nearestEntrance(z, x, y, 100)
                 if i then
-                    parts[#parts + 1] = string.format("Nearest entrance: %s, %d yards to the %s", e.text, math.floor(d + 0.5), z.compass[dir])
+                    parts[#parts + 1] = logic.finishText(string.format("Nearest entrance: %s, %d yards to the %s", e.text,
+                        math.floor(d + 0.5), logic.dirWord(z, dir)))
                 end
                 local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
                 if stop then
-                    parts[#parts + 1] = "Stop: " .. logic.stopText(z, stop, x, y)
+                    parts[#parts + 1] = "Stop: " .. logic.finishText(logic.stopText(z, stop, x, y))
                 end
                 -- the game's own word on inside: IsIndoors, and its map (the halls it calls outdoors)
                 parts[#parts + 1] = string.format("Game: %s, map %s%s", IsIndoors() and "indoors" or "outdoors",
@@ -1003,10 +1031,10 @@ module:registerCommand({
                 if isInside() then
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
-                    parts[#parts + 1] = "Current room: " .. (room and logic.describeRoom(z, room, nil) or "unknown")
+                    parts[#parts + 1] = "Current room: " .. (room and logic.finishText(logic.describeRoom(z, room, nil)) or "unknown")
                     local layer = logic.layer(z)
                     if layer then
-                        parts[#parts + 1] = "Indoor layer: " .. (logic.describe(layer, logic.valueAt(layer, x, y), true) or "none")
+                        parts[#parts + 1] = "Indoor layer: " .. (logic.finishText(logic.describe(layer, logic.valueAt(layer, x, y), true)) or "none")
                             .. (layerMode and ", in use" or ", not in use")
                     end
                 end
@@ -1028,6 +1056,7 @@ function module:describeAround()
     if z == nil then
         return
     end
+    updateWords()
     local text
     local layer = logic.layer(z)
     if isInside() and layerMode and layer then

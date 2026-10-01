@@ -21,11 +21,11 @@ local WAIT = {
     ["lift down"] = L["wait for the lift down"],
 }
 local WHERE = {
-    ship = L["ship to the %s"],
-    zeppelin = L["zeppelin to the %s"],
-    tram = L["tram to the %s"],
-    ["lift up"] = L["lift to the %s"],
-    ["lift down"] = L["lift to the %s"],
+    ship = "ship to the %s",
+    zeppelin = "zeppelin to the %s",
+    tram = "tram to the %s",
+    ["lift up"] = "lift to the %s",
+    ["lift down"] = "lift to the %s",
 }
 
 -- The stop at a position: outdoors (`rooms` nil) one on open floor (room 0); indoors one in a room
@@ -57,7 +57,7 @@ function logic.stopDirections(zone, i, x, y)
         end
         local px, py = x1 + u * vx, y1 + u * vy
         if (px - x) ^ 2 + (py - y) ^ 2 > 0.25 then
-            logic.addDir(item, logic.compassIndex(px - x, py - y))
+            logic.addDir(item, logic.bearingOf(px - x, py - y))
         end
     end
     return item.dirs
@@ -74,10 +74,10 @@ function logic.stopText(zone, i, x, y)
     end
     local words = {}
     for _, dir in ipairs(logic.stopDirections(zone, i, x, y)) do
-        words[#words + 1] = zone.compass[dir]
+        words[#words + 1] = logic.dirWord(zone, dir)
     end
     if #words > 0 and WHERE[s.kind] then
-        text = text .. ", " .. string.format(WHERE[s.kind], logic.joinWords(words))
+        text = text .. ", " .. string.format(logic.T(WHERE[s.kind]), logic.joinWords(words))
     end
     return text
 end

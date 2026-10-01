@@ -6,6 +6,31 @@
 local logic = WowVision.surroundingsLogic
 local L = WowVision:getLocale()
 
+-- The templates that name a direction, and their clock forms ("6 to the northeast" / "6 at 2
+-- o'clock"): looked up through T, which takes the clock form in clock mode.
+local CLOCK = {
+    ["%s to the %s"] = "%s at %s",
+    ["%d to the %s"] = "%d yards at %s",
+    ["%d %s"] = "%d at %s",
+    ["in to the %s"] = "in at %s",
+    ["out to the %s"] = "out at %s",
+    ["through to the %s"] = "through at %s",
+    ["on to the %s"] = "on at %s",
+    ["road to the %s"] = "road at %s",
+    ["street to the %s"] = "street at %s",
+    ["ship to the %s"] = "ship at %s",
+    ["zeppelin to the %s"] = "zeppelin at %s",
+    ["tram to the %s"] = "tram at %s",
+    ["lift to the %s"] = "lift at %s",
+}
+local function T(key)
+    if logic.clock and CLOCK[key] then
+        return L[CLOCK[key]]
+    end
+    return L[key]
+end
+logic.T = T
+
 local ITEMS_MAX = 4 -- things said at most on entering a square or a room
 local APPROACH = 10 -- yd; on a square, a street, water or drop not said yet is said this close
 local FEATURE_REACH = 25 -- yd; cliffs and water said with an outdoor place
@@ -48,7 +73,7 @@ end
 function logic.itemsText(zone, items)
     local parts = {}
     for _, item in ipairs(items) do
-        local name = item.label
+        local name = logic.expandDirs(zone, item.label)
         if item.class == "entrance" then
             name = string.format(L["entrance of %s"], item.label)
         elseif not NAMED_CLASSES[item.class] then
@@ -59,9 +84,9 @@ function logic.itemsText(zone, items)
         else
             local words = {}
             for _, dir in ipairs(item.dirs) do
-                words[#words + 1] = zone.compass[dir]
+                words[#words + 1] = logic.dirWord(zone, dir)
             end
-            parts[#parts + 1] = string.format(L["%s to the %s"], name, logic.joinWords(words))
+            parts[#parts + 1] = string.format(T("%s to the %s"), name, logic.joinWords(words))
         end
     end
     return table.concat(parts, ", ")
@@ -78,13 +103,22 @@ local EDGE_TEXTS = {
     [3] = { "%s, lava", "%d %s, lava" },
     [4] = { "%s, moat", "%d %s, moat" },
 }
+-- in clock mode ("at 4, water"; "9 at 4 o'clock, water": the yards before the hour ask for it)
+local EDGE_TEXTS_CLOCK = {
+    [0] = { "at %s, drop %d", "%d at %s, drop %d" },
+    [1] = { "at %s, water", "%d at %s, water" },
+    [2] = { "at %s, canal", "%d at %s, canal" },
+    [3] = { "at %s, lava", "%d at %s, lava" },
+    [4] = { "at %s, moat", "%d at %s, moat" },
+}
 
 -- `x, y`: the player; with them an edge with a depth per point says the depth at its nearest
 -- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot).
 function logic.edgeText(zone, i, ahead, x, y)
     local e = logic.edge(zone, i)
-    local texts = EDGE_TEXTS[e.into] or EDGE_TEXTS[0]
-    local word = zone.compass[e.facing]
+    local table_ = logic.clock and EDGE_TEXTS_CLOCK or EDGE_TEXTS
+    local texts = table_[e.into] or table_[0]
+    local word = logic.dirWord(zone, e.facing, ahead ~= nil)
     local drop = e.drop
     if e.drops and x then
         local p, best = e.points, math.huge
@@ -108,27 +142,38 @@ function logic.turnText(turn)
     return turn > 0 and L["left"] or L["right"]
 end
 
+-- A gentle bend's hint: the turn, and in clock mode where the way leads now ("left, at 3"; the
+-- direction is an angle): with twelve hours a bend changes the hour more often than it changed
+-- the compass word, and the player wants the new one said (user 2026-10-01).
+function logic.bendText(zone, turn, angle)
+    local text = logic.turnText(turn)
+    if logic.clock and angle then
+        text = text .. ", " .. string.format(logic.dirTemplate(zone, zone._toward) or "%s", logic.dirWord(zone, angle))
+    end
+    return text
+end
+
 -- Guidance targets -------------------------------------------------------------------------------
--- A target {key (unique among the targets of one guide), kind, x, y, d, dir (distance and compass
--- index from the player), name and short (its text the first time and after), atName and at (at the
--- target), through (the compass index of the way through it) and throughFormat}.
+-- A target {key (unique among the targets of one guide), kind, x, y, d, dir (distance and angle
+-- from the player), name and short (its text the first time and after), atName and at (at the
+-- target), through (the angle of the way through it) and throughFormat}.
 
 -- A doorway target: into the room `label` (the way out when `label` is nil), `through` the
--- compass index of the way through it.
+-- angle of the way through it.
 local function doorwayTarget(key, d, dir, x, y, label, through)
     if label == nil then
         return {
             key = key, kind = "doorway", d = d, dir = dir, x = x, y = y,
             name = L["way outside"], short = L["way outside"], atName = L["at the way outside"],
             at = L["at the way outside"],
-            through = through, throughFormat = L["out to the %s"],
+            through = through, throughFormat = T("out to the %s"),
         }
     end
     return {
         key = key, kind = "doorway", d = d, dir = dir, x = x, y = y,
         name = label, short = L["doorway"],
         atName = string.format(L["at the doorway to %s"], label), at = L["at the doorway"],
-        through = through, throughFormat = L["through to the %s"],
+        through = through, throughFormat = T("through to the %s"),
     }
 end
 
@@ -145,7 +190,7 @@ local function entranceTarget(zone, x, y, reach, prefer)
         key = "e" .. i, kind = "entrance", d = d, dir = dir, x = e.x, y = e.y,
         name = string.format(L["entrance of %s"], e.text), short = L["entrance"],
         atName = string.format(L["at the entrance of %s"], e.text), at = L["at the entrance"],
-        through = e.inDir, throughFormat = L["in to the %s"],
+        through = e.inDir, throughFormat = T("in to the %s"),
     }
 end
 
@@ -158,7 +203,7 @@ function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer)
         return nil
     end
     local label = beyond ~= 0 and logic.describeRoom(zone, beyond, roomId) or nil
-    return doorwayTarget(string.format("d%.1f,%.1f", door.x, door.y), d, logic.compassIndex(dx - x, dy - y), dx, dy,
+    return doorwayTarget(string.format("d%.1f,%.1f", door.x, door.y), d, logic.bearingOf(dx - x, dy - y), dx, dy,
         label, logic.doorwayDirection(zone, door, roomId))
 end
 
@@ -180,7 +225,7 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
         -- one of few, unlike the entrances along it
         name = b.label, short = b.label,
         atName = string.format(L["at the %s"], b.label), at = string.format(L["at the %s"], b.label),
-        through = b.onward, throughFormat = L["on to the %s"],
+        through = b.onward, throughFormat = T("on to the %s"),
     }
 end
 
@@ -193,13 +238,13 @@ local function climbTarget(zone, x, y, reach, prefer)
     if i == nil then
         return nil
     end
-    local code = f.value % 100
-    local up = code > 0 and not logic.axisOf(zone, f.value) and code % 10 or nil
+    local code = logic.codeOf(f.value)
+    local up = code > 0 and not logic.axisOf(zone, f.value) and code % 1000 or nil
     local name = logic.describe(zone, f.value, false, true)
     return {
         key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
-        through = up, throughFormat = up and zone.dirs[math.floor(code / 10)] or nil,
+        through = up, throughFormat = up and logic.dirTemplate(zone, math.floor(code / 1000)) or nil,
         bearing = f.bearing,
     }
 end
@@ -288,7 +333,7 @@ function logic.exitTarget(zone, x, y, moat)
         short = dead and L["way out to a dead end"] or L["way out"],
         atName = dead and L["at the way out to a dead end"] or L["at the way out"],
         at = dead and L["at the way out to a dead end"] or L["at the way out"],
-        through = exit.out, throughFormat = L["out to the %s"],
+        through = exit.out, throughFormat = T("out to the %s"),
     }
 end
 
@@ -305,17 +350,17 @@ function logic.guideText(zone, t, named, at)
     local parts = {}
     if at then
         if door and t.through then
-            return string.format(t.throughFormat, zone.compass[t.through])
+            return string.format(t.throughFormat, logic.dirWord(zone, t.through))
         end
         parts[1] = named and t.atName or t.at
     elseif door and not named then
-        return string.format(L["%d %s"], math.max(1, math.floor(t.d + 0.5)), zone.compass[t.dir])
+        return string.format(T("%d %s"), math.max(1, math.floor(t.d + 0.5)), logic.dirWord(zone, t.dir, true))
     else
         parts[1] = named and t.name or t.short
-        parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), zone.compass[t.dir])
+        parts[2] = string.format(T("%d to the %s"), math.floor(t.d + 0.5), logic.dirWord(zone, t.dir, true))
     end
-    if t.through and (at or (named and t.through ~= t.dir)) then
-        parts[#parts + 1] = string.format(t.throughFormat, zone.compass[t.through])
+    if t.through and (at or (named and not logic.sameDir(t.through, t.dir))) then
+        parts[#parts + 1] = string.format(t.throughFormat, logic.dirWord(zone, t.through))
     end
     return table.concat(parts, ", ")
 end
@@ -405,7 +450,7 @@ function logic.spotText(zone, x, y, value, previous, opts)
         local d, dir, street
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
-            d, dir, street = ld, logic.compassIndex(lx - x, ly - y), not logic.ROADS[lane.kind]
+            d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
         else
             d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
             local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
@@ -415,8 +460,8 @@ function logic.spotText(zone, x, y, value, previous, opts)
         end
         if d then
             -- instead of the place's stored nearest road, which may be another one
-            local format = street and L["street to the %s"] or L["road to the %s"]
-            text = logic.describe(zone, value, true, true) .. ", " .. string.format(format, zone.compass[dir])
+            local format = street and T("street to the %s") or T("road to the %s")
+            text = logic.describe(zone, value, true, true) .. ", " .. string.format(format, logic.dirWord(zone, dir))
         end
     end
     local near = not opts.swimming and featuresText(zone, x, y, kind, previous, opts.cut)

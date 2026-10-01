@@ -47,16 +47,27 @@ Each zone file calls `addon.addZone{...}` with:
 - `key`, `label`, `map`: the map id `UnitPosition` returns.
 - `top`, `left`, `cell`, `rows`, `cols`: the grid. Row 0 lies at world x = `top` (north),
   column 0 at world y = `left` (west); cells are `cell` yards wide.
+- `format`: 2. Directions are angles in degrees clockwise from north (an axis, both ways of a
+  street, 0..179); the module turns them into the player's words: the 8 compass words, or with
+  the compass module's Directions setting the 12 hours of a north-up clock (`logic.clock`,
+  `logic.dirWord`, `logic.axisWords`, `logic.finishText` for the "o'clock"). Data of another
+  format is left alone and said once.
 - `dirs`: direction templates ("water to the %s", "running %s", "up to the %s" for a ramp's or
-  stairs' way up); `compass`: the 8 compass words; `axes`: the 4 axis words ("north-south").
+  stairs' way up); `dirsClock`: the same for the hours ("water at %s"); `compass`: the 8 compass
+  words; `axes`: the 4 axis words ("north-south"). A place label may carry directions as angles,
+  `<d45,135>` ("fork, Goldshire road <d45,135>"): said with the "to the %s" template in the
+  player's words.
 - `places`: `{kind, label, nearest road (optional)}` per place id.
 - `grid`: one run-length string per row, `"value*count,value,..."`. A value is
-  place id * 100 + direction code; the code is template index * 10 + word index (a compass
-  word, or an axis for "running %s"); 0 = no data.
+  place id * 10000 + direction code; the code is template index * 1000 + angle (0..359, or the
+  axis 0..179 for "running %s"); 0 = no data. A way's cells carry the heading of their centre
+  line's run (roads.bend_runs), so the spoken word is the nearest one; the entry rule's key
+  (`logic.outdoorKey`) quantizes it to the current words and sticks to the word said while the
+  heading stays within KEY_STICK degrees of it.
 - `bridgeUnder`: row, column, value triples: the water under a bridge or the city canal
   under a street, said while swimming.
-- `exits`: x, y, width, out quadruples: ways out of city water; out is the compass index one
-  climbs out toward (0 = unknown).
+- `exits`: x, y, width, out quadruples: ways out of city water; out is the angle one climbs out
+  toward (-1 = unknown).
 - `deadExits`: 1-based indexes into the ways out that lead onto floor joining nothing, or into
   a dead end (decided offline with the heights; optional).
 - `noContact`: row, column, row, column quadruples: neighbouring cells of two squares with no
@@ -64,7 +75,7 @@ Each zone file calls `addon.addZone{...}` with:
   no border between the squares.
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
-- `edges`: per drop edge `{structure, facing (compass index of the drop), drop yards, into
+- `edges`: per drop edge `{structure, facing (the angle of the drop), drop yards, into
   (0 a plain drop, 1 water, 2 a city canal, 3 lava), piece, x1, y1, x2, y2, ...}`: points about 2
   yards apart along the edge.
 - High floor pieces (wall-walks, bridge decks one can walk under, a city's raised floors): an

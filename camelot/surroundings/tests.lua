@@ -19,9 +19,9 @@ local function newZone()
             { "deep water", "deep water of Test Lake" },
             { "landmark", "at the well", "Test road to the north" },
         },
-        grid = { "100*2,213*2,383*2", "400*6", "0*6" },
-        bridgeUnder = { 0, 5, 500 },
-        exits = { 95, 20, 10, 1 },   -- climbed out toward the north
+        grid = { "10000*2,21090*2,38090*2", "40000*6", "0*6" },
+        bridgeUnder = { 0, 5, 50000 },
+        exits = { 95, 20, 10, 0 },   -- climbed out toward the north (angle 0)
         -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water;
         -- a wall over row 1, columns 4 and 5, its wall-walk (high piece 1) dropping 12 yd to the
         -- south at x = 81; stepped onto from the ground at its east end (x 88, y 1) or out of a
@@ -29,8 +29,8 @@ local function newZone()
         structs = { "dock", "wall" },
         structCells = { 1, 1, 1, 1, 2, 1, 1, 4, 2, 1, 5, 2 },
         edges = {
-            { 1, 1, 3, 1, 0, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 },
-            { 2, 5, 12, 0, 1, 81, 14, 81, 12 },
+            { 1, 0, 3, 1, 0, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 },
+            { 2, 180, 12, 0, 1, 81, 14, 81, 12 },
         },
         pieceCells = { 1, 4, 1, 1, 5, 1, 0, 4, 2 },
         access = { 1, 1, 88, 1, 1, 2, 85, 25 },
@@ -70,8 +70,8 @@ local function newSquareZone()
         { "deep water", "deep water of Test" },
         { "canal", "canal of Test" },
     }
-    z.grid = { "300*2,281*2,300*3", "300,100*5,300", "300,100*5,400", "300,100*5,400", "0*7" }
-    z.bridgeUnder = { 4, 1, 500, 4, 2, 500, 4, 3, 500 }
+    z.grid = { "30000*2,28000*2,30000*3", "30000,10000*5,30000", "30000,10000*5,40000", "30000,10000*5,40000", "0*7" }
+    z.bridgeUnder = { 4, 1, 50000, 4, 2, 50000, 4, 3, 50000 }
     z.structs, z.structCells, z.edges, z.pieceCells, z.access, z.links = {}, {}, {}, {}, {}, {}
     z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
     z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
@@ -90,9 +90,9 @@ local function newLaneZone()
         compass = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" },
         axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
         places = { { "forest", "forest" }, { "road", "Test road" }, { "bridge", "bridge" } },
-        grid = { "100*2,211*2,100*2", "100*2,211*2,100*2", "100*2,211*2,100*2", "100*2,211*2,100*2",
-            "100*2,300*2,100*2" },
-        lanes = { 100, 48, 84, 48, 211, 20, 40 },
+        grid = { "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2",
+            "10000*2,30000*2,10000*2" },
+        lanes = { 100, 48, 84, 48, 21000, 20, 40 },
     }
 end
 
@@ -107,8 +107,8 @@ local function newWalkZone()
         compass = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" },
         axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
         places = { { "square", "square of Test" }, { "canal walk", "canal walk" } },
-        grid = { "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*3,0*2" },
-        lanes = { 100, 46, 84, 46, 211, 20, 40 },
+        grid = { "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*3,0*2" },
+        lanes = { 100, 46, 84, 46, 21000, 20, 40 },
     }
 end
 
@@ -125,7 +125,7 @@ local function newHallZone()
     z.rooms = {
         { 1, "great hall", "large hall", { 80, 10, 100, 40 }, f = 1200 },
         { 1, "shop", "room", { 80, 40, 100, 50 }, f = 150, s = 1 },
-        { 1, "passage", "corridor", { 70, 0, 80, 10 }, f = 90, a = 1 },
+        { 1, "passage", "corridor", { 70, 0, 80, 10 }, f = 90, a = 0 },
         { 1, "stairs", "stairs", { 70, 50, 80, 60 }, f = 40, w = -1 },
     }
     z.doors = {
@@ -135,11 +135,11 @@ local function newHallZone()
     }
     z.indoor = {
         rooms = { 1 },
-        grid = { "700*6", "700*6", "0*6" },
+        grid = { "70000*6", "70000*6", "0*6" },
         lanes = {},
         structs = { "Test City" }, waterStructs = { 1 },
         structCells = { 1, 1, 1, 1, 2, 1 },
-        edges = { { 1, 5, 80, 3, 1, 72, 20, 72, 22 } }, -- its floor belongs to the great hall (room 1)
+        edges = { { 1, 180, 80, 3, 1, 72, 20, 72, 22 } }, -- its floor belongs to the great hall (room 1)
     }
     return z
 end
@@ -207,8 +207,8 @@ testRunner:addSuite("Surroundings", {
     ["a pier is a way with a direction, like a street"] = function(t)
         local z = newHallZone()
         logic.unpack(z)
-        t:assertEqual(logic.outdoorKey(z, 881), "r881")
-        t:assertEqual(logic.describe(z, 881, true), "pier of Test, north to south")
+        t:assertEqual(logic.outdoorKey(z, 88000), "r8:0")
+        t:assertEqual(logic.describe(z, 88000, true), "pier of Test, north to south")
     end,
 
     ["the turn hint says which way to turn to face along the road"] = function(t)
@@ -223,16 +223,16 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(90)), nil)   -- facing across the road
         -- with the said axis (north to south): only while the facing's compass word is north or
         -- south; facing northeast the words tell already
-        t:assertEqual(logic.axisOf(z, 211), 1)
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(20), 1), -1)
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30), 1), 0)
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 1), -1)
+        t:assertEqual(logic.axisOf(z, 21000), 0)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(20), 0), -1)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30), 0), 0)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 0), -1)
     end,
 
     ["where the road leads ahead follows its centre line into a gentle bend"] = function(t)
         local z = newLaneZone()
         -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
-        z.lanes = { 100, 48, 90, 48, 211, 20, 40, 90, 48, 80, 44, 211, 20, 40 }
+        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 90, 48, 80, 44, 21000, 20, 40 }
         logic.unpack(z)
         local south = math.rad(180)
         local function degrees(a)
@@ -241,7 +241,7 @@ testRunner:addSuite("Surroundings", {
         -- far before the bend the road leads south
         local dir, ahead = logic.wayAhead(z, 98, 48, south, 10)
         t:assertTrue(math.abs(degrees(dir) - 180) < 8)
-        t:assertEqual(ahead, 211)
+        t:assertEqual(ahead, 21000)
         -- nearer, the road ahead has turned left (east, walking south) by more than 15 degrees
         dir = logic.wayAhead(z, 92, 48, south, 10)
         t:assertTrue(degrees(dir) - 180 > 15)
@@ -276,24 +276,24 @@ testRunner:addSuite("Surroundings", {
     ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
         local z = newWalkZone()
         logic.unpack(z)
-        t:assertEqual(logic.laneValue(z, 94, 46, 211, false), 211)
+        t:assertEqual(logic.laneValue(z, 94, 46, 21000, false), 21000)
         -- 4.5 yd off toward the square, still on a cell of the walk: the walk goes on, the line
         -- did not decide (user 2026-10-01: "I walk up a whatever and am on it")
-        local v, decided = logic.laneValue(z, 94, 50.5, 211, true)
-        t:assertEqual(v, 211)
+        local v, decided = logic.laneValue(z, 94, 50.5, 21000, true)
+        t:assertEqual(v, 21000)
         t:assertEqual(decided, false)
         -- 8.5 yd off, on the square's cells: the square
-        v, decided = logic.laneValue(z, 94, 54.5, 100, true)
-        t:assertEqual(v, 100)
+        v, decided = logic.laneValue(z, 94, 54.5, 10000, true)
+        t:assertEqual(v, 10000)
         t:assertEqual(decided, true)
         -- 4.5 yd off toward the water: nothing beside the walk there, it stays the walk (the grid)
-        v, decided = logic.laneValue(z, 94, 41.5, 211, true)
-        t:assertEqual(v, 211)
+        v, decided = logic.laneValue(z, 94, 41.5, 21000, true)
+        t:assertEqual(v, 21000)
         t:assertEqual(decided, false)
         -- from the square, 3 yd off the line on the walk's cells: the walk's cell, but not by the
         -- line (the entry distance still counts before it is said)
-        v, decided = logic.laneValue(z, 94, 49, 211, false)
-        t:assertEqual(v, 211)
+        v, decided = logic.laneValue(z, 94, 49, 21000, false)
+        t:assertEqual(v, 21000)
         t:assertEqual(decided, false)
         -- only road lines when asked for roads
         t:assertEqual(logic.nearestLane(z, 94, 46, 12, { road = true }), nil)
@@ -303,9 +303,9 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         -- the walk's line runs south along y = 46; left of that direction is east (y below 46):
         -- enter 2, leave 4 there; right (west) enter 1.5, leave 3; the cells west of y = 48 square
-        z.grid = { "100*3,211*2,0*2", "100*3,211*2,0*2", "100*3,211*2,0*2", "100*3,211*2,0*2" }
+        z.grid = { "10000*3,21000*2,0*2", "10000*3,21000*2,0*2", "10000*3,21000*2,0*2", "10000*3,21000*2,0*2" }
         z.laneFields = 10
-        z.lanes = { 100, 46, 84, 46, 211, 20, 40, 15, 30, 0 }
+        z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 15, 30, 0 }
         logic.unpack(z)
         local _d, lane = logic.nearestLane(z, 94, 42)
         t:assertEqual(logic.laneSide(lane, 94, 42), 1)
@@ -317,11 +317,11 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(enter, 1.5)
         t:assertEqual(leave, 3)
         -- 3.5 yd off: on the walk to the east (the line decided), off it to the west
-        local v, decided = logic.laneValue(z, 94, 42.5, 211, true)
-        t:assertEqual(v, 211)
+        local v, decided = logic.laneValue(z, 94, 42.5, 21000, true)
+        t:assertEqual(v, 21000)
         t:assertEqual(decided, true)
-        v, decided = logic.laneValue(z, 94, 49.5, 100, true)
-        t:assertEqual(v, 100)
+        v, decided = logic.laneValue(z, 94, 49.5, 10000, true)
+        t:assertEqual(v, 10000)
         t:assertEqual(decided, true)
         -- data with one width per stretch (7 or 8 fields) counts it on both sides
         z = newWalkZone()
@@ -336,24 +336,24 @@ testRunner:addSuite("Surroundings", {
         local z = newLaneZone()
         logic.unpack(z)
         -- on the line
-        t:assertEqual(logic.laneValue(z, 94, 48, 211, false), 211)
+        t:assertEqual(logic.laneValue(z, 94, 48, 21000, false), 21000)
         -- 3 yd off, on the grid's road cells: the road's cell, but not decided by the line (the
         -- entry distance counts before it is said; before 2026-10-01 the forest beside it) ...
-        local v, decided = logic.laneValue(z, 94, 51, 211, false)
-        t:assertEqual(v, 211)
+        local v, decided = logic.laneValue(z, 94, 51, 21000, false)
+        t:assertEqual(v, 21000)
         t:assertEqual(decided, false)
         -- ... and on it by the line when already there
-        t:assertEqual(logic.laneValue(z, 94, 51, 211, true), 211)
+        t:assertEqual(logic.laneValue(z, 94, 51, 21000, true), 21000)
         -- 5 yd off: off the road even from on it
-        t:assertEqual(logic.laneValue(z, 94, 53, 100, true), 100)
+        t:assertEqual(logic.laneValue(z, 94, 53, 10000, true), 10000)
         -- the bridge keeps its own place
-        v, decided = logic.laneValue(z, 82, 48, 300, true)
-        t:assertEqual(v, 300)
+        v, decided = logic.laneValue(z, 82, 48, 30000, true)
+        t:assertEqual(v, 30000)
         t:assertEqual(decided, false)
         -- the nearest point on the line: across the road (3 yd east), past its end the end point
         local d, _i, px, py = logic.nearestLane(z, 94, 51)
         t:assertEqual(d, 3)
-        t:assertEqual(logic.compassIndex(px - 94, py - 51), 3)
+        t:assertEqual(logic.bearingOf(px - 94, py - 51), 90)
         d = logic.nearestLane(z, 103, 48)
         t:assertEqual(d, 3)
         t:assertEqual(logic.nearestLane(z, 94, 52, 3), nil)
@@ -363,10 +363,10 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         logic.unpack(z)
         -- x = 95 is row 0; y = 55 is column 0 (y grows west, columns grow east)
-        t:assertEqual(logic.valueAt(z, 95, 55), 100)
-        t:assertEqual(logic.valueAt(z, 95, 25), 213)   -- column 3
-        t:assertEqual(logic.valueAt(z, 95, 5), 383)    -- column 5
-        t:assertEqual(logic.valueAt(z, 85, 30), 400)   -- row 1
+        t:assertEqual(logic.valueAt(z, 95, 55), 10000)
+        t:assertEqual(logic.valueAt(z, 95, 25), 21090)   -- column 3: shore, water to the east (90)
+        t:assertEqual(logic.valueAt(z, 95, 5), 38090)    -- column 5: bridge running east-west
+        t:assertEqual(logic.valueAt(z, 85, 30), 40000)   -- row 1
         t:assertEqual(logic.valueAt(z, 75, 30), 0)     -- row 2: no data
         t:assertEqual(logic.valueAt(z, 105, 30), 0)    -- north of the data
         t:assertEqual(logic.covers(z, 95, 55), true)
@@ -376,32 +376,41 @@ testRunner:addSuite("Surroundings", {
     ["a value speaks its place and direction"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        t:assertEqual(logic.describe(z, 213, true), "shore of Test Lake, water to the east")
-        t:assertEqual(logic.describe(z, 213, false), "shore of Test Lake")
-        t:assertEqual(logic.describe(z, 383, true), "bridge, east to west")
-        t:assertEqual(logic.describe(z, 100, true), "forest")
-        t:assertEqual(logic.describe(z, 673, true), "at the well, to the east, Test road to the north")
-        t:assertEqual(logic.describe(z, 673, false), "at the well")
+        t:assertEqual(logic.describe(z, 21090, true), "shore of Test Lake, water to the east")
+        t:assertEqual(logic.describe(z, 21090, false), "shore of Test Lake")
+        t:assertEqual(logic.describe(z, 38090, true), "bridge, east to west")
+        -- an angle between the words takes the nearest word: 110 degrees is still east
+        t:assertEqual(logic.describe(z, 38110, true), "bridge, east to west")
+        t:assertEqual(logic.describe(z, 21110, true), "shore of Test Lake, water to the east")
+        t:assertEqual(logic.describe(z, 10000, true), "forest")
+        t:assertEqual(logic.describe(z, 67090, true), "at the well, to the east, Test road to the north")
+        t:assertEqual(logic.describe(z, 67090, false), "at the well")
         -- leaving a road: the live road hint replaces the stored nearest road
-        t:assertEqual(logic.describe(z, 673, true, true), "at the well, to the east")
-        t:assertNil(logic.describe(z, 900, true))
+        t:assertEqual(logic.describe(z, 67090, true, true), "at the well, to the east")
+        t:assertNil(logic.describe(z, 90000, true))
     end,
 
     ["the water under a bridge is known per cell"] = function(t)
         local z = newZone()
         logic.unpack(z)
         local _v, r, c = logic.valueAt(z, 95, 5)
-        t:assertEqual(logic.underBridge(z, r, c), 500)
+        t:assertEqual(logic.underBridge(z, r, c), 50000)
         t:assertNil(logic.underBridge(z, 0, 0))
         logic.pack(z)
         t:assertNil(z._index)
     end,
 
-    ["compass words for world offsets (x north, y west)"] = function(t)
-        t:assertEqual(logic.compassIndex(10, 0), 1)     -- north
-        t:assertEqual(logic.compassIndex(0, -10), 3)    -- east
-        t:assertEqual(logic.compassIndex(-10, 10), 6)   -- southwest
-        local vx, vy = logic.compassVector(3)
+    ["bearings for world offsets (x north, y west), and their words"] = function(t)
+        t:assertEqual(logic.bearingOf(10, 0), 0)       -- north
+        t:assertEqual(logic.bearingOf(0, -10), 90)     -- east
+        t:assertEqual(logic.bearingOf(-10, 10), 225)   -- southwest
+        t:assertEqual(logic.wordIndex(100), 3)         -- east
+        t:assertEqual(logic.wordIndex(350), 1)         -- north
+        t:assertEqual(logic.hourOf(100), 3)
+        t:assertEqual(logic.hourOf(350), 12)
+        t:assertEqual(logic.hourOf(0), 12)
+        t:assertEqual(logic.hourOf(165), 6)
+        local vx, vy = logic.compassVector(90)
         t:assertEqual(math.floor(vx + 0.5), 0)
         t:assertEqual(math.floor(vy + 0.5), -1)
     end,
@@ -443,20 +452,20 @@ testRunner:addSuite("Surroundings", {
     end,
 
     ["degrees between an offset and a compass direction"] = function(t)
-        t:assertEqual(logic.angleOff(10, 0, 1), 0)                     -- due north, north
-        t:assertEqual(math.floor(logic.angleOff(10, 4, 1) + 0.5), 22)  -- a bit west of north
-        t:assertEqual(math.floor(logic.angleOff(10, 4, 8) + 0.5), 23)  -- and from northwest
-        t:assertEqual(logic.angleOff(-10, 0, 1), 180)
+        t:assertEqual(logic.angleOff(10, 0, 0), 0)                     -- due north, north
+        t:assertEqual(math.floor(logic.angleOff(10, 4, 0) + 0.5), 22)  -- a bit west of north
+        t:assertEqual(math.floor(logic.angleOff(10, 4, 315) + 0.5), 23)  -- and from northwest
+        t:assertEqual(logic.angleOff(-10, 0, 0), 180)
     end,
 
     ["the nearest way out of the water, with its direction"] = function(t)
         local z = newZone()
         logic.unpack(z)
         local i, d, dir, exit = logic.nearestExit(z, 95, 30, 25)
-        t:assertEqual(exit.out, 1)                         -- one climbs out toward the north
+        t:assertEqual(exit.out, 0)                         -- one climbs out toward the north
         t:assertEqual(i, 1)
         t:assertEqual(d, 10)
-        t:assertEqual(dir, 3)                              -- y 20 is east of y 30
+        t:assertEqual(dir, 90)                             -- y 20 is east of y 30
         t:assertNil(logic.nearestExit(z, 95, 60, 25))
     end,
 
@@ -469,7 +478,7 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.exitTarget(z, 95, 60))                       -- as a swimmer: too far
         local target = logic.exitTarget(z, 95, 60, true)               -- down in the moat: 40 yd away
         t:assertEqual(target.name, "way out of the moat")
-        t:assertEqual(target.through, 1)
+        t:assertEqual(target.through, 0)
     end,
 
     ["a drop edge warns only on the structure, in front of the edge"] = function(t)
@@ -486,7 +495,7 @@ testRunner:addSuite("Surroundings", {
     ["the edge ahead in the view wins over a nearer one; warned edges are left out"] = function(t)
         local z = newZone()
         -- a second dock edge, its drop to the west at y = 40
-        z.edges[3] = { 1, 7, 3, 1, 0, 84, 40, 86, 40 }
+        z.edges[3] = { 1, 270, 3, 1, 0, 84, 40, 86, 40 }
         logic.unpack(z)
         -- at 87, 36: the north edge 3.6 yd away (north-northeast), the west edge 4.1 yd (west)
         t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}), 1)
@@ -522,7 +531,7 @@ testRunner:addSuite("Surroundings", {
         -- with a road joining the street, it leads on
         z = newSquareZone()
         table.insert(z.places, { "road", "road" })
-        z.grid[1] = "300*2,281*2,600,300*2"
+        z.grid[1] = "30000*2,28000*2,60000,30000*2"
         logic.unpack(z)
         region = logic.regionAt(z, 78, 35)
         exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
@@ -534,10 +543,10 @@ testRunner:addSuite("Surroundings", {
         -- the lane through Stormwind's gate: forecourt and district are both "square of Trade
         -- District" (one place), joined only by the street; the street is an exit of the forecourt
         local z = newSquareZone()
-        z.grid[1] = "300,100*5,300"
-        z.grid[2] = "300*2,281*2,300*3"
-        z.grid[3] = "300,100*5,300"
-        z.grid[4] = "300,100*5,400"
+        z.grid[1] = "30000,10000*5,30000"
+        z.grid[2] = "30000*2,28000*2,30000*3"
+        z.grid[3] = "30000,10000*5,30000"
+        z.grid[4] = "30000,10000*5,40000"
         z.grid[5] = "0*7"
         logic.unpack(z)
         local region = logic.regionAt(z, 68, 35)
@@ -554,12 +563,13 @@ testRunner:addSuite("Surroundings", {
         local items = logic.featuresAround(z, 75, 35, 35, classes)
         t:assertEqual(items[1].label, "land")
         -- open land 22 yd northeast, 28 northwest, 30 west, 32 east: northeast, then northwest
-        t:assertEqual(table.concat(items[1].dirs, "+"), "2+8")
+        t:assertEqual(logic.wordIndex(items[1].dirs[1]) .. "+" .. logic.wordIndex(items[1].dirs[2]), "2+8")
         t:assertEqual(items[2].label, "water")
-        t:assertEqual(table.concat(items[2].dirs, "+"), "3")
+        t:assertEqual(logic.wordIndex(items[2].dirs[1]), 3)
         items = logic.featuresAround(z, 75, 35, 25, classes)
         t:assertEqual(#items, 1)
-        t:assertEqual(table.concat(items[1].dirs, "+"), "2")
+        t:assertEqual(#items[1].dirs, 1)
+        t:assertEqual(logic.wordIndex(items[1].dirs[1]), 2)
         t:assertEqual(#logic.featuresAround(z, 75, 35, 35, classes, { land = true, water = true }), 0)
     end,
 
@@ -640,7 +650,7 @@ testRunner:addSuite("Surroundings", {
         -- from the forest cell (row 0, column 0) the bridge is 4 cells east
         local d, dir = logic.nearestOfKinds(z, 95, 55, { bridge = true }, 45)
         t:assertEqual(d, 40)
-        t:assertEqual(dir, 3)
+        t:assertEqual(dir, 90)
         t:assertNil(logic.nearestOfKinds(z, 95, 55, { bridge = true }, 20))
     end,
 
@@ -727,13 +737,13 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(#list, 1)
         t:assertEqual(list[1].text, "Test Inn, common room")
         -- a flat opening: the common room's way out is south (from its middle), so one goes in north
-        t:assertEqual(list[1].inDir, 1)
+        t:assertEqual(logic.wordIndex(list[1].inDir), 1)   -- (the angle itself is a few degrees off north)
         t:assertEqual(list[1].x, 0)
         t:assertEqual(list[1].y, 5)
         local i, d, dir = logic.nearestEntrance(z, 10, 5, 15)
         t:assertEqual(i, 1)
         t:assertEqual(d, 10)
-        t:assertEqual(dir, 5)                              -- the door lies south
+        t:assertEqual(dir, 180)                            -- the door lies south
         t:assertNil(logic.nearestEntrance(z, 40, 5, 15))
     end,
 
@@ -748,17 +758,17 @@ testRunner:addSuite("Surroundings", {
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)
-        t:assertEqual(logic.isAroundPlace(z, 100), true)
-        t:assertEqual(logic.isAroundPlace(z, 281), false)   -- a street with a direction
-        t:assertEqual(logic.isAroundPlace(z, 200), false)   -- a street without one: a way, as a road
-        t:assertEqual(logic.isAroundPlace(z, 300), false)
+        t:assertEqual(logic.isAroundPlace(z, 10000), true)
+        t:assertEqual(logic.isAroundPlace(z, 28000), false)   -- a street with a direction
+        t:assertEqual(logic.isAroundPlace(z, 20000), false)   -- a street without one: a way, as a road
+        t:assertEqual(logic.isAroundPlace(z, 30000), false)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(logic.regionAt(z, 65, 55), region)    -- the same square, cached
         t:assertNil(logic.regionAt(z, 95, 65))              -- open land
         local items = logic.aroundItems(region, 78, 35)
         local said = {}
         for _, item in ipairs(items) do
-            said[#said + 1] = item.label .. " " .. table.concat(item.dirs, "+")
+            said[#said + 1] = item.label .. " " .. logic.wordIndex(item.dirs[1])
         end
         -- nearest first: street 17 yd north, canal 23 south, entrance 24 southeast, water 30 east
         t:assertEqual(table.concat(said, ", "), "street of Test 1, canal 5, Test Bank 4, water 3")
@@ -786,23 +796,24 @@ testRunner:addSuite("Surroundings", {
         local items = logic.aroundItems(region, 62, 35, { max = 1, classes = { way = true } })
         t:assertEqual(#items, 1)
         t:assertEqual(items[1].label, "street of Test")
-        t:assertEqual(items[1].dirs[1], 1)
+        t:assertEqual(items[1].dirs[1], 0)
     end,
 
     ["a thing meeting the square in several places says its nearest directions, at most the count"] = function(t)
         local z = newSquareZone()
         -- the street meets the square from the north (columns 3 and 4, apart from the other
         -- mouth) and from the west (rows 2 and 3, column 0)
-        z.grid[1] = "300*3,281*2,300*2"
-        z.grid[3] = "281,100*5,400"
-        z.grid[4] = "281,100*5,400"
+        z.grid[1] = "30000*3,28000*2,30000*2"
+        z.grid[3] = "28000,10000*5,40000"
+        z.grid[4] = "28000,10000*5,40000"
         logic.unpack(z)
         local region = logic.regionAt(z, 78, 35)
         local street = logic.aroundItems(region, 78, 35)[1]
         t:assertEqual(street.label, "street of Test")
-        t:assertEqual(table.concat(street.dirs, "+"), "1+7")   -- north (17 yd), then west (30 yd)
+        t:assertEqual(logic.wordIndex(street.dirs[1]) .. "+" .. logic.wordIndex(street.dirs[2]), "1+7")   -- north (17 yd), then west (30 yd)
         street = logic.aroundItems(region, 78, 35, { dirs = 1 })[1]
-        t:assertEqual(table.concat(street.dirs, "+"), "1")
+        t:assertEqual(#street.dirs, 1)
+        t:assertEqual(logic.wordIndex(street.dirs[1]), 1)
     end,
 
     ["on a square each thing is said once when the player comes close; entrances are not"] = function(t)
@@ -822,19 +833,19 @@ testRunner:addSuite("Surroundings", {
     ["a street leading on from a short opening is a beginning, with the way it leads on"] = function(t)
         local z = newSquareZone()
         table.insert(z.places, { "road", "road of Test" })
-        z.grid[1] = "300*2,281*2,600,300*2"   -- the street goes on into a road
+        z.grid[1] = "30000*2,28000*2,60000,30000*2"   -- the street goes on into a road
         logic.unpack(z)
         local region = logic.regionAt(z, 78, 35)
         local list = logic.wayBeginnings(z, region)
         t:assertEqual(#list, 1)
         t:assertEqual(list[1].label, "street of Test")
         t:assertEqual(list[1].kind, "street")
-        t:assertEqual(list[1].onward, 1)   -- north: along its axis, away from the square
+        t:assertEqual(list[1].onward, 0)   -- north: along its axis, away from the square
         local i, d, dir, b = logic.nearestBeginning(z, region, 78, 35, 30)
         t:assertEqual(i, 1)
         t:assertEqual(b, list[1])
         t:assertEqual(math.floor(d + 0.5), 20)
-        t:assertEqual(dir, 8)
+        t:assertEqual(logic.wordIndex(dir), 8)
         -- reached from the reach plus half the opening's width (10 yd here)
         t:assertNil(logic.nearestBeginning(z, region, 78, 35, 10))   -- 15: out of reach
         t:assertEqual(logic.nearestBeginning(z, region, 78, 35, 16), 1)   -- 21
@@ -844,7 +855,7 @@ testRunner:addSuite("Surroundings", {
         local z = newSquareZone()
         table.insert(z.places, { "road", "road of Test" })
         -- along the west side (rows 1 to 4, 30 yd of border), going on into a road at the north
-        z.grid = { "600,300*6", "281,100*5,300", "281,100*5,400", "281,100*5,400", "281,100*5,400" }
+        z.grid = { "60000,30000*6", "28000,10000*5,30000", "28000,10000*5,40000", "28000,10000*5,40000", "28000,10000*5,40000" }
         logic.unpack(z)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(#logic.wayBeginnings(z, region), 0)
@@ -863,15 +874,15 @@ testRunner:addSuite("Surroundings", {
         local items = logic.roomDoorways(z, 1)
         t:assertEqual(#items, 2)
         t:assertEqual(items[1].class, "way out")
-        t:assertEqual(items[1].dirs[1], 5)
+        t:assertEqual(items[1].dirs[1], 180)
         t:assertEqual(items[2].label, "upstairs landing")
-        t:assertEqual(items[2].dirs[1], 7)
+        t:assertEqual(items[2].dirs[1], 270)
         -- the same from the landing's side: the common room east, the back room north
         items = logic.roomDoorways(z, 2)
         t:assertEqual(items[1].label, "back room")
-        t:assertEqual(items[1].dirs[1], 1)
+        t:assertEqual(items[1].dirs[1], 0)
         t:assertEqual(items[2].label, "common room")
-        t:assertEqual(items[2].dirs[1], 3)
+        t:assertEqual(items[2].dirs[1], 90)
         -- more than the count: the one the player came through goes first
         t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 0 })[1].label, "upstairs landing")
         t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 2 })[1].class, "way out")
@@ -894,10 +905,10 @@ testRunner:addSuite("Surroundings", {
             },
         }
         logic.unpack(z, "deDE")
-        t:assertEqual(logic.describe(z, 213, true), "Ufer, Testsee, Wasser im Osten")
-        t:assertEqual(logic.describe(z, 383, true), "Brücke, Ost nach West")
-        t:assertEqual(logic.axisOf(z, 383), 3)
-        t:assertEqual(logic.describe(z, 600, true), "beim Brunnen, Teststraße im Norden")
+        t:assertEqual(logic.describe(z, 21090, true), "Ufer, Testsee, Wasser im Osten")
+        t:assertEqual(logic.describe(z, 38090, true), "Brücke, Ost nach West")
+        t:assertEqual(logic.axisOf(z, 38090), 90)
+        t:assertEqual(logic.describe(z, 60000, true), "beim Brunnen, Teststraße im Norden")
         t:assertEqual(logic.describeRoom(z, 1, nil), "Testgasthaus, Schankraum")
         t:assertEqual(z.structs[2], "Mauer")
         t:assertEqual(z.rooms[3].entrance, true)
@@ -906,35 +917,44 @@ testRunner:addSuite("Surroundings", {
         -- once per zone
         logic.pack(z)
         logic.unpack(z, "frFR")
-        t:assertEqual(logic.describe(z, 100, true), "Wald")
+        t:assertEqual(logic.describe(z, 10000, true), "Wald")
     end,
 
     ["without the client's language the English words stay"] = function(t)
         local z = newZone()
         z.locales = { deDE = { places = { { "Wald" } } } }
         logic.unpack(z, "enUS")
-        t:assertEqual(logic.describe(z, 383, true), "bridge, east to west")
-        t:assertEqual(logic.describe(z, 100, true), "forest")
+        t:assertEqual(logic.describe(z, 38090, true), "bridge, east to west")
+        t:assertEqual(logic.describe(z, 10000, true), "forest")
     end,
 
     ["outdoor keys: roads and canals with their direction, other places by the place"] = function(t)
         local z = newLaneZone()
         logic.unpack(z)
-        t:assertEqual(logic.outdoorKey(z, 100), 1)
-        t:assertEqual(logic.outdoorKey(z, 211), "r211")
+        t:assertEqual(logic.outdoorKey(z, 10000), 1)
+        t:assertEqual(logic.outdoorKey(z, 21000), "r2:0")
+        -- the key quantizes the angle to the spoken words: 20 degrees is still north-south, 30 is not
+        t:assertEqual(logic.outdoorKey(z, 21020), "r2:0")
+        t:assertEqual(logic.outdoorKey(z, 21030), "r2:1")
+        -- on the piece already: its key sticks while the heading stays near the word said
+        t:assertEqual(logic.outdoorKey(z, 21030, "r2:0"), "r2:0")
+        t:assertEqual(logic.outdoorKey(z, 21040, "r2:0"), "r2:1")   -- clearly northeast-southwest now
+        t:assertEqual(logic.outdoorKey(z, 21015, "r2:1"), "r2:1")   -- and back only once clearly north-south
+        t:assertEqual(logic.outdoorKey(z, 21010, "r2:1"), "r2:0")
+        t:assertEqual(logic.outdoorKey(z, 21030, "r3:0"), "r2:1")   -- another piece: no sticking
         t:assertNil(logic.outdoorKey(z, 0))
-        t:assertEqual(logic.isWayKey("r211"), true)
-        t:assertEqual(logic.keyPlace("r211"), 2)
-        t:assertEqual(logic.keyLabel(z, "r211"), "Test road")
+        t:assertEqual(logic.isWayKey("r2:0"), true)
+        t:assertEqual(logic.keyPlace("r2:0"), 2)
+        t:assertEqual(logic.keyLabel(z, "r2:0"), "Test road")
         t:assertEqual(logic.keyLabel(z, 3), "bridge")
     end,
 
     ["swimming under a bridge: the water, never decided by a centre line"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        t:assertEqual(logic.outdoorValue(z, 95, 5, false, false), 383)   -- on the bridge
+        t:assertEqual(logic.outdoorValue(z, 95, 5, false, false), 38090)   -- on the bridge
         local v, decided = logic.outdoorValue(z, 95, 5, true, true)
-        t:assertEqual(v, 500)
+        t:assertEqual(v, 50000)
         t:assertEqual(decided, false)
         t:assertEqual(logic.outdoorValue(z, 75, 30, false, false), 0)    -- no data
     end,
@@ -945,8 +965,8 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.joinWords({ "north", "west" }), "north and west")
         t:assertEqual(logic.joinWords({ "north", "west", "south" }), "north, west and south")
         local text = logic.itemsText(z, {
-            { label = "street of Test", class = "way", dirs = { 1, 7 } },
-            { label = "cliff edge", class = "cliff edge", dirs = { 3 } },
+            { label = "street of Test", class = "way", dirs = { 0, 270 } },
+            { label = "cliff edge", class = "cliff edge", dirs = { 100 } },
             { label = "Test Bank", class = "entrance", dirs = {} },
         })
         t:assertEqual(text, "street of Test to the north and west, cliff edge to the east, entrance of Test Bank here")
@@ -1003,11 +1023,11 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         z.dirs = { "running %s", "up to the %s" }
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
-        z.grid = { "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2" }
+        z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
         z.lanes = {}
         -- the ramp's foot at (92, 44), the ramp rising to the northeast; a second foot of the
         -- same ramp 2 yd away is the same target
-        z.climbFeet = { 92, 44, 222, 90, 44, 222 }
+        z.climbFeet = { 92, 44, 22045, 90, 44, 22045 }
         logic.unpack(z)
         t:assertEqual(#z._index.climbFeet, 1)
         -- 6 yd west of the foot (y 50): the ramp by name with its rise, then only the yards and
@@ -1029,7 +1049,7 @@ testRunner:addSuite("Surroundings", {
         -- with the line's bearing in the data (climbFeetFields 4): the ramp really runs at 60
         -- degrees, so 1.5 yd back along that line is at the foot, 1.5 yd beside the line is not
         z.climbFeetFields = 4
-        z.climbFeet = { 92, 44, 222, 60 }
+        z.climbFeet = { 92, 44, 22045, 60 }
         logic.pack(z)
         logic.unpack(z)
         target = logic.footTarget(z, 91.25, 45.3)
@@ -1074,7 +1094,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         -- square A on columns 0 to 2, square B (touching nothing else) on columns 3 to 5
         z.places = { { "square", "square of A" }, { "square", "square of B" } }
-        z.grid = { "100*3,200*3", "100*3,200*3", "100*3,200*3" }
+        z.grid = { "10000*3,20000*3", "10000*3,20000*3", "10000*3,20000*3" }
         logic.unpack(z)
         local region = logic.regionAt(z, 85, 45)
         local items = logic.aroundItems(region, 85, 45, { classes = { way = true }, leading = true, zone = z })
@@ -1089,7 +1109,7 @@ testRunner:addSuite("Surroundings", {
             local z = newZone()
             z.rows = 4
             z.places = { { "square", "square of A" }, { "square", "square of B" }, { "street", "street to B" } }
-            z.grid = { "100*3,200*3", "100*3,200*3", "100*3,300,200*2", "100*3,300,200*2" }
+            z.grid = { "10000*3,20000*3", "10000*3,20000*3", "10000*3,30000,20000*2", "10000*3,30000,20000*2" }
             z.noContact = noContact
             logic.unpack(z)
             local region = logic.regionAt(z, 85, 45)
@@ -1108,15 +1128,15 @@ testRunner:addSuite("Surroundings", {
     ["on a city walk the next piece is found ahead"] = function(t)
         local z = newWalkZone()
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
-        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 88, 46, 84, 42, 212, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 84, 42, 21045, 20, 40 }
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK)
-        t:assertEqual(value, 212)
+        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        t:assertEqual(value, 21045)
         -- the distance along the line (8 yd to the bend, then onto the next stretch)
         t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 9.4)
         t:assertEqual(logic.describe(z, value, true), "canal walk, northeast to southwest")
         -- walking north, away from it: nothing ahead
-        t:assertNil(logic.pieceAhead(z, 96, 46, 0, 211, logic.AHEAD_LOOK))
+        t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
     end,
 
     ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
@@ -1124,32 +1144,32 @@ testRunner:addSuite("Surroundings", {
         -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
         -- square's value (100), below it the walk's (211); stepped onto from the ground at x 90,
         -- y 50; its line runs at y = 48 over the walk's line at y = 46
-        z.stacked = { 2, 2, 1, 100, 211, 2, 3, 1, 100, 211 }
+        z.stacked = { 2, 2, 1, 10000, 21000, 2, 3, 1, 10000, 21000 }
         z.piecePlaces = { 1, 2 }
         z.pieceCells = { 2, 2, 1, 2, 3, 1 }
         z.access = { 1, 1, 90, 50 }
         z.laneFields = 8
-        z.lanes = { 100, 46, 84, 46, 211, 20, 40, 0, 92, 48, 88, 48, 100, 20, 40, 1 }
+        z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 0, 92, 48, 88, 48, 10000, 20, 40, 1 }
         logic.unpack(z)
         local high = {}
         logic.setOn(z, high)
         -- below: the walk and its line
-        t:assertEqual(logic.valueAt(z, 90, 50), 211)
+        t:assertEqual(logic.valueAt(z, 90, 50), 21000)
         local _d, lane = logic.nearestLane(z, 90, 47)
-        t:assertEqual(lane.value, 211)
+        t:assertEqual(lane.value, 21000)
         -- stepping onto the landing: its value, its line; the walk's line below does not count
         local _on, changed = logic.updateHigh(z, high, 90, 50)
         t:assertEqual(high[1], true)
         t:assertEqual(changed, true)
-        t:assertEqual(logic.valueAt(z, 90, 50), 100)
+        t:assertEqual(logic.valueAt(z, 90, 50), 10000)
         _d, lane = logic.nearestLane(z, 90, 47)
-        t:assertEqual(lane.value, 100)
+        t:assertEqual(lane.value, 10000)
         _on, changed = logic.updateHigh(z, high, 90, 50)
         t:assertEqual(changed, false)
         -- off its footprint: below again
         logic.updateHigh(z, high, 90, 58)
         t:assertNil(high[1])
-        t:assertEqual(logic.valueAt(z, 90, 50), 211)
+        t:assertEqual(logic.valueAt(z, 90, 50), 21000)
         -- a cell of its footprint painted with another place and not stacked under it is beside
         -- the piece, not on it (the bay beside the griffon ramp): with the walk (place 2) among its
         -- floor the player stays on it there, with the square alone not
@@ -1178,16 +1198,16 @@ testRunner:addSuite("Surroundings", {
     ["the next piece ahead is one the line leads onto, not a line beside it"] = function(t)
         local z = newWalkZone()
         -- the walk's line ends at x = 88; a stretch of another piece runs 5 yd beside it (y = 51)
-        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 92, 51, 84, 51, 212, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 92, 51, 84, 51, 21045, 20, 40 }
         logic.unpack(z)
         -- walking south along the line: it ends, the line beside it is no next piece
-        t:assertNil(logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK))
+        t:assertNil(logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK))
         -- a stretch meeting the line's end is
-        z.lanes = { 100, 46, 88, 46, 211, 20, 40, 88, 46, 88, 30, 212, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 88, 30, 21045, 20, 40 }
         logic.pack(z)
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 211, logic.AHEAD_LOOK)
-        t:assertEqual(value, 212)
+        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        t:assertEqual(value, 21045)
         t:assertEqual(yards, 8)
     end,
 
@@ -1195,13 +1215,13 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         z.places[1] = { "grass", "grass" }
         logic.unpack(z)
-        t:assertEqual(logic.outdoorKey(z, 211), "r211")
-        t:assertEqual(logic.isWayKey(logic.outdoorKey(z, 211)), true)
+        t:assertEqual(logic.outdoorKey(z, 21000), "r2:0")
+        t:assertEqual(logic.isWayKey(logic.outdoorKey(z, 21000)), true)
         -- stepped off the walk onto the grass, 11 yd west of its centre line
-        t:assertEqual(logic.spotText(z, 92, 57, 100, "r211", { cut = true }), "grass, street to the east")
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, "r2:0", { cut = true }), "grass, street to the east")
         -- the describe key says it too; an announcement coming from elsewhere does not
-        t:assertEqual(logic.spotText(z, 92, 57, 100, nil, {}), "grass, street to the east")
-        t:assertEqual(logic.spotText(z, 92, 57, 100, nil, { cut = true }), "grass")
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, {}), "grass, street to the east")
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, { cut = true }), "grass")
     end,
 
     ["a room says its doorways, at most the count, the way the player came left out first"] = function(t)
@@ -1214,9 +1234,9 @@ testRunner:addSuite("Surroundings", {
     ["a square says its ways on, and where it lies the nearest road"] = function(t)
         local z = newSquareZone()
         table.insert(z.places, { "road", "road of Test" })
-        z.grid[1] = "300*2,281*2,600,300*2"
+        z.grid[1] = "30000*2,28000*2,60000,30000*2"
         logic.unpack(z)
-        local text, region, said = logic.spotText(z, 78, 35, 100, nil, { cut = true })
+        local text, region, said = logic.spotText(z, 78, 35, 10000, nil, { cut = true })
         t:assertEqual(text, "square of Test, street of Test to the north")
         t:assertEqual(region.label, "square of Test")
         -- the street's mouth counts as said (not said again on coming close); the water does not
@@ -1224,7 +1244,7 @@ testRunner:addSuite("Surroundings", {
             t:assertEqual(said[m], m.class == "way" or nil)
         end
         -- the describe key also names the building entrances and what is farther
-        text = logic.spotText(z, 78, 35, 100, nil, {})
+        text = logic.spotText(z, 78, 35, 10000, nil, {})
         t:assertEqual(text, "square of Test, street of Test to the north, entrance of Test Bank to the southeast")
     end,
 
@@ -1265,11 +1285,11 @@ testRunner:addSuite("Surroundings", {
         -- the walk's columns (y 52 to 40) are a ramp rising to the northeast
         z.dirs = { "running %s", "up to the %s" }
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
-        z.grid = { "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2", "100*2,222*3,0*2" }
-        z.lanes = { 100, 46, 84, 46, 222, 20, 40 }
+        z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
+        z.lanes = { 100, 46, 84, 46, 22045, 20, 40 }
         logic.unpack(z)
-        t:assertEqual(logic.outdoorKey(z, 222), "r222")
-        t:assertEqual(logic.describe(z, 222, true), "ramp to the bank, up to the northeast")
+        t:assertEqual(logic.outdoorKey(z, 22045), "r2:")
+        t:assertEqual(logic.describe(z, 22045, true), "ramp to the bank, up to the northeast")
         -- on the square beside it, pushing east against its side
         local owner, what = logic.wallOwner(z, 94, 53, 0, -1, 2.5)
         t:assertEqual(owner, "ramp to the bank")
@@ -1282,11 +1302,59 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         z.places = { { "square", "square of Test" }, { "street", "street of Test" } }
         -- the whole grid is square; the street's lane crosses it north-south at y = 50
-        z.grid = { "100*7", "100*7", "100*7", "100*7" }
-        z.lanes = { 100, 50, 84, 50, 211, 20, 40 }
+        z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+        z.lanes = { 100, 50, 84, 50, 21000, 20, 40 }
         logic.unpack(z)
-        t:assertEqual((logic.outdoorValue(z, 92, 50, false, false)), 211)
+        t:assertEqual((logic.outdoorValue(z, 92, 50, false, false)), 21000)
         -- 6 yd off the line, past its leave distance: the square again
-        t:assertEqual((logic.outdoorValue(z, 92, 44, false, true)), 100)
+        t:assertEqual((logic.outdoorValue(z, 92, 44, false, true)), 10000)
+    end,
+
+    ["clock hours: bare numbers, o'clock once at the end of a list or after a yard count"] = function(t)
+        local z = newZone()
+        z.dirsClock = { "water at %s", "deep water at %s", "land at %s", "drop at %s",
+            "rock wall at %s", "building at %s", "at %s", "%s" }
+        logic.unpack(z)
+        logic.clock = true
+        local ok, err = pcall(function()
+            -- a direction is its hour; several in one text get one "o'clock" at the end
+            t:assertEqual(logic.finishText(logic.dirWord(z, 100)), "3")
+            t:assertEqual(logic.finishText(logic.describe(z, 21110, true)), "shore of Test Lake, water at 4")
+            t:assertEqual(logic.finishText(logic.describe(z, 38110, true)), "bridge, 4 to 10 o'clock")
+            t:assertEqual(logic.finishText(logic.itemsText(z, {
+                { label = "street of Test", class = "way", dirs = { 0, 270 } },
+                { label = "cliff edge", class = "cliff edge", dirs = { 100 } },
+            })), "street of Test at 12 and 9, cliff edge at 3 o'clock")
+            -- a yard count before the hour: "o'clock" right there
+            t:assertEqual(logic.finishText(logic.edgeText(z, 1)), "at 12, water")
+            t:assertEqual(logic.finishText(logic.edgeText(z, 2, 7.6)), "8 at 6 o'clock, drop 12")
+            local target = logic.footTarget(z, 7, 5)
+            t:assertEqual(logic.finishText(logic.guideText(z, target, true, false)),
+                "entrance of Test Inn, common room, 7 yards at 6 o'clock, in at 12")
+            t:assertEqual(logic.finishText(logic.guideText(z, target, false, false)), "7 at 6 o'clock")
+            t:assertEqual(logic.finishText(logic.guideText(z, target, false, true)), "in at 12")
+            -- two angles of one hour are one direction; of one word but two hours they are two
+            t:assertEqual(logic.sameDir(80, 100), true)     -- both 3 o'clock
+            t:assertEqual(logic.sameDir(100, 110), false)   -- 3 and 4
+            t:assertEqual(logic.wordSteps(100, 125), 1)
+            t:assertEqual(logic.wordSteps(100, 150), 2)
+            -- the way key tells 6 axes apart
+            t:assertEqual(logic.axisKey(100), 3)
+            t:assertEqual(logic.axisKey(0), 0)
+            t:assertEqual(logic.axisKey(170), 0)
+            -- a bend says where the way leads now
+            t:assertEqual(logic.finishText(logic.bendText(z, 1, 100)), "left, at 3")
+            -- a label with its directions as angles
+            t:assertEqual(logic.finishText(logic.expandDirs(z, "fork, Test road <d45,120>")), "fork, Test road at 2 and 4 o'clock")
+        end)
+        logic.clock = false
+        t:assertEqual(logic.sameDir(100, 110), true)        -- both east
+        t:assertEqual(logic.wordSteps(100, 150), 1)         -- east, southeast
+        t:assertEqual(logic.finishText(logic.bendText(z, 1, 100)), "left")
+        t:assertEqual(logic.expandDirs(z, "fork, Test road <d45,120>"), "fork, Test road to the northeast and southeast")
+        t:assertEqual(logic.finishText("no hours"), "no hours")
+        if not ok then
+            error(err, 0)
+        end
     end,
 })

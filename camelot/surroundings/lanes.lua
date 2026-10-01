@@ -104,7 +104,7 @@ end
 
 -- Which way to turn to face along the way here: the direction of its centre line over about 12 yd
 -- around the nearest point (short stretches alone bend too much), taken the end nearer the
--- facing. `spokenAxis`: the axis the announcement says (index into zone.axes) or nil: a hint only
+-- facing. `spokenAxis`: the axis angle the announcement says (0..179) or nil: a hint only
 -- where the words cannot tell the player the facing is off, i.e. the facing points the same
 -- compass way as that axis. Returns -1 (turn right), 1 (turn left), 0 (no turn needed), or nil
 -- (no way with one direction here, or facing across it, crossing over).
@@ -132,7 +132,7 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     if off > logic.TURN_ACROSS then
         return nil
     end
-    if off < logic.TURN_OFF or (spokenAxis and logic.facingAxis(facing) ~= spokenAxis) then
+    if off < logic.TURN_OFF or (spokenAxis and not logic.sameAxis(logic.facingAxis(facing), spokenAxis)) then
         return 0
     end
     return diff > 0 and 1 or -1
@@ -193,6 +193,8 @@ function logic.pieceAhead(zone, x, y, heading, current, look)
     if d == nil then
         return nil
     end
+    -- the piece the player is on, as the entry rule keys it (a key, or a cell value)
+    local currentKey = type(current) == "string" and current or logic.outdoorKey(zone, current)
     local fx, fy = math.cos(heading), math.sin(heading)
     local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
     local n = math.sqrt(dx * dx + dy * dy)
@@ -224,7 +226,7 @@ function logic.pieceAhead(zone, x, y, heading, current, look)
             step = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2)
         end
         walked = walked + step
-        if next.value ~= current then
+        if logic.outdoorKey(zone, next.value, currentKey) ~= currentKey then
             return next.value, walked
         end
         if walked >= look then

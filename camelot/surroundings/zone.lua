@@ -2,8 +2,10 @@
 -- files). This one: directions, the zone grid, unpacking a zone's data into named records, place
 -- texts and the entry rule. The data format is described in docs/src/developer/surroundings.md.
 --
--- Directions: a world offset is (dx north, dy west); compass indexes run from 1 = north clockwise
--- to 8 = northwest; a facing (GetPlayerFacing) is in radians, 0 = north, counter-clockwise.
+-- Directions: a world offset is (dx north, dy west); a direction is an angle in degrees clockwise
+-- from north (0..359; an axis, both ways of a street, 0..179); a facing (GetPlayerFacing) is in
+-- radians, 0 = north, counter-clockwise. The words come last: the 8 compass words, or with
+-- logic.clock the 12 clock hours of a north-up clock (12 = north).
 
 local logic = {}
 WowVision.surroundingsLogic = logic
@@ -36,26 +38,147 @@ logic.WATER = set("deep water", "shore")
 logic.DROPS = set("cliff edge")
 
 -- Directions -------------------------------------------------------------------------------------
+-- The data carries angles (format 2, 2026-10-01); the player's words are chosen here: the 8
+-- compass words, or with logic.clock (the compass module's Directions setting) the 12 hours.
+
+logic.CODE = 10000 -- a cell value is place id * CODE + direction code (template * 1000 + angle)
+logic.clock = false -- clock hours instead of compass words (the module sets it from the setting)
+local HOUR = "\1" -- marks an hour in a text until finishText decides where "o'clock" goes
+local HOUR_SAID = "\2" -- ... an hour that gets its "o'clock" in place (a yard count comes before it)
+local L = WowVision:getLocale()
 
 -- Degrees clockwise from north of a world offset.
 local function bearing(dx, dy)
     return math.deg(math.atan2(-dy, dx)) % 360
 end
 
-function logic.compassIndex(dx, dy)
-    return math.floor((bearing(dx, dy) + 22.5) / 45) % 8 + 1
+-- Degrees clockwise from north of a world offset, rounded (0..359).
+function logic.bearingOf(dx, dy)
+    return math.floor(bearing(dx, dy) + 0.5) % 360
 end
 
--- Degrees between the direction of a world offset and a compass index's.
-function logic.angleOff(dx, dy, index)
-    local off = math.abs(bearing(dx, dy) - (index - 1) * 45) % 360
+-- Degrees between the direction of a world offset and an angle.
+function logic.angleOff(dx, dy, angle)
+    local off = math.abs(bearing(dx, dy) - angle) % 360
     return math.min(off, 360 - off)
 end
 
--- Unit world vector of a compass index.
-function logic.compassVector(index)
-    local angle = math.rad((index - 1) * 45)
-    return math.cos(angle), -math.sin(angle)
+-- Degrees between two angles (0..180).
+function logic.angleGap(a, b)
+    local off = math.abs(a - b) % 360
+    return math.min(off, 360 - off)
+end
+
+-- Unit world vector of an angle.
+function logic.compassVector(angle)
+    local a = math.rad(angle)
+    return math.cos(a), -math.sin(a)
+end
+
+-- The compass word index (1 = north .. 8 = northwest) and the clock hour (1..12) of an angle.
+function logic.wordIndex(angle)
+    return math.floor((angle + 22.5) / 45) % 8 + 1
+end
+
+function logic.hourOf(angle)
+    local h = math.floor((angle + 15) / 30) % 12
+    return h == 0 and 12 or h
+end
+
+-- Two angles that come out as one word (or hour) in the current mode are the same direction.
+function logic.dirKey(angle)
+    if logic.clock then
+        return logic.hourOf(angle)
+    end
+    return logic.wordIndex(angle)
+end
+
+function logic.sameDir(a, b)
+    return logic.dirKey(a) == logic.dirKey(b)
+end
+
+-- How many words (or hours) apart two angles come out: 0 the same word, 1 neighbours, ...
+function logic.wordSteps(a, b)
+    local n = logic.clock and 12 or 8
+    local gap = math.abs(logic.dirKey(a) - logic.dirKey(b)) % n
+    return math.min(gap, n - gap)
+end
+
+-- The spoken direction of an angle: "northeast", or in clock mode the hour as a bare number (the
+-- text gets its "o'clock" from finishText). `said`: this hour needs "o'clock" right after it.
+function logic.dirWord(zone, angle, said)
+    if logic.clock then
+        return logic.hourOf(angle) .. (said and HOUR_SAID or HOUR)
+    end
+    return zone.compass[logic.wordIndex(angle)]
+end
+
+-- The axis key of an axis angle (0..179): one of 4 in compass mode, of 6 in clock mode.
+function logic.axisKey(angle)
+    if logic.clock then
+        return math.floor((angle + 15) / 30) % 6
+    end
+    return math.floor((angle + 22.5) / 45) % 4
+end
+
+function logic.sameAxis(a, b)
+    return logic.axisKey(a) == logic.axisKey(b)
+end
+
+-- The spoken words of an axis angle: "north to south" (zone.spokenAxes in the client's language),
+-- in clock mode both hours, "12 to 6".
+function logic.axisWords(zone, angle)
+    if logic.clock then
+        return string.format(L["%s to %s"], logic.dirWord(zone, angle), logic.dirWord(zone, angle + 180))
+    end
+    local i = logic.axisKey(angle) + 1
+    if zone.spokenAxes then
+        return zone.spokenAxes[i]
+    end
+    local word = zone.axes[i]
+    return word and (word:gsub("%-", " to "))
+end
+
+-- A direction template of the data ("water to the %s", index into zone.dirs); in clock mode its
+-- clock form ("water at %s", zone.dirsClock).
+function logic.dirTemplate(zone, i)
+    if logic.clock and zone.dirsClock then
+        return zone.dirsClock[i]
+    end
+    return zone.dirs[i]
+end
+
+-- A text ready to speak: the hour marks resolved. "o'clock" once at the end where a text names two
+-- or more hours (a list), in place where a yard count comes before the hour ("6 at 4 o'clock,
+-- in at 4"); a single hour elsewhere stays a bare number (user 2026-10-01: as short as possible
+-- without confusion).
+function logic.finishText(text)
+    if text == nil or not text:find("[\1\2]") then
+        return text
+    end
+    local _, plain = text:gsub(HOUR, "")
+    local clock = L["o'clock"]
+    text = text:gsub(HOUR_SAID, " " .. clock):gsub(HOUR, "")
+    if plain >= 2 then
+        text = text .. " " .. clock
+    end
+    return text
+end
+
+-- Fork and crossing labels (and a place's nearest road) carry their directions as angles in the
+-- data ("<d45,135>"): said in the player's words ("to the northeast and southeast", "at 2 and 4").
+function logic.expandDirs(zone, text)
+    if text == nil or not text:find("<d", 1, true) then
+        return text
+    end
+    local template = logic.dirTemplate(zone, zone._toward) or "%s"
+    return (text:gsub("<d([%d,]+)>", function(list)
+        local words = {}
+        for a in list:gmatch("%d+") do
+            words[#words + 1] = logic.dirWord(zone, tonumber(a))
+        end
+        return string.format(template, logic.joinWords(words))
+    end))
 end
 
 -- Signed degrees from angle b to angle a (both radians, counter-clockwise), -180 to 180.
@@ -64,10 +187,9 @@ function logic.degreesBetween(a, b)
     return d > 180 and d - 360 or d
 end
 
--- The axis (index into zone.axes) the compass word of a facing lies on: facing north or south is
--- the north-south axis.
+-- The axis angle (0..179) a facing lies on: facing north or south is the north-south axis, 0.
 function logic.facingAxis(facing)
-    return (logic.compassIndex(math.cos(facing), math.sin(facing)) - 1) % 4 + 1
+    return logic.bearingOf(math.cos(facing), math.sin(facing)) % 180
 end
 
 -- The grid -----------------------------------------------------------------------------------------
@@ -152,7 +274,12 @@ function logic.valueAt(zone, x, y)
 end
 
 function logic.placeOf(value)
-    return math.floor(value / 100)
+    return math.floor(value / logic.CODE)
+end
+
+-- The direction code of a cell value (template * 1000 + angle), 0 for none.
+function logic.codeOf(value)
+    return value % logic.CODE
 end
 
 -- The place record {kind, label, road} of a place id, or nil.
@@ -212,7 +339,7 @@ function logic.nearestOfKinds(zone, x, y, kinds, reach)
     if d == nil then
         return nil
     end
-    return d, logic.compassIndex(cx - x, cy - y)
+    return d, logic.bearingOf(cx - x, cy - y)
 end
 
 logic.STEPS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } -- a cell's four neighbours
@@ -285,16 +412,17 @@ function logic.nearestPoint(list, x, y, reach, prefer)
         return nil
     end
     local p = list[best]
-    return best, bestD, logic.compassIndex(p.x - x, p.y - y), p
+    return best, bestD, logic.bearingOf(p.x - x, p.y - y), p
 end
 
--- Adds a compass index to an item's directions unless it is there already or the item has `max`.
+-- Adds a direction (an angle) to an item's directions unless one with the same word is there
+-- already or the item has `max`.
 function logic.addDir(item, dir, max)
     if dir == nil or #item.dirs >= (max or math.huge) then
         return
     end
     for _, known in ipairs(item.dirs) do
-        if known == dir then
+        if logic.sameDir(known, dir) then
             return
         end
     end
@@ -313,9 +441,12 @@ local function prepareWords(zone, locale)
     end
     zone._worded = true
     zone._running = false
+    zone._toward = nil
     for i, template in ipairs(zone.dirs or {}) do
         if template == "running %s" then
             zone._running = i
+        elseif template == "to the %s" then
+            zone._toward = i
         end
     end
     for _, room in ipairs(zone.rooms or {}) do
@@ -335,6 +466,7 @@ local function prepareWords(zone, locale)
         return
     end
     zone.dirs = t.dirs or zone.dirs
+    zone.dirsClock = t.dirsClock or zone.dirsClock
     zone.compass = t.compass or zone.compass
     zone.spokenAxes = t.axes
     for i, p in ipairs(t.places or {}) do
@@ -526,7 +658,8 @@ function logic.unpack(zone, locale)
     list = zone.exits or {}
     for i = 1, #list - 3, 4 do
         local out = list[i + 3]
-        ix.exits[#ix.exits + 1] = { x = list[i], y = list[i + 1], width = list[i + 2], out = out ~= 0 and out or nil }
+        -- out: the angle one climbs out toward, -1 unknown
+        ix.exits[#ix.exits + 1] = { x = list[i], y = list[i + 1], width = list[i + 2], out = out >= 0 and out or nil }
     end
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
     -- neighbouring cells of two squares with no walkable crossing between them (decided offline
@@ -582,12 +715,13 @@ function logic.unpack(zone, locale)
     end
     ix.rooms = {}
     for i, room in ipairs(zone.rooms or {}) do
-        -- axis: the way the room runs (index into zone.axes) when it is long and narrow; winding: its
+        -- axis: the way the room runs (an axis angle, 0..179) when it is long and narrow; winding: its
         -- floor winds up turning left (1) or right (-1); floor: sq yd; named: a name of its own (a shop);
         -- hallMap: the game calls the room outdoors (IsIndoors() false), the UI map one stands on in it
         ix.rooms[i] = {
             interior = room[1], name = room[2], kind = room[3], boxes = room[4], outline = room[5],
-            entrance = room.entrance or false, axis = room.a, winding = room.w, floor = room.f or 0,
+            entrance = room.entrance or false, axis = room.a and room.a >= 0 and room.a or nil, winding = room.w,
+            floor = room.f or 0,
             named = room.s == 1, hallMap = room.g,
         }
     end
@@ -639,11 +773,11 @@ function logic.unpackLayer(zone)
     local src = zone.indoor
     local layer = {
         key = zone.key .. "/indoor", label = zone.label, map = zone.map, top = zone.top, left = zone.left,
-        cell = zone.cell, rows = zone.rows, cols = zone.cols, dirs = zone.dirs, compass = zone.compass,
-        axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
+        cell = zone.cell, rows = zone.rows, cols = zone.cols, dirs = zone.dirs, dirsClock = zone.dirsClock,
+        compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, interiors = zone.interiors, rooms = zone.rooms,
-        doors = zone.doors, _worded = true, _running = zone._running, parent = zone,
+        doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
     }
     logic.unpack(layer)
     local covered = {}
@@ -666,26 +800,16 @@ end
 
 -- Place texts ------------------------------------------------------------------------------------
 
--- The axis a direction code says ("running %s"), or nil.
+-- The axis angle a direction code says ("running %s", 0..179), or nil.
 local function axisOfCode(zone, code)
-    if math.floor(code / 10) == zone._running then
-        return code % 10
+    if math.floor(code / 1000) == zone._running then
+        return code % 1000
     end
 end
 
--- The axis (index into zone.axes) a cell value says, or nil.
+-- The axis angle (0..179) a cell value says, or nil.
 function logic.axisOf(zone, value)
-    return axisOfCode(zone, value % 100)
-end
-
--- The spoken words of an axis: "north to south" (the hyphenated word runs together when spoken);
--- a localized zone brings its own.
-function logic.axisWords(zone, i)
-    if zone.spokenAxes then
-        return zone.spokenAxes[i]
-    end
-    local word = zone.axes[i]
-    return word and (word:gsub("%-", " to "))
+    return axisOfCode(zone, value % logic.CODE)
 end
 
 -- The text of a cell value: the place label, and with `withDirection` its direction and its
@@ -696,37 +820,56 @@ function logic.describe(zone, value, withDirection, noNearRoad)
     if p == nil then
         return nil
     end
-    local text = p.label
-    local code = value % 100
+    local text = logic.expandDirs(zone, p.label)
+    local code = value % logic.CODE
     if withDirection and code > 0 then
-        local template = zone.dirs[math.floor(code / 10)]
         local axis = axisOfCode(zone, code)
-        local word = axis and logic.axisWords(zone, axis) or zone.compass[code % 10]
-        if template and word then
+        if axis then
             -- an axis without its template: "road, northwest to southeast"
-            text = text .. ", " .. (axis and word or string.format(template, word))
+            text = text .. ", " .. logic.axisWords(zone, axis)
+        else
+            local template = logic.dirTemplate(zone, math.floor(code / 1000))
+            if template then
+                text = text .. ", " .. string.format(template, logic.dirWord(zone, code % 1000))
+            end
         end
     end
     if withDirection and p.road and not noNearRoad then
-        text = text .. ", " .. p.road
+        text = text .. ", " .. logic.expandDirs(zone, p.road)
     end
     return text
 end
 
 -- Outdoor keys ------------------------------------------------------------------------------------
 -- What the entry rule compares outdoors: the place id; a piece of a way with one direction (a
--- road, a city street or walk: TURN_KINDS) "r<value>" and a canal piece "c<value>" are keyed with
--- their direction, so a bend is a new place like any other; streets follow the road rules.
+-- road, a city street or walk: TURN_KINDS) "r<place>:<axis key>" and a canal piece "c<place>:<axis
+-- key>" are keyed with their spoken direction (the axis as the current words tell it apart), so a
+-- bend is a new place like any other; streets follow the road rules.
 
-function logic.outdoorKey(zone, value)
+-- `previous`: the key the player is on now (optional). The same piece whose axis has moved into
+-- the next word but stays within KEY_STICK degrees of the word said keeps that key: a street whose
+-- heading hovers about a word boundary (the data carries each run's heading to the degree) is not
+-- a new place at every run; it becomes one once the heading is clearly in the next word.
+logic.KEY_STICK = 10 -- degrees beyond the spoken word's half step
+function logic.outdoorKey(zone, value, previous)
     if value == 0 then
         return nil
     end
     local kind = logic.kindOf(zone, value)
-    if kind == "canal" then
-        return "c" .. value
-    elseif logic.TURN_KINDS[kind] then
-        return "r" .. value
+    if kind == "canal" or logic.TURN_KINDS[kind] then
+        local axis = logic.axisOf(zone, value)
+        local prefix = (kind == "canal" and "c" or "r") .. logic.placeOf(value) .. ":"
+        if axis and type(previous) == "string" and previous:sub(1, #prefix) == prefix then
+            local said = tonumber(previous:sub(#prefix + 1))
+            local step = logic.clock and 30 or 45
+            if said and said ~= logic.axisKey(axis) then
+                local gap = math.abs(axis - said * step) % 180
+                if math.min(gap, 180 - gap) <= step / 2 + logic.KEY_STICK then
+                    return previous
+                end
+            end
+        end
+        return prefix .. (axis and logic.axisKey(axis) or "")
     end
     return logic.placeOf(value)
 end
@@ -739,7 +882,7 @@ end
 -- The place id of an outdoor key (nil for nil).
 function logic.keyPlace(key)
     if type(key) == "string" then
-        return logic.placeOf(tonumber(key:sub(2)) or 0)
+        return tonumber(key:match("^[rc](%d+)")) or 0
     end
     return key
 end

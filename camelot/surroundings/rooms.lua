@@ -217,7 +217,7 @@ function logic.doorwayDirection(zone, door, roomId)
     end
     local ax, ay = logic.toWorld(interior, door.x, door.y)
     local bx, by = logic.toWorld(interior, door.x + vx, door.y + vy)
-    return logic.compassIndex(bx - ax, by - ay)
+    return logic.bearingOf(bx - ax, by - ay)
 end
 
 logic.ENTRANCE_MERGE = 4 -- yd; doorways of one building closer than this are one entrance
@@ -402,7 +402,7 @@ function logic.roomDoorways(zone, roomId, opts)
             if fromPlayer then
                 local dx, dy = logic.doorWorld(zone, door)
                 if (dx - opts.x) ^ 2 + (dy - opts.y) ^ 2 >= logic.HERE ^ 2 then
-                    dir = logic.compassIndex(dx - opts.x, dy - opts.y)
+                    dir = logic.bearingOf(dx - opts.x, dy - opts.y)
                 end
             else
                 dir = logic.doorwayDirection(zone, door, roomId)

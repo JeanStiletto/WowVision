@@ -272,15 +272,20 @@ end
 -- opening (not the border's own direction: a mouth in a corner of the square has square cells
 -- south and west of it, and the lane through Stormwind's gate said "on to the southeast" while it
 -- runs north); without an axis, that direction itself, or `vx`, `vy` (from the square into the
--- opening) when the cells lie on the opening. A compass index, or nil.
+-- opening) when the cells lie on the opening. An angle, or nil.
 local function onwardDirection(zone, region, mouth, vx, vy)
-    local votes, count, sx, sy = { 0, 0, 0, 0 }, 0, 0, 0
+    -- the axes of the cells by compass axis (4 bins), each bin with the sum of its doubled angles
+    -- for the mean axis of the winning bin
+    local votes, sinSum, cosSum, count, sx, sy = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 0, 0, 0
     logic.flood(zone, mouth.cells, function(r, c, key)
         return not region.cells[key] and labelAtCell(zone, r, c) == mouth.label
     end, function(r, c)
         local axis = logic.axisOf(zone, logic.valueAtCell(zone, r, c))
         if axis then
-            votes[axis] = votes[axis] + 1
+            local bin = math.floor((axis + 22.5) / 45) % 4 + 1
+            votes[bin] = votes[bin] + 1
+            sinSum[bin] = sinSum[bin] + math.sin(math.rad(2 * axis))
+            cosSum[bin] = cosSum[bin] + math.cos(math.rad(2 * axis))
         end
         local cx, cy = logic.cellCentre(zone, r, c)
         sx, sy, count = sx + cx, sy + cy, count + 1
@@ -298,22 +303,23 @@ local function onwardDirection(zone, region, mouth, vx, vy)
         end
     end
     local best, most = nil, 0
-    for axis = 1, 4 do
-        if votes[axis] > most then
-            best, most = axis, votes[axis]
+    for bin = 1, 4 do
+        if votes[bin] > most then
+            best, most = bin, votes[bin]
         end
     end
     if best then
-        local ax, ay = logic.compassVector(best)
+        local axis = (math.deg(math.atan2(sinSum[best], cosSum[best])) / 2) % 180
+        local ax, ay = logic.compassVector(axis)
         local len = math.sqrt(vx * vx + vy * vy)
         local along = len > 0 and (ax * vx + ay * vy) / len or 1
         -- the cells lie across the axis rather than along it (a bent lane from a corner mouth)
         if math.abs(along) >= 0.5 then
-            return along >= 0 and best or best + 4
+            return math.floor((along >= 0 and axis or axis + 180) + 0.5) % 360
         end
     end
     if vx ~= 0 or vy ~= 0 then
-        return logic.compassIndex(vx, vy)
+        return logic.bearingOf(vx, vy)
     end
     return nil
 end
@@ -403,12 +409,12 @@ function logic.nearestBeginning(zone, region, x, y, reach, prefer)
     end
     if best then
         local b = list[best]
-        return best, bestD, logic.compassIndex(b.x - x, b.y - y), b
+        return best, bestD, logic.bearingOf(b.x - x, b.y - y), b
     end
     return nil
 end
 
--- Distance from a position to a mouth's nearest point, and the compass index toward it.
+-- Distance from a position to a mouth's nearest point, and the angle toward it.
 function logic.mouthDistance(mouth, x, y)
     local p = mouth.points
     local best, bx, by = math.huge, nil, nil
@@ -418,10 +424,10 @@ function logic.mouthDistance(mouth, x, y)
             best, bx, by = d, p[i], p[i + 1]
         end
     end
-    return best, logic.compassIndex(bx - x, by - y)
+    return best, logic.bearingOf(bx - x, by - y)
 end
 
--- Items from a list of {label, class, d, dir, mouth}: one item per label with its compass indexes
+-- Items from a list of {label, class, d, dir, mouth}: one item per label with its directions
 -- (nearest first, at most `maxDirs`; closer than HERE none), items nearest first.
 local function groupItems(found, maxDirs)
     table.sort(found, function(a, b)
@@ -523,7 +529,7 @@ end
 function logic.featuresAround(zone, x, y, reach, classOf, skip)
     local r0, c0 = logic.cellOf(zone, x, y)
     local n = math.ceil(reach / zone.cell)
-    local sectors = {} -- class -> compass index -> nearest distance
+    local sectors = {} -- class -> direction key (one per word) -> {nearest distance, its angle}
     for dr = -n, n do
         for dc = -n, n do
             local cx, cy = logic.cellCentre(zone, r0 + dr, c0 + dc)
@@ -534,9 +540,10 @@ function logic.featuresAround(zone, x, y, reach, classOf, skip)
                 if class and not (skip and skip[class]) then
                     local byDir = sectors[class] or {}
                     sectors[class] = byDir
-                    local dir = logic.compassIndex(cx - x, cy - y)
-                    if byDir[dir] == nil or d < byDir[dir] then
-                        byDir[dir] = d
+                    local dir = logic.bearingOf(cx - x, cy - y)
+                    local key = logic.dirKey(dir)
+                    if byDir[key] == nil or d < byDir[key].d then
+                        byDir[key] = { d = d, dir = dir }
                     end
                 end
             end
@@ -545,8 +552,8 @@ function logic.featuresAround(zone, x, y, reach, classOf, skip)
     local items = {}
     for class, byDir in pairs(sectors) do
         local list = {}
-        for dir, d in pairs(byDir) do
-            list[#list + 1] = { dir = dir, d = d }
+        for _, s in pairs(byDir) do
+            list[#list + 1] = s
         end
         table.sort(list, function(a, b)
             return a.d < b.d
@@ -555,8 +562,8 @@ function logic.featuresAround(zone, x, y, reach, classOf, skip)
         for _, s in ipairs(list) do
             local apart = true
             for _, dir in ipairs(dirs) do
-                local gap = math.abs(s.dir - dir) % 8
-                apart = apart and math.min(gap, 8 - gap) >= 2
+                -- not neighbours among the 8 words (or the 12 hours)
+                apart = apart and logic.wordSteps(s.dir, dir) >= 2
             end
             if apart and #dirs < 2 then
                 dirs[#dirs + 1] = s.dir
