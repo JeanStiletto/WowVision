@@ -140,6 +140,8 @@ function logic.regionAt(zone, x, y)
             table.insert(region.mouths, { label = e.building, class = e.plain and "room" or "entrance", points = { e.x, e.y } })
         end
     end
+    -- cached before the side streets are dropped: withoutSideStreets asks for the neighbouring
+    -- squares' regions, which ask for this one again (the cache ends that round trip)
     for key in pairs(cells) do
         ix.regionOf[key] = region
     end
@@ -151,6 +153,35 @@ end
 local function labelAtCell(zone, r, c)
     local p = logic.place(zone, logic.placeOf(logic.valueAtCell(zone, r, c)))
     return p and p.label, p and p.kind
+end
+
+-- The place kind of a mouth: that of its first border cell (nil for a mouth without cells, an
+-- entrance).
+local function mouthKind(zone, m)
+    local cell = m.cells and m.cells[1]
+    return cell and select(2, labelAtCell(zone, cell[1], cell[2])) or nil
+end
+
+-- A neighbouring square or hall is a place of its own: it counts even where it meets no other way
+-- (the square before the Cathedral of Light lies between two parts of an unnamed square and the
+-- cathedral; it was dropped as leading nowhere, 2026-09-29). leadsOn is for streets and ramps.
+local function isSquareMouth(zone, m)
+    return logic.SQUARES[mouthKind(zone, m)] or false
+end
+
+-- The middle of a mouth's border cells, and of the square's cells beside them (world yards).
+-- Cached on the mouth.
+local function mouthMiddle(zone, m)
+    if m.mx == nil then
+        local mx, my, ix, iy, n = 0, 0, 0, 0, #m.cells
+        for _, cell in ipairs(m.cells) do
+            local bx, by = logic.cellCentre(zone, cell[1], cell[2])
+            local sx, sy = logic.cellCentre(zone, cell[3], cell[4])
+            mx, my, ix, iy = mx + bx / n, my + by / n, ix + sx / n, iy + sy / n
+        end
+        m.mx, m.my, m.ix, m.iy = mx, my, ix, iy
+    end
+    return m.mx, m.my, m.ix, m.iy
 end
 
 -- The squares a street touches along its length (regions), and whether it touches any other way
@@ -194,9 +225,8 @@ end
 function logic.withoutSideStreets(zone, region)
     local direct = {}
     for _, m in ipairs(region.mouths) do
-        local cell = m.class == "way" and m.cells and m.cells[1]
-        if cell and logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] then
-            local x, y = logic.cellCentre(zone, cell[1], cell[2])
+        if m.class == "way" and isSquareMouth(zone, m) then
+            local x, y = logic.cellCentre(zone, m.cells[1][1], m.cells[1][2])
             local other = logic.regionAt(zone, x, y)
             if other then
                 direct[other] = true
@@ -206,8 +236,7 @@ function logic.withoutSideStreets(zone, region)
     local kept = {}
     for _, m in ipairs(region.mouths) do
         local side = false
-        local cell = m.class == "way" and m.cells and m.cells[1]
-        if cell and next(direct) and not logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] then
+        if m.class == "way" and m.cells and m.cells[1] and next(direct) and not isSquareMouth(zone, m) then
             local squares, leadsOther = streetTouches(zone, m)
             if not leadsOther then
                 local neighbour = false
@@ -292,11 +321,7 @@ local function onwardDirection(zone, region, mouth, vx, vy)
         return count >= logic.ONWARD_CELLS
     end, nil, true)
     if count > 0 then
-        local mx, my, n = 0, 0, #mouth.cells
-        for _, cell in ipairs(mouth.cells) do
-            local bx, by = logic.cellCentre(zone, cell[1], cell[2])
-            mx, my = mx + bx / n, my + by / n
-        end
+        local mx, my = mouthMiddle(zone, mouth)
         local dx, dy = sx / count - mx, sy / count - my
         if dx * dx + dy * dy >= zone.cell * zone.cell then
             vx, vy = dx, dy
@@ -324,44 +349,35 @@ local function onwardDirection(zone, region, mouth, vx, vy)
     return nil
 end
 
--- The longest distance between two of a mouth's border points.
+-- The longest distance between two of a mouth's border points. Cached on the mouth.
 local function mouthSpan(mouth)
-    local p, span = mouth.points, 0
-    for i = 1, #p - 1, 2 do
-        for j = i + 2, #p - 1, 2 do
-            span = math.max(span, math.sqrt((p[i] - p[j]) ^ 2 + (p[i + 1] - p[j + 1]) ^ 2))
+    if mouth.span == nil then
+        local p, span = mouth.points, 0
+        for i = 1, #p - 1, 2 do
+            for j = i + 2, #p - 1, 2 do
+                span = math.max(span, logic.dist(p[i], p[i + 1], p[j], p[j + 1]))
+            end
         end
+        mouth.span = span
     end
-    return span
+    return mouth.span
 end
 
 -- Where ways begin on the square: the mouths of streets, roads, bridges and walks (not squares)
 -- that lead on and meet the square along a short border (a street running along the side of the
 -- square shares a long one). Each {mouth, label, kind, x, y (the middle of the opening), onward
--- (compass index the way leads on from the square, or nil)}. Cached per region.
+-- (the angle the way leads on from the square, or nil)}. Cached per region.
 function logic.wayBeginnings(zone, region)
     if region.beginnings then
         return region.beginnings
     end
     local list = {}
     for _, m in ipairs(region.mouths) do
-        local kind = m.class == "way" and m.cells[1] and select(2, labelAtCell(zone, m.cells[1][1], m.cells[1][2]))
+        local kind = m.class == "way" and mouthKind(zone, m)
         if kind and not logic.SQUARES[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
             -- the middle of the opening: the border point nearest to the border's centre
-            local mx, my, ix, iy, n = 0, 0, 0, 0, #m.cells
-            for _, cell in ipairs(m.cells) do
-                local bx, by = logic.cellCentre(zone, cell[1], cell[2])
-                local sx, sy = logic.cellCentre(zone, cell[3], cell[4])
-                mx, my, ix, iy = mx + bx / n, my + by / n, ix + sx / n, iy + sy / n
-            end
-            local p = m.points
-            local best, bx, by = math.huge, nil, nil
-            for i = 1, #p - 1, 2 do
-                local d = (p[i] - mx) ^ 2 + (p[i + 1] - my) ^ 2
-                if d < best then
-                    best, bx, by = d, p[i], p[i + 1]
-                end
-            end
+            local mx, my, ix, iy = mouthMiddle(zone, m)
+            local _d, bx, by = logic.nearestOfPoints(m.points, mx, my)
             list[#list + 1] = {
                 mouth = m, label = m.label, kind = kind, x = bx, y = by, span = mouthSpan(m),
                 onward = onwardDirection(zone, region, m, mx - ix, my - iy),
@@ -376,7 +392,7 @@ end
 -- yards beyond half the opening's width, so a wide opening is guided to from as far as a doorway
 -- is from its threshold (the 18 yd lane through Stormwind's gate from 17 yd, a 6 yd street from
 -- 11; user 2026-09-30: with 8 yd for all, the lane was entered before a word was said). Index,
--- distance, compass index toward it, the beginning.
+-- distance, the angle toward it, the beginning.
 -- yd; at most this much of half the opening's width is added to the reach: 15 yd at most for an
 -- opening 14 yd wide or wider (user 2026-10-01: 18 yd on the Old Town square was too far, "10 or
 -- 15 should be sufficient")
@@ -390,41 +406,17 @@ end
 -- `prefer` {x, y}: the beginning guided to last stays the target unless another is nearer by
 -- more than GUIDE_STICK (nearestPoint).
 function logic.nearestBeginning(zone, region, x, y, reach, prefer)
-    local best, bestD, bestDir = nil, math.huge, nil
-    local kept, keptD = nil, nil
-    local list = logic.wayBeginnings(zone, region)
-    for i, b in ipairs(list) do
-        local d = math.sqrt((b.x - x) ^ 2 + (b.y - y) ^ 2)
-        if d <= logic.beginningReach(reach, b) then
-            if d < bestD then
-                best, bestD = i, d
-            end
-            if logic.samePoint(b, prefer) then
-                kept, keptD = i, d
-            end
-        end
-    end
-    if kept and best ~= kept and bestD > keptD - logic.GUIDE_STICK then
-        best, bestD = kept, keptD
-    end
-    if best then
-        local b = list[best]
-        return best, bestD, logic.bearingOf(b.x - x, b.y - y), b
-    end
-    return nil
+    return logic.nearestPoint(logic.wayBeginnings(zone, region), x, y, reach, prefer, {
+        reachOf = function(b)
+            return logic.beginningReach(reach, b)
+        end,
+    })
 end
 
 -- Distance from a position to a mouth's nearest point, and the angle toward it.
 function logic.mouthDistance(mouth, x, y)
-    local p = mouth.points
-    local best, bx, by = math.huge, nil, nil
-    for i = 1, #p - 1, 2 do
-        local d = math.sqrt((p[i] - x) ^ 2 + (p[i + 1] - y) ^ 2)
-        if d < best then
-            best, bx, by = d, p[i], p[i + 1]
-        end
-    end
-    return best, logic.bearingOf(bx - x, by - y)
+    local d, bx, by = logic.nearestOfPoints(mouth.points, x, y)
+    return d, logic.bearingOf(bx - x, by - y)
 end
 
 -- Items from a list of {label, class, d, dir, mouth}: one item per label with its directions
@@ -469,14 +461,6 @@ end
 local function mouthFound(m, x, y)
     local d, dir = logic.mouthDistance(m, x, y)
     return { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
-end
-
--- A neighbouring square or hall is a place of its own: it counts even where it meets no other way
--- (the square before the Cathedral of Light lies between two parts of an unnamed square and the
--- cathedral; it was dropped as leading nowhere, 2026-09-29). leadsOn is for streets and ramps.
-local function isSquareMouth(zone, m)
-    local cell = m.cells and m.cells[1]
-    return cell ~= nil and logic.SQUARES[select(2, labelAtCell(zone, cell[1], cell[2]))] or false
 end
 
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
@@ -533,7 +517,7 @@ function logic.featuresAround(zone, x, y, reach, classOf, skip)
     for dr = -n, n do
         for dc = -n, n do
             local cx, cy = logic.cellCentre(zone, r0 + dr, c0 + dc)
-            local d = math.sqrt((cx - x) ^ 2 + (cy - y) ^ 2)
+            local d = logic.dist(cx, cy, x, y)
             if d <= reach and d >= zone.cell / 2 then
                 local v = logic.valueAtCell(zone, r0 + dr, c0 + dc)
                 local class = v ~= 0 and classOf[logic.kindOf(zone, v)]

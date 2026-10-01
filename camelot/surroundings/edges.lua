@@ -14,8 +14,8 @@ function logic.underBridge(zone, r, c)
     return zone._index.under[r * zone.cols + c]
 end
 
--- The nearest way out of the water within `reach` yards: index, distance, compass index toward
--- it, the exit {x, y, width, out (the compass index one climbs out toward, or nil)}.
+-- The nearest way out of the water within `reach` yards: index, distance, the angle toward it,
+-- the exit {x, y, width, out (the angle one climbs out toward, or nil)}.
 function logic.nearestExit(zone, x, y, reach)
     return logic.nearestPoint(zone._index.exits, x, y, reach)
 end
@@ -32,10 +32,8 @@ logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming 
 
 -- The distance from (qx, qy) to the segment (ax, ay)-(bx, by).
 local function segmentDistance(qx, qy, ax, ay, bx, by)
-    local dx, dy = bx - ax, by - ay
-    local n = dx * dx + dy * dy
-    local t = n > 0 and math.max(0, math.min(1, ((qx - ax) * dx + (qy - ay) * dy) / n)) or 0
-    return math.sqrt((ax + t * dx - qx) ^ 2 + (ay + t * dy - qy) ^ 2)
+    local _px, _py, d = logic.segmentPoint(qx, qy, ax, ay, bx, by)
+    return d
 end
 
 -- Updates the set `on` of the high pieces the player is on: a piece is entered by passing where
@@ -76,7 +74,7 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
     for dr = -n, n do
         for dc = -n, n do
             for _, a in ipairs(ix.access[(r + dr) * zone.cols + c + dc] or {}) do
-                local d = math.sqrt((a.x - x) ^ 2 + (a.y - y) ^ 2)
+                local d = logic.dist(a.x, a.y, x, y)
                 local own = ix.piecePlaces and ix.piecePlaces[a.piece]
                 local fromGround = a.kind == 1 and (own == nil or own[painted])
                     and segmentDistance(a.x, a.y, px or x, py or y, x, y) <= logic.ACCESS_REACH
@@ -143,7 +141,7 @@ function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
             local p = e.points
             for k = 1, #p - 1, 2 do
                 local qx, qy = p[k], p[k + 1]
-                local d = math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
+                local d = logic.dist(x, y, qx, qy)
                 if (d <= bestD or d <= aheadD) and inFront(qx, qy, x, y, fx, fy)
                     and logic.nearCell(zone, ix.struct, r, c, e.struct) then
                     if d <= bestD then
@@ -206,10 +204,5 @@ end
 
 -- Distance from a position to the nearest point of edge `i`.
 function logic.edgeDistance(zone, i, x, y)
-    local p = zone._index.edges[i].points
-    local best = math.huge
-    for k = 1, #p - 1, 2 do
-        best = math.min(best, math.sqrt((x - p[k]) ^ 2 + (y - p[k + 1]) ^ 2))
-    end
-    return best
+    return logic.nearestOfPoints(zone._index.edges[i].points, x, y) or math.huge
 end

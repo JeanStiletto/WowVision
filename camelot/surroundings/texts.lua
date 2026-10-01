@@ -22,6 +22,17 @@ local CLOCK = {
     ["zeppelin to the %s"] = "zeppelin at %s",
     ["tram to the %s"] = "tram at %s",
     ["lift to the %s"] = "lift at %s",
+    -- drop edges ("at 4, water"; "9 at 4 o'clock, water": the yards before the hour ask for it)
+    ["%s, drop %d"] = "at %s, drop %d",
+    ["%d %s, drop %d"] = "%d at %s, drop %d",
+    ["%s, water"] = "at %s, water",
+    ["%d %s, water"] = "%d at %s, water",
+    ["%s, canal"] = "at %s, canal",
+    ["%d %s, canal"] = "%d at %s, canal",
+    ["%s, lava"] = "at %s, lava",
+    ["%d %s, lava"] = "%d at %s, lava",
+    ["%s, moat"] = "at %s, moat",
+    ["%d %s, moat"] = "%d at %s, moat",
 }
 local function T(key)
     if logic.clock and CLOCK[key] then
@@ -103,27 +114,18 @@ local EDGE_TEXTS = {
     [3] = { "%s, lava", "%d %s, lava" },
     [4] = { "%s, moat", "%d %s, moat" },
 }
--- in clock mode ("at 4, water"; "9 at 4 o'clock, water": the yards before the hour ask for it)
-local EDGE_TEXTS_CLOCK = {
-    [0] = { "at %s, drop %d", "%d at %s, drop %d" },
-    [1] = { "at %s, water", "%d at %s, water" },
-    [2] = { "at %s, canal", "%d at %s, canal" },
-    [3] = { "at %s, lava", "%d at %s, lava" },
-    [4] = { "at %s, moat", "%d at %s, moat" },
-}
 
 -- `x, y`: the player; with them an edge with a depth per point says the depth at its nearest
 -- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot).
 function logic.edgeText(zone, i, ahead, x, y)
     local e = logic.edge(zone, i)
-    local table_ = logic.clock and EDGE_TEXTS_CLOCK or EDGE_TEXTS
-    local texts = table_[e.into] or table_[0]
+    local texts = EDGE_TEXTS[e.into] or EDGE_TEXTS[0]
     local word = logic.dirWord(zone, e.facing, ahead ~= nil)
     local drop = e.drop
     if e.drops and x then
         local p, best = e.points, math.huge
         for k = 1, #p - 1, 2 do
-            local d = (x - p[k]) ^ 2 + (y - p[k + 1]) ^ 2
+            local d = logic.dist2(x, y, p[k], p[k + 1])
             local at = e.drops[(k + 1) / 2]
             if at and d < best then
                 best, drop = d, at
@@ -132,20 +134,16 @@ function logic.edgeText(zone, i, ahead, x, y)
     end
     if ahead then
         local yards = math.max(1, math.floor(ahead + 0.5))
-        return string.format(L[texts[2]], yards, word, drop)
+        return string.format(T(texts[2]), yards, word, drop)
     end
-    return string.format(L[texts[1]], word, drop)
+    return string.format(T(texts[1]), word, drop)
 end
 
--- A turn hint: 1 left, -1 right.
+-- A turn hint: 1 left, -1 right. A gentle bend says the turn alone, in clock mode too (user
+-- 2026-10-01 after the first clock walk: a bend stays inside the piece's direction, the hour said
+-- with it is noise).
 function logic.turnText(turn)
     return turn > 0 and L["left"] or L["right"]
-end
-
--- A gentle bend's hint: the turn alone, in clock mode too (user 2026-10-01 after the first clock
--- walk: a bend stays inside the piece's direction, the hour said with it is noise).
-function logic.bendText(zone, turn, angle)
-    return logic.turnText(turn)
 end
 
 -- Guidance targets -------------------------------------------------------------------------------
@@ -262,7 +260,7 @@ function logic.footTarget(zone, x, y, square, prefer)
             kept = t
         end
     end
-    if kept and best ~= kept and best.d > kept.d - logic.GUIDE_STICK then
+    if kept and best ~= kept and logic.sticks(best.d, kept.d) then
         return kept
     end
     return best

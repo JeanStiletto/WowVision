@@ -43,20 +43,13 @@ function logic.stopAt(zone, x, y, rooms)
     return nil
 end
 
--- The compass indexes from the position toward where the vehicle of stop `i` will stand (the
--- nearest point of each of its segments), each once.
+-- The angles from the position toward where the vehicle of stop `i` will stand (the nearest point
+-- of each of its segments), each word once.
 function logic.stopDirections(zone, i, x, y)
     local item = { dirs = {} }
     for _, t in ipairs(zone._index.stops[i].targets) do
-        local x1, y1, x2, y2 = t[1], t[2], t[3], t[4]
-        local vx, vy = x2 - x1, y2 - y1
-        local ll = vx * vx + vy * vy
-        local u = 0
-        if ll > 0 then
-            u = math.max(0, math.min(1, ((x - x1) * vx + (y - y1) * vy) / ll))
-        end
-        local px, py = x1 + u * vx, y1 + u * vy
-        if (px - x) ^ 2 + (py - y) ^ 2 > 0.25 then
+        local px, py = logic.segmentPoint(x, y, t[1], t[2], t[3], t[4])
+        if logic.dist2(px, py, x, y) > 0.25 then
             logic.addDir(item, logic.bearingOf(px - x, py - y))
         end
     end

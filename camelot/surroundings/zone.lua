@@ -206,6 +206,42 @@ function logic.facingAxis(facing)
     return logic.bearingOf(math.cos(facing), math.sin(facing)) % 180
 end
 
+-- Geometry ---------------------------------------------------------------------------------------
+
+-- The distance between two points, and its square (for comparisons without the root).
+function logic.dist(ax, ay, bx, by)
+    return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
+end
+
+function logic.dist2(ax, ay, bx, by)
+    return (ax - bx) ^ 2 + (ay - by) ^ 2
+end
+
+-- The point of the segment (ax, ay)-(bx, by) nearest to (qx, qy): its x, y and the distance to it.
+function logic.segmentPoint(qx, qy, ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    local n = dx * dx + dy * dy
+    local t = n > 0 and math.max(0, math.min(1, ((qx - ax) * dx + (qy - ay) * dy) / n)) or 0
+    local px, py = ax + t * dx, ay + t * dy
+    return px, py, math.sqrt((px - qx) ^ 2 + (py - qy) ^ 2)
+end
+
+-- The point of a flat list {x1, y1, x2, y2, ...} nearest to (x, y): its distance, x and y, and the
+-- index of its x in the list; nil for an empty list.
+function logic.nearestOfPoints(points, x, y)
+    local best, bk = math.huge, nil
+    for k = 1, #points - 1, 2 do
+        local d = (points[k] - x) ^ 2 + (points[k + 1] - y) ^ 2
+        if d < best then
+            best, bk = d, k
+        end
+    end
+    if bk == nil then
+        return nil
+    end
+    return math.sqrt(best), points[bk], points[bk + 1], bk
+end
+
 -- The grid -----------------------------------------------------------------------------------------
 
 -- Row 0 lies at world x = zone.top (north), column 0 at world y = zone.left (west).
@@ -225,7 +261,7 @@ function logic.covers(zone, x, y)
     return logic.inGrid(zone, logic.cellOf(zone, x, y))
 end
 
--- The painted cell value of a grid cell (0 = no data): place id * 100 + direction code; where
+-- The painted cell value of a grid cell (0 = no data): place id * CODE + direction code; where
 -- floors stack, the level the export painted (mostly the lowest).
 function logic.paintedAtCell(zone, r, c)
     if not logic.inGrid(zone, r, c) then
@@ -332,7 +368,7 @@ function logic.nearestCell(zone, x, y, cells, reach, accept)
     for dr = -cells, cells do
         for dc = -cells, cells do
             local cx, cy = logic.cellCentre(zone, r0 + dr, c0 + dc)
-            local d = math.sqrt((cx - x) ^ 2 + (cy - y) ^ 2)
+            local d = logic.dist(cx, cy, x, y)
             if (reach == nil or d <= reach) and (best == nil or d < best) then
                 local v = logic.valueAtCell(zone, r0 + dr, c0 + dc)
                 if accept(v) then
@@ -344,8 +380,8 @@ function logic.nearestCell(zone, x, y, cells, reach, accept)
     return best, bx, by, bv
 end
 
--- The nearest cell within `reach` yards whose place kind is in `kinds`: distance and compass
--- index toward it (from the cell centres), or nil.
+-- The nearest cell within `reach` yards whose place kind is in `kinds`: distance and the angle
+-- toward it (from the cell centres), or nil.
 function logic.nearestOfKinds(zone, x, y, kinds, reach)
     local d, cx, cy = logic.nearestCell(zone, x, y, math.ceil(reach / zone.cell), reach, function(v)
         return kinds[logic.kindOf(zone, v)]
@@ -395,8 +431,6 @@ function logic.flood(zone, seeds, joins, visit, seen, breadthFirst)
     return seen
 end
 
--- The nearest of the records in `list` (each with x and y) within `reach` yards: index, distance,
--- compass index toward it, the record; or nil.
 -- yd; the target guided to last (`prefer`, its position) stays the target unless another is
 -- nearer by more than this (user 2026-10-01: on the Old Town square the guidance hopped between
 -- the stairs and a street beginning at about the same distance with every half step)
@@ -404,22 +438,37 @@ logic.GUIDE_STICK = 2
 
 -- Is point p the one at `prefer` {x, y} (within half a yard)?
 function logic.samePoint(p, prefer)
-    return prefer ~= nil and (p.x - prefer.x) ^ 2 + (p.y - prefer.y) ^ 2 <= 0.25
+    return prefer ~= nil and logic.dist2(p.x, p.y, prefer.x, prefer.y) <= 0.25
 end
 
-function logic.nearestPoint(list, x, y, reach, prefer)
-    local best, bestD = nil, reach
+-- The stick rule: does the target guided to last (at `keptD`) stay, against the nearest (at
+-- `bestD`)? Only a target nearer by more than GUIDE_STICK takes over.
+function logic.sticks(bestD, keptD)
+    return keptD ~= nil and bestD > keptD - logic.GUIDE_STICK
+end
+
+-- The nearest of the records in `list` (each with x and y) within `reach` yards, with the stick
+-- rule for the one at `prefer` {x, y}: index, distance, the angle toward it, the record; or nil.
+-- opts (optional): reachOf(p), a record's own reach instead of `reach`; skip(p), true for a record
+-- left out.
+function logic.nearestPoint(list, x, y, reach, prefer, opts)
+    local reachOf, skip = opts and opts.reachOf, opts and opts.skip
+    local best, bestD = nil, math.huge
     local kept, keptD = nil, nil
     for i, p in ipairs(list) do
-        local d = math.sqrt((p.x - x) ^ 2 + (p.y - y) ^ 2)
-        if d <= bestD then
-            best, bestD = i, d
-        end
-        if d <= reach and logic.samePoint(p, prefer) then
-            kept, keptD = i, d
+        if not (skip and skip(p)) then
+            local d = logic.dist(p.x, p.y, x, y)
+            if d <= (reachOf and reachOf(p) or reach) then
+                if d <= bestD then
+                    best, bestD = i, d
+                end
+                if logic.samePoint(p, prefer) then
+                    kept, keptD = i, d
+                end
+            end
         end
     end
-    if kept and best ~= kept and bestD > keptD - logic.GUIDE_STICK then
+    if kept and best ~= kept and logic.sticks(bestD, keptD) then
         best, bestD = kept, keptD
     end
     if best == nil then
@@ -659,7 +708,7 @@ function logic.unpack(zone, locale)
         local bearing = stride >= 4 and list[i + 3] or nil
         local twin = false
         for _, f in ipairs(ix.climbFeet) do
-            if f.value == value and (f.x - x) ^ 2 + (f.y - y) ^ 2 <= logic.FEET_APART ^ 2 then
+            if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
                 twin = true
             end
         end
@@ -730,8 +779,9 @@ function logic.unpack(zone, locale)
         ix.interiors[i] = { name = f[1], ox = f[2], oy = f[3], scale = f[4], m00 = f[5], m01 = f[6], m10 = f[7], m11 = f[8],
             city = f.c == 1 }
     end
-    ix.rooms = {}
+    ix.rooms, ix.roomIds = {}, {}
     for i, room in ipairs(zone.rooms or {}) do
+        ix.roomIds[i] = i
         -- axis: the way the room runs (an axis angle, 0..179) when it is long and narrow; winding: its
         -- floor winds up turning left (1) or right (-1); floor: sq yd; named: a name of its own (a shop);
         -- hallMap: the game calls the room outdoors (IsIndoors() false), the UI map one stands on in it
@@ -960,8 +1010,7 @@ function Entry:update(key, x, y)
     if key ~= self.candidate then
         self.candidate, self.walked, self.lastX, self.lastY = key, 0, x, y
     else
-        local dx, dy = x - self.lastX, y - self.lastY
-        self.walked = self.walked + math.sqrt(dx * dx + dy * dy)
+        self.walked = self.walked + logic.dist(x, y, self.lastX, self.lastY)
         self.lastX, self.lastY = x, y
     end
     local distance = self.distance

@@ -1392,7 +1392,7 @@ testRunner:addSuite("Surroundings", {
         logic.clock = false
         t:assertEqual(logic.sameDir(100, 110), true)        -- both east
         t:assertEqual(logic.wordSteps(100, 150), 1)         -- east, southeast
-        t:assertEqual(logic.finishText(logic.bendText(z, 1, 100)), "left")
+        t:assertEqual(logic.finishText(logic.turnText(1)), "left")
         t:assertEqual(logic.expandDirs(z, "fork, Test road <d120,45>"), "fork, Test road to the northeast and southeast")
         t:assertEqual(logic.finishText("no hours"), "no hours")
         if not ok then

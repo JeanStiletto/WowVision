@@ -23,6 +23,23 @@ end
 logic.DOOR_REACH = 3.0 -- yards from a doorway's centre within which a crossing counts
 logic.DOOR_HOLD = 4.0 -- ... within which the room entered through it holds (resolveRoom)
 
+-- Is the building-frame position (vx, vy) in the box at index i of a flat box list {x0, y0, x1,
+-- y1, ...}, widened by `margin` yards?
+local function inBox(b, i, vx, vy, margin)
+    return vx >= b[i] - margin and vx <= b[i + 2] + margin and vy >= b[i + 1] - margin and vy <= b[i + 3] + margin
+end
+
+-- Is the building-frame position in one of the room's floor boxes (widened by `margin`)?
+local function onFloor(room, vx, vy, margin)
+    local b = room.boxes
+    for i = 1, #b - 3, 4 do
+        if inBox(b, i, vx, vy, margin) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Did the player walk through a doorway of the current room between the previous position and
 -- this one? A door {a, b (rooms, 0 = outside), interior, x, y (centre), nx, ny (its plane's
 -- normal), side (the side of room a, 0 = a flat opening)}, in the building frame. Returns the room
@@ -38,7 +55,7 @@ function logic.crossedDoor(zone, current, px, py, x, y)
             local ax, ay = logic.toBuilding(interior, px, py)
             local bx, by = logic.toBuilding(interior, x, y)
             local near = function(u, v)
-                return (u - door.x) ^ 2 + (v - door.y) ^ 2 <= logic.DOOR_REACH * logic.DOOR_REACH
+                return logic.dist2(u, v, door.x, door.y) <= logic.DOOR_REACH * logic.DOOR_REACH
             end
             if near(ax, ay) or near(bx, by) then
                 local mine = current == door.a and door.side or -door.side
@@ -61,7 +78,7 @@ function logic.roomOutlineAt(zone, x, y)
         local o = room.outline
         if o then
             local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
-            if vx >= o[1] and vx <= o[3] and vy >= o[2] and vy <= o[4] then
+            if inBox(o, 1, vx, vy, 0) then
                 return id
             end
         end
@@ -69,27 +86,29 @@ function logic.roomOutlineAt(zone, x, y)
     return nil
 end
 
--- The rooms whose floor boxes contain the position (within `margin` yards).
-function logic.roomCandidates(zone, x, y, margin)
+-- The rooms whose floor boxes contain the position (within `margin` yards). `rooms` (optional): a
+-- list of room ids to look at instead of all.
+function logic.roomCandidates(zone, x, y, margin, rooms)
     margin = margin or 0.5
     local ix = zone._index
     local found, inFrame = {}, {}
-    for id, room in ipairs(ix.rooms) do
+    for _, id in ipairs(rooms or ix.roomIds) do
+        local room = ix.rooms[id]
         local pos = inFrame[room.interior]
         if pos == nil then
             pos = { logic.toBuilding(ix.interiors[room.interior], x, y) }
             inFrame[room.interior] = pos
         end
-        local vx, vy = pos[1], pos[2]
-        local b = room.boxes
-        for i = 1, #b - 3, 4 do
-            if vx >= b[i] - margin and vx <= b[i + 2] + margin and vy >= b[i + 1] - margin and vy <= b[i + 3] + margin then
-                found[#found + 1] = id
-                break
-            end
+        if onFloor(room, pos[1], pos[2], margin) then
+            found[#found + 1] = id
         end
     end
     return found
+end
+
+-- Is the room's floor (within `margin`) under the position?
+local function roomHolds(zone, id, x, y, margin)
+    return #logic.roomCandidates(zone, x, y, margin, { id }) > 0
 end
 
 logic.ROOM_SLACK = 2.0 -- yd; where no floor lies right under the player, a floor this close counts
@@ -110,9 +129,8 @@ function logic.inRoomArea(zone, roomId, x, y)
         end
         room.area = { x0, y0, x1, y1 }
     end
-    local a = room.area
     local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
-    return vx >= a[1] and vx <= a[3] and vy >= a[2] and vy <= a[4]
+    return inBox(room.area, 1, vx, vy, 0)
 end
 
 -- Do two rooms of one building differ only by their number ("tram tunnel 6", "tram tunnel 7")?
@@ -138,22 +156,23 @@ end
 -- where only another room's floor lies right under the player (Northshire Abbey 2026-10-01: on
 -- the stairs the gallery's floor box over them was the only one found a step after the door, so
 -- the stairs were lost and the bell tower's door, a door of the stairs, was never checked; the
--- stairs' floor begins 3 yd behind their door).
-function logic.resolveRoom(zone, x, y, current, px, py, byDoor)
-    local crossed = logic.crossedDoor(zone, current, px, py, x, y)
-    if crossed ~= nil then
+-- stairs' floor begins 3 yd behind their door). crossed (optional): the result of crossedDoor for
+-- this step, when the caller has it already (false: none crossed).
+function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed)
+    if crossed == nil then
+        crossed = logic.crossedDoor(zone, current, px, py, x, y)
+    end
+    if crossed then
         return crossed ~= 0 and crossed or nil
     end
     local cands = logic.roomCandidates(zone, x, y)
     if byDoor and current ~= nil then
-        for _, id in ipairs(logic.roomCandidates(zone, x, y, logic.ROOM_SLACK)) do
-            if id == current then
-                return current
-            end
+        if roomHolds(zone, current, x, y, logic.ROOM_SLACK) then
+            return current
         end
         for _, door in ipairs(zone._index.doorsOf[current] or {}) do
             local dx, dy = logic.doorWorld(zone, door)
-            if dx and (dx - x) ^ 2 + (dy - y) ^ 2 <= logic.DOOR_HOLD ^ 2 then
+            if dx and logic.dist2(dx, dy, x, y) <= logic.DOOR_HOLD ^ 2 then
                 return current
             end
         end
@@ -206,7 +225,7 @@ local function roomMiddle(room)
 end
 
 -- The direction of a doorway seen from a room: the way one passes through it leaving the room
--- (its plane's normal, away from the room's side), a compass index. Fixed per room and doorway,
+-- (its plane's normal, away from the room's side), an angle. Fixed per room and doorway,
 -- like the map: the auction house's way out is to the east from anywhere in the hall. Without a
 -- usable plane (a flat opening), the way from the room's middle to the doorway.
 function logic.doorwayDirection(zone, door, roomId)
@@ -241,6 +260,16 @@ end
 
 logic.ENTRANCE_MERGE = 4 -- yd; doorways of one building closer than this are one entrance
 
+-- Adds an entrance to the list unless one of the same text lies within ENTRANCE_MERGE of it.
+local function addEntrance(list, entrance)
+    for _, e in ipairs(list) do
+        if e.text == entrance.text and logic.dist2(e.x, e.y, entrance.x, entrance.y) < logic.ENTRANCE_MERGE ^ 2 then
+            return
+        end
+    end
+    list[#list + 1] = entrance
+end
+
 -- The entrances of the indoor layer: the doorways from a room it covers into a room it does not
 -- (a shop, a passage, stairs) or outside. Each as an entrance (see logic.entrances): a room with a
 -- name of its own (a shop, the bank) is "entrance of" it; another room is said by its name alone
@@ -266,19 +295,10 @@ local function layerEntrances(layer)
             end
             if text then
                 local x, y = logic.toWorld(interior, door.x, door.y)
-                local merged = false
-                for _, e in ipairs(list) do
-                    if e.text == text and (e.x - x) ^ 2 + (e.y - y) ^ 2 < logic.ENTRANCE_MERGE ^ 2 then
-                        merged = true
-                        break
-                    end
-                end
-                if not merged then
-                    list[#list + 1] = {
-                        x = x, y = y, text = text, building = text, plain = plain, wayOut = wayOut,
-                        inDir = logic.doorwayDirection(layer, door, hall),
-                    }
-                end
+                addEntrance(list, {
+                    x = x, y = y, text = text, building = text, plain = plain, wayOut = wayOut,
+                    inDir = logic.doorwayDirection(layer, door, hall),
+                })
             end
         end
     end
@@ -309,24 +329,15 @@ function logic.entrances(zone)
             if not room.entrance and room.name ~= interior.name then
                 text = text .. ", " .. room.name
             end
-            local merged = false
-            for _, e in ipairs(list) do
-                if e.text == text and (e.x - x) ^ 2 + (e.y - y) ^ 2 < logic.ENTRANCE_MERGE ^ 2 then
-                    merged = true
-                    break
-                end
-            end
-            if not merged then
-                local out = logic.doorwayDirection(zone, door, inside)
-                list[#list + 1] = { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 }
-            end
+            local out = logic.doorwayDirection(zone, door, inside)
+            addEntrance(list, { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 })
         end
     end
     ix.entrances = list
     return list
 end
 
--- The nearest entrance within `reach` yards: index, distance, compass index toward it, the entrance.
+-- The nearest entrance within `reach` yards: index, distance, the angle toward it, the entrance.
 function logic.nearestEntrance(zone, x, y, reach, prefer)
     return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer)
 end
@@ -386,7 +397,7 @@ function logic.roomDoorways(zone, roomId, opts)
         for _, door in ipairs(doors) do
             local dx, dy = logic.doorWorld(zone, door)
             if dx then
-                dist[door] = math.sqrt((dx - opts.x) ^ 2 + (dy - opts.y) ^ 2)
+                dist[door] = logic.dist(dx, dy, opts.x, opts.y)
                 ordered[#ordered + 1] = door
             end
         end
@@ -422,7 +433,7 @@ function logic.roomDoorways(zone, roomId, opts)
             local dir
             if fromPlayer then
                 local dx, dy = logic.doorWorld(zone, door)
-                if (dx - opts.x) ^ 2 + (dy - opts.y) ^ 2 >= logic.HERE ^ 2 then
+                if logic.dist2(dx, dy, opts.x, opts.y) >= logic.HERE ^ 2 then
                     dir = logic.bearingOf(dx - opts.x, dy - opts.y)
                 end
             else
@@ -443,27 +454,26 @@ function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer)
     if not logic.isBigRoom(zone, roomId) then
         return nil
     end
-    local best, bestDoor, bx, by = reach, nil, nil, nil
-    local kept, keptD, kx, ky = nil, nil, nil, nil
-    for _, door in ipairs(zone._index.doorsOf[roomId] or {}) do
-        local dx, dy = logic.doorWorld(zone, door)
-        if dx and door ~= skip then
-            local d = math.sqrt((dx - x) ^ 2 + (dy - y) ^ 2)
-            if d <= best then
-                best, bestDoor, bx, by = d, door, dx, dy
-            end
-            if d <= reach and logic.samePoint({ x = dx, y = dy }, prefer) then
-                kept, keptD, kx, ky = door, d, dx, dy
+    local ix = zone._index
+    -- the room's doorways in world yards, once
+    ix.doorPoints = ix.doorPoints or {}
+    local points = ix.doorPoints[roomId]
+    if points == nil then
+        points = {}
+        for _, door in ipairs(ix.doorsOf[roomId] or {}) do
+            local dx, dy = logic.doorWorld(zone, door)
+            if dx then
+                points[#points + 1] = { x = dx, y = dy, door = door }
             end
         end
+        ix.doorPoints[roomId] = points
     end
-    if kept and bestDoor ~= kept and best > keptD - logic.GUIDE_STICK then
-        best, bestDoor, bx, by = keptD, kept, kx, ky
-    end
-    if bestDoor == nil then
+    local opts = skip and { skip = function(p) return p.door == skip end } or nil
+    local _i, d, _dir, p = logic.nearestPoint(points, x, y, reach, prefer, opts)
+    if p == nil then
         return nil
     end
-    return best, bestDoor, bx, by, bestDoor.a == roomId and bestDoor.b or bestDoor.a
+    return d, p.door, p.x, p.y, p.door.a == roomId and p.door.b or p.door.a
 end
 
 -- Halls the game calls outdoors (IsIndoors() false, one may mount there): Ironforge's big halls,
@@ -491,17 +501,9 @@ function logic.inHall(zone, x, y, uiMap)
         return false
     end
     local ix = zone._index
-    local margin = logic.ROOM_SLACK
     for _, id in ipairs(ix.hallRooms) do
-        local room = ix.rooms[id]
-        if room.hallMap == uiMap then
-            local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
-            local b = room.boxes
-            for i = 1, #b - 3, 4 do
-                if vx >= b[i] - margin and vx <= b[i + 2] + margin and vy >= b[i + 1] - margin and vy <= b[i + 3] + margin then
-                    return true
-                end
-            end
+        if ix.rooms[id].hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
+            return true
         end
     end
     return false

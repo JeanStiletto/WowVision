@@ -99,10 +99,10 @@ local bendFrom = nil -- where the road led at the last message (radians), nil: t
 local bendWalked = 0 -- walked on the way since the last announcement or bend hint
 local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
 local aheadX, aheadY = nil, nil -- where it was said: walking far from there forgets it
--- Guidance: the target last said, the direction said, whether it was "at" it, when, and the
--- target last said by name
-local guide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- on foot
-local waterGuide = { key = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
+-- Guidance: the target last said (key and position), the direction said, whether it was "at"
+-- it, when, the target last said by name, and whether it was said briefly (a beacon led)
+local guide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, brief = nil } -- on foot
+local waterGuide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
 local bump = { ticks = 0, key = nil, free = 0, time = nil }
 local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
 -- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
@@ -131,7 +131,7 @@ local function updateHall(z, x, y, px, py)
     if logic.inHall(z, x, y, uiMap) then
         hallGap = 0
     elseif hallGap and px and logic.isHallMap(z, uiMap) then
-        hallGap = hallGap + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        hallGap = hallGap + logic.dist(x, y, px, py)
         if hallGap > HALL_GAP then
             hallGap = nil
         end
@@ -146,20 +146,6 @@ local function isInside()
     return IsIndoors() or hallGap ~= nil
 end
 
--- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
--- The place or room there is then said at once.
-local function forgetPlace()
-    outdoor:reset()
-    indoor:reset()
-    room, lastRoom, roomByDoor = nil, nil, false
-    wipeSet(high)
-    warnedEdges = {}
-    region, saidMouths = nil, {}
-    bendFrom, aheadKey, leftWay = nil, nil, nil
-    layerMode = false
-    inMoat = false
-end
-
 -- Forget the place on the ways (outdoors, or the indoor layer's): stepping between a room and the
 -- indoor layer says the new one at once.
 local function forgetWays()
@@ -167,6 +153,17 @@ local function forgetWays()
     indoor:reset()
     region, saidMouths = nil, {}
     bendFrom, aheadKey, leftWay = nil, nil, nil
+end
+
+-- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
+-- The place or room there is then said at once.
+local function forgetPlace()
+    forgetWays()
+    room, lastRoom, roomByDoor = nil, nil, false
+    wipeSet(high)
+    warnedEdges = {}
+    layerMode = false
+    inMoat = false
 end
 
 -- A way with centre lines (road, fork, crossing, city street or walk); with `bridge` also a bridge
@@ -301,7 +298,7 @@ end
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
 -- outdoors), s (swimming), g (ghost) and f with the facing in degrees, as one token ("isf270").
 local function logTrail(x, y)
-    if trailX and (x - trailX) ^ 2 + (y - trailY) ^ 2 < TRAIL_STEP * TRAIL_STEP then
+    if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
     end
     local log = activeLog()
@@ -457,7 +454,7 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         t = nil
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)
-    if t == nil or (passed and (t.x - passed.x) ^ 2 + (t.y - passed.y) ^ 2 <= PASSED_SAME ^ 2) then
+    if t == nil or (passed and logic.dist2(t.x, t.y, passed.x, passed.y) <= PASSED_SAME ^ 2) then
         guide.key = nil
         return
     end
@@ -508,7 +505,7 @@ local function notePassed(z, x, y)
     for _, door in ipairs(z._index.doors or {}) do
         local dx, dy = logic.doorWorld(z, door)
         if dx then
-            local d = (dx - x) ^ 2 + (dy - y) ^ 2
+            local d = logic.dist2(dx, dy, x, y)
             if d <= best then
                 best, bx, by = d, dx, dy
             end
@@ -531,8 +528,18 @@ end
 
 -- Forget the doorway or beginning passed once the player was farther than its guidance reach.
 local function updatePassed(x, y)
-    if passed and (x - passed.x) ^ 2 + (y - passed.y) ^ 2 > passed.reach ^ 2 then
+    if passed and logic.dist2(x, y, passed.x, passed.y) > passed.reach ^ 2 then
         passed = nil
+    end
+end
+
+-- Guidance to the nearest way out of the water (or, with `moat`, of a moat), when there is one.
+local function guideExit(z, x, y, moat)
+    local t = module.settings.guidance and logic.exitTarget(z, x, y, moat)
+    if t then
+        guideTo(z, waterGuide, t, x, y)
+    else
+        waterGuide.key = nil
     end
 end
 
@@ -540,12 +547,7 @@ end
 local function checkWater(z, x, y)
     warnedEdges = {}
     wipeSet(high)
-    local t = module.settings.guidance and logic.exitTarget(z, x, y)
-    if t then
-        guideTo(z, waterGuide, t, x, y)
-    else
-        waterGuide.key = nil
-    end
+    guideExit(z, x, y)
 end
 
 -- Drop edges: the one within reach ahead in the view first, else one in the path with its
@@ -565,7 +567,7 @@ local function checkEdges(z, x, y, px, py, rooms)
     end
     -- the way the player moves (not the facing: strafing and walking back count too)
     local vx, vy = nil, nil
-    local moved = px and math.sqrt((x - px) ^ 2 + (y - py) ^ 2) or 0
+    local moved = px and logic.dist(x, y, px, py) or 0
     if moved >= MOVE_MIN then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
@@ -650,7 +652,7 @@ local function checkBump(z, x, y, px, py, isIndoors)
         bump.ticks = 0
         return
     end
-    local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+    local moved = logic.dist(x, y, px, py)
     local walls = WowVision.base.navigation.walls
     if walls.severity ~= 1 or now - walls.severityAt > BUMP_FRESH then
         bump.ticks = 0
@@ -706,7 +708,7 @@ local function checkBend(z, x, y, px, py)
     -- only after walking on along the way: turning about on the spot, where several short
     -- lines meet (the foot of the griffon ramp: six hints in 40 s in a replay), says nothing
     if px then
-        bendWalked = bendWalked + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        bendWalked = bendWalked + logic.dist(x, y, px, py)
     end
     local dir, ahead = logic.wayAhead(z, x, y, facing, BEND_LOOK)
     if dir == nil then
@@ -721,8 +723,7 @@ local function checkBend(z, x, y, px, py)
         bendFrom = dir
     end
     if turn ~= 0 and logic.outdoorKey(z, ahead, key) == key and bendWalked >= BEND_WALK then
-        -- (dir is a facing-like angle: radians counter-clockwise; the words take degrees clockwise)
-        say(logic.bendText(z, turn, (360 - math.deg(dir)) % 360), "bend", x, y)
+        say(logic.turnText(turn), "bend", x, y)
         bendWalked = 0
     end
 end
@@ -741,11 +742,10 @@ local function checkAhead(z, x, y, px, py)
     if not logic.isWayKey(key) or px == nil or beaconGuides() then
         return
     end
-    if aheadKey and (x - aheadX) ^ 2 + (y - aheadY) ^ 2 > (logic.AHEAD_LOOK + 6) ^ 2 then
+    if aheadKey and logic.dist2(x, y, aheadX, aheadY) > (logic.AHEAD_LOOK + 6) ^ 2 then
         aheadKey = nil
     end
-    local moved = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
-    if moved < MOVE_MIN then
+    if logic.dist(x, y, px, py) < MOVE_MIN then
         return
     end
     local heading = math.atan2(y - py, x - px)
@@ -773,7 +773,7 @@ local function checkStop(z, x, y, px, py, rooms)
             stopSaid = i
         end
     elseif stopSaid and px then
-        stopOut = stopOut + math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+        stopOut = stopOut + logic.dist(x, y, px, py)
         if stopOut >= STOP_REARM then
             stopSaid = nil
         end
@@ -825,6 +825,109 @@ local function checkPlace(z, x, y, forced)
     end
 end
 
+-- In a big hall of the indoor layer: its pieces, as the city's streets; down in a moat its way out,
+-- as out of a canal (user 2026-09-29). `here`: the rooms the player may be in.
+local function updateLayer(z, layer, x, y, px, py, here)
+    if not layerMode then
+        layerMode = true
+        forgetWays()
+        notePassed(z, x, y)
+    end
+    lastRoom = room or lastRoom
+    local moat = updateMoat(layer, x, y)
+    if moat then
+        guide.key = nil
+        guideExit(layer, x, y, true)
+    else
+        waterGuide.key = nil
+        checkGuide(layer, x, y)
+    end
+    checkPlace(layer, x, y, moat)
+    checkAhead(layer, x, y, px, py)
+    checkStop(z, x, y, px, py, here)
+end
+
+-- Indoors: the room as far as known (switches at once; announced after the entry distance), the
+-- doorways of a big room, the indoor layer's edges and halls, the stops in the room.
+local function updateIndoors(z, x, y, px, py)
+    local before = room
+    local crossed = logic.crossedDoor(z, room, px, py, x, y)
+    local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false)
+    if found ~= nil then
+        if found ~= room then
+            roomByDoor = crossed ~= nil
+        end
+        room = found
+    end
+    if crossed ~= nil or (before ~= nil and room ~= before) then
+        notePassed(z, x, y)
+    end
+    local layer = logic.layer(z)
+    local here = roomsHere(z, x, y)
+    if layer then
+        -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
+        -- has), each in the room its floor belongs to: this room, or while it is unknown
+        -- (stacked floors) any room here
+        checkEdges(layer, x, y, px, py, here)
+    end
+    if layer and logic.inLayer(layer, room, x, y) then
+        updateLayer(z, layer, x, y, px, py, here)
+        return
+    end
+    if layerMode then
+        layerMode = false
+        forgetWays()
+        notePassed(z, x, y)
+    end
+    if room ~= entryRoom then
+        -- a new room: the doorway just walked through (a big room's, within reach)
+        entryRoom, entryDoor, entryAway = room, nil, false
+        if room then
+            local _d, door = logic.nearestDoorway(z, room, x, y, logic.DOOR_REACH + 1)
+            entryDoor = door
+        end
+    end
+    if indoor:update(room, x, y) then
+        local text = logic.roomText(z, room, lastRoom, true, x, y)
+        if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
+            -- the next numbered section of the same thing (tram tunnel 6, 7...): only logged
+            logEntry("room", text, x, y, { walked = round1(indoor.walked), same = true })
+        else
+            say(text, "room", x, y, indoor.walked)
+        end
+        lastRoom = room
+    end
+    -- only a big room guides to its doorways (a small one leaves the entrance guidance as it was)
+    if room and logic.isBigRoom(z, room) then
+        if entryDoor and not entryAway then
+            local dx, dy = logic.doorWorld(z, entryDoor)
+            entryAway = dx == nil or logic.dist2(dx, dy, x, y) > logic.GUIDE_REACH ^ 2
+        end
+        checkGuide(z, x, y, room, not entryAway and entryDoor or nil)
+    end
+    checkStop(z, x, y, px, py, here)
+end
+
+-- Outdoors: the drop edges and the guidance on foot, or while swimming the ways out of the water;
+-- the place, the next piece ahead on a way and its bends, the stops.
+local function updateOutdoors(z, x, y, px, py)
+    lastRoom = nil
+    if IsSwimming() then
+        guide.key = nil
+        checkWater(z, x, y)
+    else
+        waterGuide.key = nil
+        checkEdges(z, x, y, px, py)
+        checkGuide(z, x, y)
+    end
+    checkPlace(z, x, y)
+    checkAhead(z, x, y, px, py)
+    checkBend(z, x, y, px, py)
+    if not IsSwimming() then
+        checkStop(z, x, y, px, py, nil)
+    end
+end
+
 module:hasUpdate(function(self)
     local now = GetTime()
     if now - lastCheck < CHECK_INTERVAL then
@@ -866,101 +969,9 @@ module:hasUpdate(function(self)
     end
     checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
-        local before = room
-        local crossed = logic.crossedDoor(z, room, px, py, x, y)
-        local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor)
-        if found ~= nil then
-            if found ~= room then
-                roomByDoor = crossed ~= nil
-            end
-            room = found
-        end
-        if crossed ~= nil or (before ~= nil and room ~= before) then
-            notePassed(z, x, y)
-        end
-        local layer = logic.layer(z)
-        local here = roomsHere(z, x, y)
-        if layer then
-            -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
-            -- has), each in the room its floor belongs to: this room, or while it is unknown
-            -- (stacked floors) any room here
-            checkEdges(layer, x, y, px, py, here)
-        end
-        if layer and logic.inLayer(layer, room, x, y) then
-            -- a big hall: its pieces, as the city's streets
-            if not layerMode then
-                layerMode = true
-                forgetWays()
-                notePassed(z, x, y)
-            end
-            lastRoom = room or lastRoom
-            local moat = updateMoat(layer, x, y)
-            if moat then
-                -- down in a moat: its way out, as out of a canal (user 2026-09-29)
-                guide.key = nil
-                local t = module.settings.guidance and logic.exitTarget(layer, x, y, true)
-                if t then
-                    guideTo(layer, waterGuide, t, x, y)
-                else
-                    waterGuide.key = nil
-                end
-            else
-                waterGuide.key = nil
-                checkGuide(layer, x, y)
-            end
-            checkPlace(layer, x, y, moat)
-            checkAhead(layer, x, y, px, py)
-            checkStop(z, x, y, px, py, here)
-            return
-        end
-        if layerMode then
-            layerMode = false
-            forgetWays()
-            notePassed(z, x, y)
-        end
-        if room ~= entryRoom then
-            -- a new room: the doorway just walked through (a big room's, within reach)
-            entryRoom, entryDoor, entryAway = room, nil, false
-            if room then
-                local _d, door = logic.nearestDoorway(z, room, x, y, logic.DOOR_REACH + 1)
-                entryDoor = door
-            end
-        end
-        if indoor:update(room, x, y) then
-            local text = logic.roomText(z, room, lastRoom, true, x, y)
-            if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
-                -- the next numbered section of the same thing (tram tunnel 6, 7...): only logged
-                logEntry("room", text, x, y, { walked = round1(indoor.walked), same = true })
-            else
-                say(text, "room", x, y, indoor.walked)
-            end
-            lastRoom = room
-        end
-        -- only a big room guides to its doorways (a small one leaves the entrance guidance as it was)
-        if room and logic.isBigRoom(z, room) then
-            if entryDoor and not entryAway then
-                local dx, dy = logic.doorWorld(z, entryDoor)
-                entryAway = dx == nil or (dx - x) ^ 2 + (dy - y) ^ 2 > logic.GUIDE_REACH ^ 2
-            end
-            checkGuide(z, x, y, room, not entryAway and entryDoor or nil)
-        end
-        checkStop(z, x, y, px, py, here)
-        return
-    end
-    lastRoom = nil
-    if IsSwimming() then
-        guide.key = nil
-        checkWater(z, x, y)
+        updateIndoors(z, x, y, px, py)
     else
-        waterGuide.key = nil
-        checkEdges(z, x, y, px, py)
-        checkGuide(z, x, y)
-    end
-    checkPlace(z, x, y)
-    checkAhead(z, x, y, px, py)
-    checkBend(z, x, y, px, py)
-    if not IsSwimming() then
-        checkStop(z, x, y, px, py, nil)
+        updateOutdoors(z, x, y, px, py)
     end
 end)
 

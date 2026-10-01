@@ -36,11 +36,7 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
         local level = (lane.piece == 0 and not underHigh) or (lane.piece ~= 0 and on and on[lane.piece])
         if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level
             and (place == nil or logic.placeOf(lane.value) == place) then
-            local ax, ay, dx, dy = lane.x1, lane.y1, lane.x2 - lane.x1, lane.y2 - lane.y1
-            local n = dx * dx + dy * dy
-            local t = n > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / n)) or 0
-            local px, py = ax + t * dx, ay + t * dy
-            local d = math.sqrt((x - px) ^ 2 + (y - py) ^ 2)
+            local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             if best == nil or d < best then
                 best, bestLane, bx, by = d, lane, px, py
             end
@@ -112,13 +108,12 @@ local function directedLane(zone, x, y)
     return d, lane, px, py
 end
 
--- Which way to turn to face along the way here: the direction of its centre line over about 12 yd
--- around the nearest point (short stretches alone bend too much), taken the end nearer the
--- facing. `spokenAxis`: the axis angle the announcement says (0..179) or nil: a hint only
--- where the words cannot tell the player the facing is off, i.e. the facing points the same
--- compass way as that axis. Returns -1 (turn right), 1 (turn left), 0 (no turn needed), or nil
--- (no way with one direction here, or facing across it, crossing over).
-function logic.turnHint(zone, x, y, facing, spokenAxis)
+-- The way's direction here: from the nearest point (px, py) on the centre line of the way with one
+-- direction under the player, the line about TURN_SPAN yd before and after that point along the
+-- facing (short stretches alone bend too much; a city street's line has short bits at forks).
+-- Returns px, py and the offset (dx, dy) from the point behind to the point ahead, or nil (no such
+-- way here, or the line too short).
+local function lineHere(zone, x, y, facing)
     local d, _lane, px, py = directedLane(zone, x, y)
     if d == nil then
         return nil
@@ -129,6 +124,20 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
     local dx, dy = ax - bx, ay - by
     if dx * dx + dy * dy < MIN_SPAN * MIN_SPAN then
+        return nil
+    end
+    return px, py, dx, dy
+end
+
+-- Which way to turn to face along the way here: the direction of its centre line over about 12 yd
+-- around the nearest point (lineHere), taken the end nearer the facing. `spokenAxis`: the axis
+-- angle the announcement says (0..179) or nil: a hint only where the words cannot tell the player
+-- the facing is off, i.e. the facing points the same compass way as that axis. Returns -1 (turn
+-- right), 1 (turn left), 0 (no turn needed), or nil (no way with one direction here, or facing
+-- across it, crossing over).
+function logic.turnHint(zone, x, y, facing, spokenAxis)
+    local px, py, dx, dy = lineHere(zone, x, y, facing)
+    if px == nil then
         return nil
     end
     local diff = logic.degreesBetween(math.atan2(dy, dx), facing)
@@ -154,21 +163,11 @@ end
 -- (radians like a facing) and the cell value of the line there, or nil (no way with one direction
 -- here; facing across it).
 function logic.wayAhead(zone, x, y, facing, look)
-    local d, _lane, px, py = directedLane(zone, x, y)
-    if d == nil then
+    local px, py, dx, dy = lineHere(zone, x, y, facing)
+    if px == nil then
         return nil
     end
-    -- the way's direction here from the line about TURN_SPAN yd before and after the nearest point
-    -- (as turnHint), not from the one stretch there: a city street's line has short bits at forks
-    local fx, fy = math.cos(facing), math.sin(facing)
-    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
-    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
-    ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
-    local dx, dy = ax - bx, ay - by
     local n = math.sqrt(dx * dx + dy * dy)
-    if n < MIN_SPAN then
-        return nil
-    end
     dx, dy = dx / n, dy / n
     local along = dx * math.cos(facing) + dy * math.sin(facing)
     if math.abs(along) < math.cos(math.rad(logic.TURN_ACROSS)) then
@@ -178,7 +177,7 @@ function logic.wayAhead(zone, x, y, facing, look)
         dx, dy = -dx, -dy
     end
     local _a, aheadLane, ax, ay = logic.nearestLane(zone, px + dx * look, py + dy * look, look, logic.LANE_KINDS)
-    if aheadLane == nil or (ax - px) ^ 2 + (ay - py) ^ 2 < MIN_SPAN * MIN_SPAN then
+    if aheadLane == nil or logic.dist2(ax, ay, px, py) < MIN_SPAN * MIN_SPAN then
         return nil
     end
     return math.atan2(ay - py, ax - px), aheadLane.value
@@ -226,14 +225,14 @@ function logic.pieceAhead(zone, x, y, heading, current, look)
         if next == nil then
             return nil
         end
-        local step = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2)
+        local step = logic.dist(nx, ny, px, py)
         if step < 0.5 and next == last then
             -- the stretch's end: the one meeting it there (a corner), else the line ends
             _d, next, nx, ny = logic.nearestLane(zone, qx, qy, AHEAD_JOIN, logic.LANE_KINDS, last)
             if next == nil then
                 return nil
             end
-            step = math.sqrt((nx - px) ^ 2 + (ny - py) ^ 2)
+            step = logic.dist(nx, ny, px, py)
         end
         walked = walked + step
         if logic.outdoorKey(zone, next.value, currentKey) ~= currentKey then

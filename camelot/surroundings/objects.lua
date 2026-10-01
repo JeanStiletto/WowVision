@@ -15,7 +15,7 @@ function logic.objectPoint(o, x, y)
     local pu = math.max(-o.halfLength, math.min(o.halfLength, dx * ux + dy * uy))
     local pv = math.max(-o.halfWidth, math.min(o.halfWidth, -dx * uy + dy * ux))
     local qx, qy = o.x + pu * ux - pv * uy, o.y + pu * uy + pv * ux
-    return qx, qy, math.sqrt((x - qx) ^ 2 + (y - qy) ^ 2)
+    return qx, qy, logic.dist(x, y, qx, qy)
 end
 
 -- The object the player pushes against: moving (or trying to) along the unit vector (vx, vy), the
