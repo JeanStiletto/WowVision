@@ -463,20 +463,10 @@ end
 
 -- The value of the nearest moat cell within `reach` yards of the player, or nil.
 local function moatNear(layer, x, y, reach)
-    local n = math.ceil(reach / layer.cell)
-    local best, bestD = nil, nil
-    for dr = -n, n do
-        for dc = -n, n do
-            local v = logic.valueAt(layer, x + dr * layer.cell, y + dc * layer.cell)
-            if v and v ~= 0 and logic.kind(layer, logic.placeOf(v)) == "moat" then
-                local d = dr * dr + dc * dc
-                if bestD == nil or d < bestD then
-                    best, bestD = v, d
-                end
-            end
-        end
-    end
-    return best
+    local _d, _cx, _cy, v = logic.nearestCell(layer, x, y, math.ceil(reach / layer.cell), reach, function(value)
+        return value ~= 0 and logic.kindOf(layer, value) == "moat"
+    end)
+    return v
 end
 
 -- Down in a moat? On a moat cell the player is; once in it, still while a moat cell is near,
