@@ -308,8 +308,8 @@ function logic.entrances(zone)
 end
 
 -- The nearest entrance within `reach` yards: index, distance, compass index toward it, the entrance.
-function logic.nearestEntrance(zone, x, y, reach)
-    return logic.nearestPoint(logic.entrances(zone), x, y, reach)
+function logic.nearestEntrance(zone, x, y, reach, prefer)
+    return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer)
 end
 
 -- The text of a room: the interior's name when it changes, then the room.

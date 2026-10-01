@@ -256,13 +256,30 @@ end
 
 -- The nearest of the records in `list` (each with x and y) within `reach` yards: index, distance,
 -- compass index toward it, the record; or nil.
-function logic.nearestPoint(list, x, y, reach)
+-- yd; the target guided to last (`prefer`, its position) stays the target unless another is
+-- nearer by more than this (user 2026-10-01: on the Old Town square the guidance hopped between
+-- the stairs and a street beginning at about the same distance with every half step)
+logic.GUIDE_STICK = 2
+
+-- Is point p the one at `prefer` {x, y} (within half a yard)?
+function logic.samePoint(p, prefer)
+    return prefer ~= nil and (p.x - prefer.x) ^ 2 + (p.y - prefer.y) ^ 2 <= 0.25
+end
+
+function logic.nearestPoint(list, x, y, reach, prefer)
     local best, bestD = nil, reach
+    local kept, keptD = nil, nil
     for i, p in ipairs(list) do
         local d = math.sqrt((p.x - x) ^ 2 + (p.y - y) ^ 2)
         if d <= bestD then
             best, bestD = i, d
         end
+        if d <= reach and logic.samePoint(p, prefer) then
+            kept, keptD = i, d
+        end
+    end
+    if kept and best ~= kept and bestD > keptD - logic.GUIDE_STICK then
+        best, bestD = kept, keptD
     end
     if best == nil then
         return nil
