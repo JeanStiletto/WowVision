@@ -1320,7 +1320,10 @@ testRunner:addSuite("Surroundings", {
             -- a direction is its hour; several in one text get one "o'clock" at the end
             t:assertEqual(logic.finishText(logic.dirWord(z, 100)), "3")
             t:assertEqual(logic.finishText(logic.describe(z, 21110, true)), "shore of Test Lake, water at 4")
-            t:assertEqual(logic.finishText(logic.describe(z, 38110, true)), "bridge, 4 to 10 o'clock")
+            t:assertEqual(logic.finishText(logic.describe(z, 38110, true)), "bridge, 10 to 4 o'clock")
+            t:assertEqual(logic.finishText(logic.describe(z, 38090, true)), "bridge, 3 to 9 o'clock")
+            t:assertEqual(logic.finishText(logic.describe(z, 38030, true)), "bridge, 1 to 7 o'clock")
+            t:assertEqual(logic.finishText(logic.describe(z, 38170, true)), "bridge, 12 to 6 o'clock")
             t:assertEqual(logic.finishText(logic.itemsText(z, {
                 { label = "street of Test", class = "way", dirs = { 0, 270 } },
                 { label = "cliff edge", class = "cliff edge", dirs = { 100 } },
@@ -1342,16 +1345,14 @@ testRunner:addSuite("Surroundings", {
             t:assertEqual(logic.axisKey(100), 3)
             t:assertEqual(logic.axisKey(0), 0)
             t:assertEqual(logic.axisKey(170), 0)
-            -- a bend says where the way leads now
-            t:assertEqual(logic.finishText(logic.bendText(z, 1, 100)), "left, at 3")
-            -- a label with its directions as angles
-            t:assertEqual(logic.finishText(logic.expandDirs(z, "fork, Test road <d45,120>")), "fork, Test road at 2 and 4 o'clock")
+            -- a label with its directions as angles, clockwise from north
+            t:assertEqual(logic.finishText(logic.expandDirs(z, "fork, Test road <d120,45,350>")), "fork, Test road at 2, 4 and 12 o'clock")
         end)
         logic.clock = false
         t:assertEqual(logic.sameDir(100, 110), true)        -- both east
         t:assertEqual(logic.wordSteps(100, 150), 1)         -- east, southeast
         t:assertEqual(logic.finishText(logic.bendText(z, 1, 100)), "left")
-        t:assertEqual(logic.expandDirs(z, "fork, Test road <d45,120>"), "fork, Test road to the northeast and southeast")
+        t:assertEqual(logic.expandDirs(z, "fork, Test road <d120,45>"), "fork, Test road to the northeast and southeast")
         t:assertEqual(logic.finishText("no hours"), "no hours")
         if not ok then
             error(err, 0)
