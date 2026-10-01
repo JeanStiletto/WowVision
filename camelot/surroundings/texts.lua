@@ -243,10 +243,19 @@ end
 -- building, out of the water, on along the street): on the first naming only when it goes another
 -- way than the direction to the target ("entrance, 6 to the northeast" goes in northeast), at the
 -- target itself always.
+-- At an entrance or doorway only the way through ("in to the southwest"); while the guidance
+-- stays on one, a repeat is the yards and the direction alone ("7 southwest"): the first
+-- announcement named it (user 2026-10-01).
 function logic.guideText(zone, t, named, at)
+    local door = t.kind == "entrance" or t.kind == "doorway"
     local parts = {}
     if at then
+        if door and t.through then
+            return string.format(t.throughFormat, zone.compass[t.through])
+        end
         parts[1] = named and t.atName or t.at
+    elseif door and not named then
+        return string.format(L["%d %s"], math.floor(t.d + 0.5), zone.compass[t.dir])
     else
         parts[1] = named and t.name or t.short
         parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), zone.compass[t.dir])
