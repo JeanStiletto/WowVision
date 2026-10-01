@@ -2,13 +2,12 @@ local module = WowVision.base.windows.containers
 local L = module.L
 
 -- Retail item slot labels. Item buttons are pooled and carry their own bag
--- id (the combined frame mixes bags), so the bag comes from the button,
--- not its parent. Markers the game draws on the slot read as words: stack
--- count, quest item, new, and whether the slot fails the current bag
--- search. The quality colour follows the name.
+-- id (the combined frame mixes bags; bank buttons carry a bank tab), so
+-- the bag comes from the button, not its parent. Markers the game draws on
+-- the slot read as words: stack count, quest item, new, and whether the
+-- slot fails the current bag search. The quality colour follows the name.
 function module.getBagItemLabel(itemButton)
-    local bagID = itemButton.GetBagID ~= nil and itemButton:GetBagID() or itemButton:GetParent():GetID()
-    local slotID = itemButton:GetID()
+    local bagID, slotID = module.slotLocation(itemButton)
     local info = C_Container.GetContainerItemInfo(bagID, slotID)
     if info == nil then
         return L["Empty"]
