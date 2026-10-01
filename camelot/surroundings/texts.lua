@@ -200,6 +200,7 @@ local function climbTarget(zone, x, y, reach, prefer)
         key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and zone.dirs[math.floor(code / 10)] or nil,
+        bearing = f.bearing,
     }
 end
 
@@ -228,11 +229,16 @@ function logic.footTarget(zone, x, y, square, prefer)
 end
 
 logic.GUIDE_SIDE = 1.5 -- yd beside the line through a doorway before one is at it
+-- yd beside a climb's line at its foot (user 2026-10-01: the griffon ramp is 5 yd wide, its
+-- compass word 14 degrees off its line, so a start 1.5 yd to the wrong side ended over its rim
+-- within 8 yd; "make ramp entries more precise")
+logic.GUIDE_SIDE_CLIMB = 1.0
 
 -- Is the player at the target: within GUIDE_AT, and for a doorway (a target with the way
 -- through) no farther than GUIDE_SIDE beside the line through it, so "in to the southwest" does
 -- not lead into the wall beside the door (user 2026-10-01 at the Hall of Champions: "at the
--- entrance" 2.6 yd beside the doorway, then the wall three times).
+-- entrance" 2.6 yd beside the doorway, then the wall three times); at a climb's foot within
+-- GUIDE_SIDE_CLIMB of its line, which the data gives in degrees (finer than the compass word).
 function logic.atTarget(zone, t, x, y)
     if t.d > logic.GUIDE_AT then
         return false
@@ -240,8 +246,20 @@ function logic.atTarget(zone, t, x, y)
     if t.kind == "way" or not t.through then
         return true
     end
-    local fx, fy = logic.compassVector(t.through)
-    return math.abs((t.x - x) * fy - (t.y - y) * fx) <= logic.GUIDE_SIDE
+    local fx, fy, side
+    if t.kind == "climb" then
+        side = logic.GUIDE_SIDE_CLIMB
+        if t.bearing then
+            local a = math.rad(t.bearing)
+            fx, fy = math.cos(a), -math.sin(a)   -- 0 north (+x), 90 east (-y)
+        end
+    else
+        side = logic.GUIDE_SIDE
+    end
+    if not fx then
+        fx, fy = logic.compassVector(t.through)
+    end
+    return math.abs((t.x - x) * fy - (t.y - y) * fx) <= side
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
@@ -280,7 +298,7 @@ function logic.guideText(zone, t, named, at)
         end
         parts[1] = named and t.atName or t.at
     elseif door and not named then
-        return string.format(L["%d %s"], math.floor(t.d + 0.5), zone.compass[t.dir])
+        return string.format(L["%d %s"], math.max(1, math.floor(t.d + 0.5)), zone.compass[t.dir])
     else
         parts[1] = named and t.name or t.short
         parts[2] = string.format(L["%d to the %s"], math.floor(t.d + 0.5), zone.compass[t.dir])

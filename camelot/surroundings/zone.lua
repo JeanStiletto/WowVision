@@ -503,10 +503,14 @@ function logic.unpack(zone, locale)
     -- on the way, as entrances are
     -- (a climb with two line ends at its foot has two feet a yard or two apart: one target, else
     -- the guidance named the ramp to Thane's Boots anew at every step, replay of 2026-10-01)
+    -- x, y, the climb's cell value, and (climbFeetFields 4) the line's bearing up the climb in
+    -- degrees (0 north, clockwise): the way through at the foot, finer than the compass word
     ix.climbFeet = {}
     list = zone.climbFeet or {}
-    for i = 1, #list - 2, 3 do
+    local stride = zone.climbFeetFields or 3
+    for i = 1, #list - stride + 1, stride do
         local x, y, value = list[i], list[i + 1], list[i + 2]
+        local bearing = stride >= 4 and list[i + 3] or nil
         local twin = false
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and (f.x - x) ^ 2 + (f.y - y) ^ 2 <= logic.FEET_APART ^ 2 then
@@ -514,7 +518,7 @@ function logic.unpack(zone, locale)
             end
         end
         if not twin then
-            ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value }
+            ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = bearing }
         end
     end
 
