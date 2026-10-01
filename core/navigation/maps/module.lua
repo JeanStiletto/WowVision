@@ -323,6 +323,26 @@ function module:stopPath()
     self.beacon = nil
 end
 
+-- Shift-F12 ends whatever leads the way, a route or a straight beacon,
+-- the same as "/beacon stop" (the beacon alert falls silent with it).
+function module:cancelNavigation()
+    if not self:isGuiding() then
+        WowVision:speak(L["No active waypoint"])
+        return false
+    end
+    self:stopPath()
+    WowVision:speak(L["Beacon stopped"])
+    return true
+end
+
+module:registerBinding({
+    type = "Script",
+    key = "maps/cancelNavigation",
+    label = L["Cancel Navigation"],
+    inputs = { "SHIFT-F12" },
+    script = "/run WowVision.base.navigation.maps:cancelNavigation()",
+})
+
 function module:updatePath()
     if self.path then
         self.path:update()
