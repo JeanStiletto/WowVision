@@ -29,6 +29,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * fixed a number of issues with the options window introduced in WoW Forever.
 * Added support for the character pane, including the equipment manager.
 * Bags in individual mode: the bags that are still closed follow the open ones as a "Closed Bags" bar, so a bag can be opened from the keyboard (the backpack key opens only the backpack). The keyring reads as a bag with its own slot button.
+* Added support for the bank: pages and bank types as tabs, one tab stop per bank tab, the bank bag slots, search, sort, money and the purchase of the next bag.
 * Known issue: I tried to support nearby quests and quest givers, but the functions to retrieve this data appear to be bugged in the Forever client.
 * Known Issue: WowVision settings are not persisting across reloads or game restarts. This appears to be a bug with the Forever client. I recommend setting up a macro to use the new /wv speech command to quickly set your speech settings upon login or /reload.
 * Known Issue: Range readouts are sparse and probably broken. I haven't been able to test this properly yet.
