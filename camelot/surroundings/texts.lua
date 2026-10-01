@@ -142,15 +142,10 @@ function logic.turnText(turn)
     return turn > 0 and L["left"] or L["right"]
 end
 
--- A gentle bend's hint: the turn, and in clock mode where the way leads now ("left, at 3"; the
--- direction is an angle): with twelve hours a bend changes the hour more often than it changed
--- the compass word, and the player wants the new one said (user 2026-10-01).
+-- A gentle bend's hint: the turn alone, in clock mode too (user 2026-10-01 after the first clock
+-- walk: a bend stays inside the piece's direction, the hour said with it is noise).
 function logic.bendText(zone, turn, angle)
-    local text = logic.turnText(turn)
-    if logic.clock and angle then
-        text = text .. ", " .. string.format(logic.dirTemplate(zone, zone._toward) or "%s", logic.dirWord(zone, angle))
-    end
-    return text
+    return logic.turnText(turn)
 end
 
 -- Guidance targets -------------------------------------------------------------------------------
@@ -417,18 +412,12 @@ end
 -- ROAD_SIDE_REACH, off a way; announcements only on stepping off one) and the cliffs and water
 -- near (not while `opts.swimming`). opts.cut: an announcement (see the top). Returns the text, and
 -- on a square its region and the set of its mouths said now.
-function logic.spotText(zone, x, y, value, previous, opts)
+local function spotBody(zone, x, y, value, previous, opts)
     local text = logic.describe(zone, value, true)
     if text == nil then
         return nil
     end
     local kind = logic.kindOf(zone, value)
-    if opts.facing and logic.LANE_KINDS[kind] then
-        local hint = logic.turnHint(zone, x, y, opts.facing, logic.axisOf(zone, value))
-        if hint and hint ~= 0 then
-            text = text .. ", " .. logic.turnText(hint)
-        end
-    end
     if logic.isAroundPlace(zone, value) then
         -- (a square beside a way decided by its centre line may lie off the player's own cell)
         local region = logic.regionAt(zone, x, y)
@@ -469,6 +458,24 @@ function logic.spotText(zone, x, y, value, previous, opts)
         text = text .. ", " .. near
     end
     return text
+end
+
+-- The spot text (spotBody) with the turn hint last, after the description is complete and its
+-- "o'clock" placed ("street, 10 to 4 o'clock, left"; the hint stood inside the text and the
+-- "o'clock" landed after it, user 2026-10-01).
+function logic.spotText(zone, x, y, value, previous, opts)
+    local text, region, said = spotBody(zone, x, y, value, previous, opts)
+    if text == nil then
+        return nil
+    end
+    local kind = logic.kindOf(zone, value)
+    if opts.facing and logic.LANE_KINDS[kind] then
+        local hint = logic.turnHint(zone, x, y, opts.facing, logic.axisOf(zone, value))
+        if hint and hint ~= 0 then
+            text = logic.finishText(text) .. ", " .. logic.turnText(hint)
+        end
+    end
+    return text, region, said
 end
 
 -- A room: its name (with the building's when it changes), the way it runs when it is long and

@@ -126,10 +126,18 @@ function logic.sameAxis(a, b)
 end
 
 -- The spoken words of an axis angle: "north to south" (zone.spokenAxes in the client's language),
--- in clock mode both hours, "12 to 6".
+-- in clock mode both hours, the one nearer 12 first as the compass words put the northern end
+-- first ("10 to 4" for northwest to southeast, "3 to 9" for east to west; user 2026-10-01).
 function logic.axisWords(zone, angle)
     if logic.clock then
-        return string.format(L["%s to %s"], logic.dirWord(zone, angle), logic.dirWord(zone, angle + 180))
+        local a, b = logic.hourOf(angle), logic.hourOf(angle + 180)
+        local function fromNorth(h)
+            return math.min(math.abs(h - 12), h)
+        end
+        if fromNorth(b) < fromNorth(a) or (fromNorth(b) == fromNorth(a) and b < a) then
+            a, b = b, a
+        end
+        return string.format(L["%s to %s"], logic.dirWord(zone, a * 30), logic.dirWord(zone, b * 30))
     end
     local i = logic.axisKey(angle) + 1
     if zone.spokenAxes then
@@ -173,9 +181,15 @@ function logic.expandDirs(zone, text)
     end
     local template = logic.dirTemplate(zone, zone._toward) or "%s"
     return (text:gsub("<d([%d,]+)>", function(list)
-        local words = {}
+        -- clockwise from north ("12, 2, 4 and 7"), not in the data's order
+        local angles = {}
         for a in list:gmatch("%d+") do
-            words[#words + 1] = logic.dirWord(zone, tonumber(a))
+            angles[#angles + 1] = tonumber(a)
+        end
+        table.sort(angles)
+        local words = {}
+        for _, a in ipairs(angles) do
+            words[#words + 1] = logic.dirWord(zone, a)
         end
         return string.format(template, logic.joinWords(words))
     end))
