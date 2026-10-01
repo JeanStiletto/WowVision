@@ -560,7 +560,7 @@ local function checkEdges(z, x, y, px, py, rooms)
         i = nil
     end
     if i then
-        local text = logic.edgeText(z, i, along)
+        local text = logic.edgeText(z, i, along, x, y)
         local now = GetTime()
         if text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
             say(text, "edge", x, y)
@@ -1057,6 +1057,18 @@ function module:describeAround()
     local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
     if stop then
         text = text .. ", " .. logic.stopText(z, stop, x, y)
+    end
+    -- a drop or water edge within reach, or ahead in the line of the facing (user's walk
+    -- 2026-10-01: 1.4 yd from the canal the key said only the walk's name, then the fall)
+    if not isInside() then
+        local facing = GetPlayerFacing()
+        local i, along = logic.nearestEdge(z, x, y, EDGE_REACH, high, facing), nil
+        if i == nil and facing then
+            i, along = logic.edgeAhead(z, x, y, math.cos(facing), math.sin(facing), EDGE_LOOK, high)
+        end
+        if i then
+            text = text .. ", " .. logic.edgeText(z, i, along, x, y)
+        end
     end
     say(text, "around", x, y)
 end

@@ -277,18 +277,59 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         logic.unpack(z)
         t:assertEqual(logic.laneValue(z, 94, 46, 211, false), 211)
-        -- 4.5 yd off toward the square: the square
+        -- 4.5 yd off toward the square, still on a cell of the walk: the walk goes on, the line
+        -- did not decide (user 2026-10-01: "I walk up a whatever and am on it")
         local v, decided = logic.laneValue(z, 94, 50.5, 211, true)
+        t:assertEqual(v, 211)
+        t:assertEqual(decided, false)
+        -- 8.5 yd off, on the square's cells: the square
+        v, decided = logic.laneValue(z, 94, 54.5, 100, true)
         t:assertEqual(v, 100)
         t:assertEqual(decided, true)
         -- 4.5 yd off toward the water: nothing beside the walk there, it stays the walk (the grid)
         v, decided = logic.laneValue(z, 94, 41.5, 211, true)
         t:assertEqual(v, 211)
         t:assertEqual(decided, false)
-        -- the square counts until the walk's line is near
-        t:assertEqual(logic.laneValue(z, 94, 49, 211, false), 100)
+        -- from the square, 3 yd off the line on the walk's cells: the walk's cell, but not by the
+        -- line (the entry distance still counts before it is said)
+        v, decided = logic.laneValue(z, 94, 49, 211, false)
+        t:assertEqual(v, 211)
+        t:assertEqual(decided, false)
         -- only road lines when asked for roads
         t:assertEqual(logic.nearestLane(z, 94, 46, 12, { road = true }), nil)
+    end,
+
+    ["a stretch's width per side: a wall on one side no longer narrows the other"] = function(t)
+        local z = newWalkZone()
+        -- the walk's line runs south along y = 46; left of that direction is east (y below 46):
+        -- enter 2, leave 4 there; right (west) enter 1.5, leave 3; the cells west of y = 48 square
+        z.grid = { "100*3,211*2,0*2", "100*3,211*2,0*2", "100*3,211*2,0*2", "100*3,211*2,0*2" }
+        z.laneFields = 10
+        z.lanes = { 100, 46, 84, 46, 211, 20, 40, 15, 30, 0 }
+        logic.unpack(z)
+        local _d, lane = logic.nearestLane(z, 94, 42)
+        t:assertEqual(logic.laneSide(lane, 94, 42), 1)
+        t:assertEqual(logic.laneSide(lane, 94, 50), 2)
+        local enter, leave = logic.laneWidths(lane, 94, 42)
+        t:assertEqual(enter, 2)
+        t:assertEqual(leave, 4)
+        enter, leave = logic.laneWidths(lane, 94, 50)
+        t:assertEqual(enter, 1.5)
+        t:assertEqual(leave, 3)
+        -- 3.5 yd off: on the walk to the east (the line decided), off it to the west
+        local v, decided = logic.laneValue(z, 94, 42.5, 211, true)
+        t:assertEqual(v, 211)
+        t:assertEqual(decided, true)
+        v, decided = logic.laneValue(z, 94, 49.5, 100, true)
+        t:assertEqual(v, 100)
+        t:assertEqual(decided, true)
+        -- data with one width per stretch (7 or 8 fields) counts it on both sides
+        z = newWalkZone()
+        logic.unpack(z)
+        _d, lane = logic.nearestLane(z, 94, 50)
+        enter, leave = logic.laneWidths(lane, 94, 50)
+        t:assertEqual(enter, 2)
+        t:assertEqual(leave, 4)
     end,
 
     ["the road centre line decides when the road counts, with a gap between on and off"] = function(t)
@@ -296,11 +337,12 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z)
         -- on the line
         t:assertEqual(logic.laneValue(z, 94, 48, 211, false), 211)
-        -- 3 yd off, on the grid's road cells: not yet on the road (the forest beside it) ...
+        -- 3 yd off, on the grid's road cells: the road's cell, but not decided by the line (the
+        -- entry distance counts before it is said; before 2026-10-01 the forest beside it) ...
         local v, decided = logic.laneValue(z, 94, 51, 211, false)
-        t:assertEqual(v, 100)
-        t:assertEqual(decided, true)
-        -- ... but still on it when already there
+        t:assertEqual(v, 211)
+        t:assertEqual(decided, false)
+        -- ... and on it by the line when already there
         t:assertEqual(logic.laneValue(z, 94, 51, 211, true), 211)
         -- 5 yd off: off the road even from on it
         t:assertEqual(logic.laneValue(z, 94, 53, 100, true), 100)
@@ -917,6 +959,17 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.edgeText(z, 2, 7.6), "8 south, drop 12")
     end,
 
+    ["an edge with a depth per point says the depth at the point nearest the player"] = function(t)
+        local z = newZone()
+        -- the wall-walk's edge: 3 yd deep at its first point (81, 14), 12 at the second (81, 12)
+        z.edges[2].d = { 3, 12 }
+        logic.unpack(z)
+        t:assertEqual(logic.edgeText(z, 2, nil, 82, 14.5), "south, drop 3")
+        t:assertEqual(logic.edgeText(z, 2, 7.6, 82, 11.5), "8 south, drop 12")
+        -- without the player's position the edge's one value
+        t:assertEqual(logic.edgeText(z, 2), "south, drop 12")
+    end,
+
     ["guidance names a target once, and the way through only where it differs"] = function(t)
         local z = newZone()
         logic.unpack(z)
@@ -1021,6 +1074,18 @@ testRunner:addSuite("Surroundings", {
         logic.updateHigh(z, high, 90, 58)
         t:assertNil(high[1])
         t:assertEqual(logic.valueAt(z, 90, 50), 211)
+        -- a cell of its footprint painted with another place and not stacked under it is beside
+        -- the piece, not on it (the bay beside the griffon ramp): with the walk (place 2) among its
+        -- floor the player stays on it there, with the square alone not
+        z.pieceCells = { 2, 2, 1, 2, 3, 1, 2, 4, 1 }
+        logic.pack(z)
+        logic.unpack(z)
+        logic.setOn(z, high)
+        logic.updateHigh(z, high, 90, 50)
+        t:assertEqual(high[1], true)
+        logic.updateHigh(z, high, 90, 42)
+        t:assertEqual(high[1], true)
+        high[1] = nil
         -- a step onto it counts only from a cell painted with its own floor: with the square
         -- (place 1) as its floor, the walk's cell is not
         z.piecePlaces = { 1, 1 }
@@ -1028,6 +1093,9 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z)
         logic.setOn(z, high)
         logic.updateHigh(z, high, 90, 50)
+        t:assertNil(high[1])
+        high[1] = true
+        logic.updateHigh(z, high, 90, 42)
         t:assertNil(high[1])
     end,
 

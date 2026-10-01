@@ -24,6 +24,8 @@ end
 -- stepped onto from the ground counts (the places lie about 2 yd apart along the step's line; 2.5
 -- yd around the player counted a bay 2 yd beside the griffon ramp as the ramp, "8 deep" there)
 logic.ACCESS_REACH = 1.5
+-- place kinds painted over a raised piece's own floor that keep the player on it
+local KEEP_ON = { fork = true, crossing = true, bridge = true }
 logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming out of it
 
 -- The distance from (qx, qy) to the segment (ax, ay)-(bx, by).
@@ -45,13 +47,29 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local changed = false
+    local painted = logic.placeOf(logic.paintedAtCell(zone, r, c))
+    local paintedKind = painted ~= 0 and logic.kind(zone, painted) or nil
     for piece in pairs(on) do
-        if not logic.nearCell(zone, ix.pieces, r, c, piece) then
+        local stays = logic.nearCell(zone, ix.pieces, r, c, piece)
+        -- on its footprint but on a cell painted with another place (not a fork or bridge on the
+        -- piece) that is not stacked under it, the player is beside the piece, not on it: the bay
+        -- beside the griffon ramp's foot is a dead end's cells, the ramp's floor the ramp's and its
+        -- street's (the user stood in the bay counted on the ramp for two minutes, hearing the
+        -- ramp's edges and the level up on it, 2026-10-01)
+        local own = ix.piecePlaces and ix.piecePlaces[piece]
+        if stays and own and painted ~= 0 and not own[painted] and not KEEP_ON[paintedKind] then
+            stays = false
+            for _, a in ipairs(ix.stacked and ix.stacked[r * zone.cols + c] or {}) do
+                if a.piece == piece then
+                    stays = true
+                end
+            end
+        end
+        if not stays then
             on[piece] = nil
             changed = true
         end
     end
-    local painted = logic.placeOf(logic.paintedAtCell(zone, r, c))
     local n = math.ceil(logic.ROOMS_REACH / zone.cell)
     for dr = -n, n do
         for dc = -n, n do

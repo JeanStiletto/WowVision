@@ -7,9 +7,6 @@
 local logic = WowVision.surroundingsLogic
 
 local LANE_KEEP = { bridge = true } -- places a lane never replaces
--- yd; looking outward from the player for what is beside the way (12 announced a square 10 yd away
--- from the middle of a canal street, Stormwind 2026-09-29)
-local BESIDE_STEP, BESIDE_REACH = 2, 6
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
@@ -54,39 +51,43 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip)
     return best, bestLane, bx, by
 end
 
+-- Which side of a stretch the player is on: 1 left of its direction (x1 to x2), 2 right.
+function logic.laneSide(lane, x, y)
+    local cross = (lane.x2 - lane.x1) * (y - lane.y1) - (lane.y2 - lane.y1) * (x - lane.x1)
+    return cross >= 0 and 1 or 2
+end
+
+-- A stretch's enter and leave distances on the player's side (the data measures each side on
+-- its own: a wall on one side no longer narrows the other).
+function logic.laneWidths(lane, x, y)
+    if logic.laneSide(lane, x, y) == 1 then
+        return lane.enter, lane.leave
+    end
+    return lane.enter2 or lane.enter, lane.leave2 or lane.leave
+end
+
 -- The place value near a way with a centre line: `value` is the grid's, `onWay` whether the player
 -- is on a way now (then the leave distance counts, else the enter distance). On the way: the
--- lane's value; off it, on the grid's cells of a way: the place beside it on the player's side
--- (outward from the line), for a road also the nearest place that is no road. Returns the value
--- and whether a lane decided it (false: no centre line near, or nothing beside the way, as along
--- a canal walk's water side: the grid as it is).
+-- lane's value. Off it the cell under the player decides (user 2026-10-01: "I walk up a whatever
+-- and am on it"): a cell of a way goes on as that way (the ramp cell beside the street's line,
+-- the wide sloped street beyond its narrow lane), any other cell is the place beside the way.
+-- (Before: outward from the line, the first place that is no way within 6 yd, which said "Trade
+-- District, street to the south" while the player stood on the slope's floor.) Returns the value
+-- and whether a lane decided it (false: no centre line near, or a way's cell off the line).
 function logic.laneValue(zone, x, y, value, onWay)
     local kind = logic.kindOf(zone, value)
     if LANE_KEEP[kind] then
         return value, false
     end
-    local d, lane, px, py = logic.nearestLane(zone, x, y)
+    local d, lane = logic.nearestLane(zone, x, y)
     if d == nil then
         return value, false
     end
-    if d <= (onWay and lane.leave or lane.enter) then
+    local enter, leave = logic.laneWidths(lane, x, y)
+    if d <= (onWay and leave or enter) then
         return lane.value, true
     end
-    if not logic.LANE_KINDS[kind] then
-        return value, true
-    end
-    -- beside the way: outward from the line through the player, the first place that is no way;
-    -- with none within reach the way goes on (roads and streets alike, user 2026-10-01: roads
-    -- also looked 3 cells around for any place that is no road and left the road from deep
-    -- inside its cells, "group of trees, road to the east" every 70 yd on the Goldshire road)
-    local ux, uy = (x - px) / d, (y - py) / d
-    for step = 0, BESIDE_REACH, BESIDE_STEP do
-        local v = logic.valueAt(zone, x + ux * step, y + uy * step)
-        if v ~= 0 and not logic.LANE_KINDS[logic.kindOf(zone, v)] then
-            return v, true
-        end
-    end
-    return value, false
+    return value, not logic.LANE_KINDS[kind]
 end
 
 logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
