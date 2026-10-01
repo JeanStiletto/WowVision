@@ -738,7 +738,8 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.resolveRoom(z, 5, 7, 1, 5, 3), 2)             -- up the stairs through their door
         t:assertEqual(logic.resolveRoom(z, 7.5, 5, 2, 5, 5), 1)           -- a step on: only the common room's floor
         t:assertEqual(logic.resolveRoom(z, 7.5, 5, 2, 5, 5, true), 2)     -- ... but entered by the door: the stairs hold
-        t:assertEqual(logic.resolveRoom(z, 9, 5, 2, 7.5, 5, true), 1)     -- 3 yd off their floor: left them
+        t:assertEqual(logic.resolveRoom(z, 9, 5, 2, 7.5, 5, true), 2)     -- 3 yd off their floor, 4 from their door: still held
+        t:assertEqual(logic.resolveRoom(z, 5, 9.5, 2, 5, 8.5, true), 1)   -- beyond both (the back room door is at x 10.5): left them
         t:assertEqual(logic.resolveRoom(z, 15, 5, 1, 14, 5, true), 3)     -- holding never blocks a clear room elsewhere
         t:assertEqual(logic.resolveRoom(z, 5, 3, 2, 5, 7, true), 1)       -- a doorway crossing still wins
     end,

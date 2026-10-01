@@ -21,6 +21,7 @@ function logic.toWorld(frame, vx, vy)
 end
 
 logic.DOOR_REACH = 3.0 -- yards from a doorway's centre within which a crossing counts
+logic.DOOR_HOLD = 4.0 -- ... within which the room entered through it holds (resolveRoom)
 
 -- Did the player walk through a doorway of the current room between the previous position and
 -- this one? A door {a, b (rooms, 0 = outside), interior, x, y (centre), nx, ny (its plane's
@@ -133,10 +134,11 @@ end
 -- the candidates (user 2026-09-29: riding the tram over its pit, the tunnel floor runs 1.4 yd to the
 -- side of the car; leaving the station into the tunnel's area is enough). px, py: the previous
 -- position (optional). byDoor: the current room was entered through one of its doorways; it then
--- holds as long as its floor is within ROOM_SLACK, even where only another room's floor lies right
--- under the player (Northshire Abbey 2026-10-01: on the stairs the gallery's floor box over them
--- was the only one found a step after the door, so the stairs were lost and the bell tower's door,
--- a door of the stairs, was never checked).
+-- holds as long as its floor is within ROOM_SLACK or one of its doorways within DOOR_HOLD, even
+-- where only another room's floor lies right under the player (Northshire Abbey 2026-10-01: on
+-- the stairs the gallery's floor box over them was the only one found a step after the door, so
+-- the stairs were lost and the bell tower's door, a door of the stairs, was never checked; the
+-- stairs' floor begins 3 yd behind their door).
 function logic.resolveRoom(zone, x, y, current, px, py, byDoor)
     local crossed = logic.crossedDoor(zone, current, px, py, x, y)
     if crossed ~= nil then
@@ -146,6 +148,12 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor)
     if byDoor and current ~= nil then
         for _, id in ipairs(logic.roomCandidates(zone, x, y, logic.ROOM_SLACK)) do
             if id == current then
+                return current
+            end
+        end
+        for _, door in ipairs(zone._index.doorsOf[current] or {}) do
+            local dx, dy = logic.doorWorld(zone, door)
+            if dx and (dx - x) ^ 2 + (dy - y) ^ 2 <= logic.DOOR_HOLD ^ 2 then
                 return current
             end
         end
