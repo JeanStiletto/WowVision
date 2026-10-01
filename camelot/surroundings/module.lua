@@ -389,7 +389,8 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local named = g.named ~= t.key
-    if t.d <= logic.GUIDE_AT then
+    g.x, g.y = t.x, t.y
+    if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
             say(logic.guideText(z, t, named, true), t.kind, x, y)
             g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, true, now, t.key
@@ -418,7 +419,7 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     if roomId then
         t = logic.roomDoorTarget(z, roomId, x, y, skipDoor)
     else
-        t = logic.footTarget(z, x, y, region)
+        t = logic.footTarget(z, x, y, region, guide.key and guide.x and { x = guide.x, y = guide.y } or nil)
     end
     -- not the beginning of the way the player is on (stepping out of a street onto its square)
     if t and t.kind == "way" and logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name then
@@ -493,7 +494,7 @@ end
 local function notePassedBeginning(z, x, y, square, wayKey)
     local _i, _d, _dir, b = logic.nearestBeginning(z, square, x, y, logic.GUIDE_REACH)
     if b and b.label == logic.keyLabel(z, wayKey) then
-        passed = { x = b.x, y = b.y, reach = logic.GUIDE_REACH + b.span / 2 }
+        passed = { x = b.x, y = b.y, reach = logic.beginningReach(logic.GUIDE_REACH, b) }
     end
 end
 

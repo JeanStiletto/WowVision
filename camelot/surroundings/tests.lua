@@ -984,6 +984,35 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, true, false), "way out of the water, 10 to the east, out to the north")
     end,
 
+    ["at a doorway only in front of it: beside the door the entrance is still guided to"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        -- the inn's door at (0, 5), one goes in toward the north: 2 yd south of it, in line
+        local target = logic.footTarget(z, 2, 5)
+        t:assertEqual(target.kind, "entrance")
+        t:assertEqual(logic.atTarget(z, target, 2, 5), true)
+        -- 2.7 yd away but 2.5 yd beside the line through the door: not at it
+        target = logic.footTarget(z, 1, 7.5)
+        t:assertEqual(logic.atTarget(z, target, 1, 7.5), false)
+        t:assertEqual(logic.guideText(z, target, false, false), "entrance, 3 to the east")
+    end,
+
+    ["the guidance target stays unless another is clearly nearer"] = function(t)
+        local list = { { x = 0, y = 0 }, { x = 10, y = 0 } }
+        -- nearer to the second by 1 yd, the first guided to last: the first stays
+        local i = logic.nearestPoint(list, 5.5, 0, 20, { x = 0, y = 0 })
+        t:assertEqual(i, 1)
+        -- nearer by 3 yd: the second
+        i = logic.nearestPoint(list, 6.5, 0, 20, { x = 0, y = 0 })
+        t:assertEqual(i, 2)
+        -- without a last target the nearest
+        i = logic.nearestPoint(list, 5.5, 0, 20)
+        t:assertEqual(i, 2)
+        -- the reach plus half an opening, capped: a 30 yd wide opening from 15 yd, not 23
+        t:assertEqual(logic.beginningReach(8, { span = 30 }), 15)
+        t:assertEqual(logic.beginningReach(8, { span = 10 }), 13)
+    end,
+
     ["a way out of the water onto floor that joins nothing says it leads to a dead end"] = function(t)
         local z = newZone()
         z.deadExits = { 1 }

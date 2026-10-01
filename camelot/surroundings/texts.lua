@@ -132,8 +132,8 @@ local function doorwayTarget(key, d, dir, x, y, label, through)
     }
 end
 
-local function entranceTarget(zone, x, y, reach)
-    local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach)
+local function entranceTarget(zone, x, y, reach, prefer)
+    local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer)
     if i == nil then
         return nil
     end
@@ -164,12 +164,12 @@ end
 
 -- Where a street (road, bridge, canal walk) begins on the square the player is on (or, just off
 -- it, `square`); streets that run along the square's side are no target (see wayBeginnings).
-local function beginningTarget(zone, x, y, reach, square)
+local function beginningTarget(zone, x, y, reach, square, prefer)
     square = logic.regionAt(zone, x, y) or square
     if square == nil then
         return nil
     end
-    local i, d, dir, b = logic.nearestBeginning(zone, square, x, y, reach)
+    local i, d, dir, b = logic.nearestBeginning(zone, square, x, y, reach, prefer)
     if i == nil then
         return nil
     end
@@ -184,14 +184,39 @@ local function beginningTarget(zone, x, y, reach, square)
     }
 end
 
--- The guidance target on foot: the nearest entrance or street beginning within reach.
-function logic.footTarget(zone, x, y, square)
-    local t = entranceTarget(zone, x, y, GUIDE_REACH)
-    local w = beginningTarget(zone, x, y, GUIDE_REACH, square)
+-- The guidance target on foot: the nearest entrance or street beginning within reach; the one
+-- guided to last (`prefer`, its position) stays unless another is nearer by more than GUIDE_STICK.
+function logic.footTarget(zone, x, y, square, prefer)
+    local t = entranceTarget(zone, x, y, GUIDE_REACH, prefer)
+    local w = beginningTarget(zone, x, y, GUIDE_REACH, square, prefer)
+    if t and w then
+        if logic.samePoint(t, prefer) then
+            return w.d < t.d - logic.GUIDE_STICK and w or t
+        elseif logic.samePoint(w, prefer) then
+            return t.d < w.d - logic.GUIDE_STICK and t or w
+        end
+    end
     if w and (t == nil or w.d < t.d) then
         return w
     end
     return t
+end
+
+logic.GUIDE_SIDE = 1.5 -- yd beside the line through a doorway before one is at it
+
+-- Is the player at the target: within GUIDE_AT, and for a doorway (a target with the way
+-- through) no farther than GUIDE_SIDE beside the line through it, so "in to the southwest" does
+-- not lead into the wall beside the door (user 2026-10-01 at the Hall of Champions: "at the
+-- entrance" 2.6 yd beside the doorway, then the wall three times).
+function logic.atTarget(zone, t, x, y)
+    if t.d > logic.GUIDE_AT then
+        return false
+    end
+    if t.kind == "way" or not t.through then
+        return true
+    end
+    local fx, fy = logic.compassVector(t.through)
+    return math.abs((t.x - x) * fy - (t.y - y) * fx) <= logic.GUIDE_SIDE
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins

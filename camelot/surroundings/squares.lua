@@ -371,17 +371,39 @@ end
 -- is from its threshold (the 18 yd lane through Stormwind's gate from 17 yd, a 6 yd street from
 -- 11; user 2026-09-30: with 8 yd for all, the lane was entered before a word was said). Index,
 -- distance, compass index toward it, the beginning.
-function logic.nearestBeginning(zone, region, x, y, reach)
+-- yd; at most this much of half the opening's width is added to the reach: 15 yd at most for an
+-- opening 14 yd wide or wider (user 2026-10-01: 18 yd on the Old Town square was too far, "10 or
+-- 15 should be sufficient")
+logic.BEGINNING_EXTRA = 7
+
+-- From how far a way beginning is guided to: the reach plus half its opening, capped.
+function logic.beginningReach(reach, b)
+    return reach + math.min(b.span / 2, logic.BEGINNING_EXTRA)
+end
+
+-- `prefer` {x, y}: the beginning guided to last stays the target unless another is nearer by
+-- more than GUIDE_STICK (nearestPoint).
+function logic.nearestBeginning(zone, region, x, y, reach, prefer)
     local best, bestD, bestDir = nil, math.huge, nil
+    local kept, keptD = nil, nil
     local list = logic.wayBeginnings(zone, region)
     for i, b in ipairs(list) do
         local d = math.sqrt((b.x - x) ^ 2 + (b.y - y) ^ 2)
-        if d <= reach + b.span / 2 and d < bestD then
-            best, bestD, bestDir = i, d, logic.compassIndex(b.x - x, b.y - y)
+        if d <= logic.beginningReach(reach, b) then
+            if d < bestD then
+                best, bestD = i, d
+            end
+            if logic.samePoint(b, prefer) then
+                kept, keptD = i, d
+            end
         end
     end
+    if kept and best ~= kept and bestD > keptD - logic.GUIDE_STICK then
+        best, bestD = kept, keptD
+    end
     if best then
-        return best, bestD, bestDir, list[best]
+        local b = list[best]
+        return best, bestD, logic.compassIndex(b.x - x, b.y - y), b
     end
     return nil
 end
