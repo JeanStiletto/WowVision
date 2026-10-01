@@ -152,8 +152,8 @@ end
 -- In a big room (logic.isBigRoom), the nearest of its doorways within reach, as a guidance target:
 -- the room behind it by name, the way through it leaving the room. `skip` (optional): a door left
 -- out (the one the player just came in by).
-function logic.roomDoorTarget(zone, roomId, x, y, skip)
-    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH, skip)
+function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer)
+    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH, skip, prefer)
     if d == nil then
         return nil
     end
@@ -184,22 +184,47 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
     }
 end
 
--- The guidance target on foot: the nearest entrance or street beginning within reach; the one
--- guided to last (`prefer`, its position) stays unless another is nearer by more than GUIDE_STICK.
+-- The foot of a ramp or stairs joined to the way the player is on (zone.climbFeet), as a guidance
+-- target: named like the climb ("ramp to the griffon roost"), the way through its rise ("up to
+-- the southeast"). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
+-- the entrance and walk on the street next to it".
+local function climbTarget(zone, x, y, reach, prefer)
+    local i, d, dir, f = logic.nearestPoint(zone._index.climbFeet, x, y, reach, prefer)
+    if i == nil then
+        return nil
+    end
+    local code = f.value % 100
+    local up = code > 0 and not logic.axisOf(zone, f.value) and code % 10 or nil
+    local name = logic.describe(zone, f.value, false, true)
+    return {
+        key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
+        name = name, short = name, atName = name, at = name,
+        through = up, throughFormat = up and zone.dirs[math.floor(code / 10)] or nil,
+    }
+end
+
+-- The guidance target on foot: the nearest entrance, street beginning or climb's foot within
+-- reach; the one guided to last (`prefer`, its position) stays unless another is nearer by more
+-- than GUIDE_STICK.
 function logic.footTarget(zone, x, y, square, prefer)
-    local t = entranceTarget(zone, x, y, GUIDE_REACH, prefer)
-    local w = beginningTarget(zone, x, y, GUIDE_REACH, square, prefer)
-    if t and w then
+    local candidates = {
+        entranceTarget(zone, x, y, GUIDE_REACH, prefer),
+        beginningTarget(zone, x, y, GUIDE_REACH, square, prefer),
+        climbTarget(zone, x, y, GUIDE_REACH, prefer),
+    }
+    local best, kept = nil, nil
+    for _, t in pairs(candidates) do
+        if best == nil or t.d < best.d then
+            best = t
+        end
         if logic.samePoint(t, prefer) then
-            return w.d < t.d - logic.GUIDE_STICK and w or t
-        elseif logic.samePoint(w, prefer) then
-            return t.d < w.d - logic.GUIDE_STICK and t or w
+            kept = t
         end
     end
-    if w and (t == nil or w.d < t.d) then
-        return w
+    if kept and best ~= kept and best.d > kept.d - logic.GUIDE_STICK then
+        return kept
     end
-    return t
+    return best
 end
 
 logic.GUIDE_SIDE = 1.5 -- yd beside the line through a doorway before one is at it
@@ -247,7 +272,7 @@ end
 -- stays on one, a repeat is the yards and the direction alone ("7 southwest"): the first
 -- announcement named it (user 2026-10-01).
 function logic.guideText(zone, t, named, at)
-    local door = t.kind == "entrance" or t.kind == "doorway"
+    local door = t.kind == "entrance" or t.kind == "doorway" or t.kind == "climb"
     local parts = {}
     if at then
         if door and t.through then

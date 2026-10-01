@@ -21,9 +21,11 @@ function logic.nearestExit(zone, x, y, reach)
 end
 
 -- yd; a step (the move since the last look) passing this close to a place where a high piece is
--- stepped onto from the ground counts (the places lie about 2 yd apart along the step's line; 2.5
--- yd around the player counted a bay 2 yd beside the griffon ramp as the ramp, "8 deep" there)
-logic.ACCESS_REACH = 1.5
+-- stepped onto from the ground counts (the places lie about 2 yd apart along the step's line; 1.5
+-- missed the griffon ramp's foot by 0.2 yd, user's walk 2026-10-01 10:47, and the ramp said the
+-- level below; a cell of another place drops the piece again, so the bay beside the foot no
+-- longer counts as the ramp)
+logic.ACCESS_REACH = 2.5
 -- place kinds painted over a raised piece's own floor that keep the player on it
 local KEEP_ON = { fork = true, crossing = true, bridge = true }
 logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming out of it
