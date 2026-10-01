@@ -171,7 +171,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(layer, shop, true, false), "entrance of shop, 4 to the west")
         local passage = logic.footTarget(layer, 84, 6, nil)
         t:assertEqual(logic.guideText(layer, passage, true, false), "passage, 4 to the south")
-        t:assertEqual(logic.guideText(layer, passage, false, true), "at the doorway, through to the south")
+        t:assertEqual(logic.guideText(layer, passage, false, true), "through to the south")
     end,
 
     ["lava edges of the indoor layer warn like drop edges"] = function(t)
@@ -977,8 +977,10 @@ testRunner:addSuite("Surroundings", {
         local target = logic.footTarget(z, 7, 5)
         t:assertEqual(target.kind, "entrance")
         t:assertEqual(logic.guideText(z, target, true, false), "entrance of Test Inn, common room, 7 to the south, in to the north")
-        t:assertEqual(logic.guideText(z, target, false, false), "entrance, 7 to the south")
-        t:assertEqual(logic.guideText(z, target, false, true), "at the entrance, in to the north")
+        -- a repeat: the yards and the direction; at it: the way through (user 2026-10-01)
+        t:assertEqual(logic.guideText(z, target, false, false), "7 south")
+        t:assertEqual(logic.guideText(z, target, false, true), "in to the north")
+        t:assertEqual(logic.guideText(z, target, true, true), "in to the north")
         t:assertNil(logic.footTarget(z, 20, 5))   -- beyond the guidance reach
         target = logic.exitTarget(z, 95, 30)
         t:assertEqual(logic.guideText(z, target, true, false), "way out of the water, 10 to the east, out to the north")
@@ -994,7 +996,7 @@ testRunner:addSuite("Surroundings", {
         -- 2.7 yd away but 2.5 yd beside the line through the door: not at it
         target = logic.footTarget(z, 1, 7.5)
         t:assertEqual(logic.atTarget(z, target, 1, 7.5), false)
-        t:assertEqual(logic.guideText(z, target, false, false), "entrance, 3 to the east")
+        t:assertEqual(logic.guideText(z, target, false, false), "3 east")
     end,
 
     ["the guidance target stays unless another is clearly nearer"] = function(t)
