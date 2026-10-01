@@ -1301,7 +1301,7 @@ testRunner:addSuite("Surroundings", {
     ["a way cell without a direction takes the direction of the same way's nearest line"] = function(t)
         local z = newWalkZone()
         -- the walk's cell at row 3, column 4 (x 86, y 42) has no direction; the walk's line at y = 46 is 4 yd off
-        z.grid = { "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*3,0*2", "100*2,211*2,200,0*2" }
+        z.grid = { "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*2,20000,0*2" }
         logic.unpack(z)
         t:assertEqual(logic.valueAt(z, 86, 42), 20000)
         local v, decided = logic.laneValue(z, 86, 42, 20000, false)
@@ -1309,7 +1309,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(decided, false)
         t:assertEqual(logic.outdoorKey(z, v), "r2:0")
         -- another way's cell is left alone
-        z.grid[4] = "100*2,211*2,300,0*2"
+        z.grid[4] = "10000*2,21000*2,30000,0*2"
         z.places[3] = { "street", "street of Test" }
         logic.pack(z)
         logic.unpack(z)
