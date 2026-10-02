@@ -170,16 +170,16 @@ logic.AHEAD_ANGLE = 0.25 -- cosine: the path turns at most 75 degrees away from 
 
 -- A drop edge in the player's path: moving along the unit vector (vx, vy), an edge point at most
 -- `look` yards ahead and AHEAD_WIDTH beside the path, whose drop lies ahead (not running along
--- the edge), with the player on the structure in front of it. Returns the edge index and the
--- distance along the path. `on` and `skip` as for nearestEdge; `all` (optional): a set that gets
--- every edge in the path.
+-- the edge), with the player on the structure in front of it. Returns the edge index, the
+-- distance along the path and the edge point in the path (x, y). `on` and `skip` as for
+-- nearestEdge; `all` (optional): a set that gets every edge in the path.
 function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
     local ix = zone._index
     if look <= 0 then
         return nil
     end
     local r, c = logic.cellOf(zone, x, y)
-    local best, bestAlong = nil, look
+    local best, bestAlong, bx, by = nil, look, nil, nil
     for i, e in ipairs(ix.edges) do
         local fx, fy = logic.compassVector(e.facing)
         if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(e, i, x, y, look, on, skip) then
@@ -193,13 +193,16 @@ function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
                         all[i] = true
                     end
                     if along <= bestAlong then
-                        best, bestAlong = i, along
+                        best, bestAlong, bx, by = i, along, p[k], p[k + 1]
                     end
                 end
             end
         end
     end
-    return best, best and bestAlong
+    if best then
+        return best, bestAlong, bx, by
+    end
+    return nil
 end
 
 -- Distance from a position to the nearest point of edge `i`.

@@ -156,20 +156,24 @@ function logic.dirTemplate(zone, i)
     return zone.dirs[i]
 end
 
--- A text ready to speak: the hour marks resolved. "o'clock" once at the end where a text names two
--- or more hours (a list), in place where a yard count comes before the hour ("6 at 4 o'clock,
--- in at 4"); a single hour elsewhere stays a bare number (user 2026-10-01: as short as possible
--- without confusion).
+-- A text ready to speak: the hour marks resolved. "o'clock" once after the last hour where a text
+-- names two or more hours (a list), in place where a yard count comes before the hour ("6 at 4
+-- o'clock, in at 4"); a single hour elsewhere stays a bare number (user 2026-10-01: as short as
+-- possible without confusion). The list's "o'clock" follows its last hour, not the whole text: the
+-- describe key's "fork, canal walk at 1 and 8, street at 5, 5 at 2 o'clock, canal" ended in
+-- "canal o'clock" (walk 2026-10-02).
 function logic.finishText(text)
     if text == nil or not text:find("[\1\2]") then
         return text
     end
     local _, plain = text:gsub(HOUR, "")
     local clock = L["o'clock"]
-    text = text:gsub(HOUR_SAID, " " .. clock):gsub(HOUR, "")
+    text = text:gsub(HOUR_SAID, " " .. clock)
     if plain >= 2 then
-        text = text .. " " .. clock
+        local last = text:find(HOUR .. "[^" .. HOUR .. "]*$")
+        text = text:sub(1, last - 1) .. " " .. clock .. text:sub(last + 1)
     end
+    text = text:gsub(HOUR, "")
     return text
 end
 
