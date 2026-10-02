@@ -481,6 +481,33 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(target.through, 0)
     end,
 
+    ["a pool: inside its outline (an L) the player is down in it, its way out is its own"] = function(t)
+        local z = newZone()
+        -- the floor: x 70 to 80, y 30 to 35, and x 70 to 75, y 35 to 40 (the corner x 75 to 80,
+        -- y 35 to 40 is the rim); one way out at 78, 32, 3 yd wide, out toward the northwest
+        z.pools = { { 40000, 70, 30, 80, 30, 80, 35, 75, 35, 75, 40, 70, 40, { 78, 32, 3, 315 } } }
+        logic.unpack(z)
+        local pool = logic.poolAt(z, 72, 38)
+        t:assertEqual(pool.value, 40000)
+        t:assertEqual(logic.poolAt(z, 77, 32), pool)
+        t:assertNil(logic.poolAt(z, 78, 38))                           -- the rim in the L's corner
+        t:assertNil(logic.poolAt(z, 85, 35))
+        t:assertNil(logic.poolAt(z, 72, 45))
+        local held, isHeld = logic.poolAt(z, 72, 41, pool)              -- held 1 yd beyond the rim
+        t:assertEqual(held, pool)
+        t:assertEqual(isHeld, true)
+        t:assertNil(select(2, logic.poolAt(z, 72, 38, pool)))           -- inside: not just held
+        t:assertNil(logic.poolAt(z, 72, 42, pool))                     -- 2 yd: out
+        local target = logic.exitTarget(z, 72, 38, false, pool)        -- the pool's, not the zone's (95, 20)
+        t:assertEqual(target.name, "open land, way out")               -- named with the pool (place 4 here)
+        t:assertEqual(target.key, "p1")
+        t:assertEqual(target.through, 315)
+        t:assertEqual(math.floor(target.d + 0.5), 8)
+        local plain = newZone()                                        -- a zone without pools
+        logic.unpack(plain)
+        t:assertEqual(#plain._index.pools, 0)
+    end,
+
     ["a drop edge warns only on the structure, in front of the edge"] = function(t)
         local z = newZone()
         logic.unpack(z)

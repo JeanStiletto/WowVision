@@ -723,6 +723,24 @@ function logic.unpack(zone, locale)
         -- out: the angle one climbs out toward, -1 unknown
         ix.exits[#ix.exits + 1] = { x = x, y = y, width = width, out = out >= 0 and out or nil }
     end)
+    -- pools: water one stands in everywhere (the Mystic Ward's pond in Ironforge), each the place's
+    -- value, the outline of its floor (x, y ...) and its ways out (x, y, width, the angle out)
+    ix.pools = {}
+    for _, p in ipairs(zone.pools or {}) do
+        local poly = {}
+        local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
+        for k = 2, #p - 1, 2 do
+            poly[#poly + 1] = p[k]
+            poly[#poly + 1] = p[k + 1]
+            x0, x1 = math.min(x0, p[k]), math.max(x1, p[k])
+            y0, y1 = math.min(y0, p[k + 1]), math.max(y1, p[k + 1])
+        end
+        local exits = {}
+        eachRecord(p[#p], 4, function(x, y, width, out)
+            exits[#exits + 1] = { x = x, y = y, width = width, out = out >= 0 and out or nil }
+        end)
+        ix.pools[#ix.pools + 1] = { value = p[1], poly = poly, box = { x0, x1, y0, y1 }, exits = exits }
+    end
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
     for _, i in ipairs(zone.deadExits or {}) do
         if ix.exits[i] then
@@ -833,7 +851,7 @@ function logic.unpackLayer(zone)
         cell = zone.cell, rows = zone.rows, cols = zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
-        structCells = src.structCells, edges = src.edges, exits = src.exits, interiors = zone.interiors, rooms = zone.rooms,
+        structCells = src.structCells, edges = src.edges, exits = src.exits, pools = src.pools, interiors = zone.interiors, rooms = zone.rooms,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
     }
     logic.unpack(layer)
@@ -843,6 +861,59 @@ function logic.unpackLayer(zone)
     end
     layer._index.covered = covered
     return layer
+end
+
+logic.POOL_KEEP = 1.5 -- yd outside its outline the player still counts as down in a pool
+
+-- The pool the point (x, y) lies in (inside the outline of its floor), or nil; `keep`, the pool the
+-- player was in, still while within POOL_KEEP of its outline, then with true as a second value
+-- (held: pressed against the rim from inside, the player stands half a yard beyond the outline of
+-- the floor's cells, and the pool was named anew at every bump, replay of the walk 2026-10-02; just
+-- climbed out, the player is there too, so nothing new is said while held). Down in one the player
+-- stands in the water: its way out is said (user 2026-10-02: the canal edges round the Mystic
+-- Ward's pond had them walk in circles in it).
+function logic.poolAt(zone, x, y, keep)
+    local inside = logic.insidePool
+    if keep and inside(keep, x, y) then
+        return keep
+    end
+    for _, pool in ipairs(zone._index.pools or {}) do
+        if inside(pool, x, y) then
+            return pool
+        end
+    end
+    if keep then
+        local p, n = keep.poly, #keep.poly
+        local jx, jy = p[n - 1], p[n]
+        for k = 1, n - 1, 2 do
+            local _px, _py, d = logic.segmentPoint(x, y, jx, jy, p[k], p[k + 1])
+            if d <= logic.POOL_KEEP then
+                return keep, true
+            end
+            jx, jy = p[k], p[k + 1]
+        end
+    end
+    return nil
+end
+
+-- Is (x, y) inside the pool's outline?
+function logic.insidePool(pool, x, y)
+    local b = pool.box
+    if x < b[1] or x > b[2] or y < b[3] or y > b[4] then
+        return false
+    end
+    -- crossings of a ray from the point with the outline: odd = inside
+    local p, inside = pool.poly, false
+    local n = #p
+    local jx, jy = p[n - 1], p[n]
+    for k = 1, n - 1, 2 do
+        local ix, iy = p[k], p[k + 1]
+        if (iy > y) ~= (jy > y) and x < (jx - ix) * (y - iy) / (jy - iy) + ix then
+            inside = not inside
+        end
+        jx, jy = ix, iy
+    end
+    return inside
 end
 
 -- The indoor layer of a zone (unpacked), or nil.

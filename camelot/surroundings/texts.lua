@@ -322,16 +322,27 @@ function logic.pastTarget(zone, t, x, y)
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
--- nothing or into a dead end says so.
-function logic.exitTarget(zone, x, y, moat)
-    local i, d, dir, exit = logic.nearestExit(zone, x, y, moat and MOAT_EXIT_REACH or EXIT_REACH)
+-- nothing or into a dead end says so. Down in a `pool` (logic.poolAt): its own nearest way out,
+-- named with the pool ("pool, way out, 17 yards at 9 o'clock"): one notice on stepping in, no
+-- place of its own (user 2026-10-02: "Becken, Ausgang auf 10 Uhr").
+function logic.exitTarget(zone, x, y, moat, pool)
+    local i, d, dir, exit
+    if pool then
+        i, d, dir, exit = logic.nearestPoint(pool.exits, x, y, math.huge)
+    else
+        i, d, dir, exit = logic.nearestExit(zone, x, y, moat and MOAT_EXIT_REACH or EXIT_REACH)
+    end
     if i == nil then
         return nil
     end
     local dead = exit.dead
     local name = moat and L["way out of the moat"] or L["way out of the water"]
+    if pool then
+        local place = logic.place(zone, logic.placeOf(pool.value))
+        name = place and place.label .. ", " .. L["way out"] or L["way out of the water"]
+    end
     return {
-        key = i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
+        key = pool and "p" .. i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
         name = dead and L["way out of the water to a dead end"] or name,
         short = dead and L["way out to a dead end"] or L["way out"],
         atName = dead and L["at the way out to a dead end"] or L["at the way out"],
