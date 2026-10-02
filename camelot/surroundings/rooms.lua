@@ -111,6 +111,32 @@ local function roomHolds(zone, id, x, y, margin)
     return #logic.roomCandidates(zone, x, y, margin, { id }) > 0
 end
 
+-- Does the room fit what the game says: a hall it calls outdoors (the room has a hallMap) while
+-- IsIndoors() is false, any other room while it is true? `indoors` nil: everything fits.
+local function gameFits(zone, id, indoors)
+    if indoors == nil then
+        return true
+    end
+    return (zone._index.rooms[id].hallMap ~= nil) ~= indoors
+end
+
+-- The room candidates that fit what the game says (gameFits), or all of them when none does (the
+-- game's word only decides between floors on top of each other; it never empties the list). In
+-- Ironforge the Great Forge's floor lies over the throne room's stairs and the cavern below: the
+-- game calls the forge outdoors and the rest indoors (user's walks 2026-10-02).
+function logic.fittingRooms(zone, cands, indoors)
+    if indoors == nil then
+        return cands
+    end
+    local out = {}
+    for _, id in ipairs(cands) do
+        if gameFits(zone, id, indoors) then
+            out[#out + 1] = id
+        end
+    end
+    return #out > 0 and out or cands
+end
+
 logic.ROOM_SLACK = 2.0 -- yd; where no floor lies right under the player, a floor this close counts
 
 -- Is the position within a room's area: the box around all its floor pieces (building frame)?
@@ -157,15 +183,20 @@ end
 -- the stairs the gallery's floor box over them was the only one found a step after the door, so
 -- the stairs were lost and the bell tower's door, a door of the stairs, was never checked; the
 -- stairs' floor begins 3 yd behind their door). crossed (optional): the result of crossedDoor for
--- this step, when the caller has it already (false: none crossed).
-function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed)
+-- this step, when the caller has it already (false: none crossed). indoors (optional): IsIndoors();
+-- the candidates are those that fit it (fittingRooms), and a current room that does not fit while
+-- one here does is left, held by its door or not.
+function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors)
     if crossed == nil then
         crossed = logic.crossedDoor(zone, current, px, py, x, y)
     end
     if crossed then
         return crossed ~= 0 and crossed or nil
     end
-    local cands = logic.roomCandidates(zone, x, y)
+    local cands = logic.fittingRooms(zone, logic.roomCandidates(zone, x, y), indoors)
+    if current ~= nil and not gameFits(zone, current, indoors) and #cands > 0 and gameFits(zone, cands[1], indoors) then
+        current, byDoor = nil, false
+    end
     if byDoor and current ~= nil then
         if roomHolds(zone, current, x, y, logic.ROOM_SLACK) then
             return current
@@ -183,7 +214,7 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed)
         if current ~= nil and logic.inRoomArea(zone, current, x, y) then
             return current
         end
-        cands = logic.roomCandidates(zone, x, y, logic.ROOM_SLACK)
+        cands = logic.fittingRooms(zone, logic.roomCandidates(zone, x, y, logic.ROOM_SLACK), indoors)
     end
     if #cands == 0 then
         return nil
