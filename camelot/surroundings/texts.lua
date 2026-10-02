@@ -46,7 +46,10 @@ local ITEMS_MAX = 4 -- things said at most on entering a square or a room
 local APPROACH = 10 -- yd; on a square, a street, water or drop not said yet is said this close
 local FEATURE_REACH = 25 -- yd; cliffs and water said with an outdoor place
 local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said within this
-local GUIDE_REACH = 8 -- yd; entrances and street beginnings are guided to from this close
+-- yd; entrances, street beginnings and climbs' feet are guided to from this close (8 until 2026-10-02,
+-- set when squares had no streets: the Trade District said 15 entrance lines in four minutes; 6
+-- left a third fewer in the replay of all walks, with 74 of 87 entries still guided first, 75 at 8)
+local GUIDE_REACH = 6
 logic.GUIDE_REACH = GUIDE_REACH
 local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
 local MOAT_EXIT_REACH = 300 -- yd; a moat's way out, from anywhere down in it (the Commons' moat is a ring)
