@@ -186,6 +186,14 @@ function Queued:destroy()
     self.queue = {}
 end
 
+-- The game's sounds around text-to-speech (see core/speechSounds.lua): two
+-- settings here, written into the game on login and on change.
+WowVision.speechSounds.addSettings(settings, L, WowVision.speechSounds.gameSetter)
+
+function module:onFullEnable()
+    WowVision.speechSounds.apply(self.settings, WowVision.speechSounds.gameSetter)
+end
+
 -- Module lifecycle
 styleSetting.events.valueChange:subscribe(nil, function(event, obj, key, value)
     if module.activeStyle then
