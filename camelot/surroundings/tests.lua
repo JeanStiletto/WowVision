@@ -1047,6 +1047,7 @@ testRunner:addSuite("Surroundings", {
         -- 5 yd north of the inn's door (world 0, 5); one goes in toward the north
         local target = logic.footTarget(z, 5, 5)
         t:assertEqual(target.kind, "entrance")
+        t:assertEqual(target.reach, logic.GUIDE_REACH)   -- kept while within it (module checkGuide)
         t:assertEqual(logic.guideText(z, target, true, false), "entrance of Test Inn, common room, 5 to the south, in to the north")
         -- a repeat: the yards and the direction; at it: the way through (user 2026-10-01)
         t:assertEqual(logic.guideText(z, target, false, false), "5 south")

@@ -398,6 +398,8 @@ end
 -- `brief` (a beacon leads): only that the target is there and its name, once.
 local function guideTo(z, g, t, x, y, brief)
     local now = GetTime()
+    -- where the target is and from how far it is guided to (checkGuide keeps it while within reach)
+    g.x, g.y, g.reach = t.x, t.y, t.reach
     if brief then
         if g.key ~= t.key then
             say(t.name, t.kind, x, y)
@@ -406,7 +408,6 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local named = g.named ~= t.key
-    g.x, g.y = t.x, t.y
     if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
             say(logic.guideText(z, t, named, true), t.kind, x, y)
@@ -449,6 +450,15 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)
     if t == nil or (passed and logic.dist2(t.x, t.y, passed.x, passed.y) <= PASSED_SAME ^ 2) then
+        -- a target that drops out while the player is still within its reach and GUIDE_AWAY is
+        -- kept, so its return is no new target: on the stairs beside the Trade District's
+        -- terrace the cells flip between stairs and square and a street beginning was said
+        -- three times in three seconds, and at the edge of an entrance's reach every step back
+        -- in said it again (user 2026-10-02)
+        if t == nil and guide.key and guide.reach
+            and logic.dist2(x, y, guide.x, guide.y) <= (guide.reach + GUIDE_AWAY) ^ 2 then
+            return
+        end
         guide.key = nil
         return
     end
