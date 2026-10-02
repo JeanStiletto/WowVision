@@ -117,10 +117,20 @@ local EDGE_TEXTS = {
 
 -- `x, y`: the player; with them an edge with a depth per point says the depth at its nearest
 -- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot).
-function logic.edgeText(zone, i, ahead, x, y)
+-- `qx, qy`: with `ahead`, the edge point in the player's path (edgeAhead): an edge ahead is said
+-- toward that point, where the path meets the water, not the way the drop faces. At a bank's
+-- corner the two differ: the user heard "5 at 2 o'clock, canal" (the drop of the bank beside the
+-- bridge faces 2) with the water on the course at 1, steered left of 2 and fell in (walk
+-- 2026-10-02 06:26). An edge beside the player keeps the drop's facing: its sample points lie 2 yd
+-- apart, and the nearest one of an edge walked along lies ahead, not where the drop is.
+function logic.edgeText(zone, i, ahead, x, y, qx, qy)
     local e = logic.edge(zone, i)
     local texts = EDGE_TEXTS[e.into] or EDGE_TEXTS[0]
-    local word = logic.dirWord(zone, e.facing, ahead ~= nil)
+    local angle = e.facing
+    if ahead and qx and x and logic.dist(x, y, qx, qy) >= 0.5 then
+        angle = logic.bearingOf(qx - x, qy - y)
+    end
+    local word = logic.dirWord(zone, angle, ahead ~= nil)
     local drop = e.drop
     if e.drops and x then
         local p, best = e.points, math.huge

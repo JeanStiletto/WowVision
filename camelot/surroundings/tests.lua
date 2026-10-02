@@ -1372,6 +1372,14 @@ testRunner:addSuite("Surroundings", {
             -- a yard count before the hour: "o'clock" right there
             t:assertEqual(logic.finishText(logic.edgeText(z, 1)), "at 12, water")
             t:assertEqual(logic.finishText(logic.edgeText(z, 2, 7.6)), "8 at 6 o'clock, drop 12")
+            -- a list's "o'clock" follows its last hour, not a text appended after it (the describe
+            -- key said "fork, ... at 5, 5 at 2 o'clock, canal o'clock")
+            t:assertEqual(logic.finishText(logic.itemsText(z, {
+                { label = "street of Test", class = "way", dirs = { 0, 270 } },
+            }) .. ", " .. logic.edgeText(z, 2, 7.6)), "street of Test at 12 and 9 o'clock, 8 at 6 o'clock, drop 12")
+            -- an edge ahead is said toward the point in the path, an edge beside by its drop
+            t:assertEqual(logic.finishText(logic.edgeText(z, 2, 7.6, 80, 14.5, 87.6, 14.5)), "8 at 12 o'clock, drop 12")
+            t:assertEqual(logic.finishText(logic.edgeText(z, 2, nil, 80, 14.5, 87.6, 14.5)), "at 6, drop 12")
             local target = logic.footTarget(z, 7, 5)
             t:assertEqual(logic.finishText(logic.guideText(z, target, true, false)),
                 "entrance of Test Inn, common room, 7 yards at 6 o'clock, in at 12")
