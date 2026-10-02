@@ -52,26 +52,26 @@ end
 
 testRunner:addSuite("Speech sounds", {
     ["a fresh character gets the line-break sound turned off once"] = function(t)
-        local state = { chatLineSoundSilenced = false }
+        local state = { chatLineSoundOff = false }
         local store, game = fakeGame()
         t:assertTrue(sounds.silenceOnce(state, game))
         t:assertEqual(store.values[LINE], false)
         t:assertEqual(store.values[ACTIVITY], true, "the activity sound is left alone")
         t:assertEqual(store.writes, 1)
-        t:assertTrue(state.chatLineSoundSilenced)
+        t:assertTrue(state.chatLineSoundOff)
     end,
 
     ["a sound that is already off is not written and still counts as handled"] = function(t)
-        local state = { chatLineSoundSilenced = false }
+        local state = { chatLineSoundOff = false }
         local store, game = fakeGame()
         store.values[LINE] = false
         t:assertFalse(sounds.silenceOnce(state, game))
         t:assertEqual(store.writes, 0)
-        t:assertTrue(state.chatLineSoundSilenced)
+        t:assertTrue(state.chatLineSoundOff)
     end,
 
     ["a character that was handled keeps the sound the player chose"] = function(t)
-        local state = { chatLineSoundSilenced = true }
+        local state = { chatLineSoundOff = true }
         local store, game = fakeGame()
         t:assertFalse(sounds.silenceOnce(state, game))
         t:assertEqual(store.values[LINE], true)
@@ -79,11 +79,11 @@ testRunner:addSuite("Speech sounds", {
     end,
 
     ["a refused write is tried again next login"] = function(t)
-        local state = { chatLineSoundSilenced = false }
+        local state = { chatLineSoundOff = false }
         local store, game = fakeGame(true)
         t:assertFalse(sounds.silenceOnce(state, game))
         t:assertEqual(store.values[LINE], true)
-        t:assertFalse(state.chatLineSoundSilenced)
+        t:assertFalse(state.chatLineSoundOff)
     end,
 
     ["the toggles read and write the game setting and store nothing"] = function(t)
@@ -108,7 +108,7 @@ testRunner:addSuite("Speech sounds", {
         local facade = settingsFacade()
         local _, game = fakeGame()
         sounds.addSettings(facade, untranslated(), game)
-        local flag = facade.fields.chatLineSoundSilenced
+        local flag = facade.fields.chatLineSoundOff
         t:assertNotNil(flag)
         t:assertEqual(flag.def.default, false)
         t:assertEqual(flag.def.global, false)
