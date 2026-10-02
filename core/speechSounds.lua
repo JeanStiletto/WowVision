@@ -15,6 +15,12 @@
 -- off once, the way the action bars are unlocked once; after that the
 -- player's choice stands.
 --
+-- Timing: the client loads a character's text-to-speech settings around
+-- PLAYER_ENTERING_WORLD (Blizzard's own TextToSpeechFrame waits for that
+-- event before reading them). A write at login is accepted and then lost
+-- to that load, so the speech modules silence from PLAYER_ENTERING_WORLD,
+-- not from onFullEnable.
+--
 -- Kept free of frames and game globals so it runs in the headless tests;
 -- the game is reached only through the accessor pair passed in.
 local sounds = {}
@@ -57,7 +63,7 @@ function sounds.addSettings(settings, L, game)
     end
     settings:add({
         type = "Bool",
-        key = "chatLineSoundSilenced",
+        key = "chatLineSoundOff",
         default = false,
         global = false,
         showInUI = false,
@@ -65,10 +71,10 @@ function sounds.addSettings(settings, L, game)
 end
 
 -- Turns the line-break sound off on a character's first login.
--- state.chatLineSoundSilenced records that this character was handled.
+-- state.chatLineSoundOff records that this character was handled.
 -- Returns true when the sound was on and is now off.
 function sounds.silenceOnce(state, game)
-    if state.chatLineSoundSilenced then
+    if state.chatLineSoundOff then
         return false
     end
     local option = sounds.options[1].option
@@ -80,7 +86,7 @@ function sounds.silenceOnce(state, game)
         end
         changed = true
     end
-    state.chatLineSoundSilenced = true
+    state.chatLineSoundOff = true
     return changed
 end
 

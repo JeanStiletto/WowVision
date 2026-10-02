@@ -97,12 +97,15 @@ end)
 
 -- The game's sounds around text-to-speech (see core/speechSounds.lua): two
 -- toggles that are the game's own settings, and the line-break sound
--- turned off once per character.
+-- turned off once per character. Entering the world is the first moment
+-- the game has loaded the character's own text-to-speech settings; a
+-- write at login is lost to that load.
 WowVision.speechSounds.addSettings(settings, L, WowVision.speechSounds.game)
+module:registerEvent("event", "PLAYER_ENTERING_WORLD")
 
-function module:onFullEnable()
-    if WowVision.speechSounds.silenceOnce(self.settings, WowVision.speechSounds.game) then
-        print(L["WowVision turned off the game's sound between spoken chat lines. You can turn it back on in the Speech settings."])
+function module:onEvent(event, ...)
+    if event == "PLAYER_ENTERING_WORLD" then
+        WowVision.speechSounds.silenceOnce(self.settings, WowVision.speechSounds.game)
     end
 end
 
