@@ -677,6 +677,12 @@ function logic.unpack(zone, locale)
         ix.piecePlaces[piece] = ix.piecePlaces[piece] or {}
         ix.piecePlaces[piece][place] = true
     end)
+    -- cells only a level's floor has (the indoor layers): standing there the player is on it
+    ix.pieceOwn = {}
+    eachCellTriple(zone, zone.pieceOwn, function(key, piece)
+        ix.pieceOwn[key] = ix.pieceOwn[key] or {}
+        table.insert(ix.pieceOwn[key], piece)
+    end)
     ix.links = {}
     eachRecord(zone.links, 2, function(a, b)
         addToBucket(ix.links, a, b)
@@ -697,6 +703,9 @@ function logic.unpack(zone, locale)
         ix.edges[i] = {
             struct = e[1], facing = e[2], drop = e[3], into = e[4], piece = e[5], points = points,
             drops = e.d, -- the depth per point (a ramp's side edge: 2 yd at the foot, 9 at the top), or nil
+            -- in a hall (the indoor layers): the other level its floor belongs to (0 = the main
+            -- floor) and the level its drop falls onto (walking over it puts the player there)
+            level = e.l or 0, under = e.u,
             box = { x0, x1, y0, y1 },
         }
     end
@@ -855,6 +864,10 @@ function logic.unpackLayer(zone, src, suffix)
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, pools = src.pools, interiors = zone.interiors, rooms = zone.rooms,
+        -- its halls' other levels (a gallery, the moat under the walkways), as the city's raised
+        -- pieces: one rule for every floor over or under another
+        pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
+        piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
     }
     logic.unpack(layer)
@@ -863,6 +876,8 @@ function logic.unpackLayer(zone, src, suffix)
         covered[id] = true
     end
     layer._index.covered = covered
+    -- the levels the player is on in it (edges.lua updateHigh), its own set
+    logic.setOn(layer, {})
     return layer
 end
 
