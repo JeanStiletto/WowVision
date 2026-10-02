@@ -53,7 +53,7 @@ a screen reader would cut its own speech off at every key press.
   behind it); stairs are named by where they lead up to ("stairs to the bell tower"). A room
   entered through a doorway stays the room until the next doorway or until its floor is left,
   so narrow stairs over a hall are not lost to the hall's floor below. In a big room
-  the doorways are said from where you stand, nearest first, and within 8 yards of one you are
+  the doorways are said from where you stand, nearest first, and within 6 yards of one you are
   guided to it like to an entrance ("shop, 6 to the west").
 - **The big halls of a city** (Ironforge, the Undercity quarters) are described like its
   streets and squares: their pieces with their directions ("walk along the lava, north to
@@ -66,7 +66,7 @@ a screen reader would cut its own speech off at every key press.
 - **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
   lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava");
   ahead of you the distance in yards first ("9 southwest, canal").
-- **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
+- **Guidance**: within 6 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. While swimming, the nearest way out of the
   water; one that only leads onto a ledge or into a dead end says so ("way out of the water to

@@ -1044,12 +1044,12 @@ testRunner:addSuite("Surroundings", {
     ["guidance names a target once, and the way through only where it differs"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        -- 10 yd north of the inn's door (world 0, 5); one goes in toward the north
-        local target = logic.footTarget(z, 7, 5)
+        -- 5 yd north of the inn's door (world 0, 5); one goes in toward the north
+        local target = logic.footTarget(z, 5, 5)
         t:assertEqual(target.kind, "entrance")
-        t:assertEqual(logic.guideText(z, target, true, false), "entrance of Test Inn, common room, 7 to the south, in to the north")
+        t:assertEqual(logic.guideText(z, target, true, false), "entrance of Test Inn, common room, 5 to the south, in to the north")
         -- a repeat: the yards and the direction; at it: the way through (user 2026-10-01)
-        t:assertEqual(logic.guideText(z, target, false, false), "7 south")
+        t:assertEqual(logic.guideText(z, target, false, false), "5 south")
         t:assertEqual(logic.guideText(z, target, false, true), "in to the north")
         t:assertEqual(logic.guideText(z, target, true, true), "in to the north")
         t:assertNil(logic.footTarget(z, 20, 5))   -- beyond the guidance reach
@@ -1429,10 +1429,10 @@ testRunner:addSuite("Surroundings", {
             -- an edge ahead is said toward the point in the path, an edge beside by its drop
             t:assertEqual(logic.finishText(logic.edgeText(z, 2, 7.6, 80, 14.5, 87.6, 14.5)), "8 at 12 o'clock, drop 12")
             t:assertEqual(logic.finishText(logic.edgeText(z, 2, nil, 80, 14.5, 87.6, 14.5)), "at 6, drop 12")
-            local target = logic.footTarget(z, 7, 5)
+            local target = logic.footTarget(z, 5, 5)
             t:assertEqual(logic.finishText(logic.guideText(z, target, true, false)),
-                "entrance of Test Inn, common room, 7 yards at 6 o'clock, in at 12")
-            t:assertEqual(logic.finishText(logic.guideText(z, target, false, false)), "7 at 6 o'clock")
+                "entrance of Test Inn, common room, 5 yards at 6 o'clock, in at 12")
+            t:assertEqual(logic.finishText(logic.guideText(z, target, false, false)), "5 at 6 o'clock")
             t:assertEqual(logic.finishText(logic.guideText(z, target, false, true)), "in at 12")
             -- two angles of one hour are one direction; of one word but two hours they are two
             t:assertEqual(logic.sameDir(80, 100), true)     -- both 3 o'clock
