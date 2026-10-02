@@ -97,6 +97,7 @@ local bendFrom = nil -- where the road led at the last message (radians), nil: t
 local bendWalked = 0 -- walked on the way since the last announcement or bend hint
 local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
 local aheadX, aheadY = nil, nil -- where it was said: walking far from there forgets it
+local wayNamed = nil -- the place last said by name (on entering it or ahead): its next pieces say only their direction
 -- Guidance: the target last said (key and position), the direction said, whether it was "at"
 -- it, when, the target last said by name, and whether it was said briefly (a beacon led)
 local guide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, brief = nil } -- on foot
@@ -146,7 +147,7 @@ local function forgetWays()
     outdoor:reset()
     indoor:reset()
     region, saidMouths = nil, {}
-    bendFrom, aheadKey, leftWay = nil, nil, nil
+    bendFrom, aheadKey, leftWay, wayNamed = nil, nil, nil, nil
 end
 
 -- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
@@ -722,7 +723,15 @@ local function checkAhead(z, x, y, px, py)
     local nextKey = logic.outdoorKey(z, value, key)
     if nextKey ~= aheadKey then
         aheadKey, aheadX, aheadY = nextKey, x, y
-        say(logic.describe(z, value, true), "ahead", x, y)
+        -- the next piece of this way: its direction only ("north to south"), as on stepping onto it
+        local text
+        if logic.sameWay(value, key, wayNamed) then
+            text = logic.directionText(z, value)
+        else
+            text = logic.describe(z, value, true)
+            wayNamed = logic.placeOf(value)
+        end
+        say(text, "ahead", x, y)
     end
 end
 
@@ -771,7 +780,10 @@ local function checkPlace(z, x, y, forced)
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y) then
         leftWay = logic.isWayKey(previous) and previous or nil
         local text, square, said = logic.spotText(z, x, y, value, previous,
-            { cut = true, facing = turnFacing(), swimming = IsSwimming() })
+            { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed })
+        if not logic.sameWay(value, previous, wayNamed) then
+            wayNamed = logic.placeOf(value)
+        end
         -- on a square: what was said now (its exits, what is close) is not said again on coming close
         region, saidMouths = square, said or {}
         if leftWay and square then

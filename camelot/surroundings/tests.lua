@@ -1275,6 +1275,26 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, { cut = true }), "grass")
     end,
 
+    ["inside one way only the direction changes: its name is said once"] = function(t)
+        local z = newWalkZone()
+        logic.unpack(z)
+        -- onto the walk from the square: its name and direction
+        t:assertEqual(logic.spotText(z, 96, 46, 21000, 1, { cut = true, named = 1 }), "canal walk, north to south")
+        -- its next piece, the walk's name the last said: the direction only
+        t:assertEqual(logic.sameWay(21045, "r2:0", 2), true)
+        t:assertEqual(logic.spotText(z, 96, 46, 21045, "r2:0", { cut = true, named = 2 }), "northeast to southwest")
+        -- after another way was named (the next piece ahead): the name again
+        t:assertEqual(logic.sameWay(21045, "r2:0", 5), false)
+        t:assertEqual(logic.spotText(z, 96, 46, 21045, "r2:0", { cut = true, named = 5 }), "canal walk, northeast to southwest")
+        -- another place, or coming from no way: no
+        t:assertEqual(logic.sameWay(11000, "r2:0", 1), false)
+        t:assertEqual(logic.sameWay(21045, 2, 2), false)
+        -- the describe key always names it
+        t:assertEqual(logic.spotText(z, 96, 46, 21045, "r2:0", { named = 2 }), "canal walk, northeast to southwest")
+        t:assertEqual(logic.directionText(z, 21045), "northeast to southwest")
+        t:assertNil(logic.directionText(z, 20000))
+    end,
+
     ["a room says its doorways, at most the count, the way the player came left out first"] = function(t)
         local z = newZone()
         logic.unpack(z)

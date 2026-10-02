@@ -906,6 +906,23 @@ function logic.axisOf(zone, value)
     return axisOfCode(zone, value % logic.CODE)
 end
 
+-- The direction a cell value says ("northwest to southeast", "up to the northeast"), or nil.
+function logic.directionText(zone, value)
+    local code = value % logic.CODE
+    if code == 0 then
+        return nil
+    end
+    local axis = axisOfCode(zone, code)
+    if axis then
+        -- an axis without its template: "road, northwest to southeast"
+        return logic.axisWords(zone, axis)
+    end
+    local template = logic.dirTemplate(zone, math.floor(code / 1000))
+    if template then
+        return string.format(template, logic.dirWord(zone, code % 1000))
+    end
+end
+
 -- The text of a cell value: the place label, and with `withDirection` its direction and its
 -- nearest road ("Goldshire road to the north"; left out with `noNearRoad`, when the caller says
 -- where the road is itself).
@@ -915,18 +932,9 @@ function logic.describe(zone, value, withDirection, noNearRoad)
         return nil
     end
     local text = logic.expandDirs(zone, p.label)
-    local code = value % logic.CODE
-    if withDirection and code > 0 then
-        local axis = axisOfCode(zone, code)
-        if axis then
-            -- an axis without its template: "road, northwest to southeast"
-            text = text .. ", " .. logic.axisWords(zone, axis)
-        else
-            local template = logic.dirTemplate(zone, math.floor(code / 1000))
-            if template then
-                text = text .. ", " .. string.format(template, logic.dirWord(zone, code % 1000))
-            end
-        end
+    local direction = withDirection and logic.directionText(zone, value)
+    if direction then
+        text = text .. ", " .. direction
     end
     if withDirection and p.road and not noNearRoad then
         text = text .. ", " .. logic.expandDirs(zone, p.road)
@@ -938,7 +946,8 @@ end
 -- What the entry rule compares outdoors: the place id; a piece of a way with one direction (a
 -- road, a city street or walk: TURN_KINDS) "r<place>:<axis key>" and a canal piece "c<place>:<axis
 -- key>" are keyed with their spoken direction (the axis as the current words tell it apart), so a
--- bend is a new place like any other; streets follow the road rules.
+-- bend counts like a new place, said with its direction only (sameWay); streets follow the road
+-- rules.
 
 -- `previous`: the key the player is on now (optional). The same piece whose axis has moved into
 -- the next word but stays within KEY_STICK degrees of the word said keeps that key: a street whose
@@ -971,6 +980,17 @@ end
 -- A key of a way with one direction (a road, street or walk piece).
 function logic.isWayKey(key)
     return type(key) == "string" and key:sub(1, 1) == "r"
+end
+
+-- Is the cell value `value` another piece of the way the player is on (the key `previous`, a road,
+-- street, walk or canal keyed with its direction), and was that way's name the last one said
+-- (`named`, a place id)? Then only the direction changes: the name was said on stepping onto it
+-- (user 2026-10-02: the name once, then only the direction, until one leaves the way or steps onto
+-- one with another name). After the next piece ahead was named as another way (a ramp beside the
+-- street), a bare direction would sound like that one's.
+function logic.sameWay(value, previous, named)
+    local place = logic.placeOf(value)
+    return type(previous) == "string" and value ~= 0 and logic.keyPlace(previous) == place and named == place
 end
 
 -- The place id of an outdoor key (nil for nil).
