@@ -91,9 +91,17 @@ local queueSetting = settings:add({
     default = true,
 })
 
-queueSetting.events.valueChange:subscribe(nil, function(event, proxy, value)
+queueSetting.events.valueChange:subscribe(nil, function(event, obj, key, value)
     applyQueueSetting(value)
 end)
+
+-- The game's sounds around text-to-speech (see core/speechSounds.lua): two
+-- settings here, written into the game on login and on change.
+WowVision.speechSounds.addSettings(settings, L, WowVision.speechSounds.gameSetter)
+
+function module:onFullEnable()
+    WowVision.speechSounds.apply(self.settings, WowVision.speechSounds.gameSetter)
+end
 
 local function frame_OnEvent(frame, event, utteranceID)
     if event == "VOICE_CHAT_TTS_PLAYBACK_STARTED" then
