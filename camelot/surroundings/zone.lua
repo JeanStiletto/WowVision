@@ -835,19 +835,22 @@ function logic.unpack(zone, locale)
     end
 
     if zone.indoor then
-        ix.layer = logic.unpackLayer(zone)
+        ix.layer = logic.unpackLayer(zone, zone.indoor, "/indoor")
+    end
+    if zone.indoorIn then
+        ix.layerIn = logic.unpackLayer(zone, zone.indoorIn, "/indoorIn")
     end
 end
 
--- The indoor layer (zone.indoor): the big halls of a city (Ironforge's, the Undercity quarters)
--- cut into pieces like its streets, on a grid of their own, with centre lines and the edges of their
--- floors (lava, water). Unpacked as a zone of its own that shares the frame, the words, the places
--- and the rooms of `zone`; `covered` is the set of rooms whose floor it holds; its entrances are the
--- doorways from those rooms into the others (see layerEntrances).
-function logic.unpackLayer(zone)
-    local src = zone.indoor
+-- An indoor layer (zone.indoor, zone.indoorIn): the big halls of a city (Ironforge's, the Undercity
+-- quarters) cut into pieces like its streets, on a grid of their own, with centre lines and the
+-- edges of their floors (lava, water). Unpacked as a zone of its own that shares the frame, the
+-- words, the places and the rooms of `zone`; `covered` is the set of rooms whose floor it holds;
+-- its entrances are the doorways from those rooms into the others (see layerEntrances). `src`: the
+-- layer's data, `suffix` its key after the zone's.
+function logic.unpackLayer(zone, src, suffix)
     local layer = {
-        key = zone.key .. "/indoor", label = zone.label, map = zone.map, top = zone.top, left = zone.left,
+        key = zone.key .. suffix, label = zone.label, map = zone.map, top = zone.top, left = zone.left,
         cell = zone.cell, rows = zone.rows, cols = zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
@@ -916,9 +919,21 @@ function logic.insidePool(pool, x, y)
     return inside
 end
 
--- The indoor layer of a zone (unpacked), or nil.
-function logic.layer(zone)
-    return zone._index and zone._index.layer
+-- The indoor layer of a zone (unpacked), or nil. A city has two where the game says so: the halls
+-- it calls outdoors (IsIndoors() false: Ironforge's Great Forge and Commons, the Undercity) and the
+-- big halls it calls indoors (the cavern under Ironforge's throne room); where they lie on top of
+-- each other the game's word tells the floors apart (user's walks 2026-10-02: on the forge floor the
+-- cavern's lava and doorways 60 yd below, on the stairs down the forge's lava walk). `indoors`:
+-- IsIndoors(); nil or a city with one layer: that one.
+function logic.layer(zone, indoors)
+    local ix = zone._index
+    if ix == nil then
+        return nil
+    end
+    if indoors and ix.layerIn then
+        return ix.layerIn
+    end
+    return ix.layer or (indoors == nil and ix.layerIn) or nil
 end
 
 -- Frees the unpacked data when the player leaves the zone.

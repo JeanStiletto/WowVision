@@ -274,7 +274,7 @@ local function logEntry(kind, text, x, y, extra)
             e.hall = hallGap ~= nil or nil
             e.candidates = roomCandidateNames(zone, x, y)
             e.room = room and logic.finishText(logic.describeRoom(zone, room, nil)) or nil
-            local layer = logic.layer(zone)
+            local layer = logic.layer(zone, IsIndoors())
             if layerMode and layer then
                 e.layer = logic.finishText(logic.describe(layer, logic.valueAt(layer, x, y), true))
             end
@@ -799,7 +799,7 @@ local function roomsHere(z, x, y)
     if room then
         here[room] = true
     else
-        for _, id in ipairs(logic.roomCandidates(z, x, y)) do
+        for _, id in ipairs(logic.fittingRooms(z, logic.roomCandidates(z, x, y), IsIndoors())) do
             here[id] = true
         end
     end
@@ -872,7 +872,7 @@ end
 local function updateIndoors(z, x, y, px, py)
     local before = room
     local crossed = logic.crossedDoor(z, room, px, py, x, y)
-    local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false)
+    local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false, IsIndoors())
     if found ~= nil then
         if found ~= room then
             roomByDoor = crossed ~= nil
@@ -882,7 +882,7 @@ local function updateIndoors(z, x, y, px, py)
     if crossed ~= nil or (before ~= nil and room ~= before) then
         notePassed(z, x, y)
     end
-    local layer = logic.layer(z)
+    local layer = logic.layer(z, IsIndoors())
     local here = roomsHere(z, x, y)
     if layer then
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
@@ -1074,7 +1074,7 @@ module:registerCommand({
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
                     parts[#parts + 1] = "Current room: " .. (room and logic.finishText(logic.describeRoom(z, room, nil)) or "unknown")
-                    local layer = logic.layer(z)
+                    local layer = logic.layer(z, IsIndoors())
                     if layer then
                         parts[#parts + 1] = "Indoor layer: " .. (logic.finishText(logic.describe(layer, logic.valueAt(layer, x, y), true)) or "none")
                             .. (layerMode and ", in use" or ", not in use")
@@ -1100,7 +1100,7 @@ function module:describeAround()
     end
     updateWords()
     local text
-    local layer = logic.layer(z)
+    local layer = logic.layer(z, IsIndoors())
     if isInside() and layerMode and layer then
         -- a big hall of the indoor layer: as a place outdoors; down in a pool its way out
         local pool = not IsSwimming() and logic.poolAt(layer, x, y)
