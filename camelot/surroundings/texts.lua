@@ -442,9 +442,14 @@ end
 -- or walk which way to turn to face along it (with `opts.facing`), only where the words cannot
 -- tell; on a square its exits and what is close; elsewhere where a road or street is (within
 -- ROAD_SIDE_REACH, off a way; announcements only on stepping off one) and the cliffs and water
--- near (not while `opts.swimming`). opts.cut: an announcement (see the top). Returns the text, and
--- on a square its region and the set of its mouths said now.
+-- near (not while `opts.swimming`). opts.cut: an announcement (see the top); the next piece of the
+-- way the player is on says only its direction (nil when it has none) while that way was the last
+-- named (`opts.named`, logic.sameWay). Returns the text, and on a square its region and the set of
+-- its mouths said now.
 local function spotBody(zone, x, y, value, previous, opts)
+    if opts.cut and logic.sameWay(value, previous, opts.named) then
+        return logic.directionText(zone, value)
+    end
     local text = logic.describe(zone, value, true)
     if text == nil then
         return nil

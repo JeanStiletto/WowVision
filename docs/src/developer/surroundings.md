@@ -74,7 +74,9 @@ Each zone file calls `addon.addZone{...}` with:
   axis 0..179 for "running %s"); 0 = no data. A way's cells carry the heading of their centre
   line's run (roads.bend_runs), so the spoken word is the nearest one; the entry rule's key
   (`logic.outdoorKey`) quantizes it to the current words and sticks to the word said while the
-  heading stays within KEY_STICK degrees of it.
+  heading stays within KEY_STICK degrees of it. A new key of the way the player is on says only
+  its direction while that way was the last place named (`logic.sameWay`): the name once, then
+  "north to south", until the player leaves the way or another way is named.
 - `bridgeUnder`: row, column, value triples: the water under a bridge or the city canal
   under a street, said while swimming.
 - `exits`: x, y, width, out quadruples: ways out of city water; out is the angle one climbs out
