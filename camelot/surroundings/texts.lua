@@ -162,7 +162,8 @@ end
 -- Guidance targets -------------------------------------------------------------------------------
 -- A target {key (unique among the targets of one guide), kind, x, y, d, dir (distance and angle
 -- from the player), name and short (its text the first time and after), atName and at (at the
--- target), through (the angle of the way through it) and throughFormat}.
+-- target), through (the angle of the way through it) and throughFormat, reach (from how far it is
+-- guided to)}.
 
 -- A doorway target: into the room `label` (the way out when `label` is nil), `through` the
 -- angle of the way through it.
@@ -209,8 +210,10 @@ function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer)
         return nil
     end
     local label = beyond ~= 0 and logic.describeRoom(zone, beyond, roomId) or nil
-    return doorwayTarget(string.format("d%.1f,%.1f", door.x, door.y), d, logic.bearingOf(dx - x, dy - y), dx, dy,
+    local t = doorwayTarget(string.format("d%.1f,%.1f", door.x, door.y), d, logic.bearingOf(dx - x, dy - y), dx, dy,
         label, logic.doorwayDirection(zone, door, roomId))
+    t.reach = GUIDE_REACH
+    return t
 end
 
 -- Where a street (road, bridge, canal walk) begins on the square the player is on (or, just off
@@ -226,7 +229,7 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
     end
     return {
         key = "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), kind = "way", d = d, dir = dir,
-        x = b.x, y = b.y,
+        x = b.x, y = b.y, reach = logic.beginningReach(reach, b),
         -- always by name: "street here" says nothing on a square (user 2026-09-30), an opening is
         -- one of few, unlike the entrances along it
         name = b.label, short = b.label,
@@ -274,7 +277,10 @@ function logic.footTarget(zone, x, y, square, prefer)
         end
     end
     if kept and best ~= kept and logic.sticks(best.d, kept.d) then
-        return kept
+        best = kept
+    end
+    if best then
+        best.reach = best.reach or GUIDE_REACH
     end
     return best
 end
