@@ -187,11 +187,14 @@ function Queued:destroy()
 end
 
 -- The game's sounds around text-to-speech (see core/speechSounds.lua): two
--- settings here, written into the game on login and on change.
-WowVision.speechSounds.addSettings(settings, L, WowVision.speechSounds.gameSetter)
+-- toggles that are the game's own settings, and the line-break sound
+-- turned off once per character.
+WowVision.speechSounds.addSettings(settings, L, WowVision.speechSounds.game)
 
 function module:onFullEnable()
-    WowVision.speechSounds.apply(self.settings, WowVision.speechSounds.gameSetter)
+    if WowVision.speechSounds.silenceOnce(self.settings, WowVision.speechSounds.game) then
+        print(L["WowVision turned off the game's sound between spoken chat lines. You can turn it back on in the Speech settings."])
+    end
 end
 
 -- Module lifecycle

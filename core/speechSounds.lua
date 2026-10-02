@@ -1,78 +1,118 @@
--- The game's own sounds around text-to-speech, owned by the speech module.
+-- The game's own sounds around text-to-speech, as toggles on the speech
+-- module.
 --
 -- The client plays two sounds around the text it speaks: one separating
 -- chat line breaks (between two messages) and an activity sound when a
--- message is spoken while the chat window is hidden. Both are game settings
--- (C_TTSSettings; the /tts playline and /tts playactivity commands toggle
--- them) that default to on, so every fresh character hears the line-break
--- sound between WowVision's announcements. The speech module declares a
--- setting for each and writes them into the game on every login and on
--- every change, so the WowVision value is the one that counts: a /tts
--- toggle lasts until the next login. The line-break sound is off by
--- default; the activity sound keeps the game's default.
+-- message is spoken while the chat window is hidden. Both are game
+-- settings (C_TTSSettings; the /tts playline and /tts playactivity
+-- commands toggle them) that default to on, so every fresh character hears
+-- the line-break sound between WowVision's announcements.
+--
+-- The speech module shows one toggle per sound. A toggle IS the game
+-- setting: it reads and writes C_TTSSettings and stores nothing of its own,
+-- so the /tts commands and the Speech settings screen always agree. On a
+-- character's first login with WowVision the line-break sound is turned
+-- off once, the way the action bars are unlocked once; after that the
+-- player's choice stands.
 --
 -- Kept free of frames and game globals so it runs in the headless tests;
--- the game is reached only through the setter passed in.
+-- the game is reached only through the accessor pair passed in.
 local sounds = {}
 
--- One entry per game setting: the WowVision setting key and label, the
--- default WowVision applies, and the Enum.TtsBoolSetting name.
-sounds.defs = {
+-- The two toggles: WowVision setting key and label, Enum.TtsBoolSetting name.
+sounds.options = {
     {
         key = "chatLineSound",
         label = "Sound Between Chat Lines",
-        default = false,
         option = "PlaySoundSeparatingChatLineBreaks",
     },
     {
         key = "unfocusedActivitySound",
         label = "Activity Sound When Unfocused",
-        default = true,
         option = "PlayActivitySoundWhenNotFocused",
     },
 }
 
--- Declares one Bool setting per entry on a speech module's settings facade
--- and writes each change straight into the game. setter(optionName, enabled)
--- is the game write, sounds.gameSetter in the addon.
-function sounds.addSettings(settings, L, setter)
-    for _, def in ipairs(sounds.defs) do
+-- Declares the toggles on a speech module's settings facade, reading and
+-- writing the game through game.get(optionName) and
+-- game.set(optionName, enabled), plus the hidden per-character flag that
+-- records the one-time silencing.
+function sounds.addSettings(settings, L, game)
+    for _, def in ipairs(sounds.options) do
         local field = settings:add({
             type = "Bool",
             key = def.key,
             label = L[def.label],
-            default = def.default,
+            get = function(obj, key)
+                return game.get(def.option)
+            end,
+            set = function(obj, key, value)
+                game.set(def.option, value)
+            end,
         })
-        field.events.valueChange:subscribe(nil, function(event, obj, key, value)
-            setter(def.option, value == true)
-        end)
+        -- The facade persists every setting; this one has no value of its
+        -- own, the game keeps it. Not persisting also keeps the database
+        -- restore from writing a stale copy back into the game.
+        field.persist = false
     end
+    settings:add({
+        type = "Bool",
+        key = "chatLineSoundSilenced",
+        default = false,
+        global = false,
+        showInUI = false,
+    })
 end
 
--- Writes every setting from state (the module's settings object) into the
--- game. A stored false is a value; only a missing value falls back to the
--- default.
-function sounds.apply(state, setter)
-    for _, def in ipairs(sounds.defs) do
-        local value = state[def.key]
-        if value == nil then
-            value = def.default
+-- Turns the line-break sound off on a character's first login.
+-- state.chatLineSoundSilenced records that this character was handled.
+-- Returns true when the sound was on and is now off.
+function sounds.silenceOnce(state, game)
+    if state.chatLineSoundSilenced then
+        return false
+    end
+    local option = sounds.options[1].option
+    local changed = false
+    if game.get(option) then
+        if not game.set(option, false) then
+            -- Refused (no API, an error): try again next login.
+            return false
         end
-        setter(def.option, value == true)
+        changed = true
     end
+    state.chatLineSoundSilenced = true
+    return changed
 end
 
--- The game write: C_TTSSettings.SetSetting with the option looked up by
--- name, since Enum is a game global. Returns true when the game took it.
-function sounds.gameSetter(optionName, enabled)
+-- The game side: C_TTSSettings with the option looked up by name, since
+-- Enum is a game global. get returns nil and set returns false when the
+-- client has no such setting.
+local function gameOption(optionName)
     if C_TTSSettings == nil or Enum == nil or Enum.TtsBoolSetting == nil then
-        return false
+        return nil
     end
-    local option = Enum.TtsBoolSetting[optionName]
-    if option == nil then
-        return false
-    end
-    return (pcall(C_TTSSettings.SetSetting, option, enabled))
+    return Enum.TtsBoolSetting[optionName]
 end
+
+sounds.game = {
+    get = function(optionName)
+        local option = gameOption(optionName)
+        if option == nil then
+            return nil
+        end
+        local ok, enabled = pcall(C_TTSSettings.GetSetting, option)
+        if ok then
+            return enabled
+        end
+        return nil
+    end,
+    set = function(optionName, enabled)
+        local option = gameOption(optionName)
+        if option == nil then
+            return false
+        end
+        return (pcall(C_TTSSettings.SetSetting, option, enabled))
+    end,
+}
 
 WowVision.speechSounds = sounds
