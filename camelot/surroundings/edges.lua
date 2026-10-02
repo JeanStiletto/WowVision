@@ -47,8 +47,16 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local changed = false
+    -- a hall's lower level is also entered by falling: walking over an edge whose drop falls onto
+    -- it (the moat's rim: user's walk 2026-10-02, the trench is 19 yd under the walkways)
+    local fell = logic.fellOnto(zone, on, px, py, x, y)
+    if fell and not on[fell] then
+        on[fell] = true
+        changed = true
+    end
     local painted = logic.placeOf(logic.paintedAtCell(zone, r, c))
     local paintedKind = painted ~= 0 and logic.kind(zone, painted) or nil
+    local left = {}
     for piece in pairs(on) do
         local stays = logic.nearCell(zone, ix.pieces, r, c, piece)
         -- on its footprint but on a cell painted with another place (not a fork or bridge on the
@@ -67,6 +75,36 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
         end
         if not stays then
             on[piece] = nil
+            changed = true
+            left[#left + 1] = piece
+        end
+    end
+    -- in a hall (the indoor layers' levels, zone.pieceOwn): the same level going on in the next
+    -- piece of it, a piece of the same place stacked here (the moat is cut into nine pieces; at
+    -- their seams the player left one and was on none, hearing the walkways over the trench,
+    -- replay of the walk 2026-10-02 16:47). Not outdoors: the city's raised pieces carry their
+    -- renamed streets, and the rule moved Stormwind's Mage Quarter stairs onto a street.
+    local key = r * zone.cols + c
+    for _, piece in ipairs(zone.pieceOwn and left or {}) do
+        local own = ix.piecePlaces and ix.piecePlaces[piece]
+        if own then
+            for _, a in ipairs(ix.stacked and ix.stacked[key] or {}) do
+                local theirs = ix.piecePlaces[a.piece]
+                if not on[a.piece] and theirs then
+                    for place in pairs(own) do
+                        if theirs[place] then
+                            on[a.piece] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- standing where only a level's floor is (the indoor layers' pieceOwn: the middle of the moat,
+    -- the stairs down to it) the player is on that level
+    for _, piece in ipairs(ix.pieceOwn and ix.pieceOwn[key] or {}) do
+        if not on[piece] then
+            on[piece] = true
             changed = true
         end
     end
@@ -108,10 +146,24 @@ function logic.edge(zone, i)
     return zone._index.edges[i]
 end
 
+-- Is an edge on the level the player is on? In a hall (the indoor layers) `levels` is the set of
+-- the hall's other levels the player is on: an edge of the main floor counts only while on none,
+-- an edge of a level only while on it (down in the moat the walkways' edges are no drops). nil:
+-- every edge (outdoors).
+local function onLevel(e, levels)
+    if levels == nil then
+        return true
+    end
+    if e.level == 0 then
+        return next(levels) == nil
+    end
+    return levels[e.level] == true
+end
+
 -- Whether edge `i` is looked at from (x, y) at all: not skipped, low or on a piece the player is
--- on (`on`), and its box within `reach` yards.
-local function edgeCounts(e, i, x, y, reach, on, skip)
-    if (skip and skip[i]) or (e.piece ~= 0 and not (on and on[e.piece])) then
+-- on (`on`), on the level the player is on (`levels`), and its box within `reach` yards.
+local function edgeCounts(e, i, x, y, reach, on, skip, levels)
+    if (skip and skip[i]) or (e.piece ~= 0 and not (on and on[e.piece])) or not onLevel(e, levels) then
         return false
     end
     local b = e.box
@@ -127,7 +179,7 @@ end
 -- structure's floor; the edge index and distance. With `facing`, an edge ahead (within 90 degrees
 -- of the view) wins over a nearer one beside or behind. `on`: the high pieces the player is on
 -- (see updateHigh); `skip`: a set of edge indexes left out (warned already).
-function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
+function logic.nearestEdge(zone, x, y, reach, on, facing, skip, levels)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local vx, vy = nil, nil
@@ -136,7 +188,7 @@ function logic.nearestEdge(zone, x, y, reach, on, facing, skip)
     end
     local best, bestD, ahead, aheadD = nil, reach, nil, reach
     for i, e in ipairs(ix.edges) do
-        if edgeCounts(e, i, x, y, reach, on, skip) then
+        if edgeCounts(e, i, x, y, reach, on, skip, levels) then
             local fx, fy = logic.compassVector(e.facing)
             local p = e.points
             for k = 1, #p - 1, 2 do
@@ -173,7 +225,7 @@ logic.AHEAD_ANGLE = 0.25 -- cosine: the path turns at most 75 degrees away from 
 -- the edge), with the player on the structure in front of it. Returns the edge index, the
 -- distance along the path and the edge point in the path (x, y). `on` and `skip` as for
 -- nearestEdge; `all` (optional): a set that gets every edge in the path.
-function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
+function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all, levels)
     local ix = zone._index
     if look <= 0 then
         return nil
@@ -182,7 +234,7 @@ function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
     local best, bestAlong, bx, by = nil, look, nil, nil
     for i, e in ipairs(ix.edges) do
         local fx, fy = logic.compassVector(e.facing)
-        if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(e, i, x, y, look, on, skip) then
+        if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(e, i, x, y, look, on, skip, levels) then
             local p = e.points
             for k = 1, #p - 1, 2 do
                 local dx, dy = p[k] - x, p[k + 1] - y
@@ -201,6 +253,36 @@ function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all)
     end
     if best then
         return best, bestAlong, bx, by
+    end
+    return nil
+end
+
+logic.FALL_REACH = 3.0 -- yd from an edge point a step over the edge counts as a fall over it
+
+-- The level a step from (px, py) to (x, y) fell onto: over an edge whose drop falls onto another
+-- level of the hall (zone edges with `under`), from the level the edge lies on (`on`: the levels
+-- the player is on), from the side the edge's floor is on to the other; or nil.
+function logic.fellOnto(zone, on, px, py, x, y)
+    local ix = zone._index
+    if px == nil then
+        return nil
+    end
+    for _, e in ipairs(ix.edges) do
+        if e.under and onLevel(e, on) then
+            local b = e.box
+            local reach = logic.FALL_REACH
+            if x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach then
+                local fx, fy = logic.compassVector(e.facing)
+                local p = e.points
+                for k = 1, #p - 1, 2 do
+                    local qx, qy = p[k], p[k + 1]
+                    if logic.dist(x, y, qx, qy) <= reach and inFront(qx, qy, px, py, fx, fy)
+                        and not inFront(qx, qy, x, y, fx, fy) then
+                        return e.under
+                    end
+                end
+            end
+        end
     end
     return nil
 end

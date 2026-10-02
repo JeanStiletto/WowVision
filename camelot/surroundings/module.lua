@@ -63,8 +63,6 @@ local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
 local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
 local PASSED_SAME = 4 -- a guidance target this close to that doorway is that doorway
-local MOAT_NEAR = 8 -- down in a moat the player stays in it while a moat cell is this near
-local MOAT_OUT = 4 -- walking this near a moat's way out takes the player out of it
 
 -- What the module knows about where the player is
 local zone = nil -- the zone data the player is in (unpacked)
@@ -112,10 +110,6 @@ local hallGap = nil
 -- player was once farther than the guidance reach from it (user 2026-09-29: "Ausgang, 6 Meter im
 -- Nordosten" right after going out through it)
 local passed = nil
--- Down in a moat (Ironforge's Commons): its floor reaches under the walkways beside it, where the
--- map (no height) has the walkway; so once in it the player stays in it until walking out at its
--- way out or leaving its area, as on a high piece
-local inMoat = false
 local inPool = nil -- the pool the player is down in (logic.poolAt)
 
 -- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
@@ -164,7 +158,6 @@ local function forgetPlace()
     wipeSet(high)
     warnedEdges = {}
     layerMode = false
-    inMoat = false
     inPool = nil
 end
 
@@ -463,31 +456,16 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     guideTo(z, guide, t, x, y, brief)
 end
 
--- The value of the nearest moat cell within `reach` yards of the player, or nil.
-local function moatNear(layer, x, y, reach)
-    local _d, _cx, _cy, v = logic.nearestCell(layer, x, y, math.ceil(reach / layer.cell), reach, function(value)
-        return value ~= 0 and logic.kindOf(layer, value) == "moat"
-    end)
-    return v
-end
-
--- Down in a moat? On a moat cell the player is; once in it, still while a moat cell is near,
--- until walking near its way out. Returns the moat's value while in it.
-local function updateMoat(layer, x, y)
+-- Down in a moat? The place here on the level the player is on (the hall's levels, updateHigh:
+-- in once fallen over its rim or come down its stairs, out once up on the walkway) is the moat's;
+-- returns its value then (user 2026-10-02: no rule of the moat's own, it let the player out within
+-- 4 yd of its stairs while still down in the trench).
+local function moatHere(layer, x, y)
     local v = logic.valueAt(layer, x, y)
     if v and v ~= 0 and logic.kind(layer, logic.placeOf(v)) == "moat" then
-        inMoat = true
         return v
     end
-    if not inMoat then
-        return nil
-    end
-    local near = moatNear(layer, x, y, MOAT_NEAR)
-    if near == nil or logic.nearestExit(layer, x, y, MOAT_OUT) then
-        inMoat = false
-        return nil
-    end
-    return near
+    return nil
 end
 
 -- Walked through a doorway (the room, the big hall or inside and outside changed, or a doorway of
@@ -567,8 +545,9 @@ end
 -- distance. An edge warns again after the player is out of its reach and it is no longer in the
 -- path; edges of a wall-walk or a deck high over the ground only while the player is up there.
 -- Indoors (the indoor layer's edges) `rooms` is the set of rooms the player may be in: an edge
--- inside warns only in the room its floor belongs to (its piece), as a high piece's edge.
-local function checkEdges(z, x, y, px, py, rooms)
+-- inside warns only in the room its floor belongs to (its piece), as a high piece's edge; `levels`
+-- the hall's levels the player is on: an edge warns only on its own level.
+local function checkEdges(z, x, y, px, py, rooms, levels)
     local on = rooms
     if on == nil then
         local _on, changed = logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
@@ -586,7 +565,7 @@ local function checkEdges(z, x, y, px, py, rooms)
     end
     local inPath = {}
     if vx then
-        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, nil, inPath)
+        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, nil, inPath, levels)
     end
     for i in pairs(warnedEdges) do
         if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
@@ -596,15 +575,10 @@ local function checkEdges(z, x, y, px, py, rooms)
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, on, GetPlayerFacing(), warnedEdges)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, on, GetPlayerFacing(), warnedEdges, levels)
     local along, qx, qy = nil, nil, nil
     if i == nil and vx then
-        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, warnedEdges)
-    end
-    if i and inMoat and logic.edge(z, i).into == 4 then
-        -- down in the moat: the walkway's edge above is no drop
-        warnedEdges[i] = true
-        i = nil
+        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, warnedEdges, nil, levels)
     end
     if i then
         local text = logic.edgeText(z, i, along, x, y, qx, qy)
@@ -848,7 +822,7 @@ local function updateLayer(z, layer, x, y, px, py, here)
         notePassed(z, x, y)
     end
     lastRoom = room or lastRoom
-    local moat = updateMoat(layer, x, y)
+    local moat = moatHere(layer, x, y)
     local pool, held = nil, false
     if not moat then
         pool, held = updatePool(layer, x, y)
@@ -885,10 +859,21 @@ local function updateIndoors(z, x, y, px, py)
     local layer = logic.layer(z, IsIndoors())
     local here = roomsHere(z, x, y)
     if layer then
+        -- the hall's level the player is on (a gallery, the moat under the walkways), as on the
+        -- city's raised pieces outdoors
+        local levels = layer._index.on
+        local wasOn = next(levels) ~= nil
+        logic.updateHigh(layer, levels, x, y, false, px, py)
+        if (next(levels) ~= nil) ~= wasOn then
+            -- the halls found so far were flooded on the other level (not between two pieces of
+            -- one level: a ledge of two pieces repeated what is near at every hop, replay of the
+            -- walk 2026-09-30 22:29)
+            logic.forgetRegions(layer)
+        end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
         -- has), each in the room its floor belongs to: this room, or while it is unknown
-        -- (stacked floors) any room here
-        checkEdges(layer, x, y, px, py, here)
+        -- (stacked floors) any room here; and on its own level
+        checkEdges(layer, x, y, px, py, here, levels)
     end
     if layer and logic.inLayer(layer, room, x, y) then
         updateLayer(z, layer, x, y, px, py, here)
