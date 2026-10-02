@@ -325,24 +325,36 @@ end
 -- nothing or into a dead end says so. Down in a `pool` (logic.poolAt): its own nearest way out,
 -- named with the pool ("pool, way out, 17 yards at 9 o'clock"): one notice on stepping in, no
 -- place of its own (user 2026-10-02: "Becken, Ausgang auf 10 Uhr").
-function logic.exitTarget(zone, x, y, moat, pool)
+function logic.exitTarget(zone, x, y, down, levels)
     local i, d, dir, exit
-    if pool then
-        i, d, dir, exit = logic.nearestPoint(pool.exits, x, y, math.huge)
+    local kind = down and logic.kindOf(zone, down) or nil
+    if down then
+        -- down on a hall's lower level: its own ways out (a pool's, tagged with its level), or the
+        -- moat's (level 0: the moat's nine pieces share them)
+        local own = {}
+        for _, e in ipairs(zone._index.exits) do
+            local lv = e.level or 0
+            if (lv ~= 0 and levels and levels[lv]) or (lv == 0 and kind == "moat") then
+                own[#own + 1] = e
+            end
+        end
+        i, d, dir, exit = logic.nearestPoint(own, x, y, kind == "moat" and MOAT_EXIT_REACH or math.huge)
     else
-        i, d, dir, exit = logic.nearestExit(zone, x, y, moat and MOAT_EXIT_REACH or EXIT_REACH)
+        i, d, dir, exit = logic.nearestExit(zone, x, y, EXIT_REACH)
     end
     if i == nil then
         return nil
     end
     local dead = exit.dead
-    local name = moat and L["way out of the moat"] or L["way out of the water"]
-    if pool then
-        local place = logic.place(zone, logic.placeOf(pool.value))
-        name = place and place.label .. ", " .. L["way out"] or L["way out of the water"]
+    local name = L["way out of the water"]
+    if kind == "moat" then
+        name = L["way out of the moat"]
+    elseif kind then
+        local place = logic.place(zone, logic.placeOf(down))
+        name = place and place.label .. ", " .. L["way out"] or name
     end
     return {
-        key = pool and "p" .. i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
+        key = exit.i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
         name = dead and L["way out of the water to a dead end"] or name,
         short = dead and L["way out to a dead end"] or L["way out"],
         atName = dead and L["at the way out to a dead end"] or L["at the way out"],

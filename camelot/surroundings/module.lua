@@ -110,7 +110,6 @@ local hallGap = nil
 -- player was once farther than the guidance reach from it (user 2026-09-29: "Ausgang, 6 Meter im
 -- Nordosten" right after going out through it)
 local passed = nil
-local inPool = nil -- the pool the player is down in (logic.poolAt)
 
 -- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
 -- on the ground above the Undercity Tirisfal's).
@@ -158,7 +157,6 @@ local function forgetPlace()
     wipeSet(high)
     warnedEdges = {}
     layerMode = false
-    inPool = nil
 end
 
 -- A way with centre lines (road, fork, crossing, city street or walk); with `bridge` also a bridge
@@ -456,13 +454,14 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     guideTo(z, guide, t, x, y, brief)
 end
 
--- Down in a moat? The place here on the level the player is on (the hall's levels, updateHigh:
--- in once fallen over its rim or come down its stairs, out once up on the walkway) is the moat's;
--- returns its value then (user 2026-10-02: no rule of the moat's own, it let the player out within
--- 4 yd of its stairs while still down in the trench).
-local function moatHere(layer, x, y)
+-- Down in a moat or a pool? The place here on the level the player is on (the hall's levels,
+-- updateHigh: in once fallen or stepped in or come down its stairs, out once up its way out) is
+-- one; returns its value then (user 2026-10-02: no rule of the moat's or the pools' own, the moat's
+-- let the player out within 4 yd of its stairs while still down in the trench).
+local DOWN_KINDS = { moat = true, pool = true }
+local function downHere(layer, x, y)
     local v = logic.valueAt(layer, x, y)
-    if v and v ~= 0 and logic.kind(layer, logic.placeOf(v)) == "moat" then
+    if v and v ~= 0 and DOWN_KINDS[logic.kind(layer, logic.placeOf(v))] then
         return v
     end
     return nil
@@ -503,34 +502,14 @@ local function updatePassed(x, y)
     end
 end
 
--- Guidance to the nearest way out of the water (or, with `moat`, of a moat; with `pool`, of that
--- pool), when there is one.
-local function guideExit(z, x, y, moat, pool)
-    local t = module.settings.guidance and logic.exitTarget(z, x, y, moat, pool)
+-- Guidance to the nearest way out of the water, or, with `down` (the place value of a hall's
+-- lower level the player is down on: the moat, a pool), of that level, when there is one.
+local function guideExit(z, x, y, down)
+    local t = module.settings.guidance and logic.exitTarget(z, x, y, down, down and z._index.on)
     if t then
         guideTo(z, waterGuide, t, x, y)
     else
         waterGuide.key = nil
-    end
-end
-
--- Down in a pool? Not while swimming (the water's own ways out); held near its rim (poolAt).
--- Returns the pool and whether it is only held (then nothing new is said).
-local function updatePool(z, x, y)
-    local pool, held = nil, false
-    if not IsSwimming() then
-        pool, held = logic.poolAt(z, x, y, inPool)
-    end
-    inPool = pool
-    return pool, held
-end
-
--- Out of a pool: its way out is named with it again on stepping back in (a pool's keys are "p1"...;
--- the ways out while swimming keep their naming as before).
-local function leavePool()
-    waterGuide.key = nil
-    if type(waterGuide.named) == "string" then
-        waterGuide.named = nil
     end
 end
 
@@ -822,21 +801,15 @@ local function updateLayer(z, layer, x, y, px, py, here)
         notePassed(z, x, y)
     end
     lastRoom = room or lastRoom
-    local moat = moatHere(layer, x, y)
-    local pool, held = nil, false
-    if not moat then
-        pool, held = updatePool(layer, x, y)
-    end
-    if moat or pool then
+    local down = downHere(layer, x, y)
+    if down then
         guide.key = nil
-        if not held then
-            guideExit(layer, x, y, moat ~= nil, pool)
-        end
+        guideExit(layer, x, y, down)
     else
-        leavePool()
+        waterGuide.key = nil
         checkGuide(layer, x, y)
     end
-    checkPlace(layer, x, y, moat)
+    checkPlace(layer, x, y, down)
     checkAhead(layer, x, y, px, py)
     checkStop(z, x, y, px, py, here)
 end
@@ -913,22 +886,15 @@ local function updateIndoors(z, x, y, px, py)
     checkStop(z, x, y, px, py, here)
 end
 
--- Outdoors: the drop edges and the guidance on foot, or while swimming (or down in a pool, water
--- one stands in: its way out, named with it) the ways out of the water; the place, the next piece
--- ahead on a way and its bends, the stops.
+-- Outdoors: the drop edges and the guidance on foot, or while swimming the ways out of the water;
+-- the place, the next piece ahead on a way and its bends, the stops.
 local function updateOutdoors(z, x, y, px, py)
     lastRoom = nil
-    local pool, held = updatePool(z, x, y)
     if IsSwimming() then
         guide.key = nil
         checkWater(z, x, y)
-    elseif pool then
-        guide.key = nil
-        if not held then
-            guideExit(z, x, y, false, pool)
-        end
     else
-        leavePool()
+        waterGuide.key = nil
         checkEdges(z, x, y, px, py)
         checkGuide(z, x, y)
     end
@@ -1087,12 +1053,12 @@ function module:describeAround()
     local text
     local layer = logic.layer(z, IsIndoors())
     if isInside() and layerMode and layer then
-        -- a big hall of the indoor layer: as a place outdoors; down in a pool its way out
-        local pool = not IsSwimming() and logic.poolAt(layer, x, y)
+        -- a big hall of the indoor layer: as a place outdoors; down in the moat or a pool its way out
+        local down = downHere(layer, x, y)
         local value = logic.outdoorValue(layer, x, y, false, isWay(outdoor.current, true))
         text = logic.spotText(layer, x, y, value, nil, { facing = turnFacing() }) or L["place unknown"]
-        local t = self.settings.guidance and (pool and logic.exitTarget(layer, x, y, false, pool)
-            or not pool and logic.footTarget(layer, x, y, region))
+        local t = self.settings.guidance and (down and logic.exitTarget(layer, x, y, down, layer._index.on)
+            or not down and logic.footTarget(layer, x, y, region))
         if t then
             text = text .. ", " .. logic.guideText(layer, t, true, t.d <= logic.GUIDE_AT)
         end
@@ -1104,13 +1070,12 @@ function module:describeAround()
         end
     else
         local swimming = IsSwimming()
-        local pool = not swimming and logic.poolAt(z, x, y)
         local value = logic.outdoorValue(z, x, y, swimming, isWay(outdoor.current, true))
         -- a spot the data has no place for (a gap in the map) says so, as a room does
         text = logic.spotText(z, x, y, value, nil, { facing = turnFacing(), swimming = swimming }) or L["place unknown"]
         local t = nil
-        if self.settings.guidance and (swimming or pool) then
-            t = logic.exitTarget(z, x, y, false, pool or nil)
+        if self.settings.guidance and swimming then
+            t = logic.exitTarget(z, x, y)
         elseif self.settings.guidance then
             t = logic.footTarget(z, x, y, region)
         end
