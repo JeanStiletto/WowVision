@@ -322,9 +322,10 @@ function logic.pastTarget(zone, t, x, y)
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
--- nothing or into a dead end says so. Down in a `pool` (logic.poolAt): its own nearest way out,
--- named with the pool ("pool, way out, 17 yards at 9 o'clock"): one notice on stepping in, no
--- place of its own (user 2026-10-02: "Becken, Ausgang auf 10 Uhr").
+-- nothing or into a dead end says so. `down`: the place value of a hall's lower level the player
+-- is down on (the moat, a pool; a level like any other since 2026-10-02, entered and left by
+-- updateHigh, and said as a place): the ways out of the levels in `levels`, the moat's shared by
+-- its nine pieces; a pool's named with it ("pool, way out, 17 yards at 9 o'clock").
 function logic.exitTarget(zone, x, y, down, levels)
     local i, d, dir, exit
     local kind = down and logic.kindOf(zone, down) or nil
