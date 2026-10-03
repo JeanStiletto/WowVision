@@ -334,6 +334,22 @@ function logic.pastTarget(zone, t, x, y)
     return (x - t.x) * fx + (y - t.y) * fy > logic.GUIDE_AT
 end
 
+-- Is the player on the climb whose foot `t` is, away from its foot: standing on that stairs or
+-- ramp (the value under the feet, or `currentKey`, the place last entered, is the foot's) more
+-- than GUIDE_AT yards from it? Then its foot is no target (user's walk 2026-10-03 10:31:39: on
+-- the lowest steps of the auction house stairs, "stairs, 3 to the southeast" led back down).
+-- Within GUIDE_AT it stays: the cells say the climb about 2 yd before its foot, and "up to the
+-- west" must still come there (see pastTarget).
+function logic.onClimb(zone, t, x, y, currentKey)
+    if t.d <= logic.GUIDE_AT then
+        return false
+    end
+    if logic.valueAt(zone, x, y) == t.value then
+        return true
+    end
+    return currentKey ~= nil and logic.outdoorKey(zone, t.value, currentKey) == currentKey
+end
+
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
 -- nothing or into a dead end says so. `down`: the place value of a hall's lower level the player
 -- is down on (the moat, a pool; a level like any other since 2026-10-02, entered and left by

@@ -1139,6 +1139,17 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.pastTarget(z, target, 94, 40.5), true)
         target = logic.footTarget(z, 90, 47.5)   -- 4 yd before the foot
         t:assertEqual(logic.pastTarget(z, target, 90, 47.5), false)
+        -- standing on the ramp 4 yd beside its foot: not its target any more; within 3 yd of the
+        -- foot it stays ("up to the northeast" is said there)
+        target = logic.footTarget(z, 92, 48)
+        t:assertEqual(logic.pastTarget(z, target, 92, 48), false)
+        t:assertEqual(logic.onClimb(z, target, 92, 48, nil), true)
+        target = logic.footTarget(z, 92, 46.5)
+        t:assertEqual(logic.onClimb(z, target, 92, 46.5, nil), false)
+        -- another climb under the feet (a different value): still guided to this foot
+        target = logic.footTarget(z, 92, 48)
+        target.value = 22090
+        t:assertEqual(logic.onClimb(z, target, 92, 48, nil), false)
     end,
 
     ["the guidance target stays unless another is clearly nearer"] = function(t)
