@@ -963,6 +963,12 @@ end
 -- heading hovers about a word boundary (the data carries each run's heading to the degree) is not
 -- a new place at every run; it becomes one once the heading is clearly in the next word.
 logic.KEY_STICK = 10 -- degrees beyond the spoken word's half step
+
+-- Degrees between two direction words: an hour with the clock, else a compass word.
+function logic.wordStep()
+    return logic.clock and 30 or 45
+end
+
 function logic.outdoorKey(zone, value, previous)
     if value == 0 then
         return nil
@@ -973,7 +979,7 @@ function logic.outdoorKey(zone, value, previous)
         local prefix = (kind == "canal" and "c" or "r") .. logic.placeOf(value) .. ":"
         if axis and type(previous) == "string" and previous:sub(1, #prefix) == prefix then
             local said = tonumber(previous:sub(#prefix + 1))
-            local step = logic.clock and 30 or 45
+            local step = logic.wordStep()
             if said and said ~= logic.axisKey(axis) then
                 local gap = math.abs(axis - said * step) % 180
                 if math.min(gap, 180 - gap) <= step / 2 + logic.KEY_STICK then

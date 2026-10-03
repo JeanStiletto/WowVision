@@ -256,16 +256,17 @@ function logic.pieceAhead(zone, x, y, heading, current, look)
     return nil
 end
 
-logic.BEND_RESET = 60 -- degrees; more is turning round or another road
-
 -- A gentle bend: `from` where the road led at the last message, `dir` where it leads now (both from
 -- wayAhead), `threshold` degrees. Returns the turn to say (1 left, -1 right, 0 nothing) and whether
 -- `dir` becomes the new `from`. The bend counts once the road has turned `threshold` degrees, and
 -- is said only while the facing still points at least TURN_OFF degrees the other way from where
--- the road leads: a player already turned along it (or beyond) hears nothing.
+-- the road leads: a player already turned along it (or beyond) hears nothing. A turn of a whole
+-- direction word (wordStep) or more is no bend: the hint only steers within the margin the words
+-- leave (user 2026-10-03: "a street turning from 10 o'clock to 11 o'clock needs no hint, I can
+-- turn myself then"; was 60 degrees).
 function logic.bendTurn(from, dir, facing, threshold)
     local diff = logic.degreesBetween(dir, from)
-    if math.abs(diff) > logic.BEND_RESET then
+    if math.abs(diff) >= logic.wordStep() then
         return 0, true
     end
     if math.abs(diff) < threshold then
