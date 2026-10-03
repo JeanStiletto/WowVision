@@ -127,16 +127,49 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
     while added do
         added = false
         local new = {}
-        for piece in pairs(on) do
-            for _, other in ipairs(ix.links[piece] or {}) do
-                if not on[other] and logic.nearCell(zone, ix.pieces, r, c, other) then
-                    new[#new + 1] = other
+        if ix.linkAt then
+            -- joined where the two levels meet: the step passes the place (the Brill tavern's
+            -- landing lies over the foot of its stairs, next to it the player was up at once)
+            local m = math.ceil(logic.ACCESS_REACH / zone.cell) + 1
+            for dr = -m, m do
+                for dc = -m, m do
+                    for _, l in ipairs(ix.linkAt[(r + dr) * zone.cols + c + dc] or {}) do
+                        local other = on[l.a] and not on[l.b] and l.b or on[l.b] and not on[l.a] and l.a or nil
+                        if other and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
+                            new[#new + 1] = other
+                        end
+                    end
+                end
+            end
+        else
+            for piece in pairs(on) do
+                for _, other in ipairs(ix.links[piece] or {}) do
+                    if not on[other] and logic.nearCell(zone, ix.pieces, r, c, other) then
+                        new[#new + 1] = other
+                    end
                 end
             end
         end
         for _, piece in ipairs(new) do
             on[piece] = true
             added, changed = true, true
+        end
+    end
+    if ix.linkAt then
+        -- of two joined levels the one whose floor is right here (the room beside the landing, a
+        -- step through its doorway; next to the landing's footprint the landing held for 17 s)
+        local here = ix.pieces[key]
+        local exact = false
+        for piece in pairs(on) do
+            exact = exact or (here and here[piece]) or false
+        end
+        if exact then
+            for piece in pairs(on) do
+                if not here[piece] then
+                    on[piece] = nil
+                    changed = true
+                end
+            end
         end
     end
     return on, changed

@@ -86,12 +86,20 @@ end
 -- north"): {label, class, rise, points {x, y, ...}, cells {border r, c, square r, c}}.
 local function findMouths(zone, cells, list)
     local byLabel, order, seen, along, rising = {}, {}, {}, {}, {}
+    local noTouch = zone._index.noTouch
     for i = 1, #list - 1, 2 do
         local r, c = list[i], list[i + 1]
+        local here = noTouch and logic.placeOf(logic.valueAtCell(zone, r, c))
         for _, s in ipairs(logic.STEPS) do
             local nr, nc = r + s[1], c + s[2]
             local key = nr * zone.cols + nc
-            local noContact = zone._index.noContact[(r * zone.cols + c) * zone.rows * zone.cols + key]
+            local pair = (r * zone.cols + c) * zone.rows * zone.cols + key
+            local noContact = zone._index.noContact[pair]
+            if not noContact and noTouch and noTouch[pair] then
+                -- the two floors do not meet here, on the level the player is on (the room 7 yd
+                -- below beside the landing upstairs)
+                noContact = noTouch[pair][here .. ":" .. logic.placeOf(logic.valueAtCell(zone, nr, nc))] or false
+            end
             if not cells[key] and not seen[key] and not noContact and logic.inGrid(zone, nr, nc) then
                 seen[key] = true
                 local value = logic.valueAtCell(zone, nr, nc)
@@ -146,7 +154,7 @@ local function findMouths(zone, cells, list)
                         end
                     end
                 end
-                if #members >= logic.MOUTH_MIN then
+                if #members >= (zone.mouthMin or logic.MOUTH_MIN) then
                     local points = {}
                     for _, m in ipairs(members) do
                         local px, py = logic.cellCentre(zone, m[1], m[2])

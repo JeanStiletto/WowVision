@@ -158,6 +158,37 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
+    ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
+        local z = newHallZone()
+        -- the halls the game calls indoors, on cells of 5 yd: stairs (level 1) from their foot at
+        -- y 59 west to y 45 (row 0, columns 0 to 2), the landing (level 2) over all of row 0, the
+        -- stairs' foot too (the Brill tavern's landing lies over the foot of its stairs); the
+        -- stairs are stepped onto at their foot and join the landing at their top, y 47
+        z.indoorIn = {
+            top = 100, left = 60, cell = 5, rows = 2, cols = 12,
+            rooms = { 1 }, grid = { "70000*12", "70000*12" }, lanes = {},
+            pieceCells = { 0, 0, 1, 0, 1, 1, 0, 2, 1, 0, 0, 2, 0, 1, 2, 0, 2, 2, 0, 3, 2, 0, 4, 2, 0, 5, 2 },
+            access = { 1, 1, 98, 59 }, links = { 1, 2 }, linkPoints = { 1, 2, 98, 47 },
+        }
+        logic.unpack(z)
+        local layer = logic.layer(z, true)
+        t:assertEqual(layer.cell, 5)
+        t:assertEqual(layer.cols, 12)
+        local on = {}
+        logic.setOn(layer, on)
+        -- up the stairs' foot: on the stairs, not on the landing over it
+        logic.updateHigh(layer, on, 98, 58, false, 98, 60)
+        t:assertEqual(on[1], true)
+        t:assertEqual(on[2], nil)
+        -- past their top: both, where both floors are
+        logic.updateHigh(layer, on, 98, 46, false, 98, 50)
+        t:assertEqual(on[2], true)
+        -- on the landing alone: off the stairs
+        logic.updateHigh(layer, on, 98, 38, false, 98, 46)
+        t:assertEqual(on[1], nil)
+        t:assertEqual(on[2], true)
+    end,
+
     ["the indoor layer's doorways: a shop by entrance, a passage by name, the way outside"] = function(t)
         local z = newHallZone()
         logic.unpack(z)

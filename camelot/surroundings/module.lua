@@ -623,7 +623,24 @@ end
 local function checkApproach(z, x, y)
     local here = logic.regionAt(z, x, y)
     if here and here ~= region and here.value == region.value then
-        region, saidMouths = here, {}
+        -- the same place found anew on another set of levels (a building's floors): what was
+        -- said there stays said (the landing said its stairs "down here", then "down to the
+        -- north" a second later)
+        local carried = {}
+        if z._index.linkAt then
+            local was = {}
+            for m in pairs(saidMouths) do
+                if type(m) == "table" then
+                    was[tostring(m.label) .. "|" .. tostring(m.rise)] = true
+                end
+            end
+            for _, m in ipairs(here.mouths) do
+                if was[tostring(m.label) .. "|" .. tostring(m.rise)] then
+                    carried[m] = true
+                end
+            end
+        end
+        region, saidMouths = here, carried
     end
     local text = logic.approachText(z, region, x, y, saidMouths)
     if text then
@@ -877,10 +894,69 @@ end
 
 -- Indoors: the room as far as known (switches at once; announced after the entry distance), the
 -- doorways of a big room, the indoor layer's edges and halls, the stops in the room.
+-- Where the player was indoors (the room, the levels of the indoor layer they were on), kept per
+-- character over a reload or logout: with no height in the game a reload upstairs left the module
+-- on the floor below (the Brill tavern, trial 2026-10-03). Taken back only on the same spot.
+local HERE_SAME = 1.5 -- yd from the kept spot that still count as the same
+local hereRestored = false
+local hereKept = nil
+
+local function keepHere(z, x, y)
+    if WowVisionDB == nil then
+        return
+    end
+    local layer = logic.layer(z, IsIndoors())
+    local levels = {}
+    if layer then
+        for piece in pairs(layer._index.on) do
+            levels[#levels + 1] = piece
+        end
+        table.sort(levels)
+    end
+    local sig = tostring(room) .. "|" .. table.concat(levels, ",")
+    local h = WowVisionDB.surroundingsHere
+    if hereKept == sig and h and logic.dist(h.x, h.y, x, y) < HERE_SAME / 2 then
+        return
+    end
+    hereKept = sig
+    local r = room and z._index.rooms[room]
+    WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name,
+        layer = layer and layer.key, levels = levels }
+end
+
+local function restoreHere(z, x, y)
+    hereRestored = true
+    local h = WowVisionDB and WowVisionDB.surroundingsHere
+    if type(h) ~= "table" or h.zone ~= z.key or logic.dist(h.x, h.y, x, y) > HERE_SAME then
+        return
+    end
+    local r = h.room and z._index.rooms[h.room]
+    if r and r.name == h.roomName then
+        room, roomByDoor = h.room, true
+    end
+    local layer = logic.layer(z, IsIndoors())
+    if layer and layer.key == h.layer then
+        for _, piece in ipairs(h.levels or {}) do
+            layer._index.on[piece] = true
+        end
+        logic.forgetRegions(layer)
+    end
+end
+
 local function updateIndoors(z, x, y, px, py)
+    if not hereRestored then
+        restoreHere(z, x, y)
+    end
     local before = room
     local crossed = logic.crossedDoor(z, room, px, py, x, y)
     local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false, IsIndoors())
+    -- up on a level of the indoor layer (a building's upper floor, its stairs) a doorway of the
+    -- floor below leads nowhere: no room the layer does not cover (trial 2026-10-03, the Brill
+    -- tavern: upstairs over the entrance's doorway the module said the entrance)
+    local held = logic.layer(z, IsIndoors())
+    if held and next(held._index.on) ~= nil and found ~= nil and not held._index.covered[found] then
+        crossed, found = nil, nil
+    end
     if found ~= nil then
         if found ~= room then
             roomByDoor = crossed ~= nil
@@ -897,8 +973,23 @@ local function updateIndoors(z, x, y, px, py)
         -- city's raised pieces outdoors
         local levels = layer._index.on
         local wasOn = next(levels) ~= nil
-        logic.updateHigh(layer, levels, x, y, false, px, py)
-        if (next(levels) ~= nil) ~= wasOn then
+        local _, levelsChanged = logic.updateHigh(layer, levels, x, y, false, px, py)
+        if levelsChanged and layer._index.linkAt then
+            -- a layer whose levels join at their join points (the buildings' floors): the places
+            -- found so far kept per set of levels, so stepping back onto a level finds its places
+            -- again with what was said there (a fresh flood at every hop said the stairs twice)
+            local ix = layer._index
+            local keys = {}
+            for piece in pairs(levels) do
+                keys[#keys + 1] = piece
+            end
+            table.sort(keys)
+            local sig = table.concat(keys, ",")
+            ix.regionsBySet = ix.regionsBySet or {}
+            ix.regionsBySet[ix.regionSet or ""] = ix.regionOf
+            ix.regionOf = ix.regionsBySet[sig] or {}
+            ix.regionSet = sig
+        elseif (next(levels) ~= nil) ~= wasOn then
             -- the halls found so far were flooded on the other level (not between two pieces of
             -- one level: a ledge of two pieces repeated what is near at every hop, replay of the
             -- walk 2026-09-30 22:29)
@@ -909,6 +1000,7 @@ local function updateIndoors(z, x, y, px, py)
         -- (stacked floors) any room here; and on its own level
         checkEdges(layer, x, y, px, py, here, levels)
     end
+    keepHere(z, x, y)
     if layer and logic.inLayer(layer, room, x, y) then
         updateLayer(z, layer, x, y, px, py, here)
         return
@@ -959,6 +1051,7 @@ end
 -- Outdoors: the drop edges and the guidance on foot, or while swimming the ways out of the water;
 -- the place, the next piece ahead on a way and its bends, the stops.
 local function updateOutdoors(z, x, y, px, py)
+    hereRestored = true -- (only right after loading: not when walking past the kept spot later)
     lastRoom = nil
     if IsSwimming() then
         guide.key = nil
