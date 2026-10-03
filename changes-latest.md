@@ -18,12 +18,20 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * Added the scanner. The scanner acts as traditionally seen in other mods, providing a categorized list of various things in the world. These include quest givers, nearby quests, and the location of your corpse for now. Press f9 to use it. Important: The scanner can only give you straight line paths currently pathfinding solutions are being worked on.
 * Added the /wv speech command to quickly adjust your speech settings. The syntax is /wv speech voiceID rate volume, for example /wv speech 1 8 100. Note: your first voice has ID 0.
 * The first time a character logs in with WowVision, the game's Lock Action Bars setting is turned off, so dragging spells and items off your action bars works without holding the pick up key. This happens once per character; if you lock the bars again in the game options, they stay locked.
-* Speech: two new toggles for the game's own text-to-speech sounds, "Sound Between Chat Lines" and "Activity Sound When Unfocused" (the /tts playline and /tts playactivity options; the toggles and the commands change the same game setting). The first time a character logs in with WowVision, the sound between spoken chat lines is turned off; this happens once per character, so turning it back on sticks.
+* Added two Speech toggles for the game's own text-to-speech sounds (/tts playline and /tts playactivity). The sound between chat lines is turned off once per character.
+* Shift-F12 cancels the active route or beacon.
+* The XP line in the general buffer names the level it fills towards.
+* Windows that open on a search box, like the game options, take typing right away.
+* Fixed key bindings losing Alt when Alt was let go before the key.
+* Books and letters no longer read a page number line or stop silently when there is no author.
 * Added two Merchant settings (Windows > Merchant): "Automatically Sell Poor Items" and "Automatically Repair If Possible", both off by default. When turned on, opening a vendor sells your grey items and repairs your gear on its own, with a chat message confirming what was sold or repaired. Repair is skipped if the vendor doesn't offer it or you can't afford it.
 
 ### Modern
 * Added support for the bags window.
 * Fixed an entirely unnecessary 1.5 second delay when clicking on gossip options before the text refreshed. This was caused by retail changing which events fire for gossip dialogue.
+* Fixed the gossip window staying open after the conversation moved on to a trainer, vendor or quest, or the game closed it.
+* Fixed health and power in buffers going silent when read a second time.
+* Fixed the Speech Queue setting being ignored.
 
 #### Forever
 * Updated the addon architecture and toc files to support the WoW Forever beta.
