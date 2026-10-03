@@ -45,10 +45,14 @@ sounds.options = {
 -- records the one-time silencing.
 function sounds.addSettings(settings, L, game)
     for _, def in ipairs(sounds.options) do
-        local field = settings:add({
+        settings:add({
             type = "Bool",
             key = def.key,
             label = L[def.label],
+            -- No value of its own, the game keeps it. Not persisting also
+            -- keeps the database restore from writing a stale copy back
+            -- into the game.
+            persist = false,
             get = function(obj, key)
                 return game.get(def.option)
             end,
@@ -56,10 +60,6 @@ function sounds.addSettings(settings, L, game)
                 game.set(def.option, value)
             end,
         })
-        -- The facade persists every setting; this one has no value of its
-        -- own, the game keeps it. Not persisting also keeps the database
-        -- restore from writing a stale copy back into the game.
-        field.persist = false
     end
     settings:add({
         type = "Bool",
@@ -78,16 +78,38 @@ function sounds.silenceOnce(state, game)
         return false
     end
     local option = sounds.options[1].option
+    local enabled = game.get(option)
+    if enabled == nil then
+        -- Unreadable (no API, an error): try again next login.
+        return false
+    end
     local changed = false
-    if game.get(option) then
+    if enabled then
         if not game.set(option, false) then
-            -- Refused (no API, an error): try again next login.
+            -- Refused: try again next login.
             return false
         end
         changed = true
     end
     state.chatLineSoundOff = true
     return changed
+end
+
+-- Everything a version's speech module needs, in one call: the toggles on
+-- its settings and the one-time silencing from PLAYER_ENTERING_WORLD (see
+-- Timing above). The module's own onEvent, if it has one, still runs.
+-- game defaults to the real C_TTSSettings side.
+function sounds.attach(module, settings, L, game)
+    game = game or sounds.game
+    sounds.addSettings(settings, L, game)
+    module:registerEvent("event", "PLAYER_ENTERING_WORLD")
+    local previous = module.onEvent
+    function module:onEvent(event, ...)
+        if event == "PLAYER_ENTERING_WORLD" then
+            sounds.silenceOnce(self.settings, game)
+        end
+        return previous(self, event, ...)
+    end
 end
 
 -- The game side: C_TTSSettings with the option looked up by name, since

@@ -425,8 +425,8 @@ end
 -- the node also hands it keyboard focus, so typing starts immediately and
 -- the tab pair flows through edit boxes (autoInput = false opts out); a new
 -- screen that LANDS on the node does the same, so a window opening on its
--- search box takes typing at once; Tab is
--- hooked to leave the box and move graph focus (hookTab = false opts out);
+-- search box takes typing at once. Tab is hooked to leave the box and move
+-- graph focus (hookTab = false opts out);
 -- fixAutoFocus = true turns off Blizzard's autofocus so the box cannot
 -- re-grab the keyboard on its own refreshes (icon selectors do).
 -- config: { editBox, label, autoInput?, hookTab?, fixAutoFocus? }
