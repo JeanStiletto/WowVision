@@ -230,8 +230,10 @@ end
 
 -- A synthetic button: Enter runs the handler. An optional value part reads
 -- after the role word and is watched live while focused (an opener button
--- showing the value it edits).
--- config: { label = string|function, onActivate = function, value = string|function?, onSecondary = function?, stateText = function? }
+-- showing the value it edits). An optional selected function marks the
+-- button as the current pick, read like proxyFoundButton's (a tab drawn
+-- by plain frames).
+-- config: { label = string|function, onActivate = function, value = string|function?, onSecondary = function?, stateText = function?, selected = function? }
 function nodes.button(config)
     if config.label == nil then
         error("button requires a label")
@@ -242,6 +244,14 @@ function nodes.button(config)
     local announcements = { { text = config.label, kind = kinds.label } }
     if config.value ~= nil then
         tinsert(announcements, { text = config.value, kind = kinds.value, live = "focus" })
+    end
+    if config.selected ~= nil then
+        tinsert(announcements, {
+            text = function()
+                return config.selected() and L["selected"] or nil
+            end,
+            kind = kinds.selected,
+        })
     end
     return {
         controlType = graph.controlTypes.button,

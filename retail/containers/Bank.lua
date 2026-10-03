@@ -151,11 +151,10 @@ local function renderTabs(builder)
             nodes.button({
                 label = function()
                     local current = findPageTab(bankType, pageNumber)
-                    local text = current ~= nil and current.tooltipText or L["Page"]
-                    if isCurrentPage(bankType, pageNumber) then
-                        return text .. ", " .. L["selected"]
-                    end
-                    return text
+                    return current ~= nil and current.tooltipText or L["Page"]
+                end,
+                selected = function()
+                    return isCurrentPage(bankType, pageNumber)
                 end,
                 onActivate = function()
                     local current = findPageTab(bankType, pageNumber)
