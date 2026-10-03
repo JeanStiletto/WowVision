@@ -50,10 +50,16 @@ a screen reader would cut its own speech off at every key press.
   name of their own say their floor ("room, floor 1"), the room they stand over when a named one
   carries the same word ("Main Hall, floor 1" is the gallery over the Main Hall), or their
   direction when several share a word ("entrance" has the door, "entrance northeast" lies
-  behind it); stairs are named by where they lead up to ("stairs to the bell tower"). A room
+  behind it); stairs are named by where they lead up to ("stairs to the bell tower"), and a
+  staircase the map splits into pieces is one staircase with one name. Walking on into the
+  next section of the same thing (a mine's passages, the tram tunnel, the next piece of a
+  staircase) says no name again: only the way it runs when that changed ("northwest to
+  southeast") and its doorways on, not the one you came through ("side tunnel southeast to
+  the northeast, mine 7 to the northeast"); a passage whose only way on is the next section
+  says nothing. A room
   entered through a doorway stays the room until the next doorway or until its floor is left,
   so narrow stairs over a hall are not lost to the hall's floor below. In a big room
-  the doorways are said from where you stand, nearest first, and within 6 yards of one you are
+  the doorways are said from where you stand, nearest first, and within 8 yards of one you are
   guided to it like to an entrance ("shop, 6 to the west").
 - **The big halls of a city** (Ironforge, the Undercity quarters) are described like its
   streets and squares: their pieces with their directions ("walk along the lava, north to
@@ -66,9 +72,10 @@ a screen reader would cut its own speech off at every key press.
 - **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
   lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava");
   ahead of you the distance in yards first ("9 southwest, canal").
-- **Guidance**: within 6 yards of a building entrance or of where a street begins on a square,
+- **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
-  direction changes, and once when you are at it. While swimming, the nearest way out of the
+  direction changes, and once when you are at it. Once named, it keeps saying its direction
+  out to 10 yards, so you can step back and strafe to line up with a door. While swimming, the nearest way out of the
   water; one that only leads onto a ledge or into a dead end says so ("way out of the water to
   a dead end").
 - **Turn hints** on roads and streets: "left" or "right" when the direction words cannot
