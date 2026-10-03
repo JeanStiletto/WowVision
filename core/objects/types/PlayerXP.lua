@@ -32,16 +32,23 @@ PlayerXP:addField({
 })
 
 -- The level the bar fills towards: the maximum is what the NEXT level
--- costs, so the line names it.
+-- costs, so the line names it. nil at the level cap, where there is none.
 PlayerXP:addField({
     key = "nextLevel",
     type = "Number",
     label = L["Next Level"],
     get = function(params)
-        return UnitLevel("player") + 1
+        local level = UnitLevel("player")
+        if GetMaxPlayerLevel ~= nil and level >= GetMaxPlayerLevel() then
+            return nil
+        end
+        return level + 1
     end,
 })
 
 function PlayerXP:getFocusString(params)
+    if self:get(params, "nextLevel") == nil then
+        return self:renderTemplate("[XP]: {percent}% ({current} [of] {maximum})", params)
+    end
     return self:renderTemplate("[XP]: {percent}% ({current} [of] {maximum} [to level] {nextLevel})", params)
 end
