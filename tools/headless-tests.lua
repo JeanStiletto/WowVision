@@ -68,6 +68,8 @@ loadAddonFile("core/quests/tests.lua")
 loadAddonFile("core/minimap/logic.lua")
 loadAddonFile("core/minimap/gatheringNames.lua")
 loadAddonFile("core/minimap/tests.lua")
+loadAddonFile("retail/groupHealth/logic.lua")
+loadAddonFile("retail/groupHealth/tests.lua")
 loadAddonFile("core/colors/names.lua")
 loadAddonFile("core/colors/colors.lua")
 loadAddonFile("core/colors/tests.lua")
@@ -279,6 +281,7 @@ local parseOnly = {
     "core/minimap/module.lua",
     "core/minimap/scanner.lua",
     "core/minimap/tracking.lua",
+    "retail/groupHealth/module.lua",
     "core/scanner/module.lua",
     "core/scanner/ui.lua",
     "core/scanner/providers.lua",
