@@ -21,5 +21,7 @@
        retail ProfessionsFrame. -->
   <Script file="professions.lua" />
   <Script file="crafting.lua" />
+  <!-- Diagnostic: can a secret steer pitch and volume (/wv sprobe). -->
+  <Script file="secretSpeechProbe.lua" />
 
 </Ui>
