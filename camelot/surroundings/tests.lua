@@ -269,8 +269,14 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.bendTurn(r(155), r(138), r(143), 15), 0)
         -- still facing the old way: turn right
         t:assertEqual(logic.bendTurn(r(155), r(138), r(155), 15), -1)
-        -- more than 60 degrees: turning round or another road
+        -- a whole direction word or more: no bend (45 degrees with compass words, 30 with the clock)
         t:assertEqual(logic.bendTurn(r(180), r(260), r(180), 15), 0)
+        t:assertEqual(logic.bendTurn(r(180), r(215), r(180), 15), 1)
+        local clock = logic.clock
+        logic.clock = true
+        t:assertEqual(logic.bendTurn(r(180), r(215), r(180), 15), 0)
+        t:assertEqual(logic.bendTurn(r(180), r(205), r(180), 15), 1)
+        logic.clock = clock
     end,
 
     ["a canal walk counts near its centre line; off it, what lies beside on the player's side"] = function(t)
