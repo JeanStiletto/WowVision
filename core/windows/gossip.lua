@@ -53,26 +53,14 @@ local function beginTransition()
     end)
 end
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("GOSSIP_SHOW")
-eventFrame:RegisterEvent("GOSSIP_CLOSED")
--- Not present on every client; GOSSIP_SHOW and the timeout carry those.
-pcall(eventFrame.RegisterEvent, eventFrame, "GOSSIP_OPTIONS_REFRESHED")
--- Page changes arrive as a fresh GOSSIP_SHOW on every client (retail
--- included -- GOSSIP_OPTIONS_REFRESHED there only covers options changing
--- in place), so a show while a transition is pending always refreshes;
--- gating it on the refresh event's absence left retail waiting out the
--- timeout on every page. A close flagged as continuing (retail, between
--- pages of one conversation) keeps the snapshot and the pending state.
---
--- The continuing flag is not a promise of a next page. The modern client
--- (retail and WoW: Forever) also sets it when the conversation hands over
--- to another interaction (trainer, flight master, merchant, quest giver),
--- and Forever sets it when the game itself closes the gossip (Escape,
--- walking away). No GOSSIP_SHOW ever follows those, and the window would
--- stay open as a ghost until reload. So a continuing close only holds the
--- window until the next page arrives, another interaction opens, or a
--- short grace period runs out, whichever comes first.
+-- The continuing flag of GOSSIP_CLOSED is not a promise of a next page.
+-- The modern client (retail and WoW: Forever) also sets it when the
+-- conversation hands over to another interaction (trainer, flight master,
+-- merchant, quest giver), and Forever sets it when the game itself closes
+-- the gossip (Escape, walking away). No GOSSIP_SHOW ever follows those, and
+-- the window would stay open as a ghost until reload. So a continuing close
+-- only holds the window until the next page arrives, another interaction
+-- opens, or a short grace period runs out, whichever comes first.
 local function clearState()
     state.snapshot = nil
     state.waiting = false
@@ -103,14 +91,28 @@ local function handOver()
     end
 end
 
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("GOSSIP_SHOW")
+eventFrame:RegisterEvent("GOSSIP_CLOSED")
+-- Not present on every client; GOSSIP_SHOW and the timeout carry those.
+pcall(eventFrame.RegisterEvent, eventFrame, "GOSSIP_OPTIONS_REFRESHED")
+-- The interactions that can take over a continuing close.
 eventFrame:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
 eventFrame:RegisterEvent("QUEST_GREETING")
 eventFrame:RegisterEvent("QUEST_DETAIL")
 eventFrame:RegisterEvent("QUEST_PROGRESS")
 eventFrame:RegisterEvent("QUEST_COMPLETE")
 
+-- Page changes arrive as a fresh GOSSIP_SHOW on every client (retail
+-- included -- GOSSIP_OPTIONS_REFRESHED there only covers options changing
+-- in place), so a show while a transition is pending always refreshes;
+-- gating it on the refresh event's absence left retail waiting out the
+-- timeout on every page. A close flagged as continuing (retail, between
+-- pages of one conversation) keeps the snapshot and the pending state
+-- until a page follows or the close is given up (see above).
 eventFrame:SetScript("OnEvent", function(frame, event, arg1)
     if event == "GOSSIP_CLOSED" then
+        -- arg1: interactionIsContinuing
         if arg1 then
             beginContinuingClose()
         else
@@ -125,6 +127,7 @@ eventFrame:SetScript("OnEvent", function(frame, event, arg1)
             refresh()
         end
     elseif event == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" then
+        -- arg1: the interaction type
         if arg1 ~= Enum.PlayerInteractionType.Gossip then
             handOver()
         end
