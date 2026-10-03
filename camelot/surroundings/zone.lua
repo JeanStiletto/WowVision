@@ -688,6 +688,31 @@ function logic.unpack(zone, locale)
         addToBucket(ix.links, a, b)
         addToBucket(ix.links, b, a)
     end)
+    -- neighbouring cells where two places do not meet (an indoor layer's noTouch: row, col, row,
+    -- col, place, place; decided with the heights for every level the cells show)
+    ix.noTouch = nil
+    if zone.noTouch and #zone.noTouch > 0 then
+        ix.noTouch = {}
+        local n = zone.rows * zone.cols
+        eachRecord(zone.noTouch, 6, function(r1, c1, r2, c2, pa, pb)
+            local a, b = r1 * zone.cols + c1, r2 * zone.cols + c2
+            for _, k in ipairs({ a * n + b, b * n + a }) do
+                ix.noTouch[k] = ix.noTouch[k] or {}
+                ix.noTouch[k][pa .. ":" .. pb] = true
+                ix.noTouch[k][pb .. ":" .. pa] = true
+            end
+        end)
+    end
+    -- where two levels join (an indoor layer's linkPoints): a level is joined there, as one is
+    -- stepped onto from the main floor at its access points; without them next to its footprint
+    ix.linkAt = nil
+    if zone.linkPoints and #zone.linkPoints > 0 then
+        ix.linkAt = {}
+        eachRecord(zone.linkPoints, 4, function(a, b, x, y)
+            local r, c = logic.cellOf(zone, x, y)
+            addToBucket(ix.linkAt, r * zone.cols + c, { a = a, b = b, x = x, y = y })
+        end)
+    end
 
     -- drop edges with a box each, so the edge search skips the far ones (cities have hundreds)
     ix.edges = {}
@@ -847,16 +872,22 @@ end
 -- its entrances are the doorways from those rooms into the others (see layerEntrances). `src`: the
 -- layer's data, `suffix` its key after the zone's.
 function logic.unpackLayer(zone, src, suffix)
+    -- a grid of its own where the data gives one (the halls the game calls indoors and the
+    -- buildings with floors over each other: cells half the zone's), else the zone's
+    local own = src.cell ~= nil
     local layer = {
-        key = zone.key .. suffix, label = zone.label, map = zone.map, top = zone.top, left = zone.left,
-        cell = zone.cell, rows = zone.rows, cols = zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
+        key = zone.key .. suffix, label = zone.label, map = zone.map,
+        top = own and src.top or zone.top, left = own and src.left or zone.left,
+        cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitLevels = src.exitLevels, interiors = zone.interiors, rooms = zone.rooms,
         -- its halls' other levels (a gallery, the moat under the walkways), as the city's raised
         -- pieces: one rule for every floor over or under another
         pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
-        piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn,
+        piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn, linkPoints = src.linkPoints, noTouch = src.noTouch,
+        -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
+        mouthMin = own and 1 or nil,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
     }
     logic.unpack(layer)
