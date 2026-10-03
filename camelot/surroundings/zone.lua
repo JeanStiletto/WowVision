@@ -906,6 +906,15 @@ function logic.axisOf(zone, value)
     return axisOfCode(zone, value % logic.CODE)
 end
 
+-- The angle a ramp's or stairs' cell value rises toward ("up to the northeast"), or nil.
+function logic.riseOf(zone, value)
+    local code = value % logic.CODE
+    if code == 0 or axisOfCode(zone, code) or not logic.CLIMBS[logic.kindOf(zone, value)] then
+        return nil
+    end
+    return code % 1000
+end
+
 -- The direction a cell value says ("northwest to southeast", "up to the northeast"), or nil.
 function logic.directionText(zone, value)
     local code = value % logic.CODE
@@ -1036,11 +1045,13 @@ end
 
 function Entry:reset()
     self.current, self.candidate, self.walked, self.lastX, self.lastY = nil, nil, 0, nil, nil
+    self.fromX, self.fromY = nil, nil
 end
 
 -- Returns the key when it becomes the current one, else nil. `distanceFor(key)` (optional) gives
 -- a key its own distance; the shorter of the new key's and the current key's counts, so leaving
--- a road is as quick as entering it.
+-- a road is as quick as entering it. `fromX`, `fromY`: where the step onto the current key began
+-- (where the one before was left).
 function Entry:update(key, x, y)
     if key == nil then
         self.candidate = nil
@@ -1056,6 +1067,7 @@ function Entry:update(key, x, y)
     end
     if key ~= self.candidate then
         self.candidate, self.walked, self.lastX, self.lastY = key, 0, x, y
+        self.candidateX, self.candidateY = x, y
     else
         self.walked = self.walked + logic.dist(x, y, self.lastX, self.lastY)
         self.lastX, self.lastY = x, y
@@ -1066,6 +1078,7 @@ function Entry:update(key, x, y)
     end
     if self.walked >= distance then
         self.current, self.candidate = key, nil
+        self.fromX, self.fromY = self.candidateX, self.candidateY
         return key
     end
     return nil

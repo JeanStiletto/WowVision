@@ -18,6 +18,9 @@ logic.BEGIN_MAX = 24 -- yd; a way meeting the square along a longer border runs 
 logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where it leads on
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
+-- degrees between a climb's rise and the step from the square onto it: within this it goes up from
+-- the square, beyond 180 less this down; between, it runs along the square's side (no word)
+logic.RISE_ALONG = 60
 
 -- Does a cell value belong to a place that says what lies around it? Only squares and halls: a
 -- street without a direction (a piece without centre line) is a way like a road without one (one
@@ -50,10 +53,39 @@ local function borderThing(zone, value, key)
     return nil
 end
 
--- The border cells of the region grouped into mouths, one per stretch of border of each thing:
--- {label, class, points {x, y, ...}, cells {border r, c, square r, c}}.
+-- Does the climb in a border cell (nr, nc) go up or down from the region's `cells` beside it: "up"
+-- where a step from one of them onto it goes up (its foot; a corner cell has two square cells
+-- beside it, one along the climb's side: the foot of the stairs to Champion's Hall), else "down",
+-- else "along" (it runs along the square's side); nil for no climb. From the climb's own rise in
+-- the data (user's walk 2026-10-03 08:06: on a landing between two flights "stairs at 1" did not
+-- say which stairs, nor whether up or down; the user wants "up" or "down" said).
+local function riseFrom(zone, cells, value, nr, nc)
+    local up = value ~= 0 and logic.riseOf(zone, value)
+    if not up then
+        return nil
+    end
+    local rise = "along"
+    for _, s in ipairs(logic.STEPS) do
+        local r, c = nr + s[1], nc + s[2]
+        if cells[r * zone.cols + c] then
+            local gap = logic.angleGap(up, logic.bearingOf((r - nr) * zone.cell, (c - nc) * zone.cell))
+            if gap <= logic.RISE_ALONG then
+                return "up"
+            elseif gap >= 180 - logic.RISE_ALONG then
+                rise = "down"
+            end
+        end
+    end
+    return rise
+end
+
+-- The border cells of the region grouped into mouths, one per stretch of border of each thing and,
+-- for a ramp or stairs, of each way it goes from the square (up, down; a stretch running along the
+-- square's side only where the climb goes neither up nor down from it, without a word: the long
+-- stairs beside the landing by the auction house said "stairs to the west" beside "stairs up to the
+-- north"): {label, class, rise, points {x, y, ...}, cells {border r, c, square r, c}}.
 local function findMouths(zone, cells, list)
-    local byLabel, order, seen = {}, {}, {}
+    local byLabel, order, seen, along, rising = {}, {}, {}, {}, {}
     for i = 1, #list - 1, 2 do
         local r, c = list[i], list[i + 1]
         for _, s in ipairs(logic.STEPS) do
@@ -62,21 +94,42 @@ local function findMouths(zone, cells, list)
             local noContact = zone._index.noContact[(r * zone.cols + c) * zone.rows * zone.cols + key]
             if not cells[key] and not seen[key] and not noContact and logic.inGrid(zone, nr, nc) then
                 seen[key] = true
-                local label, class = borderThing(zone, logic.valueAtCell(zone, nr, nc), key)
-                if label then
-                    if byLabel[label] == nil then
-                        byLabel[label] = { class = class, cells = {} }
-                        order[#order + 1] = label
+                local value = logic.valueAtCell(zone, nr, nc)
+                local label, class = borderThing(zone, value, key)
+                local rise = label and riseFrom(zone, cells, value, nr, nc)
+                if rise == "along" then
+                    along[#along + 1] = { label = label, class = class, value = value, cell = { nr, nc, r, c } }
+                elseif label then
+                    if rise then
+                        rising[value] = true
+                    end
+                    -- a climb's way up or down per climb (two stairs going down from a landing)
+                    local group = label .. "|" .. (rise and rise .. value or "")
+                    if byLabel[group] == nil then
+                        byLabel[group] = { label = label, class = class, rise = rise, cells = {} }
+                        order[#order + 1] = group
                     end
                     -- the border cell and the square's cell beside it (for the way on)
-                    table.insert(byLabel[label].cells, { nr, nc, r, c })
+                    table.insert(byLabel[group].cells, { nr, nc, r, c })
                 end
             end
         end
     end
+    -- a climb's stretches along the side, where that climb (its cell value) goes nowhere up or down
+    for _, a in ipairs(along) do
+        if not rising[a.value] then
+            local group = byLabel[a.label .. "|"]
+            if group == nil then
+                group = { label = a.label, class = a.class, cells = {} }
+                byLabel[a.label .. "|"] = group
+                order[#order + 1] = a.label .. "|"
+            end
+            table.insert(group.cells, a.cell)
+        end
+    end
     local mouths = {}
-    for _, label in ipairs(order) do
-        local group = byLabel[label]
+    for _, key in ipairs(order) do
+        local group = byLabel[key]
         local todo, done = group.cells, {}
         for i = 1, #todo do
             if not done[i] then
@@ -100,7 +153,7 @@ local function findMouths(zone, cells, list)
                         points[#points + 1] = px
                         points[#points + 1] = py
                     end
-                    mouths[#mouths + 1] = { label = label, class = group.class, points = points, cells = members }
+                    mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members }
                 end
             end
         end
@@ -303,6 +356,13 @@ end
 -- runs north); without an axis, that direction itself, or `vx`, `vy` (from the square into the
 -- opening) when the cells lie on the opening. An angle, or nil.
 local function onwardDirection(zone, region, mouth, vx, vy)
+    -- a ramp or stairs leads on the way it goes from the square, up or down its own rise (the
+    -- stairs past the landing by the auction house said "on to the west" going up to the north)
+    if mouth.rise then
+        local cell = mouth.cells[1]
+        local up = logic.riseOf(zone, logic.valueAtCell(zone, cell[1], cell[2]))
+        return mouth.rise == "up" and up or (up + 180) % 360
+    end
     -- the axes of the cells by compass axis (4 bins), each bin with the sum of its doubled angles
     -- for the mean axis of the winning bin
     local votes, sinSum, cosSum, count, sx, sy = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 0, 0, 0
@@ -419,18 +479,19 @@ function logic.mouthDistance(mouth, x, y)
     return d, logic.bearingOf(bx - x, by - y)
 end
 
--- Items from a list of {label, class, d, dir, mouth}: one item per label with its directions
--- (nearest first, at most `maxDirs`; closer than HERE none), items nearest first.
+-- Items from a list of {label, class, rise, d, dir, mouth}: one item per label (and rise) with its
+-- directions (nearest first, at most `maxDirs`; closer than HERE none), items nearest first.
 local function groupItems(found, maxDirs)
     table.sort(found, function(a, b)
         return a.d < b.d
     end)
     local items, byLabel = {}, {}
     for _, f in ipairs(found) do
-        local item = byLabel[f.label]
+        local key = f.label .. "|" .. (f.rise or "")
+        local item = byLabel[key]
         if item == nil then
-            item = { label = f.label, class = f.class, d = f.d, dirs = {}, mouths = {} }
-            byLabel[f.label] = item
+            item = { label = f.label, class = f.class, rise = f.rise, d = f.d, dirs = {}, mouths = {} }
+            byLabel[key] = item
             items[#items + 1] = item
         end
         logic.addDir(item, f.d >= logic.HERE and f.dir or nil, maxDirs)
@@ -460,7 +521,7 @@ end
 
 local function mouthFound(m, x, y)
     local d, dir = logic.mouthDistance(m, x, y)
-    return { label = m.label, class = m.class, d = d, dir = dir, mouth = m }
+    return { label = m.label, class = m.class, rise = m.rise, d = d, dir = dir, mouth = m }
 end
 
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.

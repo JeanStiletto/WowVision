@@ -440,9 +440,16 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     else
         t = logic.footTarget(z, x, y, region, prefer)
     end
-    -- not the beginning of the way the player is on (stepping out of a street onto its square)
-    if t and t.kind == "way" and logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name then
-        t = nil
+    -- not the beginning of the way the player is on (stepping out of a street onto its square), nor
+    -- of the way under the player's feet before the step onto it counts (user's walk 2026-10-03
+    -- 08:06: stepped onto the stairs beside the landing, "stairs, 7 to the southeast" came)
+    if t and t.kind == "way" then
+        local here = logic.valueAt(z, x, y)
+        local onIt = here and here ~= 0 and logic.place(z, logic.placeOf(here))
+        if (logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name)
+            or (onIt and onIt.label == t.name) then
+            t = nil
+        end
     end
     -- not the foot of a climb the player is past (going up it)
     if t and t.kind == "climb" and logic.pastTarget(z, t, x, y) then
@@ -496,13 +503,21 @@ local function notePassed(z, x, y)
     end
 end
 
--- Stepped off a way onto a square: the beginning of that way the player came out of stays quiet,
--- as a doorway walked through does, until the player is beyond its guidance reach (the lane
--- through Stormwind's gate is guided to from 17 yd; user 2026-09-30).
-local function notePassedBeginning(z, x, y, square, wayKey)
-    local _i, _d, _dir, b = logic.nearestBeginning(z, square, x, y, logic.GUIDE_REACH)
-    if b and b.label == logic.keyLabel(z, wayKey) then
-        passed = { x = b.x, y = b.y, reach = logic.beginningReach(logic.GUIDE_REACH, b) }
+-- Stepped off a way (a ramp or stairs too) onto a square at (fx, fy): the beginning of that way
+-- the player came out of stays quiet, as a doorway walked through does, until the player is beyond
+-- its guidance reach (the lane through Stormwind's gate is guided to from 17 yd; user 2026-09-30).
+-- The one of its name nearest to where it was left: on the landing by the auction house two
+-- stairs begin 13 yd apart, and the one come up by was guided back to (user's walk 2026-10-03).
+local function notePassedBeginning(z, fx, fy, square, wayKey)
+    local label, best, bd = logic.keyLabel(z, wayKey), nil, nil
+    for _, b in ipairs(logic.wayBeginnings(z, square)) do
+        local d = logic.dist(b.x, b.y, fx, fy)
+        if b.label == label and d <= logic.beginningReach(logic.GUIDE_REACH, b) and (bd == nil or d < bd) then
+            best, bd = b, d
+        end
+    end
+    if best then
+        passed = { x = best.x, y = best.y, reach = logic.beginningReach(logic.GUIDE_REACH, best) }
     end
 end
 
@@ -796,8 +811,9 @@ local function checkPlace(z, x, y, forced)
         end
         -- on a square: what was said now (its exits, what is close) is not said again on coming close
         region, saidMouths = square, said or {}
-        if leftWay and square then
-            notePassedBeginning(z, x, y, square, leftWay)
+        local cameOff = previous and (logic.isWayKey(previous) or logic.CLIMBS[logic.kind(z, logic.keyPlace(previous))])
+        if cameOff and square then
+            notePassedBeginning(z, outdoor.fromX or x, outdoor.fromY or y, square, previous)
         end
         bendFrom, bendWalked = nil, 0
         if outdoor.current == aheadKey then
