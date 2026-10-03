@@ -518,13 +518,20 @@ function nodes.proxyDropdown(config)
             },
         },
         onActivate = function()
-            if target.OpenMenu ~= nil then
-                target:OpenMenu()
-            elseif target.Click ~= nil then
-                target:Click()
-            end
+            nodes.openDropdown(target)
         end,
     }, target)
+end
+
+-- Opens a Blizzard dropdown button's menu: OpenMenu where the frame has it
+-- (a plain click does not open these), a click otherwise. proxyDropdown's
+-- Enter, and any other entry that opens the same menu.
+function nodes.openDropdown(target)
+    if target.OpenMenu ~= nil then
+        target:OpenMenu()
+    elseif target.Click ~= nil then
+        target:Click()
+    end
 end
 
 -- A real Blizzard check button: clicks are genuine, the checked state reads

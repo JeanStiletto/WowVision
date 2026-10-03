@@ -164,11 +164,7 @@ local function bagSlotEntry(frame, slotButton, label)
             add({
                 label = L["Bag Menu"],
                 onActivate = function()
-                    if menuButton.OpenMenu ~= nil then
-                        menuButton:OpenMenu()
-                    elseif menuButton.Click ~= nil then
-                        menuButton:Click()
-                    end
+                    nodes.openDropdown(menuButton)
                 end,
             })
         end
