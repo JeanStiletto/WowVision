@@ -93,6 +93,10 @@ function logic.itemsText(zone, items)
         elseif not NAMED_CLASSES[item.class] then
             name = L[item.class]
         end
+        if item.rise then
+            -- "stairs up to the north", "Treppe hinab auf 6"
+            name = string.format(item.rise == "up" and L["%s up"] or L["%s down"], name)
+        end
         if #item.dirs == 0 then
             parts[#parts + 1] = string.format(L["%s here"], name)
         else
@@ -248,7 +252,7 @@ local function climbTarget(zone, x, y, reach, prefer)
         return nil
     end
     local code = logic.codeOf(f.value)
-    local up = code > 0 and not logic.axisOf(zone, f.value) and code % 1000 or nil
+    local up = logic.riseOf(zone, f.value)
     local name = logic.describe(zone, f.value, false, true)
     return {
         key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,

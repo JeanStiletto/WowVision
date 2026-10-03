@@ -568,6 +568,31 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(exits[1].label, "street of Test")
     end,
 
+    ["stairs beside a square are said going up or down from it"] = function(t)
+        -- user's walk 2026-10-03: on a landing "stairs at 1" did not say up or down
+        local function stairsItems(code)
+            local z = newSquareZone()
+            z.dirs[9] = "up to the %s"
+            table.insert(z.places, { "stairs", "stairs" })
+            z.grid[1] = "30000*2," .. (60000 + code) .. "*2,30000*3"
+            logic.unpack(z)
+            local region = logic.regionAt(z, 78, 35)
+            return logic.aroundItems(region, 78, 35, { classes = { way = true } }), z
+        end
+        -- rising to the north, away from the square: up
+        local items, z = stairsItems(9000)
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].rise, "up")
+        t:assertEqual(logic.itemsText(z, items), "stairs up to the north")
+        -- rising to the south, toward the square: down
+        items = stairsItems(9180)
+        t:assertEqual(items[1].rise, "down")
+        -- rising to the east, along the square's side: no word
+        items = stairsItems(9090)
+        t:assertEqual(#items, 1)
+        t:assertNil(items[1].rise)
+    end,
+
     ["a street to another piece of the same square leads on"] = function(t)
         -- the lane through Stormwind's gate: forecourt and district are both "square of Trade
         -- District" (one place), joined only by the street; the street is an exit of the forecourt
