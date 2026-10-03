@@ -413,7 +413,9 @@ end
 -- (isBigRoom), given the player's position (opts.x, opts.y), instead the direction from the player
 -- to each doorway (none closer than HERE), nearest first (user 2026-09-29: "exit northeast" said the
 -- side of a 90 yd hall). opts (optional): max (items), dirs (directions per item); cameFrom: the
--- room the player came from (a room id, 0 = outside), left out first when there are more than max.
+-- room the player came from (a room id, 0 = outside), left out first when there are more than max;
+-- section: leave out the doorways back to cameFrom (sectionText). Doorways into a room of the
+-- very same name (another piece of one staircase) are never said.
 function logic.roomDoorways(zone, roomId, opts)
     opts = opts or {}
     local ix = zone._index
@@ -445,10 +447,15 @@ function logic.roomDoorways(zone, roomId, opts)
         end
     end
     local items, byLabel, cameLabel = {}, {}, nil
+    local name = ix.rooms[roomId].name
     for _, door in ipairs(ordered) do
         local other = door.a == roomId and door.b or door.a
         local label, class = "way out", "way out"
-        if other ~= 0 then
+        if other ~= 0 and (ix.rooms[other].name == name or (opts.section and other == opts.cameFrom)) then
+            -- not into another piece of the same thing (one staircase, one of Ironforge's hall ways:
+            -- the data names its pieces alike), nor back on a section's announcement (sectionText)
+            label = nil
+        elseif other ~= 0 then
             label, class = logic.describeRoom(zone, other, roomId), "room"
         end
         if label then

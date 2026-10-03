@@ -48,8 +48,10 @@ local FEATURE_REACH = 25 -- yd; cliffs and water said with an outdoor place
 local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said within this
 -- yd; entrances, street beginnings and climbs' feet are guided to from this close (8 until 2026-10-02,
 -- set when squares had no streets: the Trade District said 15 entrance lines in four minutes; 6
--- left a third fewer in the replay of all walks, with 74 of 87 entries still guided first, 75 at 8)
-local GUIDE_REACH = 6
+-- left a third fewer in the replay of all walks, with 74 of 87 entries still guided first, 75 at 8;
+-- back to 8 on 2026-10-03: at the chapel in Deathknell the user backed off its door to 6 to 9 yd
+-- to line up with it and heard nothing there)
+local GUIDE_REACH = 8
 logic.GUIDE_REACH = GUIDE_REACH
 local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
 local MOAT_EXIT_REACH = 300 -- yd; a moat's way out, from anywhere down in it (the Commons' moat is a ring)
@@ -207,9 +209,10 @@ end
 
 -- In a big room (logic.isBigRoom), the nearest of its doorways within reach, as a guidance target:
 -- the room behind it by name, the way through it leaving the room. `skip` (optional): a door left
--- out (the one the player just came in by).
-function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer)
-    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, GUIDE_REACH, skip, prefer)
+-- out (the one the player just came in by). `reach` (optional): searched within, GUIDE_REACH when
+-- not given; the target's reach stays GUIDE_REACH.
+function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer, reach)
+    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, reach or GUIDE_REACH, skip, prefer)
     if d == nil then
         return nil
     end
@@ -264,12 +267,13 @@ end
 
 -- The guidance target on foot: the nearest entrance, street beginning or climb's foot within
 -- reach; the one guided to last (`prefer`, its position) stays unless another is nearer by more
--- than GUIDE_STICK.
-function logic.footTarget(zone, x, y, square, prefer)
+-- than GUIDE_STICK. `reach` (optional): searched within, GUIDE_REACH when not given.
+function logic.footTarget(zone, x, y, square, prefer, reach)
+    reach = reach or GUIDE_REACH
     local candidates = {
-        entranceTarget(zone, x, y, GUIDE_REACH, prefer),
-        beginningTarget(zone, x, y, GUIDE_REACH, square, prefer),
-        climbTarget(zone, x, y, GUIDE_REACH, prefer),
+        entranceTarget(zone, x, y, reach, prefer),
+        beginningTarget(zone, x, y, reach, square, prefer),
+        climbTarget(zone, x, y, reach, prefer),
     }
     local best, kept = nil, nil
     for _, t in pairs(candidates) do
@@ -544,6 +548,43 @@ function logic.spotText(zone, x, y, value, previous, opts)
     return text, region, said
 end
 
+-- The way a room runs ("north to south") or which way its winding stairs turn, or nil.
+function logic.roomWay(zone, id)
+    local room = zone._index.rooms[id]
+    if room.winding then
+        return room.winding > 0 and L["winding, turns left going up"] or L["winding, turns right going up"]
+    elseif room.axis then
+        return logic.axisWords(zone, room.axis)
+    end
+    return nil
+end
+
+-- Walking into the next section of the same thing (logic.sameRoomName: a mine's passages, the
+-- pieces of one staircase): no name, the way it runs only when that differs from `lastWay` (the
+-- last said, as on a street; user 2026-10-03), and its doorways on, without the one the player
+-- came through and those into another piece of the same name (one staircase); in a mine the
+-- numbered passages are the ways to choose from. A section whose only way on is the next section
+-- of the same thing leaves it unsaid: no choice there (the tram tunnel's ten sections said one
+-- each on a ride, replay of 2026-09-29 18:14; user that day: only when the name really changes).
+-- Returns the text (nil when nothing is left) and the way it runs (nil when it has none).
+function logic.sectionText(zone, id, previous, lastWay, x, y)
+    local way = logic.roomWay(zone, id)
+    local parts = {}
+    if way and way ~= lastWay then
+        parts[1] = way
+    end
+    local items = logic.roomDoorways(zone, id, { dirs = logic.ITEM_DIRS, x = x, y = y, max = ITEMS_MAX,
+        cameFrom = previous, section = true })
+    local base = zone._index.rooms[id].name:gsub("%s+%d+$", "")
+    if #items == 1 and items[1].class == "room" and items[1].label:gsub("%s+%d+$", "") == base then
+        items = {}
+    end
+    if #items > 0 then
+        parts[#parts + 1] = logic.itemsText(zone, items)
+    end
+    return #parts > 0 and table.concat(parts, ", ") or nil, way
+end
+
 -- A room: its name (with the building's when it changes), the way it runs when it is long and
 -- narrow ("passage of Ironforge, north to south") or which way its winding stairs turn, and its
 -- doorways, each with the fixed direction one passes through it leaving the room, or in a big room
@@ -554,11 +595,9 @@ function logic.roomText(zone, id, previous, cut, x, y)
     if text == nil then
         return nil
     end
-    local room = zone._index.rooms[id]
-    if room.winding then
-        text = text .. ", " .. (room.winding > 0 and L["winding, turns left going up"] or L["winding, turns right going up"])
-    elseif room.axis then
-        text = text .. ", " .. logic.axisWords(zone, room.axis)
+    local way = logic.roomWay(zone, id)
+    if way then
+        text = text .. ", " .. way
     end
     local opts = { dirs = logic.ITEM_DIRS, x = x, y = y }
     if cut then
