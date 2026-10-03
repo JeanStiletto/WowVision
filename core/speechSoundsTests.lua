@@ -80,6 +80,15 @@ testRunner:addSuite("Speech sounds", {
         t:assertEqual(store.writes, 0)
     end,
 
+    ["an unreadable setting is tried again next login"] = function(t)
+        local state = { chatLineSoundOff = false }
+        local store, game = fakeGame()
+        store.values[LINE] = nil
+        t:assertFalse(sounds.silenceOnce(state, game))
+        t:assertEqual(store.writes, 0)
+        t:assertFalse(state.chatLineSoundOff)
+    end,
+
     ["a refused write is tried again next login"] = function(t)
         local state = { chatLineSoundOff = false }
         local store, game = fakeGame(true)

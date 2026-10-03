@@ -78,10 +78,15 @@ function sounds.silenceOnce(state, game)
         return false
     end
     local option = sounds.options[1].option
+    local enabled = game.get(option)
+    if enabled == nil then
+        -- Unreadable (no API, an error): try again next login.
+        return false
+    end
     local changed = false
-    if game.get(option) then
+    if enabled then
         if not game.set(option, false) then
-            -- Refused (no API, an error): try again next login.
+            -- Refused: try again next login.
             return false
         end
         changed = true
