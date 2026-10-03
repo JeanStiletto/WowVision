@@ -20,7 +20,10 @@ tested in `tests.lua`:
   hints, where a road leads, gentle bends.
 - `rooms.lua`: building frames, rooms without a height (stacked floors resolved by the
   doorway walked through; a room entered that way holds while its floor is within
-  `logic.ROOM_SLACK`, `resolveRoom`'s `byDoor`), doorways, entrances.
+  `logic.ROOM_SLACK`, `resolveRoom`'s `byDoor`), doorways, entrances. Rooms whose names differ
+  only by a trailing number are sections of one thing (`logic.sameRoomName`): walking from one
+  into the next says `logic.sectionText` (texts.lua) instead of the full room line. A doorway
+  into a room of the very same name (the pieces of one staircase) is never listed.
 - `squares.lua`: the region of a square (flood fill), what borders it (mouths), where ways
   begin on it, items around a place, cliffs and water near an outdoor place.
 - `objects.lua`: objects one bumps into, whose wall it is.
@@ -123,7 +126,9 @@ Each zone file calls `addon.addZone{...}` with:
   Tram): it is named after its zone, which the player knows, so its rooms are said without it.
 - `rooms`: `{interior, name, kind, floor boxes {x0, y0, x1, y1, ...}, outline box
   (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional)}`,
-  in the building's frame. `a`: the axis angle (0..179) a long, narrow room runs along;
+  in the building's frame. `a`: the axis angle (0..179) a long, narrow room runs along, or for
+  a piece of a staircase split into pieces (all named alike) the line from its lowest to its
+  highest doorway;
   `w`: its floor winds up turning left (1, counter-clockwise seen from above) or right (-1);
   `s`: the room has a name of its own (a shop: "entrance of" it from a hall). A room of at least
   `logic.BIG_ROOM` sq yd says and guides to its doorways from the player's position.
