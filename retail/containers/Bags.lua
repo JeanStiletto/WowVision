@@ -235,14 +235,6 @@ local function renderGrid(builder, frame, frameKey, separateBags)
     builder:popContext()
 end
 
-local function moneyText()
-    local money = GetMoney()
-    if money == nil or WowVision.isSecret(money) then
-        return nil
-    end
-    return GetCoinText(money, " ")
-end
-
 local function renderFrameControls(builder, frame, frameKey)
     -- The search box is one shared edit box parented to the frame that
     -- owns it; it gets a stop of its own so tabbing in starts typing.
@@ -280,11 +272,7 @@ local function renderFrameControls(builder, frame, frameKey)
             ControlId.structural(frameKey .. ":money"),
             nodes.text({
                 label = function()
-                    local text = moneyText()
-                    if text == nil then
-                        return L["Money"]
-                    end
-                    return L["Money"] .. ", " .. text
+                    return module.moneyLabel(GetMoney())
                 end,
             })
         )

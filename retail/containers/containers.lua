@@ -34,3 +34,22 @@ function module.getBagItemLabel(itemButton)
     end
     return table.concat(parts, ", ")
 end
+
+-- An amount of money as words ("12 Gold 5 Silver"), nil for a secret or
+-- missing amount. Shared by the bags and the bank.
+function module.coinText(amount)
+    if amount == nil or WowVision.isSecret(amount) then
+        return nil
+    end
+    return C_CurrencyInfo.GetCoinText(amount, " ")
+end
+
+-- The money line of the bag and bank controls: "Money, <amount>", or just
+-- "Money" while the amount cannot be read.
+function module.moneyLabel(amount)
+    local text = module.coinText(amount)
+    if text == nil then
+        return L["Money"]
+    end
+    return L["Money"] .. ", " .. text
+end
