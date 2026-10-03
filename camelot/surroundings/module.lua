@@ -76,6 +76,7 @@ local lastX, lastY = nil, nil -- the previous position, for walking through door
 local room = nil -- the room the player is in as far as known (switches at once)
 local roomByDoor = false -- ... entered through one of its doorways: it holds over stacked floors (logic.resolveRoom)
 local lastRoom = nil -- the last announced room, for the interior name
+local roomWaySaid = nil -- the way the last said room runs ("north to south"), for its next section
 local layerMode = false -- in one of the big halls of the indoor layer: its places, not the room
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
@@ -433,12 +434,26 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         guide.brief, guide.key, guide.named = brief, nil, nil
     end
     -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
-    local t
     local prefer = guide.key and guide.x and { x = guide.x, y = guide.y } or nil
-    if roomId then
-        t = logic.roomDoorTarget(z, roomId, x, y, skipDoor, prefer)
-    else
-        t = logic.footTarget(z, x, y, region, prefer)
+    local function lookup(reach)
+        if roomId then
+            return logic.roomDoorTarget(z, roomId, x, y, skipDoor, prefer, reach)
+        end
+        return logic.footTarget(z, x, y, region, prefer, reach)
+    end
+    local t = lookup()
+    -- the target guided to stays guided while the player is within its reach and GUIDE_AWAY
+    -- (until 2026-10-03 it was kept there silently: backing off the chapel's door in Deathknell
+    -- beyond its reach and strafing along its front crossed the doorway's lane without a word,
+    -- the user's walk 13:49)
+    if t == nil and prefer and guide.reach
+        and logic.dist2(x, y, guide.x, guide.y) <= (guide.reach + GUIDE_AWAY) ^ 2 then
+        t = lookup(guide.reach + GUIDE_AWAY)
+        if t and logic.samePoint(t, prefer) then
+            t.reach = guide.reach
+        else
+            t = nil
+        end
     end
     -- not the beginning of the way the player is on (stepping out of a street onto its square), nor
     -- of the way under the player's feet before the step onto it counts (user's walk 2026-10-03
@@ -912,12 +927,21 @@ local function updateIndoors(z, x, y, px, py)
         end
     end
     if indoor:update(room, x, y) then
-        local text = logic.roomText(z, room, lastRoom, true, x, y)
         if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
-            -- the next numbered section of the same thing (tram tunnel 6, 7...): only logged
-            logEntry("room", text, x, y, { walked = round1(indoor.walked), same = true })
+            -- the next section of the same thing (a mine's passages, tram tunnel 6, 7..., the pieces
+            -- of one staircase): no name, the way it runs when that changed and its doorways on
+            -- (user 2026-10-03; until then only logged); with nothing left only logged
+            local text, way = logic.sectionText(z, room, lastRoom, roomWaySaid, x, y)
+            if text then
+                say(text, "room", x, y, indoor.walked)
+                roomWaySaid = way or roomWaySaid
+            else
+                logEntry("room", logic.roomText(z, room, lastRoom, true, x, y), x, y,
+                    { walked = round1(indoor.walked), same = true })
+            end
         else
-            say(text, "room", x, y, indoor.walked)
+            say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
+            roomWaySaid = room and logic.roomWay(z, room)
         end
         lastRoom = room
     end

@@ -198,6 +198,49 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.roomDoorTarget(z, 3, 76, 6), nil)
     end,
 
+    ["the next section of the same thing: no name, its way when it changed, its doorways on"] = function(t)
+        local z = newZone()
+        z.interiors = { { "Test Mine", 0, 0, 1, -1, 0, 0, -1 } }
+        z.rooms = {
+            { 1, "mine", "corridor", { 0, 0, 10, 30 }, f = 300, a = 0 },
+            { 1, "mine 2", "corridor", { 0, 30, 10, 60 }, f = 300, a = 0 },
+            { 1, "mine 3", "room", { 10, 30, 20, 40 }, f = 100 },
+            { 1, "gallery", "room", { 0, 60, 10, 70 }, f = 100 },
+            { 1, "stairs", "stairs", { -10, 30, 0, 40 }, f = 40, a = 90 },
+            { 1, "stairs", "stairs", { -20, 30, -10, 40 }, f = 40, a = 45 },
+            { 1, "mine 4", "room", { 20, 30, 30, 40 }, f = 100 },
+        }
+        z.doors = {
+            { 1, 2, 1, 5, 30, 0, 1, -1 },
+            { 2, 3, 1, 10, 35, 1, 0, -1 },
+            { 2, 4, 1, 5, 60, 0, 1, -1 },
+            { 2, 5, 1, 0, 35, 1, 0, 1 },
+            { 5, 6, 1, -10, 35, 1, 0, 1 },
+            { 0, 6, 1, -20, 35, 0, 0, 0 },
+            { 3, 7, 1, 20, 35, 1, 0, -1 },
+        }
+        logic.unpack(z)
+        t:assertTrue(logic.sameRoomName(z, 1, 2))
+        -- into mine 2 from mine: the way runs as said already, so only the doorways on, not back
+        local text, way = logic.sectionText(z, 2, 1, logic.roomWay(z, 1))
+        t:assertEqual(way, logic.roomWay(z, 1))
+        t:assertTrue(text:find("mine 3", 1, true) ~= nil and text:find("gallery", 1, true) ~= nil
+            and text:find("stairs", 1, true) ~= nil)
+        t:assertNil(text:find("mine to", 1, true))
+        t:assertNil(text:find(way, 1, true))
+        -- back into mine: nothing left to say
+        t:assertNil((logic.sectionText(z, 1, 2, way)))
+        -- up the staircase: the next piece says its way and the way out, not the piece below
+        text = logic.sectionText(z, 6, 5, logic.roomWay(z, 5))
+        t:assertTrue(text:find(logic.roomWay(z, 6), 1, true) == 1)
+        t:assertTrue(text:find("way out", 1, true) ~= nil)
+        t:assertNil(text:find("stairs", 1, true))
+        -- a passage whose only way on is the next section of the same thing: no choice, nothing said
+        t:assertNil((logic.sectionText(z, 3, 2, way)))
+        -- a doorway into another piece of the same staircase is no way on
+        t:assertEqual(#logic.roomDoorways(z, 5, { section = true, cameFrom = 2 }), 0)
+    end,
+
     ["winding stairs say which way they turn going up"] = function(t)
         local z = newHallZone()
         logic.unpack(z)
