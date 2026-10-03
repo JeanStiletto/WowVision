@@ -56,17 +56,6 @@ local function sortedActive(pool, less)
     return list
 end
 
-local function coinText(amount)
-    if amount == nil or WowVision.isSecret(amount) then
-        return nil
-    end
-    local format = GetCoinText or (C_CurrencyInfo ~= nil and C_CurrencyInfo.GetCoinText) or nil
-    if format == nil then
-        return tostring(amount)
-    end
-    return format(amount, " ")
-end
-
 local function fontText(fontString)
     if fontString == nil or not fontString:IsShown() then
         return nil
@@ -162,11 +151,10 @@ local function renderTabs(builder)
             nodes.button({
                 label = function()
                     local current = findPageTab(bankType, pageNumber)
-                    local text = current ~= nil and current.tooltipText or L["Page"]
-                    if isCurrentPage(bankType, pageNumber) then
-                        return text .. ", " .. L["selected"]
-                    end
-                    return text
+                    return current ~= nil and current.tooltipText or L["Page"]
+                end,
+                selected = function()
+                    return isCurrentPage(bankType, pageNumber)
                 end,
                 onActivate = function()
                     local current = findPageTab(bankType, pageNumber)
@@ -354,17 +342,10 @@ end
 
 local function moneyLabel()
     local bankType = activeBankType()
-    local amount = nil
     if bankType == Enum.BankType.Account and C_Bank ~= nil and C_Bank.FetchDepositedMoney ~= nil then
-        amount = C_Bank.FetchDepositedMoney(bankType)
-    else
-        amount = GetMoney()
+        return module.moneyLabel(C_Bank.FetchDepositedMoney(bankType))
     end
-    local text = coinText(amount)
-    if text == nil then
-        return L["Money"]
-    end
-    return L["Money"] .. ", " .. text
+    return module.moneyLabel(GetMoney())
 end
 
 local function nextTabCostLabel()
@@ -372,7 +353,7 @@ local function nextTabCostLabel()
     local data = bankType ~= nil and C_Bank ~= nil and C_Bank.FetchNextPurchasableBankTabData ~= nil
             and C_Bank.FetchNextPurchasableBankTabData(bankType)
         or nil
-    local cost = data ~= nil and coinText(data.tabCost) or nil
+    local cost = data ~= nil and module.coinText(data.tabCost) or nil
     if cost == nil then
         return COSTS_LABEL or L["Money"]
     end

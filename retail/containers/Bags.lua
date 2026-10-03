@@ -164,11 +164,7 @@ local function bagSlotEntry(frame, slotButton, label)
             add({
                 label = L["Bag Menu"],
                 onActivate = function()
-                    if menuButton.OpenMenu ~= nil then
-                        menuButton:OpenMenu()
-                    elseif menuButton.Click ~= nil then
-                        menuButton:Click()
-                    end
+                    nodes.openDropdown(menuButton)
                 end,
             })
         end
@@ -190,33 +186,6 @@ local function renderBag(builder, frame, bagID, buttons)
     end
     module.renderSlots(builder, buttons)
     builder:popContext()
-end
-
--- The bag slot buttons as one row under their own stop: the shown
--- buttons of the bags the filter accepts. False when none qualifies.
-local function renderBagBar(builder, key, label, idPrefix, include)
-    local entries = {}
-    for _, bagID in ipairs(HELD_BAG_IDS) do
-        local slotButton = bagSlotButton(bagID)
-        if slotButton ~= nil and slotButton:IsShown() and include(bagID) then
-            tinsert(entries, { bagID = bagID, button = slotButton })
-        end
-    end
-    if #entries == 0 then
-        return false
-    end
-    builder:beginStop(key)
-    builder:pushContext(key, label)
-    builder:startRow()
-    for _, entry in ipairs(entries) do
-        builder:addItem(
-            ControlId.structural(idPrefix .. entry.bagID),
-            module.itemSlotNode(entry.button, L["Bag Slot"] .. " " .. bagLabel(entry.bagID))
-        )
-    end
-    builder:endRow()
-    builder:popContext()
-    return true
 end
 
 -- One grid for a combined frame: plain rows, no bag boundaries, exactly
@@ -241,23 +210,25 @@ local function renderGrid(builder, frame, frameKey, separateBags)
     -- The bag slot buttons as one bar after the grid. A bag the game
     -- still shows as its own frame (the reagent bag and the keyring do,
     -- even in combined mode) keeps its slot button with that frame.
-    local any = renderBagBar(builder, frameKey .. ":bagSlots", L["Bag Slots"], "bagButton:", function(bagID)
-        return not separateBags[bagID]
-    end)
+    builder:beginStop(frameKey .. ":bagSlots")
+    builder:pushContext(frameKey .. ":bagSlots", L["Bag Slots"])
+    builder:startRow()
+    local any = false
+    for _, bagID in ipairs(HELD_BAG_IDS) do
+        local slotButton = bagSlotButton(bagID)
+        if slotButton ~= nil and slotButton:IsShown() and not separateBags[bagID] then
+            any = true
+            builder:addItem(
+                ControlId.structural("bagButton:" .. bagID),
+                module.itemSlotNode(slotButton, L["Bag Slot"] .. " " .. bagLabel(bagID))
+            )
+        end
+    end
     if not any then
-        builder:beginStop(frameKey .. ":bagSlots")
-        builder:pushContext(frameKey .. ":bagSlots", L["Bag Slots"])
         builder:addItem(ControlId.structural(frameKey .. ":noBagSlots"), nodes.text({ label = L["Empty"] }))
-        builder:popContext()
     end
-end
-
-local function moneyText()
-    local money = GetMoney()
-    if money == nil or WowVision.isSecret(money) then
-        return nil
-    end
-    return GetCoinText(money, " ")
+    builder:endRow()
+    builder:popContext()
 end
 
 local function renderFrameControls(builder, frame, frameKey)
@@ -297,11 +268,7 @@ local function renderFrameControls(builder, frame, frameKey)
             ControlId.structural(frameKey .. ":money"),
             nodes.text({
                 label = function()
-                    local text = moneyText()
-                    if text == nil then
-                        return L["Money"]
-                    end
-                    return L["Money"] .. ", " .. text
+                    return module.moneyLabel(GetMoney())
                 end,
             })
         )
