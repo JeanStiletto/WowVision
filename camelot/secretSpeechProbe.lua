@@ -476,6 +476,43 @@ end
 
 local running = false
 
+-- Pitch range test: can steps get bigger than the -10..10 of absmiddle
+-- allows? Nested relative <pitch middle> on top of absmiddle (does it go
+-- beyond 10?), a value past the edge (clamped?), and a fraction (finer
+-- steps?). Plain markup only, each line says what it should sound like.
+local PITCH_TESTS = {
+    { "pitch 1, top of the range", '<pitch absmiddle="10">one, top', "</pitch>" },
+    { "pitch 2, top plus 5 nested", '<pitch absmiddle="10"><pitch middle="5">two, above the top?', "</pitch></pitch>" },
+    { "pitch 3, top plus 10 nested", '<pitch absmiddle="10"><pitch middle="10">three, even higher?', "</pitch></pitch>" },
+    { "pitch 4, absmiddle 15", '<pitch absmiddle="15">four, fifteen', "</pitch>" },
+    { "pitch 5, bottom of the range", '<pitch absmiddle="-10">five, bottom', "</pitch>" },
+    { "pitch 6, bottom minus 5 nested", '<pitch absmiddle="-10"><pitch middle="-5">six, below the bottom?', "</pitch></pitch>" },
+    { "pitch 7, absmiddle 2", '<pitch absmiddle="2">seven, two', "</pitch>" },
+    { "pitch 8, absmiddle 2.5", '<pitch absmiddle="2.5">eight, two and a half', "</pitch>" },
+    { "pitch 9, absmiddle 3", '<pitch absmiddle="3">nine, three', "</pitch>" },
+}
+
+local function runPitchTest(voice)
+    if running then
+        say("Probe already running")
+        return
+    end
+    running = true
+    record({ marker = true, label = "pitch test, voice " .. tostring(voice) })
+    for index, test in ipairs(PITCH_TESTS) do
+        C_Timer.After(index * STEP_SECONDS, function()
+            speak(test[1], voice, function()
+                return test[2] .. bust() .. test[3]
+            end, nil, true)
+        end)
+    end
+    C_Timer.After((#PITCH_TESTS + 1) * STEP_SECONDS, function()
+        running = false
+        say("Pitch test done")
+    end)
+    say("Pitch test, voice " .. tostring(voice) .. ". " .. #PITCH_TESTS .. " lines follow")
+end
+
 local function runSteps(voice, unit)
     if running then
         say("Probe already running")
@@ -733,7 +770,7 @@ end
 
 WowVision.base:registerCommand({
     name = "sprobe",
-    description = "Secret speech probe: 'run [voice] [unit]' ten spoken steps, 'events [seconds]' counts health and power events, 'monitor [voice] [percent]' toggles a pitch party health monitor, 'log' shows the engine statuses",
+    description = "Secret speech probe: 'run [voice] [unit]' ten spoken steps, 'events [seconds]' counts health and power events, 'monitor [voice] [percent]' toggles a pitch party health monitor, 'pitch [voice]' tests how far pitch reaches, 'log' shows the engine statuses",
     func = function(args)
         local words = {}
         for word in tostring(args or ""):lower():gmatch("%S+") do
@@ -753,6 +790,9 @@ WowVision.base:registerCommand({
                 percent, voice = voice, nil
             end
             toggleMonitor(voice or defaultVoice, percent)
+        elseif command == "pitch" then
+            local voice = parseArgs(words)
+            runPitchTest(voice or defaultVoice)
         elseif command == "log" then
             showLog()
         else
