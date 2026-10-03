@@ -318,6 +318,11 @@ module:registerBinding({
     script = "/run WowVision.base.navigation.maps:stepWaypoint(-1)",
 })
 
+-- Whether a beacon leads the way (a route or a straight line).
+function module:isGuiding()
+    return self.path ~= nil
+end
+
 function module:stopPath()
     self.path = nil
     self.beacon = nil
