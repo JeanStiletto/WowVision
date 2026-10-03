@@ -22,5 +22,7 @@
   <Script file="professions.lua" />
   <Script file="crafting.lua" />
   <Include file="surroundings\modules.xml" />
+  <!-- Diagnostic: can a secret steer pitch and volume (/wv sprobe). -->
+  <Script file="secretSpeechProbe.lua" />
 
 </Ui>
