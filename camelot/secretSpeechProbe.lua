@@ -11,8 +11,8 @@
 --    secret text with SAPI XML tags. So the secret result can become the
 --    number inside a <pitch absmiddle="..."> or <volume level="..."> tag.
 --
--- /wv sprobe run [voiceID] [unit]  ten spoken steps, each names itself;
---                                   say what you hear for each number
+-- /wv sprobe run [voiceID] [unit]  fifteen steps, each names itself (ten
+--                                   speech, five beacon sounds); say what you hear
 -- /wv sprobe events [seconds]      counts health and power events per unit
 -- /wv sprobe monitor [voiceID] [percent]
 --                                   toggles a Sku-style party health monitor:
@@ -32,6 +32,8 @@ local engineSpeak = C_VoiceChat.SpeakText
 
 local probe = {
     entries = {},
+    rawEvents = {},
+    registerErrors = {},
     eventCounts = nil,
     monitor = nil,
 }
@@ -112,12 +114,21 @@ local function getCurves()
         tinsert(pitch, { i / 10, 10 - 2 * i })
     end
     tinsert(pitch, { 1.0, -10 })
+    -- Beacon distance 1 (near) when badly damaged up to 30 (far) at full.
+    local distance = {}
+    for i = 0, 9 do
+        tinsert(distance, { i / 10, 1 + 3 * i })
+    end
+    tinsert(distance, { 1.0, 30 })
     curves = {
         percent = stepCurve(percent),
         pitch = stepCurve(pitch),
         constLow = stepCurve({ { 0, -10 }, { 1, -10 } }),
         constHigh = stepCurve({ { 0, 10 }, { 1, 10 } }),
         constZero = stepCurve({ { 0, 0 }, { 1, 0 } }),
+        constNear = stepCurve({ { 0, 1 }, { 1, 1 } }),
+        constFar = stepCurve({ { 0, 30 }, { 1, 30 } }),
+        distance = stepCurve(distance),
         belowHalf = stepCurve({ { 0, 100 }, { 0.5, 0 } }),
         aboveHalf = stepCurve({ { 0, 0 }, { 0.5, 100 } }),
         gates = {},
@@ -191,10 +202,25 @@ for _, event in ipairs({
     "VOICE_CHAT_TTS_PLAYBACK_FINISHED",
     "VOICE_CHAT_TTS_PLAYBACK_FAILED",
 }) do
-    pcall(ttsFrame.RegisterEvent, ttsFrame, event)
+    local ok, err = pcall(ttsFrame.RegisterEvent, ttsFrame, event)
+    if not ok then
+        tinsert(probe.registerErrors, event .. ": " .. tostring(err))
+    end
 end
+
+-- Every engine speech event, ours or not, so the log shows which events this
+-- client actually sends (the first in-game run matched none of them).
+local MAX_RAW = 120
+local function rawEvent(now, event, a, b)
+    tinsert(probe.rawEvents, string.format("%.3f %s %s %s", now, event, tostring(a), tostring(b)))
+    while #probe.rawEvents > MAX_RAW do
+        tremove(probe.rawEvents, 1)
+    end
+end
+
 ttsFrame:SetScript("OnEvent", function(_, event, a, b)
     local now = GetTime()
+    rawEvent(now, event, a, b)
     if event == "VOICE_CHAT_TTS_SPEAK_TEXT_UPDATE" then
         local status, utteranceID = a, b
         local entry = byUtterance[utteranceID]
@@ -210,6 +236,14 @@ ttsFrame:SetScript("OnEvent", function(_, event, a, b)
         return
     end
     local entry = byUtterance[a]
+    -- No text update came for our call: the first unknown start is ours.
+    if entry == nil and event == "VOICE_CHAT_TTS_PLAYBACK_STARTED" and pending ~= nil and pending.utteranceID == nil then
+        entry = pending
+        entry.utteranceID = a
+        entry.mappedByStart = true
+        byUtterance[a] = entry
+        pending = nil
+    end
     if entry == nil then
         return
     end
@@ -244,12 +278,20 @@ local function entryLine(entry)
     if entry.error ~= nil then
         tinsert(parts, "ERROR " .. entry.error)
     end
-    tinsert(parts, "utterance " .. tostring(entry.utteranceID))
+    if entry.sound == nil then
+        tinsert(parts, "utterance " .. tostring(entry.utteranceID))
+    end
     if #entry.statuses > 0 then
         tinsert(parts, "status " .. table.concat(entry.statuses, " "))
     end
-    if entry.noSyncUpdate and entry.utteranceID ~= nil then
+    if entry.mappedByStart then
+        tinsert(parts, "matched by its start, no text update")
+    elseif entry.noSyncUpdate and entry.utteranceID ~= nil then
         tinsert(parts, "update came late")
+    end
+    if entry.sound ~= nil then
+        tinsert(parts, entry.sound)
+        return table.concat(parts, "; ")
     end
     tinsert(parts, "start after " .. ms(entry.calledAt, entry.startedAt))
     if entry.failedAt ~= nil then
@@ -261,6 +303,38 @@ local function entryLine(entry)
 end
 
 -- The ten steps ---------------------------------------------------------------
+
+local BEACON = "Interface/AddOns/WowVision/audio/beacons/probe_mid_1/probe_mid_1;0;"
+
+local function describe(value)
+    if isSecret(value) then
+        return "secret"
+    end
+    return tostring(value)
+end
+
+-- Plays a sound file whose path may be secret, and records what came back.
+local function playSound(label, buildPath, secrets)
+    local entry = { label = label, voice = "-", calledAt = GetTime(), statuses = {} }
+    record(entry)
+    local flags = {}
+    for _, item in ipairs(secrets or {}) do
+        tinsert(flags, item[1] .. "=" .. (isSecret(item[2]) and "secret" or "plain"))
+    end
+    entry.secrets = table.concat(flags, ", ")
+    local okBuild, path = pcall(buildPath)
+    if not okBuild then
+        entry.error = "build: " .. tostring(path)
+        return
+    end
+    entry.textSecret = isSecret(path)
+    local ok, willPlay, handle = pcall(PlaySoundFile, path, "Master")
+    if not ok then
+        entry.error = "play: " .. tostring(willPlay)
+        return
+    end
+    entry.sound = "willPlay " .. describe(willPlay) .. ", handle " .. describe(handle)
+end
 
 local function buildSteps(unit)
     local c = getCurves()
@@ -349,6 +423,47 @@ local function buildSteps(unit)
                 return 'ten, next word silent, <volume level="' .. h(c.constZero) .. '">wrong</volume> done' .. bust()
             end,
         },
+        -- Sound files: the beacon files are named <angle>;<distance>, so a
+        -- secret number can pick the distance in the file name.
+        {
+            label = "11 plain sound, near",
+            path = function()
+                return BEACON .. "1.mp3"
+            end,
+        },
+        {
+            label = "12 plain sound, far",
+            path = function()
+                return BEACON .. "30.mp3"
+            end,
+        },
+        {
+            label = "13 secret sound, constant near",
+            secrets = function()
+                return { { "distance", h(c.constNear) } }
+            end,
+            path = function()
+                return BEACON .. h(c.constNear) .. ".mp3"
+            end,
+        },
+        {
+            label = "14 secret sound, constant far",
+            secrets = function()
+                return { { "distance", h(c.constFar) } }
+            end,
+            path = function()
+                return BEACON .. h(c.constFar) .. ".mp3"
+            end,
+        },
+        {
+            label = "15 secret sound from health",
+            secrets = function()
+                return { { "distance", h(c.distance) } }
+            end,
+            path = function()
+                return BEACON .. h(c.distance) .. ".mp3"
+            end,
+        },
     }
 end
 
@@ -373,14 +488,21 @@ local function runSteps(voice, unit)
                 local ok, list = pcall(step.secrets)
                 secrets = ok and list or { { "secrets error " .. tostring(list), nil } }
             end
-            speak(step.label, voice, step.text, secrets, true)
+            if step.path ~= nil then
+                say(step.label:match("^%d+"))
+                C_Timer.After(1.2, function()
+                    playSound(step.label, step.path, secrets)
+                end)
+            else
+                speak(step.label, voice, step.text, secrets, true)
+            end
         end)
     end
     C_Timer.After((#steps + 1) * STEP_SECONDS, function()
         running = false
         say("Probe done. Type slash w v s probe log for the engine statuses")
     end)
-    say("Secret speech probe, unit " .. unit .. ", voice " .. tostring(voice) .. ". Ten steps follow")
+    say("Secret speech probe, unit " .. unit .. ", voice " .. tostring(voice) .. ". " .. #steps .. " steps follow")
 end
 
 -- Event counting --------------------------------------------------------------
@@ -571,6 +693,13 @@ local function showLog()
     local lines = {}
     for _, entry in ipairs(probe.entries) do
         tinsert(lines, entryLine(entry))
+    end
+    for _, err in ipairs(probe.registerErrors) do
+        tinsert(lines, "event registration failed: " .. err)
+    end
+    tinsert(lines, #probe.rawEvents .. " engine speech events seen (time, event, first, second):")
+    for _, line in ipairs(probe.rawEvents) do
+        tinsert(lines, line)
     end
     WowVisionDump = WowVisionDump or {}
     WowVisionDump.secretProbe = lines
