@@ -45,10 +45,14 @@ sounds.options = {
 -- records the one-time silencing.
 function sounds.addSettings(settings, L, game)
     for _, def in ipairs(sounds.options) do
-        local field = settings:add({
+        settings:add({
             type = "Bool",
             key = def.key,
             label = L[def.label],
+            -- No value of its own, the game keeps it. Not persisting also
+            -- keeps the database restore from writing a stale copy back
+            -- into the game.
+            persist = false,
             get = function(obj, key)
                 return game.get(def.option)
             end,
@@ -56,10 +60,6 @@ function sounds.addSettings(settings, L, game)
                 game.set(def.option, value)
             end,
         })
-        -- The facade persists every setting; this one has no value of its
-        -- own, the game keeps it. Not persisting also keeps the database
-        -- restore from writing a stale copy back into the game.
-        field.persist = false
     end
     settings:add({
         type = "Bool",

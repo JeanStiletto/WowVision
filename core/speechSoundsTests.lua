@@ -24,20 +24,22 @@ local function fakeGame(refuse)
     return store, game
 end
 
--- A settings facade standing in for module:hasSettings(): keeps the
--- declared fields and reads or writes each through its accessors.
+-- module:hasSettings() on a real settings class: the facade's add rule
+-- (persisted unless the def says persist = false) replicated, since
+-- Module.lua itself is WoW-bound.
 local function settingsFacade()
-    local facade = { fields = {} }
+    local settingsClass = WowVision.Class("Settings:speechSoundsTest")
+    local facade = { obj = settingsClass:new() }
     function facade:add(def)
-        local field = { def = def, persist = true }
-        function field:read()
-            return self.def.get(nil, self.def.key)
+        if def.persist == nil then
+            def.persist = true
         end
-        function field:write(value)
-            self.def.set(nil, self.def.key, value)
-        end
-        self.fields[def.key] = field
-        return field
+        def.setting = true
+        settingsClass:addFields({ def })
+        return settingsClass:getField(def.key)
+    end
+    function facade:field(key)
+        return settingsClass:getField(key)
     end
     return facade
 end
@@ -90,29 +92,45 @@ testRunner:addSuite("Speech sounds", {
         local facade = settingsFacade()
         local store, game = fakeGame()
         sounds.addSettings(facade, untranslated(), game)
-        local line = facade.fields.chatLineSound
-        local activity = facade.fields.unfocusedActivitySound
-        t:assertEqual(line.def.type, "Bool")
-        t:assertEqual(line.def.label, "Sound Between Chat Lines")
+        local settings = facade.obj
+        local line = facade:field("chatLineSound")
+        t:assertEqual(line.typeKey, "Bool")
+        t:assertEqual(line.label, "Sound Between Chat Lines")
         t:assertFalse(line.persist, "the game keeps the value")
-        t:assertFalse(activity.persist)
-        t:assertEqual(line:read(), true)
+        t:assertFalse(facade:field("unfocusedActivitySound").persist)
+        t:assertEqual(settings.chatLineSound, true)
         store.values[LINE] = false
-        t:assertEqual(line:read(), false, "reads are live")
-        activity:write(false)
+        t:assertEqual(settings.chatLineSound, false, "reads are live")
+        settings.unfocusedActivitySound = false
         t:assertEqual(store.values[ACTIVITY], false)
         t:assertEqual(store.writes, 1)
+    end,
+
+    ["a database restore leaves the game setting alone"] = function(t)
+        local facade = settingsFacade()
+        local store, game = fakeGame()
+        sounds.addSettings(facade, untranslated(), game)
+        local charNode = { chatLineSound = false, chatLineSoundOff = true }
+        local globalNode = {}
+        facade.obj:setDB({ char = charNode, global = globalNode })
+        t:assertEqual(store.writes, 0, "a stale stored copy is not written back")
+        t:assertEqual(store.values[LINE], true)
+        t:assertTrue(facade.obj.chatLineSoundOff, "the flag itself is restored")
+        facade.obj.unfocusedActivitySound = false
+        t:assertEqual(store.values[ACTIVITY], false)
+        t:assertNil(charNode.unfocusedActivitySound, "nothing is stored")
+        t:assertNil(globalNode.unfocusedActivitySound)
     end,
 
     ["the silenced flag is a hidden per-character setting"] = function(t)
         local facade = settingsFacade()
         local _, game = fakeGame()
         sounds.addSettings(facade, untranslated(), game)
-        local flag = facade.fields.chatLineSoundOff
+        local flag = facade:field("chatLineSoundOff")
         t:assertNotNil(flag)
-        t:assertEqual(flag.def.default, false)
-        t:assertEqual(flag.def.global, false)
-        t:assertEqual(flag.def.showInUI, false)
+        t:assertEqual(flag.default, false)
+        t:assertEqual(flag.global, false)
+        t:assertEqual(flag.showInUI, false)
         t:assertTrue(flag.persist)
     end,
 
