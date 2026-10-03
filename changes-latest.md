@@ -25,6 +25,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * Fixed key bindings losing Alt when Alt was let go before the key.
 * Books and letters no longer read a page number line or stop silently when there is no author.
 * Added two Merchant settings (Windows > Merchant): "Automatically Sell Poor Items" and "Automatically Repair If Possible", both off by default. When turned on, opening a vendor sells your grey items and repairs your gear on its own, with a chat message confirming what was sold or repaired. Repair is skipped if the vendor doesn't offer it or you can't afford it.
+* Added Sku's Beacon 6 as a beacon sound.
 
 ### Modern
 * Added support for the bags window.
