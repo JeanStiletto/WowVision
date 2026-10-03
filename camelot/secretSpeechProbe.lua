@@ -78,11 +78,18 @@ local function speechSettings()
     return voice, rate, math.max(0, math.min(100, volume))
 end
 
+-- Every probe result is printed to chat as well as spoken: chat can be
+-- reread and copied afterwards, speech is gone once heard.
+local function chat(text)
+    for line in tostring(text):gmatch("[^\n]+") do
+        print("WowVision probe: " .. line)
+    end
+end
+
 local function say(text)
+    chat(text)
     if WowVision.base ~= nil and WowVision.base.speech ~= nil then
         WowVision:speak(text)
-    else
-        print(text)
     end
 end
 
@@ -703,6 +710,7 @@ local function showLog()
     end
     WowVisionDump = WowVisionDump or {}
     WowVisionDump.secretProbe = lines
+    chat(table.concat(lines, "\n"))
     WowVision.testing.showResults(table.concat(lines, "\n"))
 end
 
