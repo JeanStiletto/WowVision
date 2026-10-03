@@ -143,6 +143,28 @@ testRunner:addSuite("Speech sounds", {
         t:assertTrue(flag.persist)
     end,
 
+    ["attach silences from entering the world and keeps the module's own onEvent"] = function(t)
+        local facade = settingsFacade()
+        local store, game = fakeGame()
+        local heard = {}
+        local module = { registered = {}, settings = facade.obj }
+        function module:registerEvent(eventType, event)
+            table.insert(self.registered, eventType .. ":" .. event)
+        end
+        function module:onEvent(event)
+            table.insert(heard, event)
+        end
+        sounds.attach(module, facade, untranslated(), game)
+        t:assertEqual(module.registered[1], "event:PLAYER_ENTERING_WORLD")
+        t:assertNotNil(facade:field("chatLineSound"))
+        module:onEvent("PLAYER_LOGIN")
+        t:assertEqual(store.values[LINE], true, "only entering the world silences")
+        module:onEvent("PLAYER_ENTERING_WORLD")
+        t:assertEqual(store.values[LINE], false)
+        t:assertTrue(facade.obj.chatLineSoundOff)
+        t:assertEqual(#heard, 2, "the module's own handler saw both events")
+    end,
+
     ["the game accessors are harmless without the game API"] = function(t)
         t:assertNil(C_TTSSettings)
         t:assertNil(sounds.game.get(LINE))

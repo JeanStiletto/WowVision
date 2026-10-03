@@ -95,6 +95,23 @@ function sounds.silenceOnce(state, game)
     return changed
 end
 
+-- Everything a version's speech module needs, in one call: the toggles on
+-- its settings and the one-time silencing from PLAYER_ENTERING_WORLD (see
+-- Timing above). The module's own onEvent, if it has one, still runs.
+-- game defaults to the real C_TTSSettings side.
+function sounds.attach(module, settings, L, game)
+    game = game or sounds.game
+    sounds.addSettings(settings, L, game)
+    module:registerEvent("event", "PLAYER_ENTERING_WORLD")
+    local previous = module.onEvent
+    function module:onEvent(event, ...)
+        if event == "PLAYER_ENTERING_WORLD" then
+            sounds.silenceOnce(self.settings, game)
+        end
+        return previous(self, event, ...)
+    end
+end
+
 -- The game side: C_TTSSettings with the option looked up by name, since
 -- Enum is a game global. get returns nil and set returns false when the
 -- client has no such setting.
