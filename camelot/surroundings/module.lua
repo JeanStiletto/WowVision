@@ -451,9 +451,17 @@ local function checkGuide(z, x, y, roomId, skipDoor)
             t = nil
         end
     end
-    -- not the foot of a climb the player is past (going up it)
-    if t and t.kind == "climb" and logic.pastTarget(z, t, x, y) then
-        t = nil
+    -- not the foot of a climb the player is past (going up it), nor of the one the player stands on;
+    -- back down at that foot its "up to the west" is said again (a second try at the griffon ramp)
+    if t and t.kind == "climb" then
+        if logic.onClimb(z, t, x, y, outdoor.current) then
+            if guide.key == t.key then
+                guide.at = false
+            end
+            t = nil
+        elseif logic.pastTarget(z, t, x, y) then
+            t = nil
+        end
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)
     if t == nil or (passed and logic.dist2(t.x, t.y, passed.x, passed.y) <= PASSED_SAME ^ 2) then
