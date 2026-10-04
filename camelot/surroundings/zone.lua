@@ -674,6 +674,7 @@ function logic.unpack(zone, locale)
         ix.pieces[key] = ix.pieces[key] or {}
         ix.pieces[key][piece] = true
     end)
+    -- where a piece joins a building one comes out of (piece, 2, x, y); from the ground: linkPoints
     ix.access = {}
     eachRecord(zone.access, 4, function(piece, kind, x, y)
         local r, c = logic.cellOf(zone, x, y)
@@ -716,16 +717,19 @@ function logic.unpack(zone, locale)
             end
         end)
     end
-    -- where two levels join (an indoor layer's linkPoints): a level is joined there, as one is
-    -- stepped onto from the main floor at its access points; without them next to its footprint
-    ix.linkAt = nil
-    if zone.linkPoints and #zone.linkPoints > 0 then
-        ix.linkAt = {}
-        eachRecord(zone.linkPoints, 4, function(a, b, x, y)
-            local r, c = logic.cellOf(zone, x, y)
+    -- where a piece is joined (linkPoints: a, b, x, y): from level 0, the ground outdoors or a
+    -- hall's or a building's main floor (groundAt: one rule for all, user 2026-10-04), or where two
+    -- levels of a building meet (linkAt; without such points pieces join next to their footprints)
+    ix.groundAt, ix.linkAt = {}, nil
+    eachRecord(zone.linkPoints, 4, function(a, b, x, y)
+        local r, c = logic.cellOf(zone, x, y)
+        if a == 0 or b == 0 then
+            addToBucket(ix.groundAt, r * zone.cols + c, { piece = a + b, x = x, y = y })
+        else
+            ix.linkAt = ix.linkAt or {}
             addToBucket(ix.linkAt, r * zone.cols + c, { a = a, b = b, x = x, y = y })
-        end)
-    end
+        end
+    end)
 
     -- drop edges with a box each, so the edge search skips the far ones (cities have hundreds)
     ix.edges = {}

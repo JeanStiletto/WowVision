@@ -48,8 +48,8 @@ a screen reader would cut its own speech off at every key press.
   are listed with its other ways ("stairs to the upstairs landing to the east").
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it. A long, narrow
-  room says which way it runs ("passage of Ironforge, north to south"); winding stairs say which
-  way they turn going up ("stairs of Ironforge, winding, turns left going up"). Rooms without a
+  room says which way it runs ("passage of Ironforge, north to south"); winding stairs say so
+  ("stairs of Ironforge, winding"). Rooms without a
   name of their own say their floor ("room, floor 1"), or the floor's name where the game names
   it ("room southeast, upstairs"; said once: on that floor its rooms are "room southeast" and the
   stairs up to it just "stairs"), the room they stand over when a named one

@@ -4,8 +4,8 @@
 --
 -- An edge on a high piece (a gate's wall-walk, a bridge deck over a bank) warns only while the
 -- player is up there. There is no height on Forever, so a piece counts from where the player is
--- seen stepping onto it: from the ground at an access point, out of a building's rooms, or from a
--- joined piece; walking under it never counts.
+-- seen stepping onto it: from the ground where it joins level 0, out of a building's rooms, or from
+-- a joined piece; walking under it never counts.
 
 local logic = WowVision.surroundingsLogic
 
@@ -37,9 +37,9 @@ local function segmentDistance(qx, qy, ax, ay, bx, by)
 end
 
 -- Updates the set `on` of the high pieces the player is on: a piece is entered by passing where
--- it is stepped onto from the ground, where it joins a building the player just came out of
--- (`cameOut`), or from a joined piece the player is on; it is left by walking off its footprint.
--- A step from the ground counts only from a cell painted with the piece's own floor
+-- it is stepped onto from the ground (on no piece), where it joins a building the player just came
+-- out of (`cameOut`), or from a joined piece the player is on; it is left by walking off its
+-- footprint. A step from the ground counts only from a cell painted with the piece's own floor
 -- (zone.piecePlaces): not from the bay under the landing at the griffon ramp's foot, 2 yd from
 -- where the ramp rises (a false "8 deep" there, user's walk 2026-09-30). `px, py`: the position
 -- at the last look (the step from there counts). Returns the set and whether it changed.
@@ -108,15 +108,30 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
             changed = true
         end
     end
+    -- level 0, the ground outdoors or a hall's or a building's main floor: a piece is stepped onto
+    -- where it joins level 0 (zone.groundAt), from a cell painted with its own floor, unless the
+    -- player is up on a piece lying over the ground here (one rule for every floor over another,
+    -- user 2026-10-04: the Brill tavern's room upstairs lies over the cellar stairs' top; Stormwind's
+    -- docks are stepped onto from beside the quay, which the player still counts on)
     local n = math.ceil(logic.ROOMS_REACH / zone.cell)
+    local ground = true
+    for _, a in ipairs(ix.stacked and ix.stacked[key] or {}) do
+        ground = ground and not on[a.piece]
+    end
     for dr = -n, n do
         for dc = -n, n do
-            for _, a in ipairs(ix.access[(r + dr) * zone.cols + c + dc] or {}) do
-                local d = logic.dist(a.x, a.y, x, y)
-                local own = ix.piecePlaces and ix.piecePlaces[a.piece]
-                local fromGround = a.kind == 1 and (own == nil or own[painted])
-                    and segmentDistance(a.x, a.y, px or x, py or y, x, y) <= logic.ACCESS_REACH
-                if (fromGround or (a.kind == 2 and cameOut and d <= logic.ROOMS_REACH)) and not on[a.piece] then
+            local cell = (r + dr) * zone.cols + c + dc
+            for _, g in ipairs(ground and ix.groundAt[cell] or {}) do
+                local own = ix.piecePlaces and ix.piecePlaces[g.piece]
+                if (own == nil or own[painted]) and not on[g.piece]
+                    and segmentDistance(g.x, g.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
+                    on[g.piece] = true
+                    changed = true
+                end
+            end
+            -- ... and where it joins a building the player just came out of
+            for _, a in ipairs(cameOut and ix.access[cell] or {}) do
+                if a.kind == 2 and not on[a.piece] and logic.dist(a.x, a.y, x, y) <= logic.ROOMS_REACH then
                     on[a.piece] = true
                     changed = true
                 end
@@ -129,22 +144,13 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
         local new = {}
         if ix.linkAt then
             -- joined where the two levels meet: the step passes the place (the Brill tavern's
-            -- landing lies over the foot of its stairs, next to it the player was up at once).
-            -- Level 0 is a building's main floor: on it while on no level; a level joined to it is
-            -- stepped onto only from there (leaving a level for the main floor is its footprint's
-            -- rule), as from any level onto the next (user 2026-10-04: one rule for all floors)
-            local function isOn(p)
-                if p == 0 then
-                    return next(on) == nil
-                end
-                return on[p] == true
-            end
+            -- landing lies over the foot of its stairs, next to it the player was up at once)
             local m = math.ceil(logic.ACCESS_REACH / zone.cell) + 1
             for dr = -m, m do
                 for dc = -m, m do
                     for _, l in ipairs(ix.linkAt[(r + dr) * zone.cols + c + dc] or {}) do
-                        local other = isOn(l.a) and not isOn(l.b) and l.b or isOn(l.b) and not isOn(l.a) and l.a or nil
-                        if other and other ~= 0 and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
+                        local other = on[l.a] and not on[l.b] and l.b or on[l.b] and not on[l.a] and l.a or nil
+                        if other and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
                             new[#new + 1] = other
                         end
                     end

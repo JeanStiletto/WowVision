@@ -94,6 +94,7 @@ local warnedEdges = {} -- drop edges warned about (again after stepping out of r
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
+local saidLabels = {} -- in a building's floors: the names of those, over the place's copies per set of levels
 local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
 local bendWalked = 0 -- walked on the way since the last announcement or bend hint
 local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
@@ -147,7 +148,7 @@ end
 local function forgetWays()
     outdoor:reset()
     indoor:reset()
-    region, saidMouths = nil, {}
+    region, saidMouths, saidLabels = nil, {}, {}
     bendFrom, aheadKey, leftWay, wayNamed = nil, nil, nil, nil
 end
 
@@ -626,17 +627,19 @@ local function checkApproach(z, x, y)
     if here and here ~= region and here.value == region.value then
         -- the same place found anew on another set of levels (a building's floors): what was
         -- said there stays said (the landing said its stairs "down here", then "down to the
-        -- north" a second later)
+        -- north" a second later). Kept by name over the whole visit, not only from the copy
+        -- left: after falling into the Brill tavern's cellar the module went between two copies
+        -- of the cellar, one without the stairs, and "stairs here" came again 3 s after the
+        -- place line (walks 2026-10-04 19:10 and 23:19)
         local carried = {}
         if z._index.linkAt then
-            local was = {}
             for m in pairs(saidMouths) do
                 if type(m) == "table" then
-                    was[tostring(m.label)] = true
+                    saidLabels[tostring(m.label)] = true
                 end
             end
             for _, m in ipairs(here.mouths) do
-                if was[tostring(m.label)] then
+                if saidLabels[tostring(m.label)] then
                     carried[m] = true
                 end
             end
@@ -859,7 +862,7 @@ local function checkPlace(z, x, y, forced)
             wayNamed = logic.placeOf(value)
         end
         -- on a square: what was said now (its exits, what is close) is not said again on coming close
-        region, saidMouths = square, said or {}
+        region, saidMouths, saidLabels = square, said or {}, {}
         local cameOff = previous and (logic.isWayKey(previous) or logic.CLIMBS[logic.kind(z, logic.keyPlace(previous))])
         if cameOff and square then
             notePassedBeginning(z, outdoor.fromX or x, outdoor.fromY or y, square, previous)
