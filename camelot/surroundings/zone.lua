@@ -887,6 +887,7 @@ function logic.unpackLayer(zone, src, suffix)
         -- pieces: one rule for every floor over or under another
         pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
         piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn, linkPoints = src.linkPoints, noTouch = src.noTouch,
+        down = src.down,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,

@@ -108,6 +108,33 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
             changed = true
         end
     end
+    -- a building's levels below its main floor (zone.down: the cellar, the stairs down to it):
+    -- standing on the main floor's cell of such a level's own place, where its floor is, the
+    -- player is on it. The Brill tavern's cellar stairs are painted on the main floor, with the
+    -- room upstairs over them and the cellar under them, and the player stepped onto them from the
+    -- kitchen's side: the cellar (joined only to them) under the kitchen said "kitchen" (walk
+    -- 2026-10-04 19:11). Not the levels above: the landing lies over the foot of the stairs up;
+    -- and only from the main floor or a level below it (upstairs over the cellar stairs the room
+    -- north said "stairs to the kitchen" in the replay)
+    local below = zone.down ~= nil and painted ~= 0
+    if below then
+        local isDown = {}
+        for _, piece in ipairs(zone.down) do
+            isDown[piece] = true
+        end
+        for piece in pairs(on) do
+            below = below and isDown[piece] == true
+        end
+    end
+    if below then
+        for _, piece in ipairs(zone.down) do
+            local own = ix.piecePlaces and ix.piecePlaces[piece]
+            if own and own[painted] and not on[piece] and ix.pieces[key] and ix.pieces[key][piece] then
+                on[piece] = true
+                changed = true
+            end
+        end
+    end
     local n = math.ceil(logic.ROOMS_REACH / zone.cell)
     for dr = -n, n do
         for dc = -n, n do
