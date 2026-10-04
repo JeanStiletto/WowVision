@@ -33,7 +33,8 @@ local function newZone()
             { 2, 180, 12, 0, 1, 81, 14, 81, 12 },
         },
         pieceCells = { 1, 4, 1, 1, 5, 1, 0, 4, 2 },
-        access = { 1, 1, 88, 1, 1, 2, 85, 25 },
+        access = { 1, 2, 85, 25 },
+        linkPoints = { 0, 1, 88, 1 },
         links = { 1, 2 },
         -- frames chosen so that the building frame equals world x and y
         interiors = { { "Test Inn", 0, 0, 1, -1, 0, 0, -1 }, { "Test Barn", 0, 0, 1, -1, 0, 0, -1 } },
@@ -72,7 +73,7 @@ local function newSquareZone()
     }
     z.grid = { "30000*2,28000*2,30000*3", "30000,10000*5,30000", "30000,10000*5,40000", "30000,10000*5,40000", "0*7" }
     z.bridgeUnder = { 4, 1, 50000, 4, 2, 50000, 4, 3, 50000 }
-    z.structs, z.structCells, z.edges, z.pieceCells, z.access, z.links = {}, {}, {}, {}, {}, {}
+    z.structs, z.structCells, z.edges, z.pieceCells, z.access, z.linkPoints, z.links = {}, {}, {}, {}, {}, {}, {}
     z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
     z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
     z.doors = { { 0, 1, 1, 65, 15, 1, 0, 0 } }
@@ -168,7 +169,7 @@ testRunner:addSuite("Surroundings", {
             top = 100, left = 60, cell = 5, rows = 2, cols = 12,
             rooms = { 1 }, grid = { "70000*12", "70000*12" }, lanes = {},
             pieceCells = { 0, 0, 1, 0, 1, 1, 0, 2, 1, 0, 0, 2, 0, 1, 2, 0, 2, 2, 0, 3, 2, 0, 4, 2, 0, 5, 2 },
-            access = { 1, 1, 98, 59 }, links = { 1, 2 }, linkPoints = { 1, 2, 98, 47 },
+            links = { 1, 2 }, linkPoints = { 0, 1, 98, 59, 1, 2, 98, 47 },
         }
         logic.unpack(z)
         local layer = logic.layer(z, true)
@@ -1308,6 +1309,36 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
     end,
 
+    ["a piece is stepped onto from the ground, not from a piece lying over the ground there"] = function(t)
+        local z = newWalkZone()
+        -- the landing (piece 1) joins the ground at x 90, y 50; piece 2 lies on the same cells
+        z.stacked = { 2, 2, 1, 10000, 21000, 2, 3, 1, 10000, 21000 }
+        z.piecePlaces = { 1, 2, 2, 2 }
+        z.pieceCells = { 2, 2, 1, 2, 3, 1, 2, 2, 2, 2, 3, 2 }
+        z.linkPoints = { 0, 1, 90, 50 }
+        logic.unpack(z)
+        -- from the ground the step joins it
+        local high = {}
+        logic.updateHigh(z, high, 90, 50, false, 90, 52)
+        t:assertEqual(high[1], true)
+        -- counted on piece 2, which does not lie over the ground here (Stormwind's quay beside a
+        -- dock's foot): joined too
+        high = { [2] = true }
+        logic.updateHigh(z, high, 90, 50, false, 90, 52)
+        t:assertEqual(high[1], true)
+        -- up on piece 2 lying over the ground here (the Brill tavern's room upstairs over the cellar
+        -- stairs' top): not
+        z = newWalkZone()
+        z.stacked = { 2, 2, 1, 10000, 21000, 2, 3, 1, 10000, 21000, 2, 2, 2, 10000, 21000, 2, 3, 2, 10000, 21000 }
+        z.piecePlaces = { 1, 2, 2, 2 }
+        z.pieceCells = { 2, 2, 1, 2, 3, 1, 2, 2, 2, 2, 3, 2 }
+        z.linkPoints = { 0, 1, 90, 50 }
+        logic.unpack(z)
+        high = { [2] = true }
+        logic.updateHigh(z, high, 90, 50, false, 90, 52)
+        t:assertNil(high[1])
+    end,
+
     ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
         local z = newWalkZone()
         -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
@@ -1316,7 +1347,7 @@ testRunner:addSuite("Surroundings", {
         z.stacked = { 2, 2, 1, 10000, 21000, 2, 3, 1, 10000, 21000 }
         z.piecePlaces = { 1, 2 }
         z.pieceCells = { 2, 2, 1, 2, 3, 1 }
-        z.access = { 1, 1, 90, 50 }
+        z.linkPoints = { 0, 1, 90, 50 }
         z.laneFields = 8
         z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 0, 92, 48, 88, 48, 10000, 20, 40, 1 }
         logic.unpack(z)

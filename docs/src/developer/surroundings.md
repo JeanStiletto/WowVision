@@ -98,10 +98,15 @@ Each zone file calls `addon.addZone{...}` with:
   ramp's side edge: 2 yd at the foot, 9 at the top).
 - High floor pieces (wall-walks, bridge decks one can walk under, a city's raised floors): an
   edge with piece 0 lies low; otherwise it warns only after the player was seen stepping onto
-  that piece. `pieceCells`: row, column, piece triples (footprints); `access`: piece, kind, x,
-  y (kind 1 stepped onto from the ground, 2 out of a building's rooms); `links`: pairs of
-  joined pieces. `piecePlaces` (optional): piece, place id pairs, the places of the floor up on
-  the piece: a step from the ground counts only from a cell painted with one of them.
+  that piece. `pieceCells`: row, column, piece triples (footprints); `linkPoints`: a, b, x, y,
+  where two levels join; level 0 is the ground (outdoors, a hall's or a building's main floor),
+  one rule for all of them: a piece is stepped onto from level 0 at its join points, unless the
+  player is up on a piece lying over the ground there (`stacked`); `access`: piece, 2, x, y,
+  where a piece joins a building one comes out of (files before 2026-10-05 had the joins from
+  the ground here as kind 1: the module needs a newer export); `links`: pairs of joined pieces (they join next to their footprints where no
+  join points between them are given). `piecePlaces` (optional): piece, place id pairs, the
+  places of the floor up on the piece: a step from the ground counts only from a cell painted
+  with one of them.
 - `stacked` (optional): row, column, piece, value up, value below: cells where a high piece
   lies over other floor (decided offline with the heights: the landing of a ramp over the bay
   beside it). The grid holds one value per cell; `logic.valueAtCell` returns the value up
@@ -122,9 +127,9 @@ Each zone file calls `addon.addZone{...}` with:
   to only from that floor.
 - Indoor layer of mapped buildings (split.ROOM_LEVEL_BUILDINGS): `buildingLevels` (the levels
   that are a building's rooms; the building rules, such as a painted level holding over the
-  levels stacked under it, apply only to them), `linkPoints` with level 0 (the building's main
-  floor: joined only while the player is on no level, as any two levels join), and drop edges
-  from the building's own walk graph (`deadends.dry_edges` with `head`).
+  levels stacked under it, apply only to them), `linkPoints` with level 0 at a staircase's end
+  (its points within `LEVEL_END_Z` of its lowest or highest point), and drop edges from the
+  building's own walk graph (`deadends.dry_edges` with `head`).
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
