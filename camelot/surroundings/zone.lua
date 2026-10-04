@@ -31,8 +31,8 @@ logic.TURN_KINDS = set("road", "street", "quay", "pier", "canal walk", "slime ca
 -- follow the road rules)
 logic.NARROW = set("road", "bridge", "fork", "crossing", "street", "quay", "pier", "canal walk", "slime canal walk",
     "walk along the lava", "ramp", "stairs")
--- a city's outdoor ramps and stairs (said with the way up: "ramp, up to the northeast"); their
--- sides are named when bumped into from beside them
+-- ramps and stairs (said like a street, "stairs, north to south": no "up" or "down" since
+-- 2026-10-04); their sides are named when bumped into from beside them
 logic.CLIMBS = set("ramp", "stairs")
 logic.WATER = set("deep water", "shore")
 logic.DROPS = set("cliff edge")
@@ -957,6 +957,12 @@ function logic.directionText(zone, value)
         -- an axis without its template: "road, northwest to southeast"
         return logic.axisWords(zone, axis)
     end
+    -- a ramp or stairs runs like a street: its axis, the same walking up or down (user 2026-10-04:
+    -- "up to the south" while going down the Brill tavern's cellar stairs to the north; with rooms
+    -- and places named, "stairs to the upstairs landing up at 3" was a word monster)
+    if logic.CLIMBS[logic.kindOf(zone, value)] then
+        return logic.axisWords(zone, code % 1000 % 180)
+    end
     local template = logic.dirTemplate(zone, math.floor(code / 1000))
     if template then
         return string.format(template, logic.dirWord(zone, code % 1000))
@@ -1008,6 +1014,13 @@ function logic.outdoorKey(zone, value, previous)
     if kind == "canal" or logic.TURN_KINDS[kind] then
         local axis = logic.axisOf(zone, value)
         local prefix = (kind == "canal" and "c" or "r") .. logic.placeOf(value) .. ":"
+        -- a ramp or stairs: each flight a piece of its own by the way it rises, so the turn on a
+        -- landing is said (the Brill tavern's stairs go up north, then up south: four times into
+        -- the landing's wall in silence, walk 2026-10-03 23:55); said with its axis (directionText)
+        local rise = axis == nil and logic.riseOf(zone, value)
+        if rise then
+            return prefix .. "u" .. logic.dirKey(rise)
+        end
         if axis and type(previous) == "string" and previous:sub(1, #prefix) == prefix then
             local said = tonumber(previous:sub(#prefix + 1))
             local step = logic.wordStep()
