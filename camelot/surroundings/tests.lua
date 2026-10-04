@@ -648,8 +648,9 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(exits[1].label, "street of Test")
     end,
 
-    ["stairs beside a square are said going up or down from it"] = function(t)
-        -- user's walk 2026-10-03: on a landing "stairs at 1" did not say up or down
+    ["stairs beside a square: up or down from it is kept for the way on, never said"] = function(t)
+        -- user's walk 2026-10-03: on a landing "stairs at 1" did not say up or down; 2026-10-04:
+        -- no "up" or "down" any more (word monsters), the mouths keep it for the way on
         local function stairsItems(code)
             local z = newSquareZone()
             z.dirs[9] = "up to the %s"
@@ -662,15 +663,15 @@ testRunner:addSuite("Surroundings", {
         -- rising to the north, away from the square: up
         local items, z = stairsItems(9000)
         t:assertEqual(#items, 1)
-        t:assertEqual(items[1].rise, "up")
-        t:assertEqual(logic.itemsText(z, items), "stairs up to the north")
+        t:assertEqual(items[1].mouths[1].rise, "up")
+        t:assertEqual(logic.itemsText(z, items), "stairs to the north")
         -- rising to the south, toward the square: down
         items = stairsItems(9180)
-        t:assertEqual(items[1].rise, "down")
-        -- rising to the east, along the square's side: no word
+        t:assertEqual(items[1].mouths[1].rise, "down")
+        -- rising to the east, along the square's side
         items = stairsItems(9090)
         t:assertEqual(#items, 1)
-        t:assertNil(items[1].rise)
+        t:assertNil(items[1].mouths[1].rise)
     end,
 
     ["a street to another piece of the same square leads on"] = function(t)
@@ -1187,13 +1188,13 @@ testRunner:addSuite("Surroundings", {
         z.climbFeet = { 92, 44, 22045, 90, 44, 22045 }
         logic.unpack(z)
         t:assertEqual(#z._index.climbFeet, 1)
-        -- 6 yd west of the foot (y 50): the ramp by name with its rise, then only the yards and
-        -- the direction, at it only the rise
+        -- 6 yd west of the foot (y 50): the ramp by name with the way on up it (no "up" since
+        -- 2026-10-04), then only the yards and the direction, at it only the way on
         local target = logic.footTarget(z, 92, 50)
         t:assertEqual(target.kind, "climb")
-        t:assertEqual(logic.guideText(z, target, true, false), "ramp to the bank, 6 to the east, up to the northeast")
+        t:assertEqual(logic.guideText(z, target, true, false), "ramp to the bank, 6 to the east, on to the northeast")
         t:assertEqual(logic.guideText(z, target, false, false), "6 east")
-        t:assertEqual(logic.guideText(z, target, false, true), "up to the northeast")
+        t:assertEqual(logic.guideText(z, target, false, true), "on to the northeast")
         target = logic.footTarget(z, 92, 44.8)
         t:assertEqual(logic.atTarget(z, target, 92, 44.8), true)
         -- 1.2 yd beside the line through the foot (north-west of it): not at it, still
@@ -1468,7 +1469,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopText(z, 1, 85, 55), "wait for the tram to Sturmwind, tram to the south")
     end,
 
-    ["a ramp is a way keyed like a street, said with the way up; its side is named when bumped"] = function(t)
+    ["a ramp is a way keyed per flight, said like a street; its side is named when bumped"] = function(t)
         local z = newWalkZone()
         -- the walk's columns (y 52 to 40) are a ramp rising to the northeast
         z.dirs = { "running %s", "up to the %s" }
@@ -1476,8 +1477,14 @@ testRunner:addSuite("Surroundings", {
         z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
         z.lanes = { 100, 46, 84, 46, 22045, 20, 40 }
         logic.unpack(z)
-        t:assertEqual(logic.outdoorKey(z, 22045), "r2:")
-        t:assertEqual(logic.describe(z, 22045, true), "ramp to the bank, up to the northeast")
+        -- keyed by the way it rises (each flight its own piece), said with its axis: the same up or down
+        t:assertEqual(logic.outdoorKey(z, 22045), "r2:u2")
+        t:assertEqual(logic.describe(z, 22045, true), "ramp to the bank, " .. logic.axisWords(z, 45))
+        -- a flight rising the other way (the Brill tavern's stairs: up north, then up south) is
+        -- another piece, said with the same axis
+        t:assertEqual(logic.outdoorKey(z, 22225), "r2:u6")
+        t:assertEqual(logic.directionText(z, 22225), logic.directionText(z, 22045))
+        t:assertEqual(logic.sameWay(22225, "r2:u2", 2), true)
         -- on the square beside it, pushing east against its side
         local owner, what = logic.wallOwner(z, 94, 53, 0, -1, 2.5)
         t:assertEqual(owner, "ramp to the bank")

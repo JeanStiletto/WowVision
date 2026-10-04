@@ -487,18 +487,20 @@ function logic.mouthDistance(mouth, x, y)
     return d, logic.bearingOf(bx - x, by - y)
 end
 
--- Items from a list of {label, class, rise, d, dir, mouth}: one item per label (and rise) with its
--- directions (nearest first, at most `maxDirs`; closer than HERE none), items nearest first.
+-- Items from a list of {label, class, d, dir, mouth}: one item per label with its directions
+-- (nearest first, at most `maxDirs`; closer than HERE none), items nearest first. A climb's mouths
+-- up and down from the square are one item: no "up" or "down" said since 2026-10-04 (user: with
+-- rooms and places named they made word monsters, and the stairs one came up said "down here").
 local function groupItems(found, maxDirs)
     table.sort(found, function(a, b)
         return a.d < b.d
     end)
     local items, byLabel = {}, {}
     for _, f in ipairs(found) do
-        local key = f.label .. "|" .. (f.rise or "")
+        local key = f.label
         local item = byLabel[key]
         if item == nil then
-            item = { label = f.label, class = f.class, rise = f.rise, d = f.d, dirs = {}, mouths = {} }
+            item = { label = f.label, class = f.class, d = f.d, dirs = {}, mouths = {} }
             byLabel[key] = item
             items[#items + 1] = item
         end

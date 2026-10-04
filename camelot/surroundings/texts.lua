@@ -95,10 +95,6 @@ function logic.itemsText(zone, items)
         elseif not NAMED_CLASSES[item.class] then
             name = L[item.class]
         end
-        if item.rise then
-            -- "stairs up to the north", "Treppe hinab auf 6"
-            name = string.format(item.rise == "up" and L["%s up"] or L["%s down"], name)
-        end
         if #item.dirs == 0 then
             parts[#parts + 1] = string.format(L["%s here"], name)
         else
@@ -246,8 +242,8 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
 end
 
 -- The foot of a ramp or stairs joined to the way the player is on (zone.climbFeet), as a guidance
--- target: named like the climb ("ramp to the griffon roost"), the way through its rise ("up to
--- the southeast"). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
+-- target: named like the climb ("ramp to the griffon roost"), the way on up it ("on to the
+-- southeast"; no "up" since 2026-10-04). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
 -- the entrance and walk on the street next to it".
 local function climbTarget(zone, x, y, reach, prefer)
     local i, d, dir, f = logic.nearestPoint(zone._index.climbFeet, x, y, reach, prefer)
@@ -260,7 +256,7 @@ local function climbTarget(zone, x, y, reach, prefer)
     return {
         key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
-        through = up, throughFormat = up and logic.dirTemplate(zone, math.floor(code / 1000)) or nil,
+        through = up, throughFormat = up and T("on to the %s") or nil,
         bearing = f.bearing,
     }
 end
@@ -539,7 +535,9 @@ function logic.spotText(zone, x, y, value, previous, opts)
         return nil
     end
     local kind = logic.kindOf(zone, value)
-    if opts.facing and logic.LANE_KINDS[kind] then
+    -- not on ramps and stairs: left and right only keep one from drifting on long ways (user
+    -- 2026-10-04)
+    if opts.facing and logic.LANE_KINDS[kind] and not logic.CLIMBS[kind] then
         local hint = logic.turnHint(zone, x, y, opts.facing, logic.axisOf(zone, value))
         if hint and hint ~= 0 then
             text = logic.finishText(text) .. ", " .. logic.turnText(hint)

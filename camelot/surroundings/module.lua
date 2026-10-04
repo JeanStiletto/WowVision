@@ -41,7 +41,7 @@ local CHECK_INTERVAL = 0.2 -- seconds between two looks at the position
 -- Distances in yards, times in seconds
 local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
 local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
-local ENTRY_INDOORS = 3 -- ... inside a room
+local ENTRY_INDOORS = 3 -- ... inside a room, and a place of a building's floors on their own fine grid
 local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
@@ -733,7 +733,9 @@ end
 local function checkBend(z, x, y, px, py)
     local key = outdoor.current
     local facing = turnFacing()
-    if not logic.isWayKey(key) or facing == nil then
+    -- not on ramps and stairs: left and right only keep one from drifting on long ways (user
+    -- 2026-10-04)
+    if not logic.isWayKey(key) or facing == nil or logic.CLIMBS[logic.kind(z, logic.keyPlace(key))] then
         bendFrom, bendWalked = nil, 0
         return
     end
@@ -842,6 +844,12 @@ local function checkPlace(z, x, y, forced)
         value, laneDecided = logic.outdoorValue(z, x, y, IsSwimming(), isWay(outdoor.current, true))
     end
     local previous = outdoor.current
+    -- a building's floors on a grid of their own (cells of 2 yd: the Brill tavern) are rooms: said
+    -- after ENTRY_INDOORS (the kitchen came 14 s after the guidance to its stairs, walk 2026-10-03
+    -- 23:14). The halls on the zone's grid keep ENTRY_OUTDOORS: at 5 or 3 Ironforge's large hall
+    -- and its moat took turns within 2 s, and outdoors 3 nearly doubled the back and forth
+    -- between places (replay of all walks, 2026-10-04)
+    outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y) then
         leftWay = logic.isWayKey(previous) and previous or nil
         local text, square, said = logic.spotText(z, x, y, value, previous,

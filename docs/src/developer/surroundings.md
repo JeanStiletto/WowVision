@@ -67,7 +67,8 @@ Each zone file calls `addon.addZone{...}` with:
   `logic.dirWord`, `logic.axisWords`, `logic.finishText` for the "o'clock"). Data of another
   format is left alone and said once.
 - `dirs`: direction templates ("water to the %s", "running %s", "up to the %s" for a ramp's or
-  stairs' way up); `dirsClock`: the same for the hours ("water at %s"); `compass`: the 8 compass
+  stairs' way up; the module says a climb by its axis instead, `logic.directionText`, and keys
+  each flight by its rise, `logic.outdoorKey`); `dirsClock`: the same for the hours ("water at %s"); `compass`: the 8 compass
   words; `axes`: the 4 axis words ("north-south"). A place label may carry directions as angles,
   `<d45,135>` ("fork, Goldshire road <d45,135>"): said with the "to the %s" template in the
   player's words.
