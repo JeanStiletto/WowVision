@@ -461,8 +461,9 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     if t and t.kind == "way" then
         local here = logic.valueAt(z, x, y)
         local onIt = here and here ~= 0 and logic.place(z, logic.placeOf(here))
-        if (logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == t.name)
-            or (onIt and onIt.label == t.name) then
+        local name = t.label or t.name
+        if (logic.isWayKey(outdoor.current) and logic.keyLabel(z, outdoor.current) == name)
+            or (onIt and onIt.label == name) then
             t = nil
         end
     end
@@ -631,11 +632,11 @@ local function checkApproach(z, x, y)
             local was = {}
             for m in pairs(saidMouths) do
                 if type(m) == "table" then
-                    was[tostring(m.label) .. "|" .. tostring(m.rise)] = true
+                    was[tostring(m.label)] = true
                 end
             end
             for _, m in ipairs(here.mouths) do
-                if was[tostring(m.label) .. "|" .. tostring(m.rise)] then
+                if was[tostring(m.label)] then
                     carried[m] = true
                 end
             end

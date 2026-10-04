@@ -42,14 +42,17 @@ a screen reader would cut its own speech off at every key press.
   says the square again.
 - **Ramps and stairs** are ways of their own, said like a street, the same going up or down:
   "ramp to the bank, northeast to southwest", "stairs of Mage Quarter, east to west". One that
-  leads to a building's door is named after it. Each flight is a piece of its own, so where
-  stairs turn on a landing you hear the new flight's direction. On a square or in a room they
+  leads to a building's door is named after it. Each flight is a piece of its own, and so is a
+  landing where the stairs turn: the stairs that go up north, cross a landing to the west and go
+  on up south say "north to south", "east to west", "north to south". On a square or in a room they
   are listed with its other ways ("stairs to the upstairs landing to the east").
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it. A long, narrow
   room says which way it runs ("passage of Ironforge, north to south"); winding stairs say which
   way they turn going up ("stairs of Ironforge, winding, turns left going up"). Rooms without a
-  name of their own say their floor ("room, floor 1"), the room they stand over when a named one
+  name of their own say their floor ("room, floor 1"), or the floor's name where the game names
+  it ("room southeast, upstairs"; said once: on that floor its rooms are "room southeast" and the
+  stairs up to it just "stairs"), the room they stand over when a named one
   carries the same word ("Main Hall, floor 1" is the gallery over the Main Hall), or their
   direction when several share a word ("entrance" has the door, "entrance northeast" lies
   behind it); stairs are named by where they lead up to ("stairs to the bell tower"), and a

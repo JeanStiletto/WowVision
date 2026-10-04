@@ -536,6 +536,7 @@ local function prepareWords(zone, locale)
     zone.dirsClock = t.dirsClock or zone.dirsClock
     zone.compass = t.compass or zone.compass
     zone.spokenAxes = t.axes
+    zone.floors = t.floors or zone.floors
     for i, p in ipairs(t.places or {}) do
         local place = zone.places[i]
         if place then
@@ -879,7 +880,7 @@ function logic.unpackLayer(zone, src, suffix)
         key = zone.key .. suffix, label = zone.label, map = zone.map,
         top = own and src.top or zone.top, left = own and src.left or zone.left,
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
-        compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, places = zone.places, grid = src.grid or {},
+        compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitLevels = src.exitLevels, interiors = zone.interiors, rooms = zone.rooms,
         -- its halls' other levels (a gallery, the moat under the walkways), as the city's raised
@@ -969,15 +970,59 @@ function logic.directionText(zone, value)
     end
 end
 
+-- Named floors (zone.floors, per floor: its word, the name of its own room, the stairs up to it,
+-- those stairs said plainly: "Obergeschoss", "Obergeschoss", "Treppe Richtung Obergeschoss",
+-- "Treppe"): said once, as a building's name is (user 2026-10-04: "Obergeschoss" three times in one
+-- line upstairs in the Brill tavern). The floor a label lies on (an index into zone.floors) and
+-- the label without it: a room on it ("Raum Südost, Obergeschoss" -> "Raum Südost"), the stairs up
+-- to it ("Treppe"), the floor's own room (no shorter form: nil); nil for any other label.
+function logic.floorOf(zone, label)
+    if label == nil then
+        return nil
+    end
+    for i, f in ipairs(zone.floors or {}) do
+        if label == f[2] then
+            return i, nil
+        elseif label == f[3] then
+            return i, f[4]
+        end
+        local tail = ", " .. f[1]
+        if #label > #tail and label:sub(-#tail) == tail then
+            return i, label:sub(1, -#tail - 1)
+        end
+    end
+    return nil
+end
+
+-- A label as said on floor `floor` (an index into zone.floors, or nil): without the floor where it
+-- lies on that floor.
+function logic.floorLabel(zone, label, floor)
+    if floor == nil then
+        return label
+    end
+    local on, bare = logic.floorOf(zone, label)
+    if on == floor and bare then
+        return bare
+    end
+    return label
+end
+
+-- The floor of the place at a cell value (see floorOf), or nil.
+function logic.floorOfValue(zone, value)
+    local p = value and value ~= 0 and zone._index.places[logic.placeOf(value)]
+    return p and logic.floorOf(zone, p.label) or nil
+end
+
 -- The text of a cell value: the place label, and with `withDirection` its direction and its
 -- nearest road ("Goldshire road to the north"; left out with `noNearRoad`, when the caller says
--- where the road is itself).
-function logic.describe(zone, value, withDirection, noNearRoad)
+-- where the road is itself). `floor` (optional): the named floor the player is on or comes from,
+-- whose name the label leaves out (floorLabel).
+function logic.describe(zone, value, withDirection, noNearRoad, floor)
     local p = zone._index.places[logic.placeOf(value)]
     if p == nil then
         return nil
     end
-    local text = logic.expandDirs(zone, p.label)
+    local text = logic.expandDirs(zone, logic.floorLabel(zone, p.label, floor))
     local direction = withDirection and logic.directionText(zone, value)
     if direction then
         text = text .. ", " .. direction

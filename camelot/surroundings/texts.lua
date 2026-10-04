@@ -86,10 +86,10 @@ function logic.joinWords(words)
 end
 
 -- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
-function logic.itemsText(zone, items)
+function logic.itemsText(zone, items, floor)
     local parts = {}
     for _, item in ipairs(items) do
-        local name = logic.expandDirs(zone, item.label)
+        local name = logic.expandDirs(zone, logic.floorLabel(zone, item.label, floor))
         if item.class == "entrance" then
             name = string.format(L["entrance of %s"], item.label)
         elseif not NAMED_CLASSES[item.class] then
@@ -186,14 +186,15 @@ local function doorwayTarget(key, d, dir, x, y, label, through)
     }
 end
 
-local function entranceTarget(zone, x, y, reach, prefer)
+local function entranceTarget(zone, x, y, reach, prefer, floor)
     local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer)
     if i == nil then
         return nil
     end
     if e.plain then
         -- in the indoor layer: a doorway into a passage, stairs, or out
-        return doorwayTarget("e" .. i, d, dir, e.x, e.y, not e.wayOut and e.text or nil, e.inDir)
+        return doorwayTarget("e" .. i, d, dir, e.x, e.y,
+            not e.wayOut and logic.floorLabel(zone, e.text, floor) or nil, e.inDir)
     end
     return {
         key = "e" .. i, kind = "entrance", d = d, dir = dir, x = e.x, y = e.y,
@@ -230,13 +231,16 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
     if i == nil then
         return nil
     end
+    -- on a named floor the stairs down are "stairs" (logic.floorOf)
+    local label = logic.floorLabel(zone, b.label, logic.floorOfValue(zone, square.value))
     return {
         key = "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), kind = "way", d = d, dir = dir,
+        label = b.label,   -- the way's own name (the name said may leave out a floor)
         x = b.x, y = b.y, reach = logic.beginningReach(reach, b),
         -- always by name: "street here" says nothing on a square (user 2026-09-30), an opening is
         -- one of few, unlike the entrances along it
-        name = b.label, short = b.label,
-        atName = string.format(L["at the %s"], b.label), at = string.format(L["at the %s"], b.label),
+        name = label, short = label,
+        atName = string.format(L["at the %s"], label), at = string.format(L["at the %s"], label),
         through = b.onward, throughFormat = T("on to the %s"),
     }
 end
@@ -245,14 +249,13 @@ end
 -- target: named like the climb ("ramp to the griffon roost"), the way on up it ("on to the
 -- southeast"; no "up" since 2026-10-04). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
 -- the entrance and walk on the street next to it".
-local function climbTarget(zone, x, y, reach, prefer)
+local function climbTarget(zone, x, y, reach, prefer, floor)
     local i, d, dir, f = logic.nearestPoint(zone._index.climbFeet, x, y, reach, prefer)
     if i == nil then
         return nil
     end
-    local code = logic.codeOf(f.value)
     local up = logic.riseOf(zone, f.value)
-    local name = logic.describe(zone, f.value, false, true)
+    local name = logic.describe(zone, f.value, false, true, floor)
     return {
         key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
@@ -266,10 +269,11 @@ end
 -- than GUIDE_STICK. `reach` (optional): searched within, GUIDE_REACH when not given.
 function logic.footTarget(zone, x, y, square, prefer, reach)
     reach = reach or GUIDE_REACH
+    local floor = logic.floorOfValue(zone, logic.valueAt(zone, x, y))
     local candidates = {
-        entranceTarget(zone, x, y, reach, prefer),
+        entranceTarget(zone, x, y, reach, prefer, floor),
         beginningTarget(zone, x, y, reach, square, prefer),
-        climbTarget(zone, x, y, reach, prefer),
+        climbTarget(zone, x, y, reach, prefer, floor),
     }
     local best, kept = nil, nil
     for _, t in pairs(candidates) do
@@ -479,7 +483,9 @@ local function spotBody(zone, x, y, value, previous, opts)
     if opts.cut and logic.sameWay(value, previous, opts.named) then
         return logic.directionText(zone, value)
     end
-    local text = logic.describe(zone, value, true)
+    -- a named floor said once: not again coming from a place on it (logic.floorOf)
+    local from = opts.cut and logic.floorOf(zone, logic.keyLabel(zone, previous)) or nil
+    local text = logic.describe(zone, value, true, nil, from)
     if text == nil then
         return nil
     end
@@ -493,7 +499,7 @@ local function spotBody(zone, x, y, value, previous, opts)
         local said = logic.wayMouths(region)
         local items = squareItems(zone, x, y, region, opts.cut, previous, said)
         if #items > 0 then
-            text = text .. ", " .. logic.itemsText(zone, items)
+            text = text .. ", " .. logic.itemsText(zone, items, logic.floorOfValue(zone, value))
         end
         return text, region, said
     end
@@ -613,6 +619,6 @@ end
 function logic.approachText(zone, region, x, y, said)
     local items = logic.approaching(region, x, y, APPROACH, said, logic.ITEM_DIRS)
     if #items > 0 then
-        return logic.itemsText(zone, items)
+        return logic.itemsText(zone, items, logic.floorOfValue(zone, region.value))
     end
 end
