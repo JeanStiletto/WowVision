@@ -563,11 +563,12 @@ function logic.spotText(zone, x, y, value, previous, opts)
     return text, region, said
 end
 
--- The way a room runs ("north to south") or which way its winding stairs turn, or nil.
+-- The way a room runs ("north to south"), "winding" for winding stairs, or nil. Not which way they
+-- turn going up: no way up or down is said (user 2026-10-04); the data's turn (w) stays.
 function logic.roomWay(zone, id)
     local room = zone._index.rooms[id]
     if room.winding then
-        return room.winding > 0 and L["winding, turns left going up"] or L["winding, turns right going up"]
+        return L["winding"]
     elseif room.axis then
         return logic.axisWords(zone, room.axis)
     end

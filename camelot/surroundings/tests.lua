@@ -272,10 +272,10 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(#logic.roomDoorways(z, 5, { section = true, cameFrom = 2 }), 0)
     end,
 
-    ["winding stairs say which way they turn going up"] = function(t)
+    ["winding stairs say they wind, not which way going up"] = function(t)
         local z = newHallZone()
         logic.unpack(z)
-        t:assertEqual(logic.roomText(z, 4, 1, false), "stairs, winding, turns right going up")
+        t:assertEqual(logic.roomText(z, 4, 1, false), "stairs, winding")
     end,
 
     ["a pier is a way with a direction, like a street"] = function(t)
