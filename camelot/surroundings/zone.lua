@@ -301,6 +301,18 @@ function logic.valueAtCell(zone, r, c)
         return v
     end
     local on = ix.on
+    -- in a building's floors (zone.buildingLevels): where a level the player is on is painted
+    -- itself, it holds over the others there (the Brill tavern's cellar lies under its stairs:
+    -- with both on, the stairs said "cellar" all the way up)
+    if on and ix.buildingLevel and v ~= 0 then
+        local here, place = ix.pieces[r * zone.cols + c], logic.placeOf(v)
+        for piece in pairs(on) do
+            local own = ix.piecePlaces and ix.piecePlaces[piece]
+            if ix.buildingLevel[piece] and own and own[place] and here and here[piece] then
+                return v
+            end
+        end
+    end
     if on then
         for _, a in ipairs(alts) do
             if on[a.piece] then
@@ -887,7 +899,7 @@ function logic.unpackLayer(zone, src, suffix)
         -- pieces: one rule for every floor over or under another
         pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
         piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn, linkPoints = src.linkPoints, noTouch = src.noTouch,
-        down = src.down,
+        down = src.down, buildingLevels = src.buildingLevels,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
@@ -898,6 +910,12 @@ function logic.unpackLayer(zone, src, suffix)
         covered[id] = true
     end
     layer._index.covered = covered
+    -- the levels that are a building's rooms (the rules for a building's floors hold only there)
+    local building = {}
+    for _, id in ipairs(src.buildingLevels or {}) do
+        building[id] = true
+    end
+    layer._index.buildingLevel = next(building) and building or nil
     -- the levels the player is on in it (edges.lua updateHigh), its own set
     logic.setOn(layer, {})
     return layer
