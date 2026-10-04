@@ -76,7 +76,12 @@ a screen reader would cut its own speech off at every key press.
   Harbor") that says its piers and quays. The water under them is said only while swimming.
 - **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
   lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava");
-  ahead of you the distance in yards first ("9 southwest, canal").
+  ahead of you the distance in yards first ("9 southwest, canal"). In buildings whose floors are
+  mapped (the Brill tavern) also an open stairwell or the open side of a staircase, only on the
+  floor it lies on; going over it counts you on the floor below.
+- **Feet of ramps and stairs**: within 8 yards of the foot, guidance to it with the way up
+  ("stairs, 2 to the east, on to the north"), lined up with the climb; in mapped buildings only
+  from the floor the foot is on.
 - **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. Once named, it keeps saying its direction

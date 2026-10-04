@@ -117,7 +117,14 @@ Each zone file calls `addon.addZone{...}` with:
 - `climbFeet`: the feet of ramps and stairs joined to the way below, `climbFeetFields` values
   each (4; 3 in older files): x, y, the climb's cell value, and the bearing up the climb in
   degrees. Guidance targets on the way, like entrances; two feet of one climb closer than
-  `logic.FEET_APART` are one target.
+  `logic.FEET_APART` are one target. An indoor layer of a mapped building has its staircases'
+  feet with 5 fields: the fifth the level of the floor at the foot (0 = the main floor), guided
+  to only from that floor.
+- Indoor layer of mapped buildings (split.ROOM_LEVEL_BUILDINGS): `buildingLevels` (the levels
+  that are a building's rooms; the building rules, such as a painted level holding over the
+  levels stacked under it, apply only to them), `linkPoints` with level 0 (the building's main
+  floor: joined only while the player is on no level, as any two levels join), and drop edges
+  from the building's own walk graph (`deadends.dry_edges` with `head`).
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
