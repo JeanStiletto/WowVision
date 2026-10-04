@@ -755,14 +755,17 @@ function logic.unpack(zone, locale)
     -- x, y, the climb's cell value, and (climbFeetFields 4) the line's bearing up the climb in
     -- degrees (0 north, clockwise): the way through at the foot, finer than the compass word
     ix.climbFeet = {}
+    -- (climbFeetFields 5, a building's staircases) the level of the floor at the foot: guided to only
+    -- from that floor (0: the main floor)
     local feetStride = zone.climbFeetFields or 3
-    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing)
+    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing, level)
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
                 return
             end
         end
-        ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil }
+        ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil,
+            level = feetStride >= 5 and level or nil }
     end)
 
     ix.exits = {}
@@ -899,7 +902,9 @@ function logic.unpackLayer(zone, src, suffix)
         -- pieces: one rule for every floor over or under another
         pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
         piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn, linkPoints = src.linkPoints, noTouch = src.noTouch,
-        down = src.down, buildingLevels = src.buildingLevels,
+        buildingLevels = src.buildingLevels,
+        -- the feet of a building's staircases, guided to as the city's climbs' feet
+        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,

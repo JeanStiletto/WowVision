@@ -250,14 +250,25 @@ end
 -- southeast"; no "up" since 2026-10-04). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
 -- the entrance and walk on the street next to it".
 local function climbTarget(zone, x, y, reach, prefer, floor)
-    local i, d, dir, f = logic.nearestPoint(zone._index.climbFeet, x, y, reach, prefer)
+    -- a foot on the floor the player is on (a building's: its level; the main floor while on none)
+    local on = zone._index.on or {}
+    local feet = zone._index.climbFeet
+    if zone.climbFeetFields == 5 then
+        feet = {}
+        for _, f in ipairs(zone._index.climbFeet) do
+            if (f.level == 0 and next(on) == nil) or (f.level ~= 0 and on[f.level]) then
+                feet[#feet + 1] = f
+            end
+        end
+    end
+    local i, d, dir, f = logic.nearestPoint(feet, x, y, reach, prefer)
     if i == nil then
         return nil
     end
     local up = logic.riseOf(zone, f.value)
     local name = logic.describe(zone, f.value, false, true, floor)
     return {
-        key = "c" .. i, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
+        key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and T("on to the %s") or nil,
         bearing = f.bearing,

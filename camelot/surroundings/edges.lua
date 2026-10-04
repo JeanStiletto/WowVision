@@ -108,33 +108,6 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
             changed = true
         end
     end
-    -- a building's levels below its main floor (zone.down: the cellar, the stairs down to it):
-    -- standing on the main floor's cell of such a level's own place, where its floor is, the
-    -- player is on it. The Brill tavern's cellar stairs are painted on the main floor, with the
-    -- room upstairs over them and the cellar under them, and the player stepped onto them from the
-    -- kitchen's side: the cellar (joined only to them) under the kitchen said "kitchen" (walk
-    -- 2026-10-04 19:11). Not the levels above: the landing lies over the foot of the stairs up;
-    -- and only from the main floor or a level below it (upstairs over the cellar stairs the room
-    -- north said "stairs to the kitchen" in the replay)
-    local below = zone.down ~= nil and painted ~= 0
-    if below then
-        local isDown = {}
-        for _, piece in ipairs(zone.down) do
-            isDown[piece] = true
-        end
-        for piece in pairs(on) do
-            below = below and isDown[piece] == true
-        end
-    end
-    if below then
-        for _, piece in ipairs(zone.down) do
-            local own = ix.piecePlaces and ix.piecePlaces[piece]
-            if own and own[painted] and not on[piece] and ix.pieces[key] and ix.pieces[key][piece] then
-                on[piece] = true
-                changed = true
-            end
-        end
-    end
     local n = math.ceil(logic.ROOMS_REACH / zone.cell)
     for dr = -n, n do
         for dc = -n, n do
@@ -156,13 +129,22 @@ function logic.updateHigh(zone, on, x, y, cameOut, px, py)
         local new = {}
         if ix.linkAt then
             -- joined where the two levels meet: the step passes the place (the Brill tavern's
-            -- landing lies over the foot of its stairs, next to it the player was up at once)
+            -- landing lies over the foot of its stairs, next to it the player was up at once).
+            -- Level 0 is a building's main floor: on it while on no level; a level joined to it is
+            -- stepped onto only from there (leaving a level for the main floor is its footprint's
+            -- rule), as from any level onto the next (user 2026-10-04: one rule for all floors)
+            local function isOn(p)
+                if p == 0 then
+                    return next(on) == nil
+                end
+                return on[p] == true
+            end
             local m = math.ceil(logic.ACCESS_REACH / zone.cell) + 1
             for dr = -m, m do
                 for dc = -m, m do
                     for _, l in ipairs(ix.linkAt[(r + dr) * zone.cols + c + dc] or {}) do
-                        local other = on[l.a] and not on[l.b] and l.b or on[l.b] and not on[l.a] and l.a or nil
-                        if other and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
+                        local other = isOn(l.a) and not isOn(l.b) and l.b or isOn(l.b) and not isOn(l.a) and l.a or nil
+                        if other and other ~= 0 and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
                             new[#new + 1] = other
                         end
                     end
