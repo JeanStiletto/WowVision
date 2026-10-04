@@ -382,12 +382,17 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     end
     local previous = previousRoomId and ix.rooms[previousRoomId]
     local interior = ix.interiors[room.interior]
+    -- a named floor is said once, as the building is: not again from a room on it (logic.floorOf)
+    local name = room.name
+    if previous and previous.interior == room.interior then
+        name = logic.floorLabel(zone, name, (logic.floorOf(zone, previous.name)))
+    end
     -- a city's own complex (Ironforge) is named after the zone the player knows: never said
     local city = interior ~= nil and interior.city
     if not city and (previous == nil or previous.interior ~= room.interior) then
-        return (interior and interior.name or "") .. ", " .. room.name
+        return (interior and interior.name or "") .. ", " .. name
     end
-    return room.name
+    return name
 end
 
 logic.BIG_ROOM = 800 -- sq yd; in a room this big its doorways are said from where the player stands

@@ -1469,6 +1469,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopText(z, 1, 85, 55), "wait for the tram to Sturmwind, tram to the south")
     end,
 
+    ["a named floor is said once: its rooms and the stairs up to it without it on it"] = function(t)
+        -- user 2026-10-04 upstairs in the Brill tavern: "Obergeschoss, Treppe Richtung Obergeschoss
+        -- at 12, Raum Südost, Obergeschoss at 5"
+        local z = { floors = { { "Obergeschoss", "Obergeschoss", "Treppe Richtung Obergeschoss", "Treppe" } } }
+        local i, bare = logic.floorOf(z, "Raum Südost, Obergeschoss")
+        t:assertEqual(i, 1)
+        t:assertEqual(bare, "Raum Südost")
+        t:assertEqual(logic.floorOf(z, "Obergeschoss"), 1)
+        t:assertEqual(select(2, logic.floorOf(z, "Treppe Richtung Obergeschoss")), "Treppe")
+        t:assertNil(logic.floorOf(z, "Schankraum"))
+        t:assertNil(logic.floorOf(z, "Raum, erster Stock"))
+        -- on the floor: without it; elsewhere (no floor, the common room below) the full name
+        t:assertEqual(logic.floorLabel(z, "Raum Südost, Obergeschoss", 1), "Raum Südost")
+        t:assertEqual(logic.floorLabel(z, "Treppe Richtung Obergeschoss", 1), "Treppe")
+        t:assertEqual(logic.floorLabel(z, "Obergeschoss", 1), "Obergeschoss")
+        t:assertEqual(logic.floorLabel(z, "Raum Südost, Obergeschoss", nil), "Raum Südost, Obergeschoss")
+        t:assertEqual(logic.floorLabel(z, "Schankraum", 1), "Schankraum")
+    end,
+
     ["a ramp is a way keyed per flight, said like a street; its side is named when bumped"] = function(t)
         local z = newWalkZone()
         -- the walk's columns (y 52 to 40) are a ramp rising to the northeast
