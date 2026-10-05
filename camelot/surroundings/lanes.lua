@@ -19,22 +19,13 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
     if list == nil then
         return nil
     end
-    -- a raised piece's lines count only up on it, and up on one over other floor the lower
-    -- floor's lines do not (zone.stacked, logic.setOn)
-    local on = ix.on
-    local underHigh = false
-    local alts = on and ix.stacked and ix.stacked[r * zone.cols + c]
-    if alts then
-        for _, a in ipairs(alts) do
-            if on[a.piece] then
-                underHigh = true
-            end
-        end
-    end
+    -- a stretch whose floor lies over or under other floor counts only on its piece (the
+    -- ground's lines not up on a landing over them, the landing's not down on the street); any
+    -- other stretch (piece -1) counts on every floor: the position alone finds it
+    local floor = ix.floor or 0
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        local level = (lane.piece == 0 and not underHigh) or (lane.piece ~= 0 and on and on[lane.piece])
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and level
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (lane.piece == -1 or lane.piece == floor)
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             if best == nil or d < best then

@@ -2,10 +2,11 @@
 -- edges), the high floor pieces they may lie on, and the water: what lies under a bridge and the
 -- ways out of city water.
 --
--- An edge on a high piece (a gate's wall-walk, a bridge deck over a bank) warns only while the
--- player is up there. There is no height on Forever, so a piece counts from where the player is
--- seen stepping onto it: from the ground where it joins level 0, out of a building's rooms, or from
--- a joined piece; walking under it never counts.
+-- An edge on a floor piece (a gate's wall-walk, a bridge deck over a bank, a landing) warns only
+-- while the player is on that piece. There is no height on Forever (measured 2026-10-05), so the
+-- player's floor is followed from the ground: it changes only at a join crossed, at a drop edge
+-- crossed, or when the floor is no longer under them (updateFloor); walking under a piece never
+-- counts.
 
 local logic = WowVision.surroundingsLogic
 
@@ -20,15 +21,15 @@ function logic.nearestExit(zone, x, y, reach)
     return logic.nearestPoint(zone._index.exits, x, y, reach)
 end
 
--- yd; a step (the move since the last look) passing this close to a place where a high piece is
--- stepped onto from the ground counts (the places lie about 2 yd apart along the step's line; 1.5
--- missed the griffon ramp's foot by 0.2 yd, user's walk 2026-10-01 10:47, and the ramp said the
--- level below; a cell of another place drops the piece again, so the bay beside the foot no
--- longer counts as the ramp)
+-- yd; a step (the move since the last look) crossing a join within this of one of its points
+-- counts (the points lie about 2 yd apart along the line where two floors meet; 1.5 missed the
+-- griffon ramp's foot by 0.2 yd, user's walk 2026-10-01)
 logic.ACCESS_REACH = 2.5
--- place kinds painted over a raised piece's own floor that keep the player on it
-local KEEP_ON = { fork = true, crossing = true, bridge = true }
-logic.ROOMS_REACH = 6.0 -- yd from where it joins a building, just after coming out of it
+logic.ROOMS_REACH = 6.0 -- yd from a building's door join, just after coming out of it
+-- yd the step must reach beyond a join's line for the crossing to count: strafing along the rim
+-- of a raised strip crosses its line back and forth by inches, and every crossing is a floor
+-- change (the Valley of Heroes' avenue flipped four times in 11 s, replay 2026-10-05)
+logic.CROSS_MARGIN = 0.5
 
 -- The distance from (qx, qy) to the segment (ax, ay)-(bx, by).
 local function segmentDistance(qx, qy, ax, ay, bx, by)
@@ -36,182 +37,146 @@ local function segmentDistance(qx, qy, ax, ay, bx, by)
     return d
 end
 
--- Updates the set `on` of the high pieces the player is on: a piece is entered by passing where
--- it is stepped onto from the ground (on no piece), where it joins a building the player just came
--- out of (`cameOut`), or from a joined piece the player is on; it is left by walking off its
--- footprint. A step from the ground counts only from a cell painted with the piece's own floor
--- (zone.piecePlaces): not from the bay under the landing at the griffon ramp's foot, 2 yd from
--- where the ramp rises (a false "8 deep" there, user's walk 2026-09-30). `px, py`: the position
--- at the last look (the step from there counts). Returns the set and whether it changed.
-function logic.updateHigh(zone, on, x, y, cameOut, px, py)
+-- Is the floor piece `floor` under the cell `key`: the ground wherever the data does not say it
+-- is absent (zone.noGround; the middle of a moat), another piece where the cell or one of the 8
+-- cells around it lists it (zone.floorCells): a piece's floor has a cell without a walk surface
+-- now and then (the moat under its bridges, the cavern floor), and the floor fell back to the
+-- ground there for a step.
+function logic.floorHere(zone, key, floor)
+    local ix = zone._index
+    if floor == 0 then
+        return not ix.noGround[key]
+    end
+    local cols = zone.cols
+    local r, c = math.floor(key / cols), key % cols
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            local here = ix.floorCells[(r + dr) * cols + c + dc]
+            if here ~= nil and here[floor] ~= nil then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Did the step from (px, py) to (x, y) cross the join `j` (a point on the line where two floors
+-- meet, with the direction from its piece a into b): within ACCESS_REACH beside the point, from
+-- a's side to b's (1), from b's to a's (-1), or not (nil). A join without a direction counts
+-- either way when the step passes within reach of it.
+local function crossed(j, px, py, x, y)
+    if j.angle == nil then
+        return segmentDistance(j.x, j.y, px, py, x, y) <= logic.ACCESS_REACH and 0 or nil
+    end
+    local vx, vy = logic.compassVector(j.angle)
+    local before = (px - j.x) * vx + (py - j.y) * vy
+    local after = (x - j.x) * vx + (y - j.y) * vy
+    if before == after then
+        return nil
+    end
+    -- where the step meets the join's line, how far beside the point
+    local t = before / (before - after)
+    if t < 0 or t > 1 then
+        return nil
+    end
+    local mx, my = px + (x - px) * t, py + (y - py) * t
+    if math.abs((mx - j.x) * vy - (my - j.y) * vx) > logic.ACCESS_REACH then
+        return nil
+    end
+    if before <= 0 and after > logic.CROSS_MARGIN then
+        return 1
+    elseif before >= 0 and after < -logic.CROSS_MARGIN then
+        return -1
+    end
+    return nil
+end
+
+-- Updates the floor piece the player is on (zone._index.floor; 0 the ground: the one rule for
+-- every floor over or under another, user 2026-10-05). It changes only (1) at a drop edge of the
+-- floor crossed, onto the piece the drop lands on; (2) at a join crossed in its direction, from
+-- the floor into the piece it meets there (a join from a building's door counts while `cameOut`,
+-- within ROOMS_REACH); (3) when the floor is no longer under the player: then the piece here
+-- that the floor joins or drops onto, else the only piece here where the ground is absent, else
+-- the ground. `px, py`: the position at the last look. Returns the floor and whether it changed.
+function logic.updateFloor(zone, x, y, cameOut, px, py)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
-    local changed = false
-    -- a hall's lower level is also entered by falling: walking over an edge whose drop falls onto
-    -- it (the moat's rim: user's walk 2026-10-02, the trench is 19 yd under the walkways)
-    local fell = logic.fellOnto(zone, on, px, py, x, y)
-    if fell and not on[fell] then
-        on[fell] = true
-        changed = true
-    end
-    local painted = logic.placeOf(logic.paintedAtCell(zone, r, c))
-    local paintedKind = painted ~= 0 and logic.kind(zone, painted) or nil
-    local left = {}
-    for piece in pairs(on) do
-        local stays = logic.nearCell(zone, ix.pieces, r, c, piece)
-        -- on its footprint but on a cell painted with another place (not a fork or bridge on the
-        -- piece) that is not stacked under it, the player is beside the piece, not on it: the bay
-        -- beside the griffon ramp's foot is a dead end's cells, the ramp's floor the ramp's and its
-        -- street's (the user stood in the bay counted on the ramp for two minutes, hearing the
-        -- ramp's edges and the level up on it, 2026-10-01)
-        local own = ix.piecePlaces and ix.piecePlaces[piece]
-        if stays and own and painted ~= 0 and not own[painted] and not KEEP_ON[paintedKind] then
-            stays = false
-            for _, a in ipairs(ix.stacked and ix.stacked[r * zone.cols + c] or {}) do
-                if a.piece == piece then
-                    stays = true
-                end
-            end
-        end
-        if not stays then
-            on[piece] = nil
-            changed = true
-            left[#left + 1] = piece
-        end
-    end
-    -- in a hall (the indoor layers' levels, zone.pieceOwn): the same level going on in the next
-    -- piece of it, a piece of the same place stacked here (the moat is cut into nine pieces; at
-    -- their seams the player left one and was on none, hearing the walkways over the trench,
-    -- replay of the walk 2026-10-02 16:47). Not outdoors: the city's raised pieces carry their
-    -- renamed streets, and the rule moved Stormwind's Mage Quarter stairs onto a street.
     local key = r * zone.cols + c
-    for _, piece in ipairs(zone.pieceOwn and left or {}) do
-        local own = ix.piecePlaces and ix.piecePlaces[piece]
-        if own then
-            for _, a in ipairs(ix.stacked and ix.stacked[key] or {}) do
-                local theirs = ix.piecePlaces[a.piece]
-                if not on[a.piece] and theirs then
-                    for place in pairs(own) do
-                        if theirs[place] then
-                            on[a.piece] = true
+    local was = ix.floor or 0
+    local floor = was
+    local fell = px and logic.fellOnto(zone, floor, px, py, x, y)
+    if fell then
+        floor = fell
+    elseif px then
+        local n = math.ceil(logic.ROOMS_REACH / zone.cell)
+        local best, bd = nil, nil
+        for dr = -n, n do
+            for dc = -n, n do
+                for _, j in ipairs(ix.joinAt[(r + dr) * zone.cols + c + dc] or {}) do
+                    local other, d = nil, nil
+                    if j.a == -1 then
+                        if cameOut and j.b ~= floor then
+                            d = logic.dist(j.x, j.y, x, y)
+                            other = d <= logic.ROOMS_REACH and j.b or nil
+                        end
+                    elseif j.a == floor or j.b == floor then
+                        -- a join without a direction (a structure's, a step between two surfaces
+                        -- of one cell) only leads from its a into its b: the piece is left by
+                        -- walking off it, not by passing the point again
+                        local way = crossed(j, px, py, x, y)
+                        if way and ((way == 0 and j.a == floor) or (way ~= 0 and (way > 0) == (j.a == floor))) then
+                            other = j.a == floor and j.b or j.a
+                            d = logic.dist(j.x, j.y, x, y)
                         end
                     end
-                end
-            end
-        end
-    end
-    -- standing where only a level's floor is (the indoor layers' pieceOwn: the middle of the moat,
-    -- the stairs down to it) the player is on that level
-    for _, piece in ipairs(ix.pieceOwn and ix.pieceOwn[key] or {}) do
-        if not on[piece] then
-            on[piece] = true
-            changed = true
-        end
-    end
-    -- level 0, the ground outdoors or a hall's or a building's main floor: a piece is stepped onto
-    -- where it joins level 0 (zone.groundAt), from a cell painted with its own floor, unless the
-    -- player is up on a piece lying over the ground here (one rule for every floor over another,
-    -- user 2026-10-04: the Brill tavern's room upstairs lies over the cellar stairs' top; Stormwind's
-    -- docks are stepped onto from beside the quay, which the player still counts on)
-    local n = math.ceil(logic.ROOMS_REACH / zone.cell)
-    local ground = true
-    for _, a in ipairs(ix.stacked and ix.stacked[key] or {}) do
-        ground = ground and not on[a.piece]
-    end
-    for dr = -n, n do
-        for dc = -n, n do
-            local cell = (r + dr) * zone.cols + c + dc
-            for _, g in ipairs(ground and ix.groundAt[cell] or {}) do
-                local own = ix.piecePlaces and ix.piecePlaces[g.piece]
-                if (own == nil or own[painted]) and not on[g.piece]
-                    and segmentDistance(g.x, g.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
-                    on[g.piece] = true
-                    changed = true
-                end
-            end
-            -- ... and where it joins a building the player just came out of
-            for _, a in ipairs(cameOut and ix.access[cell] or {}) do
-                if a.kind == 2 and not on[a.piece] and logic.dist(a.x, a.y, x, y) <= logic.ROOMS_REACH then
-                    on[a.piece] = true
-                    changed = true
-                end
-            end
-        end
-    end
-    local added = true
-    while added do
-        added = false
-        local new = {}
-        if ix.linkAt then
-            -- joined where the two levels meet: the step passes the place (the Brill tavern's
-            -- landing lies over the foot of its stairs, next to it the player was up at once)
-            local m = math.ceil(logic.ACCESS_REACH / zone.cell) + 1
-            for dr = -m, m do
-                for dc = -m, m do
-                    for _, l in ipairs(ix.linkAt[(r + dr) * zone.cols + c + dc] or {}) do
-                        local other = on[l.a] and not on[l.b] and l.b or on[l.b] and not on[l.a] and l.a or nil
-                        if other and segmentDistance(l.x, l.y, px or x, py or y, x, y) <= logic.ACCESS_REACH then
-                            new[#new + 1] = other
-                        end
-                    end
-                end
-            end
-        else
-            for piece in pairs(on) do
-                for _, other in ipairs(ix.links[piece] or {}) do
-                    if not on[other] and logic.nearCell(zone, ix.pieces, r, c, other) then
-                        new[#new + 1] = other
+                    if other and (bd == nil or d < bd) then
+                        best, bd = other, d
                     end
                 end
             end
         end
-        for _, piece in ipairs(new) do
-            on[piece] = true
-            added, changed = true, true
+        if best then
+            floor = best
         end
     end
-    if ix.linkAt then
-        -- of two joined levels the one whose floor is right here (the room beside the landing, a
-        -- step through its doorway; next to the landing's footprint the landing held for 17 s)
-        local here = ix.pieces[key]
-        local exact = false
-        for piece in pairs(on) do
-            exact = exact or (here and here[piece]) or false
-        end
-        if exact then
-            for piece in pairs(on) do
-                if not here[piece] then
-                    on[piece] = nil
-                    changed = true
-                end
+    -- a floor just entered is trusted for this look (a join point may lie a step outside the
+    -- cells its piece has); otherwise the floor must be under the player
+    if floor == was and not logic.floorHere(zone, key, floor) then
+        local here = ix.floorCells[key]
+        local pick, only, count = nil, nil, 0
+        for p in pairs(here or {}) do
+            only, count = p, count + 1
+            if ix.joined[floor] and ix.joined[floor][p] and (pick == nil or p < pick) then
+                pick = p
             end
         end
+        if pick == nil and count == 1 and ix.noGround[key] then
+            pick = only
+        end
+        floor = pick or 0
     end
-    return on, changed
+    ix.floor = floor
+    return floor, floor ~= was
+end
+
+-- Sets the floor piece the player is on (0 the ground); every lookup follows it.
+function logic.setFloor(zone, floor)
+    zone._index.floor = floor or 0
 end
 
 function logic.edge(zone, i)
     return zone._index.edges[i]
 end
 
--- Is an edge on the level the player is on? In a hall (the indoor layers) `levels` is the set of
--- the hall's other levels the player is on: an edge of the main floor counts only while on none,
--- an edge of a level only while on it (down in the moat the walkways' edges are no drops). nil:
--- every edge (outdoors).
-local function onLevel(e, levels)
-    if levels == nil then
-        return true
-    end
-    if e.level == 0 then
-        return next(levels) == nil
-    end
-    return levels[e.level] == true
-end
-
--- Whether edge `i` is looked at from (x, y) at all: not skipped, low or on a piece the player is
--- on (`on`), on the level the player is on (`levels`), and its box within `reach` yards.
-local function edgeCounts(e, i, x, y, reach, on, skip, levels)
-    if (skip and skip[i]) or (e.piece ~= 0 and not (on and on[e.piece])) or not onLevel(e, levels) then
+-- Whether edge `i` is looked at from (x, y) at all: not skipped, on the floor piece the player is
+-- on (zone._index.floor: an edge of the ground (floor 0) counts only on the ground, an edge of a
+-- piece only up on it; down in the moat the walkways' edges are no drops; an edge with no floor
+-- (nil: the zone's edges into water, a structure's low edges) on every floor), in one of the
+-- rooms the player may be in (`rooms`, the indoor layers: an edge inside warns only in the room
+-- its floor belongs to; nil: every room), and its box within `reach` yards.
+local function edgeCounts(zone, e, i, x, y, reach, rooms, skip)
+    if (skip and skip[i]) or (e.floor ~= nil and e.floor ~= (zone._index.floor or 0))
+        or (rooms and e.piece ~= 0 and not rooms[e.piece]) then
         return false
     end
     local b = e.box
@@ -225,9 +190,9 @@ end
 
 -- The drop edge to warn about within `reach` yards: one the player stands in front of, on the
 -- structure's floor; the edge index and distance. With `facing`, an edge ahead (within 90 degrees
--- of the view) wins over a nearer one beside or behind. `on`: the high pieces the player is on
--- (see updateHigh); `skip`: a set of edge indexes left out (warned already).
-function logic.nearestEdge(zone, x, y, reach, on, facing, skip, levels)
+-- of the view) wins over a nearer one beside or behind. `rooms`: the rooms the player may be in
+-- (indoors), nil outdoors; `skip`: a set of edge indexes left out (warned already).
+function logic.nearestEdge(zone, x, y, reach, rooms, facing, skip)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local vx, vy = nil, nil
@@ -236,7 +201,7 @@ function logic.nearestEdge(zone, x, y, reach, on, facing, skip, levels)
     end
     local best, bestD, ahead, aheadD = nil, reach, nil, reach
     for i, e in ipairs(ix.edges) do
-        if edgeCounts(e, i, x, y, reach, on, skip, levels) then
+        if edgeCounts(zone, e, i, x, y, reach, rooms, skip) then
             local fx, fy = logic.compassVector(e.facing)
             local p = e.points
             for k = 1, #p - 1, 2 do
@@ -271,9 +236,9 @@ logic.AHEAD_ANGLE = 0.25 -- cosine: the path turns at most 75 degrees away from 
 -- A drop edge in the player's path: moving along the unit vector (vx, vy), an edge point at most
 -- `look` yards ahead and AHEAD_WIDTH beside the path, whose drop lies ahead (not running along
 -- the edge), with the player on the structure in front of it. Returns the edge index, the
--- distance along the path and the edge point in the path (x, y). `on` and `skip` as for
+-- distance along the path and the edge point in the path (x, y). `rooms` and `skip` as for
 -- nearestEdge; `all` (optional): a set that gets every edge in the path.
-function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all, levels)
+function logic.edgeAhead(zone, x, y, vx, vy, look, rooms, skip, all)
     local ix = zone._index
     if look <= 0 then
         return nil
@@ -282,7 +247,7 @@ function logic.edgeAhead(zone, x, y, vx, vy, look, on, skip, all, levels)
     local best, bestAlong, bx, by = nil, look, nil, nil
     for i, e in ipairs(ix.edges) do
         local fx, fy = logic.compassVector(e.facing)
-        if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(e, i, x, y, look, on, skip, levels) then
+        if fx * vx + fy * vy >= logic.AHEAD_ANGLE and edgeCounts(zone, e, i, x, y, look, rooms, skip) then
             local p = e.points
             for k = 1, #p - 1, 2 do
                 local dx, dy = p[k] - x, p[k + 1] - y
@@ -307,16 +272,16 @@ end
 
 logic.FALL_REACH = 3.0 -- yd from an edge point a step over the edge counts as a fall over it
 
--- The level a step from (px, py) to (x, y) fell onto: over an edge whose drop falls onto another
--- level of the hall (zone edges with `under`), from the level the edge lies on (`on`: the levels
--- the player is on), from the side the edge's floor is on to the other; or nil.
-function logic.fellOnto(zone, on, px, py, x, y)
+-- The floor piece a step from (px, py) to (x, y) fell onto: over a drop edge of the floor the
+-- player is on (`floor`) whose drop lands on another piece (zone edges with `under`; the ground
+-- is 0), from the side the edge's floor is on to the other; or nil.
+function logic.fellOnto(zone, floor, px, py, x, y)
     local ix = zone._index
     if px == nil then
         return nil
     end
     for _, e in ipairs(ix.edges) do
-        if e.under and onLevel(e, on) then
+        if e.under ~= nil and (e.floor == nil or e.floor == floor) then
             local b = e.box
             local reach = logic.FALL_REACH
             if x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach then

@@ -81,20 +81,12 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
-local high = {} -- the high floor pieces (wall-walks, bridge decks, raised city floors) the player is on
-
--- Empties a set in place (the zone's lookups hold the same table: logic.setOn).
-local function wipeSet(set)
-    for k in pairs(set) do
-        set[k] = nil
-    end
-end
 local outAt = nil -- when the player last came out of a building
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
-local saidLabels = {} -- in a building's floors: the names of those, over the place's copies per set of levels
+local saidLabels = {} -- the names said on a place, over the place's copies per floor piece
 local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
 local bendWalked = 0 -- walked on the way since the last announcement or bend hint
 local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
@@ -157,7 +149,16 @@ end
 local function forgetPlace()
     forgetWays()
     room, lastRoom, roomByDoor = nil, nil, false
-    wipeSet(high)
+    if zone then
+        logic.setFloor(zone, 0)
+        local layer = logic.layer(zone)
+        if layer then
+            logic.setFloor(layer, 0)
+        end
+        if zone._index and zone._index.layerIn then
+            logic.setFloor(zone._index.layerIn, 0)
+        end
+    end
     warnedEdges = {}
     layerMode = false
 end
@@ -248,8 +249,8 @@ local function roomCandidateNames(z, x, y)
 end
 
 -- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", ...),
--- text}, where the player was (the data's cell and its text, the room candidates indoors, the high
--- pieces the player was on) and the facing in degrees (0 = north, counter-clockwise).
+-- text}, where the player was (the data's cell and its text, the room candidates indoors, the
+-- floor piece the player was on) and the facing in degrees (0 = north, counter-clockwise).
 local function logEntry(kind, text, x, y, extra)
     local log = activeLog()
     if log == nil then
@@ -276,13 +277,13 @@ local function logEntry(kind, text, x, y, extra)
     end
     e.swimming = IsSwimming() or nil
     e.facing = facingDegrees()
-    local on = {}
-    for piece in pairs(high) do
-        on[#on + 1] = piece
+    -- the floor piece the player is on (0 the ground), in the hall layer they are in or outdoors
+    local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+    if held and (held._index.floor or 0) ~= 0 then
+        e.floor = held._index.floor
     end
-    if #on > 0 then
-        table.sort(on)
-        e.high = table.concat(on, " ")
+    if held and held ~= zone then
+        e.layerKey = held.key
     end
     for k, v in pairs(extra or {}) do
         e[k] = v
@@ -317,7 +318,7 @@ end
 -- The data format this module reads (zone.format): 2 carries directions as angles. Data of
 -- another format is left alone, and said once (the data addon and WowVision are switched
 -- together: branch clock-directions on both).
-local FORMAT = 2
+local FORMAT = 3
 local formatWarned = false
 local function formatFits(z)
     if (z.format or 1) == FORMAT then
@@ -356,7 +357,6 @@ local function findZone(x, y, map)
         end
         if found then
             logic.unpack(found, GetLocale())
-            logic.setOn(found, high)
         end
         zone = found
         if found then
@@ -497,10 +497,10 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     guideTo(z, guide, t, x, y, brief)
 end
 
--- Down in a moat or a pool? The place here on the level the player is on (the hall's levels,
--- updateHigh: in once fallen or stepped in or come down its stairs, out once up its way out) is
--- one; returns its value then (user 2026-10-02: no rule of the moat's or the pools' own, the moat's
--- let the player out within 4 yd of its stairs while still down in the trench).
+-- Down in a moat or a pool? The place here on the floor piece the player is on (updateFloor: in
+-- once fallen or stepped in or come down its stairs, out once up its way out) is one; returns its
+-- value then (user 2026-10-02: no rule of the moat's or the pools' own, the moat's let the player
+-- out within 4 yd of its stairs while still down in the trench).
 local DOWN_KINDS = { moat = true, pool = true }
 local function downHere(layer, x, y)
     local v = logic.valueAt(layer, x, y)
@@ -556,7 +556,7 @@ end
 -- Guidance to the nearest way out of the water, or, with `down` (the place value of a hall's
 -- lower level the player is down on: the moat, a pool), of that level, when there is one.
 local function guideExit(z, x, y, down)
-    local t = module.settings.guidance and logic.exitTarget(z, x, y, down, down and z._index.on)
+    local t = module.settings.guidance and logic.exitTarget(z, x, y, down, z._index.floor)
     if t then
         guideTo(z, waterGuide, t, x, y)
     else
@@ -567,25 +567,23 @@ end
 -- While swimming: the nearest way out of the water; climbing out at an edge warns again.
 local function checkWater(z, x, y)
     warnedEdges = {}
-    wipeSet(high)
+    logic.setFloor(z, 0)
     guideExit(z, x, y)
 end
 
 -- Drop edges: the one within reach ahead in the view first, else one in the path with its
 -- distance. An edge warns again after the player is out of its reach and it is no longer in the
--- path; edges of a wall-walk or a deck high over the ground only while the player is up there.
--- Indoors (the indoor layer's edges) `rooms` is the set of rooms the player may be in: an edge
--- inside warns only in the room its floor belongs to (its piece), as a high piece's edge; `levels`
--- the hall's levels the player is on: an edge warns only on its own level.
-local function checkEdges(z, x, y, px, py, rooms, levels)
-    local on = rooms
-    if on == nil then
-        local _on, changed = logic.updateHigh(z, high, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
+-- path; an edge warns only on the floor piece its floor belongs to (a wall-walk's or a deck's
+-- only while the player is up there, a landing's only on the landing). Indoors (the indoor
+-- layer's edges) `rooms` is the set of rooms the player may be in: an edge inside warns only in
+-- the room its floor belongs to (its piece).
+local function checkEdges(z, x, y, px, py, rooms)
+    if rooms == nil then
+        local _floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
         if changed then
-            -- the squares found so far were flooded on the old level
+            -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
         end
-        on = high
     end
     -- the way the player moves (not the facing: strafing and walking back count too)
     local vx, vy = nil, nil
@@ -595,7 +593,7 @@ local function checkEdges(z, x, y, px, py, rooms, levels)
     end
     local inPath = {}
     if vx then
-        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, nil, inPath, levels)
+        logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, nil, inPath)
     end
     for i in pairs(warnedEdges) do
         if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
@@ -605,10 +603,10 @@ local function checkEdges(z, x, y, px, py, rooms, levels)
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, on, GetPlayerFacing(), warnedEdges, levels)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, rooms, GetPlayerFacing(), warnedEdges)
     local along, qx, qy = nil, nil, nil
     if i == nil and vx then
-        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, on, warnedEdges, nil, levels)
+        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, warnedEdges, nil)
     end
     if i then
         local text = logic.edgeText(z, i, along, x, y, qx, qy)
@@ -625,23 +623,21 @@ end
 local function checkApproach(z, x, y)
     local here = logic.regionAt(z, x, y)
     if here and here ~= region and here.value == region.value then
-        -- the same place found anew on another set of levels (a building's floors): what was
+        -- the same place found anew on another floor piece (a building's floors): what was
         -- said there stays said (the landing said its stairs "down here", then "down to the
         -- north" a second later). Kept by name over the whole visit, not only from the copy
         -- left: after falling into the Brill tavern's cellar the module went between two copies
         -- of the cellar, one without the stairs, and "stairs here" came again 3 s after the
         -- place line (walks 2026-10-04 19:10 and 23:19)
         local carried = {}
-        if z._index.linkAt then
-            for m in pairs(saidMouths) do
-                if type(m) == "table" then
-                    saidLabels[tostring(m.label)] = true
-                end
+        for m in pairs(saidMouths) do
+            if type(m) == "table" then
+                saidLabels[tostring(m.label)] = true
             end
-            for _, m in ipairs(here.mouths) do
-                if saidLabels[tostring(m.label)] then
-                    carried[m] = true
-                end
+        end
+        for _, m in ipairs(here.mouths) do
+            if saidLabels[tostring(m.label)] then
+                carried[m] = true
             end
         end
         region, saidMouths = here, carried
@@ -918,14 +914,8 @@ local function keepHere(z, x, y)
         return
     end
     local layer = logic.layer(z, IsIndoors())
-    local levels = {}
-    if layer then
-        for piece in pairs(layer._index.on) do
-            levels[#levels + 1] = piece
-        end
-        table.sort(levels)
-    end
-    local sig = tostring(room) .. "|" .. table.concat(levels, ",")
+    local floor = layer and (layer._index.floor or 0) or 0
+    local sig = tostring(room) .. "|" .. floor
     local h = WowVisionDB.surroundingsHere
     if hereKept == sig and h and logic.dist(h.x, h.y, x, y) < HERE_SAME / 2 then
         return
@@ -933,7 +923,7 @@ local function keepHere(z, x, y)
     hereKept = sig
     local r = room and z._index.rooms[room]
     WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name,
-        layer = layer and layer.key, levels = levels }
+        layer = layer and layer.key, floor = floor }
 end
 
 local function restoreHere(z, x, y)
@@ -947,10 +937,8 @@ local function restoreHere(z, x, y)
         room, roomByDoor = h.room, true
     end
     local layer = logic.layer(z, IsIndoors())
-    if layer and layer.key == h.layer then
-        for _, piece in ipairs(h.levels or {}) do
-            layer._index.on[piece] = true
-        end
+    if layer and layer.key == h.layer and type(h.floor) == "number" then
+        logic.setFloor(layer, h.floor)
         logic.forgetRegions(layer)
     end
 end
@@ -966,7 +954,7 @@ local function updateIndoors(z, x, y, px, py)
     -- floor below leads nowhere: no room the layer does not cover (trial 2026-10-03, the Brill
     -- tavern: upstairs over the entrance's doorway the module said the entrance)
     local held = logic.layer(z, IsIndoors())
-    if held and next(held._index.on) ~= nil and found ~= nil and not held._index.covered[found] then
+    if held and (held._index.floor or 0) ~= 0 and found ~= nil and not held._index.covered[found] then
         crossed, found = nil, nil
     end
     if found ~= nil then
@@ -981,36 +969,23 @@ local function updateIndoors(z, x, y, px, py)
     local layer = logic.layer(z, IsIndoors())
     local here = roomsHere(z, x, y)
     if layer then
-        -- the hall's level the player is on (a gallery, the moat under the walkways), as on the
-        -- city's raised pieces outdoors
-        local levels = layer._index.on
-        local wasOn = next(levels) ~= nil
-        local _, levelsChanged = logic.updateHigh(layer, levels, x, y, false, px, py)
-        if levelsChanged and layer._index.linkAt then
-            -- a layer whose levels join at their join points (the buildings' floors): the places
-            -- found so far kept per set of levels, so stepping back onto a level finds its places
-            -- again with what was said there (a fresh flood at every hop said the stairs twice)
-            local ix = layer._index
-            local keys = {}
-            for piece in pairs(levels) do
-                keys[#keys + 1] = piece
-            end
-            table.sort(keys)
-            local sig = table.concat(keys, ",")
-            ix.regionsBySet = ix.regionsBySet or {}
-            ix.regionsBySet[ix.regionSet or ""] = ix.regionOf
-            ix.regionOf = ix.regionsBySet[sig] or {}
-            ix.regionSet = sig
-        elseif (next(levels) ~= nil) ~= wasOn then
-            -- the halls found so far were flooded on the other level (not between two pieces of
-            -- one level: a ledge of two pieces repeated what is near at every hop, replay of the
-            -- walk 2026-09-30 22:29)
-            logic.forgetRegions(layer)
+        -- the floor piece the player is on in the hall (a gallery, the moat under the walkways, a
+        -- building's floors), as on the city's floors outdoors
+        local ix = layer._index
+        local floor, floorChanged = logic.updateFloor(layer, x, y, false, px, py)
+        if floorChanged then
+            -- the places found so far kept per floor piece, so stepping back onto a floor finds
+            -- its places again with what was said there (a fresh flood at every hop said the
+            -- stairs twice)
+            ix.regionsByFloor = ix.regionsByFloor or {}
+            ix.regionsByFloor[ix.regionFloor or 0] = ix.regionOf
+            ix.regionOf = ix.regionsByFloor[floor] or {}
+            ix.regionFloor = floor
         end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
         -- has), each in the room its floor belongs to: this room, or while it is unknown
-        -- (stacked floors) any room here; and on its own level
-        checkEdges(layer, x, y, px, py, here, levels)
+        -- (stacked floors) any room here; and on its own floor piece
+        checkEdges(layer, x, y, px, py, here)
     end
     keepHere(z, x, y)
     if layer and logic.inLayer(layer, room, x, y) then
@@ -1232,7 +1207,7 @@ function module:describeAround()
         local down = downHere(layer, x, y)
         local value = logic.outdoorValue(layer, x, y, false, isWay(outdoor.current, true))
         text = logic.spotText(layer, x, y, value, nil, { facing = turnFacing() }) or L["place unknown"]
-        local t = self.settings.guidance and (down and logic.exitTarget(layer, x, y, down, layer._index.on)
+        local t = self.settings.guidance and (down and logic.exitTarget(layer, x, y, down, layer._index.floor)
             or not down and logic.footTarget(layer, x, y, region))
         if t then
             text = text .. ", " .. logic.guideText(layer, t, true, t.d <= logic.GUIDE_AT)
@@ -1267,10 +1242,10 @@ function module:describeAround()
     -- 2026-10-01: 1.4 yd from the canal the key said only the walk's name, then the fall)
     if not isInside() then
         local facing = GetPlayerFacing()
-        local i = logic.nearestEdge(z, x, y, EDGE_REACH, high, facing)
+        local i = logic.nearestEdge(z, x, y, EDGE_REACH, nil, facing)
         local along, qx, qy = nil, nil, nil
         if i == nil and facing then
-            i, along, qx, qy = logic.edgeAhead(z, x, y, math.cos(facing), math.sin(facing), EDGE_LOOK, high)
+            i, along, qx, qy = logic.edgeAhead(z, x, y, math.cos(facing), math.sin(facing), EDGE_LOOK, nil)
         end
         if i then
             text = text .. ", " .. logic.edgeText(z, i, along, x, y, qx, qy)
