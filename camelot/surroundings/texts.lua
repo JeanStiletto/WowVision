@@ -250,15 +250,12 @@ end
 -- southeast"; no "up" since 2026-10-04). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
 -- the entrance and walk on the street next to it".
 local function climbTarget(zone, x, y, reach, prefer, floor)
-    -- a foot on the floor the player is on (a building's: its level; the main floor while on none)
-    local on = zone._index.on or {}
-    local feet = zone._index.climbFeet
-    if zone.climbFeetFields == 5 then
-        feet = {}
-        for _, f in ipairs(zone._index.climbFeet) do
-            if (f.level == 0 and next(on) == nil) or (f.level ~= 0 and on[f.level]) then
-                feet[#feet + 1] = f
-            end
+    -- a foot on the floor piece the player is on (the ground, a landing, a building's floor)
+    local on = zone._index.floor or 0
+    local feet = {}
+    for _, f in ipairs(zone._index.climbFeet) do
+        if (f.floor or 0) == on then
+            feet[#feet + 1] = f
         end
     end
     local i, d, dir, f = logic.nearestPoint(feet, x, y, reach, prefer)
@@ -366,20 +363,19 @@ function logic.onClimb(zone, t, x, y, currentKey)
 end
 
 -- The nearest way out of the water within reach, while swimming; one onto floor that joins
--- nothing or into a dead end says so. `down`: the place value of a hall's lower level the player
--- is down on (the moat, a pool; a level like any other since 2026-10-02, entered and left by
--- updateHigh, and said as a place): the ways out of the levels in `levels`, the moat's shared by
--- its nine pieces; a pool's named with it ("pool, way out, 17 yards at 9 o'clock").
-function logic.exitTarget(zone, x, y, down, levels)
+-- nothing or into a dead end says so. `down`: the place value of a hall's lower floor the player
+-- is down on (the moat, a pool; a floor piece like any other, entered and left by updateFloor,
+-- and said as a place): the ways out of the floor piece the player is on (`floor`; the moat's
+-- nine place pieces are one floor and share them); a pool's named with it ("pool, way out, 17
+-- yards at 9 o'clock").
+function logic.exitTarget(zone, x, y, down, floor)
     local i, d, dir, exit
     local kind = down and logic.kindOf(zone, down) or nil
     if down then
-        -- down on a hall's lower level: its own ways out (a pool's, tagged with its level), or the
-        -- moat's (level 0: the moat's nine pieces share them)
+        -- down on a hall's lower floor: its own ways out
         local own = {}
         for _, e in ipairs(zone._index.exits) do
-            local lv = e.level or 0
-            if (lv ~= 0 and levels and levels[lv]) or (lv == 0 and kind == "moat") then
+            if (e.floor or 0) == (floor or 0) then
                 own[#own + 1] = e
             end
         end
@@ -448,6 +444,13 @@ local function squareItems(zone, x, y, region, cut, previous, said)
         opts.cameFrom = logic.keyLabel(zone, previous)
     end
     local items = logic.aroundItems(region, x, y, opts)
+    -- the ways the entry names count as said before the approaching ones are looked for (a
+    -- street both around and within APPROACH was listed twice)
+    for _, item in ipairs(items) do
+        for _, m in ipairs(item.mouths or {}) do
+            said[m] = true
+        end
+    end
     for _, item in ipairs(logic.approaching(region, x, y, APPROACH, said, logic.ITEM_DIRS)) do
         items[#items + 1] = item
     end
@@ -507,8 +510,16 @@ local function spotBody(zone, x, y, value, previous, opts)
         if region == nil then
             return text
         end
-        local said = logic.wayMouths(region)
+        -- said: the ways the entry line names (its cut leaves the farther ones out: a ramp 43 yd
+        -- across the square comes as "near" once within APPROACH, as before) and the water and
+        -- drops approaching; not every way of the square
+        local said = {}
         local items = squareItems(zone, x, y, region, opts.cut, previous, said)
+        for _, item in ipairs(items) do
+            for _, m in ipairs(item.mouths or {}) do
+                said[m] = true
+            end
+        end
         if #items > 0 then
             text = text .. ", " .. logic.itemsText(zone, items, logic.floorOfValue(zone, value))
         end

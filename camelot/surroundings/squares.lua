@@ -84,29 +84,31 @@ end
 -- square's side only where the climb goes neither up nor down from it, without a word: the long
 -- stairs beside the landing by the auction house said "stairs to the west" beside "stairs up to the
 -- north"): {label, class, rise, points {x, y, ...}, cells {border r, c, square r, c}}.
-local function findMouths(zone, cells, list)
+local function findMouths(zone, cells, list, floors, own)
     local byLabel, order, seen, along, rising = {}, {}, {}, {}, {}
-    local noTouch = zone._index.noTouch
+    floors = floors or { [zone._index.floor or 0] = true }
     for i = 1, #list - 1, 2 do
         local r, c = list[i], list[i + 1]
-        local here = noTouch and logic.placeOf(logic.valueAtCell(zone, r, c))
         for _, s in ipairs(logic.STEPS) do
             local nr, nc = r + s[1], c + s[2]
             local key = nr * zone.cols + nc
             local pair = (r * zone.cols + c) * zone.rows * zone.cols + key
             local noContact = zone._index.noContact[pair]
-            if not noContact and noTouch and noTouch[pair] then
-                -- the two floors do not meet here, on the level the player is on (the room 7 yd
-                -- below beside the landing upstairs)
-                noContact = noTouch[pair][here .. ":" .. logic.placeOf(logic.valueAtCell(zone, nr, nc))] or false
-            end
             if not cells[key] and not seen[key] and not noContact and logic.inGrid(zone, nr, nc) then
                 seen[key] = true
-                local value = logic.valueAtCell(zone, nr, nc)
+                -- what lies there on the player's floor: its value where the floor goes on into
+                -- the cell, else the piece the floor joins there (the stairs down from a landing;
+                -- the common room 7 yd below the landing is no neighbour of it)
+                local value, piece = logic.mouthValue(zone, nr, nc, key, floors, r * zone.cols + c, own)
+                -- the square's own place beyond a join (its part on a raised strip the flood did
+                -- not reach) is no neighbour
+                if own and value ~= 0 and logic.placeOf(value) == own then
+                    value = 0
+                end
                 local label, class = borderThing(zone, value, key)
                 local rise = label and riseFrom(zone, cells, value, nr, nc)
                 if rise == "along" then
-                    along[#along + 1] = { label = label, class = class, value = value, cell = { nr, nc, r, c } }
+                    along[#along + 1] = { label = label, class = class, value = value, piece = piece, cell = { nr, nc, r, c } }
                 elseif label then
                     if rise then
                         rising[value] = true
@@ -114,7 +116,7 @@ local function findMouths(zone, cells, list)
                     -- a climb's way up or down per climb (two stairs going down from a landing)
                     local group = label .. "|" .. (rise and rise .. value or "")
                     if byLabel[group] == nil then
-                        byLabel[group] = { label = label, class = class, rise = rise, cells = {} }
+                        byLabel[group] = { label = label, class = class, rise = rise, value = value, piece = piece, cells = {} }
                         order[#order + 1] = group
                     end
                     -- the border cell and the square's cell beside it (for the way on)
@@ -128,7 +130,7 @@ local function findMouths(zone, cells, list)
         if not rising[a.value] then
             local group = byLabel[a.label .. "|"]
             if group == nil then
-                group = { label = a.label, class = a.class, cells = {} }
+                group = { label = a.label, class = a.class, value = a.value, piece = a.piece, cells = {} }
                 byLabel[a.label .. "|"] = group
                 order[#order + 1] = a.label .. "|"
             end
@@ -154,14 +156,17 @@ local function findMouths(zone, cells, list)
                         end
                     end
                 end
-                if #members >= (zone.mouthMin or logic.MOUTH_MIN) then
+                -- a climb going up or down from the square counts from one border cell: a ramp
+                -- is narrow, and a raised part of the square beside its foot takes its other cells
+                if #members >= (zone.mouthMin or logic.MOUTH_MIN) or (group.rise and #members >= 1) then
                     local points = {}
                     for _, m in ipairs(members) do
                         local px, py = logic.cellCentre(zone, m[1], m[2])
                         points[#points + 1] = px
                         points[#points + 1] = py
                     end
-                    mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members }
+                    mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members,
+                        value = group.value, piece = group.piece }
                 end
             end
         end
@@ -172,6 +177,88 @@ end
 -- The region of the around-place at a position: {value, label, cells (set of keys), mouths}, where
 -- the building entrances on the square or at its edge are mouths too (class "entrance", labelled
 -- with the building); nil where the place is no around-place. Cached per cell.
+-- The value a neighbouring cell shows from the player's floor piece: the floor's own value where
+-- the floor goes on into the cell; water and a cliff's edge from any floor (the harbour's quay
+-- sees the water beside it); else the value of a piece the floor joins at that cell or at the
+-- square's cell beside it (the join points lie on the border); 0 when none of these: the cell is
+-- no neighbour on this floor (the common room 7 yd below the landing).
+function logic.mouthValue(zone, r, c, key, floors, fromKey, own)
+    -- of the region's floors here, the first that shows another place than the region's own (a
+    -- raised strip of the square runs on beside the ramp's foot: the ramp is the neighbour)
+    local same, samePiece = nil, nil
+    for f in pairs(floors) do
+        if logic.floorHere(zone, key, f) then
+            local v = logic.valueOfFloor(zone, r, c, f)
+            if v ~= 0 and logic.placeOf(v) ~= own then
+                return v, f
+            end
+            if same == nil then
+                same, samePiece = v, f
+            end
+        end
+    end
+    local painted = logic.paintedAtCell(zone, r, c)
+    local kind = painted ~= 0 and logic.kindOf(zone, painted) or nil
+    if painted == 0 or logic.WATER[kind] or logic.DROPS[kind] then
+        return painted
+    end
+    local joinAt = zone._index.joinAt
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            for _, j in ipairs(joinAt[(r + dr) * zone.cols + c + dc] or {}) do
+                local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
+                if other and other >= 0 then
+                    local v = logic.valueOfFloor(zone, r, c, other)
+                    if v ~= 0 and logic.placeOf(v) ~= own then
+                        return v, other
+                    end
+                end
+            end
+        end
+    end
+    return same or 0, samePiece
+end
+
+-- A cell's value as seen from a mouth: on the floor piece the mouth's thing lies on (a ramp beside
+-- the square is a piece of its own; from the square's floor its cells show the square), else the
+-- player's floor's.
+function logic.mouthCellValue(zone, mouth, r, c)
+    if mouth.piece then
+        local v = logic.valueOfFloor(zone, r, c, mouth.piece)
+        if v ~= 0 then
+            return v
+        end
+    end
+    return logic.valueAtCell(zone, r, c)
+end
+
+-- The floor pieces a region spreads over: the player's, and every piece joined to one of them
+-- whose value at the join's cell is the region's (a square cut into ground and a raised strip
+-- along its canal is one square). Returns whether the cell (r, c) joins the region, adding the
+-- piece it reaches through.
+local function regionJoins(zone, r, c, key, floors, value)
+    for f in pairs(floors) do
+        if logic.floorHere(zone, key, f) and logic.valueOfFloor(zone, r, c, f) == value then
+            return true
+        end
+    end
+    -- a join in the cell or one of its neighbours (the join points lie on the border between
+    -- the two floors' cells, on either side)
+    local joinAt = zone._index.joinAt
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            for _, j in ipairs(joinAt[(r + dr) * zone.cols + c + dc] or {}) do
+                local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
+                if other and other >= 0 and logic.valueOfFloor(zone, r, c, other) == value then
+                    floors[other] = true
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
     if not logic.isAroundPlace(zone, value) then
@@ -183,8 +270,9 @@ function logic.regionAt(zone, x, y)
         return ix.regionOf[r0 * cols + c0]
     end
     local cells, list = {}, {}
-    logic.flood(zone, { { r0, c0 } }, function(r, c)
-        return logic.valueAtCell(zone, r, c) == value
+    local floors = { [ix.floor or 0] = true }
+    logic.flood(zone, { { r0, c0 } }, function(r, c, key)
+        return regionJoins(zone, r, c, key, floors, value)
     end, function(r, c)
         list[#list + 1] = r
         list[#list + 1] = c
@@ -192,7 +280,7 @@ function logic.regionAt(zone, x, y)
     end, cells)
     local region = {
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
-        mouths = findMouths(zone, cells, list),
+        mouths = findMouths(zone, cells, list, floors, logic.placeOf(value)),
     }
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
@@ -211,8 +299,9 @@ function logic.regionAt(zone, x, y)
 end
 
 -- The place label and kind at a grid cell.
-local function labelAtCell(zone, r, c)
-    local p = logic.place(zone, logic.placeOf(logic.valueAtCell(zone, r, c)))
+local function labelAtCell(zone, r, c, mouth)
+    local v = mouth and logic.mouthCellValue(zone, mouth, r, c) or logic.valueAtCell(zone, r, c)
+    local p = logic.place(zone, logic.placeOf(v))
     return p and p.label, p and p.kind
 end
 
@@ -220,7 +309,7 @@ end
 -- entrance).
 local function mouthKind(zone, m)
     local cell = m.cells and m.cells[1]
-    return cell and select(2, labelAtCell(zone, cell[1], cell[2])) or nil
+    return cell and select(2, labelAtCell(zone, cell[1], cell[2], m)) or nil
 end
 
 -- A neighbouring square or hall is a place of its own: it counts even where it meets no other way
@@ -333,11 +422,11 @@ function logic.leadsOn(zone, mouth, region)
     end
     local own = {}
     for _, m in ipairs(mouth.cells or {}) do
-        own[logic.placeOf(logic.valueAtCell(zone, m[1], m[2]))] = true
+        own[logic.placeOf(logic.mouthCellValue(zone, mouth, m[1], m[2]))] = true
     end
     local leads, count = false, 0
     logic.flood(zone, mouth.cells or {}, function(r, c, key)
-        local value = logic.valueAtCell(zone, r, c)
+        local value = logic.mouthCellValue(zone, mouth, r, c)
         local place = value ~= 0 and logic.placeOf(value) or nil
         if own[place] then
             return true
@@ -367,15 +456,19 @@ local function onwardDirection(zone, region, mouth, vx, vy)
     -- a ramp or stairs leads on the way it goes from the square, up or down its own rise (the
     -- stairs past the landing by the auction house said "on to the west" going up to the north)
     if mouth.rise then
+        -- the climb's own value (a piece joined to the square's floor shows another value from
+        -- the square's floor itself)
         local cell = mouth.cells[1]
-        local up = logic.riseOf(zone, logic.valueAtCell(zone, cell[1], cell[2]))
-        return mouth.rise == "up" and up or (up + 180) % 360
+        local up = logic.riseOf(zone, mouth.value or logic.valueAtCell(zone, cell[1], cell[2]))
+        if up then
+            return mouth.rise == "up" and up or (up + 180) % 360
+        end
     end
     -- the axes of the cells by compass axis (4 bins), each bin with the sum of its doubled angles
     -- for the mean axis of the winning bin
     local votes, sinSum, cosSum, count, sx, sy = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 0, 0, 0
     logic.flood(zone, mouth.cells, function(r, c, key)
-        return not region.cells[key] and labelAtCell(zone, r, c) == mouth.label
+        return not region.cells[key] and labelAtCell(zone, r, c, mouth) == mouth.label
     end, function(r, c)
         local axis = logic.axisOf(zone, logic.valueAtCell(zone, r, c))
         if axis then
@@ -565,11 +658,20 @@ end
 -- are left to the entrance guidance.
 function logic.approaching(region, x, y, reach, said, maxDirs)
     local found = {}
+    -- a thing said is said by its label: a staircase in flights is several mouths of one name
+    -- (the tavern's stairs came as "near" three times in two seconds)
+    local labels = {}
     for _, m in ipairs(region.mouths) do
-        if not said[m] and m.class ~= "entrance" and m.class ~= "room" then
+        if said[m] then
+            labels[m.label] = true
+        end
+    end
+    for _, m in ipairs(region.mouths) do
+        if not said[m] and not labels[m.label] and m.class ~= "entrance" and m.class ~= "room" then
             local f = mouthFound(m, x, y)
             if f.d <= reach then
                 said[m] = true
+                labels[m.label] = true
                 found[#found + 1] = f
             end
         end

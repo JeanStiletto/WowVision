@@ -288,44 +288,31 @@ function logic.paintedAtCell(zone, r, c)
     return row.values[lo]
 end
 
--- The cell value of a grid cell: the painted one, but where a raised piece of floor lies over
--- other floor (zone.stacked, decided offline with the heights: the landing at the griffon ramp
--- over the bay beside the ramp's foot) the raised piece's value while the player is counted on
--- it (logic.setOn: the high pieces of edges.lua, entered where they are stepped onto), else the
--- lower floor's. So every lookup follows the level the player is on.
+-- The cell value of a grid cell: the painted one (the ground's where the ground has floor in the
+-- cell), or, up on another floor piece (zone._index.floor, edges.lua updateFloor), that piece's
+-- value where the cell lists it (zone.floorCells: the landing over the street). So every lookup
+-- follows the floor the player is on.
 function logic.valueAtCell(zone, r, c)
     local v = logic.paintedAtCell(zone, r, c)
     local ix = zone._index
-    local alts = ix.stacked and ix.stacked[r * zone.cols + c]
-    if alts == nil then
-        return v
-    end
-    local on = ix.on
-    -- in a building's floors (zone.buildingLevels): where a level the player is on is painted
-    -- itself, it holds over the others there (the Brill tavern's cellar lies under its stairs:
-    -- with both on, the stairs said "cellar" all the way up)
-    if on and ix.buildingLevel and v ~= 0 then
-        local here, place = ix.pieces[r * zone.cols + c], logic.placeOf(v)
-        for piece in pairs(on) do
-            local own = ix.piecePlaces and ix.piecePlaces[piece]
-            if ix.buildingLevel[piece] and own and own[place] and here and here[piece] then
-                return v
-            end
+    local floor = ix.floor or 0
+    if floor ~= 0 then
+        local here = ix.floorCells[r * zone.cols + c]
+        local own = here and here[floor]
+        if own then
+            return own
         end
     end
-    if on then
-        for _, a in ipairs(alts) do
-            if on[a.piece] then
-                return a.on
-            end
-        end
-    end
-    return alts[1].off
+    return v
 end
 
--- The set of high pieces the player is on (edges.lua updateHigh), shared with every lookup.
-function logic.setOn(zone, on)
-    zone._index.on = on
+-- The value of a floor piece at a grid cell (0 for none there): the ground's is the painted one.
+function logic.valueOfFloor(zone, r, c, floor)
+    if floor == 0 then
+        return logic.paintedAtCell(zone, r, c)
+    end
+    local here = zone._index.floorCells[r * zone.cols + c]
+    return here and here[floor] or 0
 end
 
 -- Forgets the squares found so far: their flood depends on the level the player is on.
@@ -667,70 +654,35 @@ function logic.unpack(zone, locale)
     for _, struct in ipairs(zone.waterStructs or {}) do
         ix.waterStructs[struct] = true
     end
-    -- high floor pieces: their footprints (a set of pieces per cell), where they are stepped onto
-    -- and which join
-    ix.pieces = {}
-    eachCellTriple(zone, zone.pieceCells, function(key, piece)
-        ix.pieces[key] = ix.pieces[key] or {}
-        ix.pieces[key][piece] = true
+    -- the floor pieces (one rule for every floor over or under another): per cell the pieces
+    -- present besides the ground with their values (floorCells: row, col, piece, value), the
+    -- cells where the ground has no floor (noGround), and the joins (a, b, x, y, angle: where
+    -- piece a meets piece b, the direction from a into b; a 0 the ground, -1 a building's door;
+    -- angle -1 none, -2 no point): per cell the joins with a point, per piece the pieces it joins
+    ix.floorCells = {}
+    eachRecord(zone.floorCells, 4, function(r, c, piece, value)
+        local key = r * zone.cols + c
+        ix.floorCells[key] = ix.floorCells[key] or {}
+        ix.floorCells[key][piece] = value
     end)
-    -- where a piece joins a building one comes out of (piece, 2, x, y); from the ground: linkPoints
-    ix.access = {}
-    eachRecord(zone.access, 4, function(piece, kind, x, y)
-        local r, c = logic.cellOf(zone, x, y)
-        addToBucket(ix.access, r * zone.cols + c, { piece = piece, kind = kind, x = x, y = y })
+    ix.noGround = {}
+    eachRecord(zone.noGround, 2, function(r, c)
+        ix.noGround[r * zone.cols + c] = true
     end)
-    -- cells where a raised piece lies over other floor: per cell the pieces with the value up on
-    -- them and the value below (valueAtCell); per piece the place ids of the floor on it
-    ix.stacked = {}
-    eachRecord(zone.stacked, 5, function(r, c, piece, on, off)
-        addToBucket(ix.stacked, r * zone.cols + c, { piece = piece, on = on, off = off })
-    end)
-    ix.piecePlaces = {}
-    eachRecord(zone.piecePlaces, 2, function(piece, place)
-        ix.piecePlaces[piece] = ix.piecePlaces[piece] or {}
-        ix.piecePlaces[piece][place] = true
-    end)
-    -- cells only a level's floor has (the indoor layers): standing there the player is on it
-    ix.pieceOwn = {}
-    eachCellTriple(zone, zone.pieceOwn, function(key, piece)
-        ix.pieceOwn[key] = ix.pieceOwn[key] or {}
-        table.insert(ix.pieceOwn[key], piece)
-    end)
-    ix.links = {}
-    eachRecord(zone.links, 2, function(a, b)
-        addToBucket(ix.links, a, b)
-        addToBucket(ix.links, b, a)
-    end)
-    -- neighbouring cells where two places do not meet (an indoor layer's noTouch: row, col, row,
-    -- col, place, place; decided with the heights for every level the cells show)
-    ix.noTouch = nil
-    if zone.noTouch and #zone.noTouch > 0 then
-        ix.noTouch = {}
-        local n = zone.rows * zone.cols
-        eachRecord(zone.noTouch, 6, function(r1, c1, r2, c2, pa, pb)
-            local a, b = r1 * zone.cols + c1, r2 * zone.cols + c2
-            for _, k in ipairs({ a * n + b, b * n + a }) do
-                ix.noTouch[k] = ix.noTouch[k] or {}
-                ix.noTouch[k][pa .. ":" .. pb] = true
-                ix.noTouch[k][pb .. ":" .. pa] = true
-            end
-        end)
-    end
-    -- where a piece is joined (linkPoints: a, b, x, y): from level 0, the ground outdoors or a
-    -- hall's or a building's main floor (groundAt: one rule for all, user 2026-10-04), or where two
-    -- levels of a building meet (linkAt; without such points pieces join next to their footprints)
-    ix.groundAt, ix.linkAt = {}, nil
-    eachRecord(zone.linkPoints, 4, function(a, b, x, y)
-        local r, c = logic.cellOf(zone, x, y)
-        if a == 0 or b == 0 then
-            addToBucket(ix.groundAt, r * zone.cols + c, { piece = a + b, x = x, y = y })
-        else
-            ix.linkAt = ix.linkAt or {}
-            addToBucket(ix.linkAt, r * zone.cols + c, { a = a, b = b, x = x, y = y })
+    ix.joinAt, ix.joined = {}, {}
+    eachRecord(zone.joins, 5, function(a, b, x, y, angle)
+        if angle ~= -2 then
+            local r, c = logic.cellOf(zone, x, y)
+            addToBucket(ix.joinAt, r * zone.cols + c, { a = a, b = b, x = x, y = y, angle = angle >= 0 and angle or nil })
+        end
+        if a >= 0 then
+            ix.joined[a] = ix.joined[a] or {}
+            ix.joined[a][b] = true
+            ix.joined[b] = ix.joined[b] or {}
+            ix.joined[b][a] = true
         end
     end)
-
+    ix.floor = 0
     -- drop edges with a box each, so the edge search skips the far ones (cities have hundreds)
     ix.edges = {}
     for i, e in ipairs(zone.edges or {}) do
@@ -747,7 +699,7 @@ function logic.unpack(zone, locale)
             drops = e.d, -- the depth per point (a ramp's side edge: 2 yd at the foot, 9 at the top), or nil
             -- in a hall (the indoor layers): the other level its floor belongs to (0 = the main
             -- floor) and the level its drop falls onto (walking over it puts the player there)
-            level = e.l or 0, under = e.u,
+            floor = e.l, under = e.u,
             box = { x0, x1, y0, y1 },
         }
     end
@@ -759,17 +711,16 @@ function logic.unpack(zone, locale)
     -- x, y, the climb's cell value, and (climbFeetFields 4) the line's bearing up the climb in
     -- degrees (0 north, clockwise): the way through at the foot, finer than the compass word
     ix.climbFeet = {}
-    -- (climbFeetFields 5, a building's staircases) the level of the floor at the foot: guided to only
-    -- from that floor (0: the main floor)
+    -- (climbFeetFields 5) the floor piece at the foot (0 the ground): guided to only from that floor
     local feetStride = zone.climbFeetFields or 3
-    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing, level)
+    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing, floor)
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
                 return
             end
         end
         ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil,
-            level = feetStride >= 5 and level or nil }
+            floor = feetStride >= 5 and floor or 0 }
     end)
 
     ix.exits = {}
@@ -777,11 +728,11 @@ function logic.unpack(zone, locale)
         -- out: the angle one climbs out toward, -1 unknown
         ix.exits[#ix.exits + 1] = { x = x, y = y, width = width, out = out >= 0 and out or nil, i = #ix.exits + 1 }
     end)
-    -- per way out the hall's lower level it leads out of (zone.exitLevels: a pool's; 0 or none:
-    -- any, the moat's and the canals')
-    for i, lv in ipairs(zone.exitLevels or {}) do
+    -- per way out the floor piece it leads out of (zone.exitFloors: the moat's, a pool's; 0 or
+    -- none: the ground, the canals')
+    for i, fl in ipairs(zone.exitFloors or {}) do
         if ix.exits[i] then
-            ix.exits[i].level = lv
+            ix.exits[i].floor = fl
         end
     end
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
@@ -901,12 +852,10 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
-        structCells = src.structCells, edges = src.edges, exits = src.exits, exitLevels = src.exitLevels, interiors = zone.interiors, rooms = zone.rooms,
-        -- its halls' other levels (a gallery, the moat under the walkways), as the city's raised
-        -- pieces: one rule for every floor over or under another
-        pieceCells = src.pieceCells, access = src.access, links = src.links, stacked = src.stacked,
-        piecePlaces = src.piecePlaces, pieceOwn = src.pieceOwn, linkPoints = src.linkPoints, noTouch = src.noTouch,
-        buildingLevels = src.buildingLevels,
+        structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, interiors = zone.interiors, rooms = zone.rooms,
+        -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
+        -- zone's: one rule for every floor over or under another
+        floorCells = src.floorCells, noGround = src.noGround, joins = src.joins,
         -- the feet of a building's staircases, guided to as the city's climbs' feet
         climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
@@ -919,14 +868,8 @@ function logic.unpackLayer(zone, src, suffix)
         covered[id] = true
     end
     layer._index.covered = covered
-    -- the levels that are a building's rooms (the rules for a building's floors hold only there)
-    local building = {}
-    for _, id in ipairs(src.buildingLevels or {}) do
-        building[id] = true
-    end
-    layer._index.buildingLevel = next(building) and building or nil
-    -- the levels the player is on in it (edges.lua updateHigh), its own set
-    logic.setOn(layer, {})
+    -- the floor piece the player is on in it (edges.lua updateFloor), its own
+    logic.setFloor(layer, 0)
     return layer
 end
 

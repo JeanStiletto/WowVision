@@ -61,7 +61,7 @@ Each zone file calls `addon.addZone{...}` with:
 - `key`, `label`, `map`: the map id `UnitPosition` returns.
 - `top`, `left`, `cell`, `rows`, `cols`: the grid. Row 0 lies at world x = `top` (north),
   column 0 at world y = `left` (west); cells are `cell` yards wide.
-- `format`: 2. Directions are angles in degrees clockwise from north (an axis, both ways of a
+- `format`: 3. Directions are angles in degrees clockwise from north (an axis, both ways of a
   street, 0..179); the module turns them into the player's words: the 8 compass words, or with
   the compass module's Directions setting the 12 hours of a north-up clock (`logic.clock`,
   `logic.dirWord`, `logic.axisWords`, `logic.finishText` for the "o'clock"). Data of another
@@ -93,43 +93,46 @@ Each zone file calls `addon.addZone{...}` with:
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
   triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
 - `edges`: per drop edge `{structure, facing (the angle of the drop), drop yards, into
-  (0 a plain drop, 1 water, 2 a city canal, 3 lava, 4 a moat), piece, x1, y1, x2, y2, ...}`:
-  points about 2 yards apart along the edge; `d = {...}` (optional) the depth per point (a
-  ramp's side edge: 2 yd at the foot, 9 at the top).
-- High floor pieces (wall-walks, bridge decks one can walk under, a city's raised floors): an
-  edge with piece 0 lies low; otherwise it warns only after the player was seen stepping onto
-  that piece. `pieceCells`: row, column, piece triples (footprints); `linkPoints`: a, b, x, y,
-  where two levels join; level 0 is the ground (outdoors, a hall's or a building's main floor),
-  one rule for all of them: a piece is stepped onto from level 0 at its join points, unless the
-  player is up on a piece lying over the ground there (`stacked`); `access`: piece, 2, x, y,
-  where a piece joins a building one comes out of (files before 2026-10-05 had the joins from
-  the ground here as kind 1: the module needs a newer export); `links`: pairs of joined pieces (they join next to their footprints where no
-  join points between them are given). `piecePlaces` (optional): piece, place id pairs, the
-  places of the floor up on the piece: a step from the ground counts only from a cell painted
-  with one of them.
-- `stacked` (optional): row, column, piece, value up, value below: cells where a high piece
-  lies over other floor (decided offline with the heights: the landing of a ramp over the bay
-  beside it). The grid holds one value per cell; `logic.valueAtCell` returns the value up
-  while the module counts the player on that piece (`logic.setOn`), else the value below, so
-  every lookup (places, squares, guidance) follows the level the player is on.
+  (0 a plain drop, 1 water, 2 a city canal, 3 lava, 4 a moat), room (indoor layers: the room
+  the edge's floor belongs to, 0 any; 0 outdoors), x1, y1, x2, y2, ...}`: points about 2 yards
+  apart along the edge; named fields after them (optional): `d = {...}` the depth per point (a
+  ramp's side edge: 2 yd at the foot, 9 at the top), `l = piece` the floor piece the edge's
+  floor is on (left out for the ground), `u = piece` the piece its drop lands on (0 the
+  ground). An edge warns only while the player is on its floor piece.
+- Floor pieces (one rule for every floor over or under another, 2026-10-05; `floors.py` in the
+  exporter): the player is always on exactly one piece, 0 being the ground. A piece is connected
+  walkable floor cut where a climb begins (every flight of stairs or ramp is a piece) and where a
+  floor lies over itself; flat floor that lies over or under no other floor is the ground.
+  `floorCells`: row, column, piece, value: the pieces present in a cell besides the ground, each
+  with its place value there (the grid holds the ground's); `noGround`: row, column pairs, the
+  cells where the ground has no floor; `joins`: a, b, x, y, angle: where piece a meets piece b
+  (a 0 the ground, -1 a building's door) with the direction from a into b in degrees (-1 none:
+  such a join only leads from a into b; -2 no point: the two are joined somewhere). The module
+  (`logic.updateFloor`) changes the floor only at a join crossed in its direction, at a drop edge
+  of the floor crossed (onto `u`), or when the floor is no longer under the player: then the
+  piece here that the floor joins or drops onto, else the only piece here where the ground is
+  absent, else the ground. `logic.valueAtCell` returns the floor piece's value where the cell
+  lists it, else the grid's, so every lookup (places, squares, lanes, guidance) follows the
+  floor the player is on; a square's neighbours are the cells its floor goes on into and the
+  pieces it joins there (`logic.mouthValue`).
 - `lanes`: centre line stretches, `laneFields` values each (10 now; 7 and 8 in older files):
   x1, y1, x2, y2, the cell value there, the distances from the line in 0.1 yards within which
   the way starts to count (enter) and beyond which it stops (leave) left of the stretch's
   direction, the same two right of it (a wall on one side no longer narrows the other), and the
-  high piece the stretch runs on (0 = none): such a stretch counts only up on its piece, and
-  over a stacked cell the lower floor's stretches do not count while the player is up. 8-field
-  files have one width pair and the piece; 7-field files the width pair alone.
+  floor piece the stretch runs on where that floor lies over or under other floor (0 = the
+  ground; -1 = not stacked: the stretch counts on every floor, the position alone finds it):
+  a stacked stretch counts only on its piece. 8-field files have one width pair and the piece;
+  7-field files the width pair alone.
 - `climbFeet`: the feet of ramps and stairs joined to the way below, `climbFeetFields` values
-  each (4; 3 in older files): x, y, the climb's cell value, and the bearing up the climb in
-  degrees. Guidance targets on the way, like entrances; two feet of one climb closer than
-  `logic.FEET_APART` are one target. An indoor layer of a mapped building has its staircases'
-  feet with 5 fields: the fifth the level of the floor at the foot (0 = the main floor), guided
-  to only from that floor.
-- Indoor layer of mapped buildings (split.ROOM_LEVEL_BUILDINGS): `buildingLevels` (the levels
-  that are a building's rooms; the building rules, such as a painted level holding over the
-  levels stacked under it, apply only to them), `linkPoints` with level 0 at a staircase's end
-  (its points within `LEVEL_END_Z` of its lowest or highest point), and drop edges from the
-  building's own walk graph (`deadends.dry_edges` with `head`).
+  each (5; 3 and 4 in older files): x, y, the climb's cell value, the bearing up the climb in
+  degrees, and the floor piece at the foot (0 the ground): guided to only from that floor.
+  Guidance targets on the way, like entrances; two feet of one climb closer than
+  `logic.FEET_APART` are one target.
+- Indoor layer of mapped buildings (split.room_levels: every built house with stairs or a
+  sloped floor): its rooms are pieces on a fine grid, its floors floor pieces on the building's
+  own walk graph, with drop edges from it (`deadends.dry_edges` with `head`) and its staircases'
+  feet in `climbFeet`; `exitFloors` (optional, indoor layers): per way out the floor piece it
+  leads out of (a moat's, a pool's).
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
