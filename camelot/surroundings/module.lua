@@ -202,6 +202,10 @@ end
 -- offline after a /reload or logout (the walklog tools of wv-surroundings). Off until switched
 -- on, then on until switched off.
 local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 4
+-- Falls: WoW's gravity in yards per second squared, for the drop a fall's length would mean if
+-- it was a plain drop (a jump of 0.8 s is no drop); falls shorter than FALL_LOG (one stair step
+-- down, 0.19 s) are not logged
+local GRAVITY, FALL_LOG, JUMP_GRACE = 19.29, 0.2, 0.8
 local trailX, trailY = nil, nil
 local sessionLogged = false
 
@@ -247,9 +251,32 @@ local function roomCandidateNames(z, x, y)
     return table.concat(names, "; ")
 end
 
--- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", ...),
--- text}, where the player was (the data's cell and its text, the room candidates indoors, the high
--- pieces the player was on) and the facing in degrees (0 = north, counter-clockwise).
+-- The game's third position value (UnitPosition) as text: a number, nil, or a secret value. It is
+-- taken to be no height on Forever, but no log ever held it (the 2026-10-05 review), so the probe
+-- and the log carry it.
+local function heightText(gz)
+    if gz == nil then
+        return "nil"
+    elseif issecretvalue ~= nil and issecretvalue(gz) then
+        return "secret"
+    elseif type(gz) == "number" then
+        return string.format("%.2f", gz)
+    end
+    return type(gz) .. " " .. tostring(gz)
+end
+
+-- The same as a plain number, or nil.
+local function heightNumber(gz)
+    if type(gz) == "number" and not (issecretvalue ~= nil and issecretvalue(gz)) then
+        return gz
+    end
+    return nil
+end
+
+-- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", "fall",
+-- ...), text}, where the player was (the data's cell and its text, the room candidates indoors,
+-- the high pieces the player was on), the facing in degrees (0 = north, counter-clockwise) and
+-- the game's third position value (z: a number, else zraw with what it is).
 local function logEntry(kind, text, x, y, extra)
     local log = activeLog()
     if log == nil then
@@ -276,6 +303,13 @@ local function logEntry(kind, text, x, y, extra)
     end
     e.swimming = IsSwimming() or nil
     e.facing = facingDegrees()
+    local _gx, _gy, gz = UnitPosition("player")
+    local h = heightNumber(gz)
+    if h then
+        e.z = round1(h)
+    elseif gz ~= nil then
+        e.zraw = heightText(gz)
+    end
     local on = {}
     for piece in pairs(high) do
         on[#on + 1] = piece
@@ -292,7 +326,8 @@ local function logEntry(kind, text, x, y, extra)
 end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
--- outdoors), s (swimming), g (ghost) and f with the facing in degrees, as one token ("isf270").
+-- outdoors), s (swimming), g (ghost), f with the facing in degrees and z with the game's third
+-- position value when it is a number, as one token ("isf270z12.5").
 local function logTrail(x, y)
     if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
@@ -303,9 +338,12 @@ local function logTrail(x, y)
     end
     trailX, trailY = x, y
     local facing = facingDegrees()
+    local _gx, _gy, gz = UnitPosition("player")
+    local h = heightNumber(gz)
     local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
         .. (UnitIsGhost("player") and "g" or "")
         .. (facing and ("f" .. facing) or "")
+        .. (h and string.format("z%.1f", h) or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
@@ -1081,8 +1119,43 @@ local function updateOutdoors(z, x, y, px, py)
     end
 end
 
+-- Falls (IsFalling, as core's fall detector uses it), logged when they end with their length,
+-- the drop that length would mean and whether a jump press began them, so a walk shows what
+-- falls, jumps and stairs look like from the game's side (the 2026-10-05 review: a fall is the
+-- one height change the game reports).
+local fallStart, lastJump = nil, -math.huge
+if hooksecurefunc ~= nil then
+    hooksecurefunc("JumpOrAscendStart", function()
+        lastJump = GetTime()
+    end)
+end
+
+local function trackFall(now)
+    if IsFalling == nil then
+        return
+    end
+    if IsFalling() then
+        fallStart = fallStart or now
+        return
+    end
+    if fallStart == nil then
+        return
+    end
+    local start = fallStart
+    fallStart = nil
+    local length = now - start
+    if length < FALL_LOG then
+        return
+    end
+    local jumped = start - lastJump >= -0.1 and start - lastJump <= JUMP_GRACE
+    local x, y = UnitPosition("player")
+    logEntry("fall", string.format("fall %.1f s, %d yards if a drop%s", length,
+        math.floor(0.5 * GRAVITY * length * length + 0.5), jumped and ", after a jump press" or ""), x, y)
+end
+
 module:hasUpdate(function(self)
     local now = GetTime()
+    trackFall(now)
     if now - lastCheck < CHECK_INTERVAL then
         return
     end
@@ -1168,7 +1241,7 @@ module:registerCommand({
             module:describeAround()
             return
         end
-        local x, y, _z, map = UnitPosition("player")
+        local x, y, gz, map = UnitPosition("player")
         local parts = {}
         if #zones() == 0 then
             parts[#parts + 1] = "No surroundings data loaded; is the WowVision_Surroundings addon installed and enabled? "
@@ -1178,6 +1251,8 @@ module:registerCommand({
         else
             local z = findZone(x, y, map)
             parts[#parts + 1] = string.format("Position %.1f %.1f, map %s", x, y, tostring(map))
+            parts[#parts + 1] = string.format("Height %s, falling %s", heightText(gz),
+                IsFalling ~= nil and (IsFalling() and "yes" or "no") or "unknown")
             if z == nil then
                 parts[#parts + 1] = "Outside the surroundings data"
             else
