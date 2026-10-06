@@ -1409,6 +1409,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.pieceWithLabel(z, 90, 50, nil, 5), nil)
     end,
 
+    ["up on a piece a cell without its value reads it from the cells around, else from a joined piece"] = function(t)
+        local z = newWalkZone()
+        -- piece 1 (the square's landing) lists only (2, 2); piece 2 (a canal walk piece joined
+        -- to it) lists (2, 4)
+        z.floorCells = { 2, 2, 1, 10000, 2, 4, 2, 21000 }
+        z.joins = { 1, 2, 90, 44, -1 }
+        logic.unpack(z)
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.valueAt(z, 90, 50), 10000)
+        -- the cell beside it has no value of piece 1: the piece's value next door, not the paint
+        t:assertEqual(logic.valueAt(z, 90, 46), 10000)
+        -- two cells on, only the joined piece is there: its value
+        t:assertEqual(logic.valueAt(z, 90, 42), 21000)
+        -- off every piece's cells and their neighbours the paint stands
+        t:assertEqual(logic.valueAt(z, 78, 34), 0)
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.valueAt(z, 90, 46), 21000)
+    end,
+
     ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
         local z = newWalkZone()
         -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
@@ -1542,6 +1561,29 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopText(z, 2, 95, 9), "wait for the lift down, lift to the east")
         -- no stop off its cells
         t:assertEqual(logic.stopAt(z, 75, 35, nil), nil)
+    end,
+
+    ["a stop on a floor piece is found only up on it: the zeppelin tower's top, not its foot"] = function(t)
+        local z = newZone()
+        -- a zeppelin stop whose waiting floor lies on pieces 2 and 3 (the tower's platform over
+        -- the cells of row 1, cut in two by its stairs); the ship's stop on the ground (no list:
+        -- data from before the field)
+        z.stops = {
+            { "zeppelin", "Orgrimmar", 0, { 1, 1, 1, 2 }, { 75, 40, 75, 20 }, { 2, 3 } },
+            { "ship", "Test Harbor", 0, { 1, 4 }, { 75, 10, 75, 0 } },
+        }
+        logic.unpack(z)
+        -- on the ground under the platform: nothing
+        t:assertEqual(logic.stopAt(z, 85, 35, nil), nil)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.stopAt(z, 85, 35, nil), 1)
+        t:assertEqual(logic.stopText(z, 1, 85, 35), "wait for the zeppelin to Orgrimmar, zeppelin to the south")
+        logic.setFloor(z, 3)
+        t:assertEqual(logic.stopAt(z, 85, 35, nil), 1)
+        -- up on the platform the ground's stop is not here
+        t:assertEqual(logic.stopAt(z, 85, 15, nil), nil)
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.stopAt(z, 85, 15, nil), 2)
     end,
 
     ["a stop's destination comes in the client's language"] = function(t)
