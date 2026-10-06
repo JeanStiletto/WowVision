@@ -164,6 +164,52 @@ function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
 end
 
+-- The label of the place a floor piece carries at (x, y) (nil for the ground, or a piece without
+-- a place there): what names the piece across exports, which number the pieces anew.
+function logic.pieceLabel(zone, x, y, floor)
+    if not floor or floor == 0 then
+        return nil
+    end
+    local r, c = logic.cellOf(zone, x, y)
+    local v = logic.valueOfFloor(zone, r, c, floor)
+    local place = v ~= 0 and logic.place(zone, logic.placeOf(v)) or nil
+    return place and place.label or nil
+end
+
+-- The floor piece at (x, y) (the cell or one of the 8 around it) carrying the place `label`,
+-- the piece `number` when it carries it, else the lowest numbered one; without a label the
+-- number itself when that piece lies there; nil when no piece there fits (a reload memory
+-- from before a re-export: the number means another piece now).
+function logic.pieceWithLabel(zone, x, y, label, number)
+    local ix = zone._index
+    local cols = zone.cols
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local found = nil
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            local here = ix.floorCells[(r0 + dr) * cols + c0 + dc]
+            for p, v in pairs(here or {}) do
+                if label == nil then
+                    if p == number then
+                        return p
+                    end
+                else
+                    local place = v ~= 0 and logic.place(zone, logic.placeOf(v)) or nil
+                    if place and place.label == label then
+                        if p == number then
+                            return p
+                        end
+                        if found == nil or p < found then
+                            found = p
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
 function logic.edge(zone, i)
     return zone._index.edges[i]
 end

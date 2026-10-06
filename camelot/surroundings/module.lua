@@ -922,8 +922,12 @@ local function keepHere(z, x, y)
     end
     hereKept = sig
     local r = room and z._index.rooms[room]
+    -- the floor piece by the place it carries at the spot, not by its number alone: every export
+    -- numbers the pieces anew, and the number of the tavern's upper floor became another
+    -- building's piece after the floor-pieces export, so a login upstairs landed on the ground
+    -- (walk 2026-10-05)
     WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name,
-        layer = layer and layer.key, floor = floor }
+        layer = layer and layer.key, floor = floor, floorLabel = layer and logic.pieceLabel(layer, x, y, floor) or nil }
 end
 
 local function restoreHere(z, x, y)
@@ -938,8 +942,14 @@ local function restoreHere(z, x, y)
     end
     local layer = logic.layer(z, IsIndoors())
     if layer and layer.key == h.layer and type(h.floor) == "number" then
-        logic.setFloor(layer, h.floor)
-        logic.forgetRegions(layer)
+        local floor = h.floor
+        if floor ~= 0 then
+            floor = logic.pieceWithLabel(layer, x, y, h.floorLabel, floor)
+        end
+        if floor ~= nil then
+            logic.setFloor(layer, floor)
+            logic.forgetRegions(layer)
+        end
     end
 end
 
