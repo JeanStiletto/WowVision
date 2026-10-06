@@ -21,6 +21,7 @@ logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
 -- degrees between a climb's rise and the step from the square onto it: within this it goes up from
 -- the square, beyond 180 less this down; between, it runs along the square's side (no word)
 logic.RISE_ALONG = 60
+logic.DOOR_NEAR = 3 -- cells; a doorway this close to a border cell of a room's opening is the opening
 
 -- Does a cell value belong to a place that says what lies around it? Only squares and halls: a
 -- street without a direction (a piece without centre line) is a way like a road without one (one
@@ -174,6 +175,51 @@ local function findMouths(zone, cells, list, floors, own)
     return mouths
 end
 
+-- In a building layer a room's opening into another room is its doorway, not the border the grid
+-- shows: the grid cuts no walls between rooms, so the Brill tavern kitchen's opening ran along the
+-- common room's whole north wall and "kitchen at 12" pointed at the wall 5 yd beside the door,
+-- and the porch beyond the entrance room was a neighbour through a wall (user's walk 2026-10-06
+-- 04:16). The opening keeps its border cells (the way on is followed from them) and takes the
+-- doorways within DOOR_NEAR of them as its points; two rooms of one building with no doorway
+-- between them are no neighbours. A climb's opening stays the grid's (its foot is guided to as a
+-- climb), and so does a place that is no room (a hall cut into pieces).
+local function doorMouths(zone, region)
+    local out = {}
+    for _, m in ipairs(region.mouths) do
+        local keep = true
+        if m.class == "way" and m.cells and not logic.CLIMBS[logic.kindOf(zone, m.value)] then
+            local doors, rooms = logic.doorsBetween(zone, region.label, m.label)
+            if rooms then
+                local points, reach = {}, (logic.DOOR_NEAR * zone.cell) ^ 2
+                for _, door in ipairs(doors) do
+                    local dx, dy = logic.doorWorld(zone, door)
+                    local near = false
+                    for _, cell in ipairs(m.cells) do
+                        local cx, cy = logic.cellCentre(zone, cell[1], cell[2])
+                        if dx and logic.dist2(dx, dy, cx, cy) <= reach then
+                            near = true
+                            break
+                        end
+                    end
+                    if near then
+                        points[#points + 1] = dx
+                        points[#points + 1] = dy
+                    end
+                end
+                if #points == 0 then
+                    keep = false
+                else
+                    m.points = points
+                end
+            end
+        end
+        if keep then
+            out[#out + 1] = m
+        end
+    end
+    return out
+end
+
 -- The region of the around-place at a position: {value, label, cells (set of keys), mouths}, where
 -- the building entrances on the square or at its edge are mouths too (class "entrance", labelled
 -- with the building); nil where the place is no around-place. Cached per cell.
@@ -282,6 +328,9 @@ function logic.regionAt(zone, x, y)
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
         mouths = findMouths(zone, cells, list, floors, logic.placeOf(value)),
     }
+    if ix.covered then
+        region.mouths = doorMouths(zone, region)
+    end
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
         if logic.nearCell(zone, cells, er, ec, true) then
@@ -630,14 +679,16 @@ end
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
 -- opts (all optional): max (items), cameFrom (the label that goes first when there are more),
 -- dirs (directions per item at most), classes (a set: only these classes), leading (with zone:
--- only ways that lead on, see leadsOn; squares always).
+-- only ways that lead on, see leadsOn; squares always, and climbs: a ramp or stairs leads to
+-- another floor, which is somewhere, though no way begins there (the Brill tavern's stairs fell
+-- off the common room's entry line because the landing above is no way; user 2026-10-06)).
 function logic.aroundItems(region, x, y, opts)
     opts = opts or {}
     local found = {}
     for _, m in ipairs(region.mouths) do
         if (opts.classes == nil or opts.classes[m.class])
             and not (opts.leading and m.class == "way" and not isSquareMouth(opts.zone, m)
-                and not logic.leadsOn(opts.zone, m, region)) then
+                and not logic.CLIMBS[mouthKind(opts.zone, m)] and not logic.leadsOn(opts.zone, m, region)) then
             found[#found + 1] = mouthFound(m, x, y)
         end
     end

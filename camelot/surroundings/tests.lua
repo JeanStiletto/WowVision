@@ -683,6 +683,53 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(items[1].mouths[1].rise)
     end,
 
+    ["stairs beside a square are on its entry line: they lead to another floor"] = function(t)
+        local z = newSquareZone()
+        z.dirs[9] = "up to the %s"
+        table.insert(z.places, { "stairs", "stairs" })
+        z.grid[1] = "30000*2,69000*2,30000*3"
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
+        t:assertEqual(#exits, 1)
+        t:assertEqual(exits[1].label, "stairs")
+        -- no way begins there: the climb's foot is guided to as a climb
+        t:assertEqual(#logic.wayBeginnings(z, region), 0)
+    end,
+
+    ["in a building layer a room's opening into another room is its doorway"] = function(t)
+        -- a house (not a city's complex): the great hall (named as its room is) with the shop west
+        -- of it (y 40 to 50) and a porch east of it (y 0 to 10) on the layer's grid; a door to the
+        -- shop at x 90, y 40, none to the porch: a wall between them, whatever the grid shows
+        local z = newHallZone()
+        z.interiors[1].c = nil
+        z.places[7] = { "hall", "great hall" }
+        table.insert(z.places, { "hall", "shop" }) -- place 9
+        table.insert(z.places, { "hall", "porch" }) -- place 10
+        table.insert(z.rooms, { 1, "porch", "room", { 80, 0, 100, 10 }, f = 100 }) -- room 5
+        z.indoor.rooms = { 1, 2, 5 }
+        z.indoor.grid = { "0,90000,70000*3,100000", "0,90000,70000*3,100000", "0*6" }
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        local region = logic.regionAt(layer, 90, 25)
+        t:assertEqual(region.label, "great hall")
+        local byLabel = {}
+        for _, m in ipairs(region.mouths) do
+            byLabel[m.label] = m
+        end
+        t:assertNil(byLabel["porch"])
+        local shop = byLabel["shop"]
+        t:assertEqual(shop ~= nil, true)
+        t:assertEqual(#shop.points, 2)
+        t:assertEqual(shop.points[1], 90)
+        t:assertEqual(shop.points[2], 40)
+        -- its distance and direction are the doorway's, not the border's middle (90, 45)
+        local d = logic.mouthDistance(shop, 82, 12)
+        t:assertEqual(math.floor(d + 0.5), 29)
+        -- the way outside is still there, by its door
+        t:assertEqual(byLabel["way outside"] ~= nil, true)
+    end,
+
     ["a street to another piece of the same square leads on"] = function(t)
         -- the lane through Stormwind's gate: forecourt and district are both "square of Trade
         -- District" (one place), joined only by the street; the street is an exit of the forecourt

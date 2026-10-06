@@ -114,7 +114,10 @@ Each zone file calls `addon.addZone{...}` with:
   absent, else the ground. `logic.valueAtCell` returns the floor piece's value where the cell
   lists it, else the grid's, so every lookup (places, squares, lanes, guidance) follows the
   floor the player is on; a square's neighbours are the cells its floor goes on into and the
-  pieces it joins there (`logic.mouthValue`).
+  pieces it joins there (`logic.mouthValue`). In a house's layer a room's opening into another room is its
+  doorway (the portal record, `logic.doorsBetween`): the grid cuts no walls between rooms, so
+  two rooms with no doorway between them are no neighbours; a city's halls keep the grid's
+  openings (no doorway records between them).
 - `lanes`: centre line stretches, `laneFields` values each (10 now; 7 and 8 in older files):
   x1, y1, x2, y2, the cell value there, the distances from the line in 0.1 yards within which
   the way starts to count (enter) and beyond which it stops (leave) left of the stretch's

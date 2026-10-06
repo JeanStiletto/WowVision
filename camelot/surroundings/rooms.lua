@@ -397,6 +397,40 @@ end
 
 logic.BIG_ROOM = 800 -- sq yd; in a room this big its doorways are said from where the player stands
 
+-- The doorways between a room called `nameA` and one called `nameB` in one house (the rooms'
+-- bare names, which the indoor layer's places of them are labelled with): the doors, and whether
+-- the two names are rooms of one house at all (then no door between them means a wall). Two
+-- pieces of one thing (one name) are no two rooms; a city's own complex (Ironforge, the Undercity)
+-- is none either: its halls meet without doorway records (the Hall of Explorers and the Forlorn
+-- Cavern), so the grid says what lies beside them.
+function logic.doorsBetween(zone, nameA, nameB)
+    local ix = zone._index
+    local doors = {}
+    if nameA == nameB then
+        return doors, false
+    end
+    local byInterior, bothRooms = {}, false
+    for _, room in pairs(ix.rooms) do
+        local interior = ix.interiors[room.interior]
+        if (room.name == nameA or room.name == nameB) and interior and not interior.city then
+            local names = byInterior[room.interior] or {}
+            byInterior[room.interior] = names
+            names[room.name] = true
+            bothRooms = bothRooms or (names[nameA] and names[nameB]) or false
+        end
+    end
+    if not bothRooms then
+        return doors, false
+    end
+    for _, door in ipairs(ix.doors) do
+        local a, b = ix.rooms[door.a], ix.rooms[door.b]
+        if a and b and ((a.name == nameA and b.name == nameB) or (a.name == nameB and b.name == nameA)) then
+            doors[#doors + 1] = door
+        end
+    end
+    return doors, true
+end
+
 -- Is the room big (BIG_ROOM)? There its doorways are said and guided to from the player's position.
 function logic.isBigRoom(zone, roomId)
     local room = zone._index.rooms[roomId]
