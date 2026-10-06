@@ -159,10 +159,10 @@ local function newTowerZone()
     local z = newZone()
     z.places = {
         { "open land", "open land" },
-        { "stairs", "stairs to the landing" },
-        { "platform", "landing" },
+        { "stairs", "stairs to the landing", of = "tower" },
+        { "platform", "landing", of = "tower" },
         { "road", "road" },
-        { "stairs", "stairs to the top" },
+        { "stairs", "stairs to the top", of = "tower" },
     }
     z.grid = { "10000*6", "10000*6", "40000*6" }
     z.bridgeUnder, z.exits, z.interiors, z.rooms, z.doors = {}, {}, {}, {}, {}
@@ -172,9 +172,11 @@ local function newTowerZone()
         { 1, 180, 12, 0, 0, 93, 36, 93, 34, l = 1, u = 0 },
         { 1, 180, 12, 0, 0, 93, 52, 93, 50, l = 1, u = 0 },
     }
-    z.floorCells = { 0, 1, 1, 20000, 0, 2, 1, 20000, 0, 2, 2, 30000, 0, 3, 2, 30000 }
+    -- the next flight (piece 3) rises from the middle of the landing, over its cell at column 3
+    z.floorCells = { 0, 1, 1, 20000, 0, 2, 1, 20000, 0, 2, 2, 30000, 0, 3, 2, 30000, 0, 3, 3, 50000 }
     z.noGround = {}
-    z.joins = { 0, 1, 95, 52, 90, 1, 2, 95, 35, 90 }
+    z.joins = { 0, 1, 95, 52, 90, 1, 2, 95, 35, 90, 2, 3, 95, 25, 90 }
+    z.ofTemplate = "%s of %s"
     z.climbFeetFields = 5
     z.climbFeet = { 96, 25, 50000, 90, 2 }
     return z
@@ -242,6 +244,48 @@ testRunner:addSuite("Surroundings", {
         logic.updateFloor(layer, 97, 59.2, false, 98, 59.3)
         logic.updateFloor(layer, 99, 58.8, false, 97, 59.2)
         t:assertEqual(layer._index.floor, 0)
+    end,
+
+    ["a structure's place says the structure's name only where the player is not on it"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        -- from outside (or with the around key): with the structure's name
+        t:assertEqual(logic.describe(z, 30000, false), "landing of tower")
+        t:assertEqual(logic.describe(z, 30000, false, nil, nil, nil), "landing of tower")
+        -- coming from a place of the same structure: without it
+        t:assertEqual(logic.describe(z, 30000, false, nil, nil, "tower"), "landing")
+        -- a place of no structure: as it was
+        t:assertEqual(logic.describe(z, 40000, false, nil, nil, "tower"), "road")
+    end,
+
+    ["a level reached by a ramp at one structure and by stairs at another is one named floor"] = function(t)
+        local z = newTowerZone()
+        z.floors = {
+            { "platform", "platform", "ramp to the platform", "ramp" },
+            { "platform", "platform", "stairs to the platform", "stairs" },
+        }
+        logic.unpack(z)
+        t:assertEqual(logic.floorOf(z, "platform"), 1)
+        local on, bare = logic.floorOf(z, "stairs to the platform")
+        t:assertEqual(on, 1)
+        t:assertEqual(bare, "stairs")
+        -- up there, the stairs up to it are said plainly
+        t:assertEqual(logic.floorLabel(z, "stairs to the platform", 1), "stairs")
+    end,
+
+    ["a stair joined in the middle of a platform is one of its openings"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        local region = logic.regionAt(z, 95, 22)
+        t:assertEqual(region ~= nil, true)
+        local found = false
+        for _, m in ipairs(region.mouths) do
+            if m.label == "stairs to the top" then
+                found = true
+            end
+        end
+        t:assertEqual(found, true)
     end,
 
     ["a structure's platform says what lies around it, as a square"] = function(t)

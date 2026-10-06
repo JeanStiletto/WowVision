@@ -234,8 +234,9 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
     if i == nil then
         return nil
     end
-    -- on a named floor the stairs down are "stairs" (logic.floorOf)
-    local label = logic.floorLabel(zone, b.label, logic.floorOfValue(zone, square.value))
+    -- on a named floor the stairs down are "stairs" (logic.floorOf); a way of a structure the
+    -- player is not on with the structure's name (b.spoken)
+    local label = b.spoken or logic.floorLabel(zone, b.label, logic.floorOfValue(zone, square.value))
     return {
         key = "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), kind = "way", d = d, dir = dir,
         label = b.label,   -- the way's own name (the name said may leave out a floor)
@@ -290,7 +291,7 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         return nil
     end
     local up = logic.riseOf(zone, f.value)
-    local name = logic.describe(zone, f.value, false, true, floor)
+    local name = logic.describe(zone, f.value, false, true, floor, logic.ownerOf(zone, logic.valueAt(zone, x, y)))
     return {
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
@@ -526,7 +527,10 @@ local function spotBody(zone, x, y, value, previous, opts)
     end
     -- a named floor said once: not again coming from a place on it (logic.floorOf)
     local from = opts.cut and logic.floorOf(zone, logic.keyLabel(zone, previous)) or nil
-    local text = logic.describe(zone, value, true, nil, from)
+    -- a structure's name only coming onto it (an announcement from a place of the same structure
+    -- leaves it out; the around key says it)
+    local here = opts.cut and logic.ownerOfPlace(zone, logic.keyPlace(previous)) or nil
+    local text = logic.describe(zone, value, true, nil, from, here)
     if text == nil then
         return nil
     end
@@ -571,7 +575,7 @@ local function spotBody(zone, x, y, value, previous, opts)
         if d then
             -- instead of the place's stored nearest road, which may be another one
             local format = street and T("street to the %s") or T("road to the %s")
-            text = logic.describe(zone, value, true, true) .. ", " .. string.format(format, logic.dirWord(zone, dir))
+            text = logic.describe(zone, value, true, true, from, here) .. ", " .. string.format(format, logic.dirWord(zone, dir))
         end
     end
     local near = not opts.swimming and featuresText(zone, x, y, kind, previous, opts.cut)

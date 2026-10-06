@@ -563,6 +563,7 @@ local function prepareWords(zone, locale)
     zone.compass = t.compass or zone.compass
     zone.spokenAxes = t.axes
     zone.floors = t.floors or zone.floors
+    zone.ofTemplate = t.ofTemplate or zone.ofTemplate
     for i, p in ipairs(t.places or {}) do
         local place = zone.places[i]
         if place then
@@ -570,6 +571,7 @@ local function prepareWords(zone, locale)
             if place[3] then
                 place[3] = p[2] or place[3]
             end
+            place.of = p.of or place.of
         end
     end
     for i, name in ipairs(t.interiors or {}) do
@@ -663,7 +665,7 @@ function logic.unpack(zone, locale)
 
     ix.places = {}
     for id, p in pairs(zone.places) do
-        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false }
+        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of }
     end
 
     -- water under a bridge (or a city canal under the streets), said while swimming
@@ -991,15 +993,26 @@ function logic.floorOf(zone, label)
     if label == nil then
         return nil
     end
-    for i, f in ipairs(zone.floors or {}) do
+    local floors = zone.floors or {}
+    -- one floor may have several entries (reached by stairs and by a ramp: a structure's
+    -- "platform" up a ramp at one tower and up stairs at another): the floor is its first entry
+    local function first(i)
+        for j = 1, i do
+            if floors[j][2] == floors[i][2] then
+                return j
+            end
+        end
+        return i
+    end
+    for i, f in ipairs(floors) do
         if label == f[2] then
-            return i, nil
+            return first(i), nil
         elseif label == f[3] then
-            return i, f[4]
+            return first(i), f[4]
         end
         local tail = ", " .. f[1]
         if #label > #tail and label:sub(-#tail) == tail then
-            return i, label:sub(1, -#tail - 1)
+            return first(i), label:sub(1, -#tail - 1)
         end
     end
     return nil
@@ -1018,6 +1031,16 @@ function logic.floorLabel(zone, label, floor)
     return label
 end
 
+-- The structure a place belongs to (its name, as said), or nil: by place id, by cell value.
+function logic.ownerOfPlace(zone, id)
+    local p = id and zone._index.places[id]
+    return p and p.of or nil
+end
+
+function logic.ownerOf(zone, value)
+    return value and value ~= 0 and logic.ownerOfPlace(zone, logic.placeOf(value)) or nil
+end
+
 -- The floor of the place at a cell value (see floorOf), or nil.
 function logic.floorOfValue(zone, value)
     local p = value and value ~= 0 and zone._index.places[logic.placeOf(value)]
@@ -1028,12 +1051,20 @@ end
 -- nearest road ("Goldshire road to the north"; left out with `noNearRoad`, when the caller says
 -- where the road is itself). `floor` (optional): the named floor the player is on or comes from,
 -- whose name the label leaves out (floorLabel).
-function logic.describe(zone, value, withDirection, noNearRoad, floor)
+function logic.describe(zone, value, withDirection, noNearRoad, floor, here)
     local p = zone._index.places[logic.placeOf(value)]
     if p == nil then
         return nil
     end
     local text = logic.expandDirs(zone, logic.floorLabel(zone, p.label, floor))
+    -- a place of a structure (a tower's platform, its stairs) says the structure's name where the
+    -- player is not on it yet: `here`, the structure of the place the player is on or comes from
+    -- (nil: none, or the name is always said, as Alt-L says a room's building); inside the
+    -- structure its places go without it, as a building's rooms do (user 2026-10-06: "Treppe
+    -- Richtung zweiter Stock" is enough up in the zeppelin tower)
+    if p.of and p.of ~= here then
+        text = string.format(zone.ofTemplate or "%s of %s", text, p.of)
+    end
     local direction = withDirection and logic.directionText(zone, value)
     if direction then
         text = text .. ", " .. direction
