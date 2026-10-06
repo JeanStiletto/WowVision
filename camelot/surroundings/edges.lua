@@ -114,14 +114,18 @@ end
 -- the floor into the piece it meets there (a join from a building's door counts while `cameOut`,
 -- within ROOMS_REACH); (3) when the floor is no longer under the player: then the piece here
 -- that the floor joins or drops onto, else the only piece here where the ground is absent, else
--- the ground. `px, py`: the position at the last look. Returns the floor and whether it changed.
-function logic.updateFloor(zone, x, y, cameOut, px, py)
+-- the ground. `px, py`: the position at the last look; `blocked`: the player pushes against
+-- something (the wall detection's "blocked"): no fall then (pressing against the zeppelin tower's
+-- railing ends just past an edge's rim, and the module dropped the player from the first flight
+-- to the deck on a bump, walk 2026-10-06 11:21; a real fall is no push). Returns the floor and
+-- whether it changed.
+function logic.updateFloor(zone, x, y, cameOut, px, py, blocked)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local key = r * zone.cols + c
     local was = ix.floor or 0
     local floor = was
-    local fell = px and logic.fellOnto(zone, floor, px, py, x, y)
+    local fell = px and not blocked and logic.fellOnto(zone, floor, px, py, x, y)
     -- the crossings pending from the last look (crossed), and this look's
     local pendingBefore, pendingNow = ix.pendingJoins or {}, {}
     if fell then
@@ -180,6 +184,10 @@ function logic.updateFloor(zone, x, y, cameOut, px, py)
     ix.floor = floor
     -- a crossing pending leads off the floor it began on only
     ix.pendingJoins = floor == was and pendingNow or {}
+    -- the floor the player came onto this one from (the guidance on a flight: logic.footTarget)
+    if floor ~= was then
+        ix.cameFrom = was
+    end
     return floor, floor ~= was
 end
 
@@ -187,6 +195,7 @@ end
 function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
     zone._index.pendingJoins = {}
+    zone._index.cameFrom = nil
 end
 
 -- The label of the place a floor piece carries at (x, y) (nil for the ground, or a piece without
@@ -246,7 +255,8 @@ end
 -- rooms the player may be in (`rooms`, the indoor layers: an edge inside warns only in the room
 -- its floor belongs to; nil: every room), and its box within `reach` yards.
 local function edgeCounts(zone, e, i, x, y, reach, rooms, skip)
-    if (skip and skip[i]) or (e.floor ~= nil and e.floor ~= (zone._index.floor or 0))
+    local floor = zone._index.floor or 0
+    if (skip and skip[i]) or (e.floor ~= nil and e.floor ~= floor and not (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor)))
         or (rooms and e.piece ~= 0 and not rooms[e.piece]) then
         return false
     end
@@ -254,10 +264,48 @@ local function edgeCounts(zone, e, i, x, y, reach, rooms, skip)
     return x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach
 end
 
+-- yd from a join of the player's floor with another piece within which that piece's drop edge
+-- points count on the player's floor too: where two pieces meet their rims run on into each other,
+-- and the rim of one is a yard or two (too short for an edge of its own, it went to the other's
+-- record): the zeppelin tower's landing beside the gap at the top of the first flight had none,
+-- the user stood on the landing and walked into the gap unwarned (walk 2026-10-06 11:19)
+logic.JOIN_EDGE_REACH = 3.0
+
+-- Are pieces a and b joined (a floor and another piece)?
+function logic.joinedPieces(zone, a, b)
+    local joined = zone._index.joined[a]
+    return joined ~= nil and joined[b] == true
+end
+
+-- Does the point (qx, qy) of edge `e` count on the floor `floor`: every point of an edge of that
+-- floor (or of no floor), and up on a piece (not the ground: it joins the foot of every stairs, and
+-- their side drops came as drops ahead from the street below, replay 2026-10-06) a point of an
+-- edge of a piece joined to it within JOIN_EDGE_REACH of one of their joins.
+local function pointCounts(zone, e, floor, qx, qy)
+    if e.floor == nil or e.floor == floor then
+        return true
+    elseif floor == 0 then
+        return false
+    end
+    local pts = zone._index.joinPoints[floor]
+    pts = pts and pts[e.floor]
+    if pts == nil then
+        return false
+    end
+    local reach2 = logic.JOIN_EDGE_REACH * logic.JOIN_EDGE_REACH
+    for k = 1, #pts - 1, 2 do
+        if logic.dist2(qx, qy, pts[k], pts[k + 1]) <= reach2 then
+            return true
+        end
+    end
+    return false
+end
+
 -- Does the player stand in front of the edge point (q), on the structure's side, not beyond it?
 local function inFront(qx, qy, x, y, fx, fy)
     return (x - qx) * fx + (y - qy) * fy <= 0.5
 end
+
 
 -- The drop edge to warn about within `reach` yards: one the player stands in front of, on the
 -- structure's floor; the edge index and distance. With `facing`, an edge ahead (within 90 degrees
@@ -265,6 +313,7 @@ end
 -- (indoors), nil outdoors; `skip`: a set of edge indexes left out (warned already).
 function logic.nearestEdge(zone, x, y, reach, rooms, facing, skip)
     local ix = zone._index
+    local floor = ix.floor or 0
     local r, c = logic.cellOf(zone, x, y)
     local vx, vy = nil, nil
     if facing then
@@ -279,6 +328,7 @@ function logic.nearestEdge(zone, x, y, reach, rooms, facing, skip)
                 local qx, qy = p[k], p[k + 1]
                 local d = logic.dist(x, y, qx, qy)
                 if (d <= bestD or d <= aheadD) and inFront(qx, qy, x, y, fx, fy)
+                    and pointCounts(zone, e, floor, qx, qy)
                     and logic.nearCell(zone, ix.struct, r, c, e.struct) then
                     if d <= bestD then
                         best, bestD = i, d
@@ -311,6 +361,7 @@ logic.AHEAD_ANGLE = 0.25 -- cosine: the path turns at most 75 degrees away from 
 -- nearestEdge; `all` (optional): a set that gets every edge in the path.
 function logic.edgeAhead(zone, x, y, vx, vy, look, rooms, skip, all)
     local ix = zone._index
+    local floor = ix.floor or 0
     if look <= 0 then
         return nil
     end
@@ -324,7 +375,8 @@ function logic.edgeAhead(zone, x, y, vx, vy, look, rooms, skip, all)
                 local dx, dy = p[k] - x, p[k + 1] - y
                 local along = dx * vx + dy * vy
                 if along > 0 and along <= (all and look or bestAlong) and math.abs(dx * vy - dy * vx) <= logic.AHEAD_WIDTH
-                    and inFront(p[k], p[k + 1], x, y, fx, fy) and logic.nearCell(zone, ix.struct, r, c, e.struct) then
+                    and inFront(p[k], p[k + 1], x, y, fx, fy) and pointCounts(zone, e, floor, p[k], p[k + 1])
+                    and logic.nearCell(zone, ix.struct, r, c, e.struct) then
                     if all then
                         all[i] = true
                     end
@@ -352,7 +404,7 @@ function logic.fellOnto(zone, floor, px, py, x, y)
         return nil
     end
     for _, e in ipairs(ix.edges) do
-        if e.under ~= nil and (e.floor == nil or e.floor == floor) then
+        if e.under ~= nil and (e.floor == nil or e.floor == floor or (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor))) then
             local b = e.box
             local reach = logic.FALL_REACH
             if x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach then
@@ -361,7 +413,7 @@ function logic.fellOnto(zone, floor, px, py, x, y)
                 for k = 1, #p - 1, 2 do
                     local qx, qy = p[k], p[k + 1]
                     if logic.dist(x, y, qx, qy) <= reach and inFront(qx, qy, px, py, fx, fy)
-                        and not inFront(qx, qy, x, y, fx, fy) then
+                        and not inFront(qx, qy, x, y, fx, fy) and pointCounts(zone, e, floor, qx, qy) then
                         return e.under
                     end
                 end

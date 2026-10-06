@@ -149,6 +149,37 @@ local function newHallZone()
     return z
 end
 
+-- A tower: 3 rows x 6 columns of 10 yd cells; north edge at x = 100, west edge at y = 60; open
+-- land, a road on row 2. A flight of stairs (piece 1) over row 0, columns 1 and 2 (y 50 to 30)
+-- leads east onto a landing (piece 2) over columns 2 and 3 (y 40 to 20); the ground joins the
+-- flight at its foot (y 52), the flight the landing at y 35. The flight's south rim beside the
+-- join is a drop (an edge of the flight, its points 2 yd from the join), and farther west too;
+-- the next flight's foot (stairs to the top) stands on the landing at y 25.
+local function newTowerZone()
+    local z = newZone()
+    z.places = {
+        { "open land", "open land" },
+        { "stairs", "stairs to the landing" },
+        { "platform", "landing" },
+        { "road", "road" },
+        { "stairs", "stairs to the top" },
+    }
+    z.grid = { "10000*6", "10000*6", "40000*6" }
+    z.bridgeUnder, z.exits, z.interiors, z.rooms, z.doors = {}, {}, {}, {}, {}
+    z.structs = { "tower" }
+    z.structCells = { 0, 1, 1, 0, 2, 1, 0, 3, 1 }
+    z.edges = {
+        { 1, 180, 12, 0, 0, 93, 36, 93, 34, l = 1, u = 0 },
+        { 1, 180, 12, 0, 0, 93, 52, 93, 50, l = 1, u = 0 },
+    }
+    z.floorCells = { 0, 1, 1, 20000, 0, 2, 1, 20000, 0, 2, 2, 30000, 0, 3, 2, 30000 }
+    z.noGround = {}
+    z.joins = { 0, 1, 95, 52, 90, 1, 2, 95, 35, 90 }
+    z.climbFeetFields = 5
+    z.climbFeet = { 96, 25, 50000, 90, 2 }
+    return z
+end
+
 testRunner:addSuite("Surroundings", {
     ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
         local z = newHallZone()
@@ -211,6 +242,70 @@ testRunner:addSuite("Surroundings", {
         logic.updateFloor(layer, 97, 59.2, false, 98, 59.3)
         logic.updateFloor(layer, 99, 58.8, false, 97, 59.2)
         t:assertEqual(layer._index.floor, 0)
+    end,
+
+    ["a structure's platform says what lies around it, as a square"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        t:assertEqual(logic.isAroundPlace(z, 30000), true)
+        t:assertEqual(logic.isAroundPlace(z, 20000), false)
+    end,
+
+    ["up on a piece, the drop edge of a piece joined to it counts near their join"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        -- on the landing beside the join: the flight's rim there warns
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.nearestEdge(z, 95, 35, 4), 1)
+        -- on the landing, the flight's rim 15 yd from the join does not
+        t:assertEqual(logic.nearestEdge(z, 95, 51, 4), nil)
+        -- on the flight itself both do
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.nearestEdge(z, 95, 51, 4), 2)
+        -- on the ground (it joins the foot of every flight) neither
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.nearestEdge(z, 95, 35, 4), nil)
+    end,
+
+    ["a step over a rim falls, a push against its railing does not"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        -- from the landing over the flight's rim beside the join, pushing against something
+        logic.setFloor(z, 2)
+        logic.updateFloor(z, 91, 35, false, 95, 35, true)
+        t:assertEqual(z._index.floor, 2)
+        -- the same step, moving freely: a fall onto the ground
+        logic.setFloor(z, 2)
+        logic.updateFloor(z, 91, 35, false, 95, 35, false)
+        t:assertEqual(z._index.floor, 0)
+    end,
+
+    ["up on a piece that joins the ground nowhere, the ground's paint is nothing"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        -- the landing joins only the flight: the road below it is not its neighbour
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.valueAtCell(z, 2, 5), 0)
+        t:assertEqual(logic.valueAtCell(z, 0, 3), 30000)
+        -- the flight joins the ground at its foot: the road is
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.valueAtCell(z, 2, 5), 40000)
+    end,
+
+    ["on a flight, the next flight's foot on the landing at its top is guided to"] = function(t)
+        local z = newTowerZone()
+        logic.unpack(z)
+        -- up the flight from the ground: the foot on the landing it joins
+        logic.updateFloor(z, 95, 49, false, 95, 53)
+        t:assertEqual(z._index.floor, 1)
+        local target = logic.footTarget(z, 95, 31)
+        t:assertEqual(target ~= nil and target.kind, "climb")
+        -- down the flight from the landing: not back to it
+        logic.setFloor(z, 2)
+        logic.updateFloor(z, 95, 37, false, 95, 33)
+        t:assertEqual(z._index.floor, 1)
+        target = logic.footTarget(z, 95, 31)
+        t:assertEqual(target, nil)
     end,
 
     ["the indoor layer's doorways: a shop by entrance, a passage by name, the way outside"] = function(t)

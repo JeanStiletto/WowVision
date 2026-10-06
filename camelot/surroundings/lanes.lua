@@ -23,12 +23,29 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
     -- ground's lines not up on a landing over them, the landing's not down on the street); any
     -- other stretch (piece -1) counts on every floor: the position alone finds it
     local floor = ix.floor or 0
+    -- up on a piece that joins the ground nowhere (a tower's landing), a stretch of every floor
+    -- counts only where that piece (or one joined to it) lies: the road beside the tower is not
+    -- the landing's 12 yd over it
+    local joined = floor ~= 0 and ix.joined[floor] or nil
+    local aloft = floor ~= 0 and not (joined and joined[0])
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
         if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (lane.piece == -1 or lane.piece == floor)
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
-            if best == nil or d < best then
+            local here = true
+            if aloft and lane.piece == -1 then
+                local lr, lc = logic.cellOf(zone, px, py)
+                local cell = ix.floorCells[lr * zone.cols + lc]
+                here = false
+                for p in pairs(cell or {}) do
+                    if p == floor or (joined and joined[p]) then
+                        here = true
+                        break
+                    end
+                end
+            end
+            if here and (best == nil or d < best) then
                 best, bestLane, bx, by = d, lane, px, py
             end
         end
