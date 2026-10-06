@@ -917,9 +917,11 @@ end
 
 -- Indoors: the room as far as known (switches at once; announced after the entry distance), the
 -- doorways of a big room, the indoor layer's edges and halls, the stops in the room.
--- Where the player was indoors (the room, the levels of the indoor layer they were on), kept per
--- character over a reload or logout: with no height in the game a reload upstairs left the module
--- on the floor below (the Brill tavern, trial 2026-10-03). Taken back only on the same spot.
+-- Where the player was (the room, the levels of the indoor layer they were on, the floor piece
+-- outdoors), kept per character over a reload or logout: with no height in the game a reload
+-- upstairs left the module on the floor below (the Brill tavern, trial 2026-10-03; a login on the
+-- zeppelin tower's deck said the street under it, walk 2026-10-06 14:21). Taken back only on the
+-- same spot.
 local HERE_SAME = 1.5 -- yd from the kept spot that still count as the same
 local hereRestored = false
 local hereKept = nil
@@ -930,7 +932,8 @@ local function keepHere(z, x, y)
     end
     local layer = logic.layer(z, IsIndoors())
     local floor = layer and (layer._index.floor or 0) or 0
-    local sig = tostring(room) .. "|" .. floor
+    local ground = z._index.floor or 0
+    local sig = tostring(room) .. "|" .. floor .. "|" .. ground
     local h = WowVisionDB.surroundingsHere
     if hereKept == sig and h and logic.dist(h.x, h.y, x, y) < HERE_SAME / 2 then
         return
@@ -942,18 +945,27 @@ local function keepHere(z, x, y)
     -- building's piece after the floor-pieces export, so a login upstairs landed on the ground
     -- (walk 2026-10-05)
     WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name,
-        layer = layer and layer.key, floor = floor, floorLabel = layer and logic.pieceLabel(layer, x, y, floor) or nil }
+        layer = layer and layer.key, floor = floor, floorLabel = layer and logic.pieceLabel(layer, x, y, floor) or nil,
+        ground = ground, groundLabel = logic.pieceLabel(z, x, y, ground) }
 end
 
-local function restoreHere(z, x, y)
+-- (`outdoors`: the room is not taken back)
+local function restoreHere(z, x, y, outdoors)
     hereRestored = true
     local h = WowVisionDB and WowVisionDB.surroundingsHere
     if type(h) ~= "table" or h.zone ~= z.key or logic.dist(h.x, h.y, x, y) > HERE_SAME then
         return
     end
-    local r = h.room and z._index.rooms[h.room]
+    local r = not outdoors and h.room and z._index.rooms[h.room]
     if r and r.name == h.roomName then
         room, roomByDoor = h.room, true
+    end
+    -- the zone's own floor piece (a tower's deck, a bridge, a city's raised street)
+    if type(h.ground) == "number" and h.ground ~= 0 then
+        local ground = logic.pieceWithLabel(z, x, y, h.groundLabel, h.ground)
+        if ground ~= nil then
+            logic.setFloor(z, ground)
+        end
     end
     local layer = logic.layer(z, IsIndoors())
     if layer and layer.key == h.layer and type(h.floor) == "number" then
@@ -1067,7 +1079,10 @@ end
 -- Outdoors: the drop edges and the guidance on foot, or while swimming the ways out of the water;
 -- the place, the next piece ahead on a way and its bends, the stops.
 local function updateOutdoors(z, x, y, px, py)
-    hereRestored = true -- (only right after loading: not when walking past the kept spot later)
+    -- (only right after loading: not when walking past the kept spot later)
+    if not hereRestored then
+        restoreHere(z, x, y, true)
+    end
     lastRoom = nil
     if IsSwimming() then
         guide.key = nil
@@ -1083,6 +1098,7 @@ local function updateOutdoors(z, x, y, px, py)
     if not IsSwimming() then
         checkStop(z, x, y, px, py, nil)
     end
+    keepHere(z, x, y)
 end
 
 module:hasUpdate(function(self)
