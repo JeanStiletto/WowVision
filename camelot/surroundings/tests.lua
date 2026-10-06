@@ -231,7 +231,7 @@ testRunner:addSuite("Surroundings", {
         local z = newHallZone()
         logic.unpack(z)
         t:assertEqual(logic.roomText(z, 1, nil, false, 95, 25),
-            "great hall, way out to the north, shop to the west, passage to the southeast")
+            "great hall, way outside to the north, shop to the west, passage to the southeast")
         -- without a position (or in a small room) the fixed directions stay
         t:assertEqual(logic.roomText(z, 3, 1, false, 75, 5), "passage, north to south, great hall to the north")
         -- guidance to the nearest doorway of the big room
@@ -1499,8 +1499,8 @@ testRunner:addSuite("Surroundings", {
     ["a room says its doorways, at most the count, the way the player came left out first"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        t:assertEqual(logic.roomText(z, 1, nil, false), "Test Inn, common room, way out to the south, upstairs landing to the west")
-        t:assertEqual(logic.roomText(z, 1, 2, true), "common room, way out to the south, upstairs landing to the west")
+        t:assertEqual(logic.roomText(z, 1, nil, false), "Test Inn, common room, way outside to the south, upstairs landing to the west")
+        t:assertEqual(logic.roomText(z, 1, 2, true), "common room, way outside to the south, upstairs landing to the west")
     end,
 
     ["a square says its ways on, and where it lies the nearest road"] = function(t)

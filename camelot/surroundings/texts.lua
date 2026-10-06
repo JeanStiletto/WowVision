@@ -93,7 +93,10 @@ function logic.itemsText(zone, items, floor)
         if item.class == "entrance" then
             name = string.format(L["entrance of %s"], item.label)
         elseif not NAMED_CLASSES[item.class] then
-            name = L[item.class]
+            -- a room's doorway to the street is the "way outside" (Ausgang), as the indoor layer's
+            -- entrances say it; "way out" stays the way out of water and moats (Ausstieg; user
+            -- 2026-10-06: "Ausstieg" at the Gilded Rose's door)
+            name = item.class == "way out" and L["way outside"] or L[item.class]
         end
         if #item.dirs == 0 then
             parts[#parts + 1] = string.format(L["%s here"], name)
