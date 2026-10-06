@@ -167,8 +167,10 @@ Each zone file calls `addon.addZone{...}` with:
   the cells are the waiting floor (the dock edge beside a ship, a lift's landing, a tram platform
   along the cars); the segments are where the vehicle stands (a ship along its heading, a lift's
   car as a point, a tram's cars along the track); the direction said is toward the nearest point
-  of each, from where the player stands ("ship to the southwest"). An outdoor stop counts only
-  outdoors, a stop in a room only in that room (the room the player is in, or the candidates
+  of each, from where the player stands ("ship to the southwest"). A sixth element lists the
+  floor pieces the waiting floor lies on (`{0}` the ground; older data has none): an outdoor stop
+  counts only outdoors and only up on one of those pieces (the zeppelin tower's top was said at
+  its foot), a stop in a room only in that room (the room the player is in, or the candidates
   while it is unknown). The module says a stop on stepping onto it, again only after the player
   walked 3 yards off every stop; the describe key and `/wv surr` add it.
 - A map made of one building (the Deeprun Tram, map 369) has an empty grid: rooms, doors,

@@ -290,17 +290,38 @@ end
 
 -- The cell value of a grid cell: the painted one (the ground's where the ground has floor in the
 -- cell), or, up on another floor piece (zone._index.floor, edges.lua updateFloor), that piece's
--- value where the cell lists it (zone.floorCells: the landing over the street). So every lookup
--- follows the floor the player is on.
+-- value where the cell lists it (zone.floorCells: the landing over the street), else its value
+-- in one of the 8 cells around (the player is on the piece, so it is here, with a cell of its
+-- own too narrow for a surface: the ground floor's paint came through at the top of the
+-- tavern's stairs, walk 2026-10-06), else the value of a piece joined to it in the cell. So
+-- every lookup follows the floor the player is on.
 function logic.valueAtCell(zone, r, c)
     local v = logic.paintedAtCell(zone, r, c)
     local ix = zone._index
     local floor = ix.floor or 0
     if floor ~= 0 then
-        local here = ix.floorCells[r * zone.cols + c]
+        local cols = zone.cols
+        local here = ix.floorCells[r * cols + c]
         local own = here and here[floor]
         if own then
             return own
+        end
+        for dr = -1, 1 do
+            for dc = -1, 1 do
+                local near = ix.floorCells[(r + dr) * cols + c + dc]
+                local nv = near and near[floor]
+                if nv then
+                    return nv
+                end
+            end
+        end
+        local joined = ix.joined[floor]
+        if here and joined then
+            for p, pv in pairs(here) do
+                if joined[p] then
+                    return pv
+                end
+            end
         end
     end
     return v
@@ -815,10 +836,14 @@ function logic.unpack(zone, locale)
     ix.regionOf = {} -- squares found so far, per cell key
 
     -- stops (where one waits for a ship, zeppelin, lift or tram): {kind, destination, room, cells,
-    -- segments}; the stops on each cell
+    -- segments, {floor pieces; 0 the ground: outdoors the stop counts only on one of them, the
+    -- zeppelin tower's top was said at its foot, 2026-10-06}}; the stops on each cell
     ix.stops, ix.stopCells = {}, {}
     for i, s in ipairs(zone.stops or {}) do
-        local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, targets = {} }
+        local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, floors = {}, targets = {} }
+        for _, fl in ipairs(type(s[6]) == "table" and s[6] or { 0 }) do
+            stop.floors[fl] = true
+        end
         eachRecord(s[5], 4, function(x1, y1, x2, y2)
             stop.targets[#stop.targets + 1] = { x1, y1, x2, y2 }
         end)

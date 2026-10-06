@@ -36,7 +36,9 @@ function logic.stopAt(zone, x, y, rooms)
     local r, c = logic.cellOf(zone, x, y)
     for _, i in ipairs(ix.stopCells[r * zone.cols + c] or {}) do
         local s = ix.stops[i]
-        if (rooms == nil and s.room == 0) or (rooms ~= nil and rooms[s.room]) then
+        -- outdoors only on a floor piece its waiting floor lies on (the zeppelin tower's top
+        -- platform was said at its foot, under it, 2026-10-06)
+        if (rooms == nil and s.room == 0 and s.floors[ix.floor or 0]) or (rooms ~= nil and rooms[s.room]) then
             return i, s
         end
     end
