@@ -62,31 +62,48 @@ end
 
 -- Did the step from (px, py) to (x, y) cross the join `j` (a point on the line where two floors
 -- meet, with the direction from its piece a into b): within ACCESS_REACH beside the point, from
--- a's side to b's (1), from b's to a's (-1), or not (nil). A join without a direction counts
--- either way when the step passes within reach of it.
-local function crossed(j, px, py, x, y)
+-- a's side to b's (1), from b's to a's (-1), or not (nil); a step reaching CROSS_MARGIN beyond
+-- the join's line counts. The second result: a crossing pending (1 or -1), a step that passed the
+-- join's line but ended within the margin beyond it; with `pending` (that result of the last look)
+-- the next step reaching the margin counts (the module looks every few yards: one look ended
+-- 0.4 yd past the deck's join at the zeppelin tower, the next began past the join, and the
+-- stairs were never entered, walk 2026-10-06 09:56), and a step staying within the margin keeps
+-- it pending. Strafing along the join within the margin never counts. A join without a
+-- direction counts either way when the step passes within reach of it.
+local function crossed(j, px, py, x, y, pending)
     if j.angle == nil then
         return segmentDistance(j.x, j.y, px, py, x, y) <= logic.ACCESS_REACH and 0 or nil
     end
     local vx, vy = logic.compassVector(j.angle)
     local before = (px - j.x) * vx + (py - j.y) * vy
     local after = (x - j.x) * vx + (y - j.y) * vy
-    if before == after then
-        return nil
+    local margin = logic.CROSS_MARGIN
+    -- where the step passes the line `line` yd beyond the join: within reach beside the point?
+    local function beside(line)
+        local t = (before - line) / (before - after)
+        local mx, my = px + (x - px) * t, py + (y - py) * t
+        return math.abs((mx - j.x) * vy - (my - j.y) * vx) <= logic.ACCESS_REACH
     end
-    -- where the step meets the join's line, how far beside the point
-    local t = before / (before - after)
-    if t < 0 or t > 1 then
-        return nil
+    if before ~= after then
+        if before <= 0 and after > margin then
+            return beside(0) and 1 or nil
+        elseif before >= 0 and after < -margin then
+            return beside(0) and -1 or nil
+        elseif pending == 1 and before > 0 and before <= margin and after > margin then
+            return beside(margin) and 1 or nil
+        elseif pending == -1 and before < 0 and before >= -margin and after < -margin then
+            return beside(-margin) and -1 or nil
+        end
+        if before <= 0 and after > 0 and after <= margin then
+            return nil, beside(0) and 1 or nil
+        elseif before >= 0 and after < 0 and after >= -margin then
+            return nil, beside(0) and -1 or nil
+        end
     end
-    local mx, my = px + (x - px) * t, py + (y - py) * t
-    if math.abs((mx - j.x) * vy - (my - j.y) * vx) > logic.ACCESS_REACH then
-        return nil
-    end
-    if before <= 0 and after > logic.CROSS_MARGIN then
-        return 1
-    elseif before >= 0 and after < -logic.CROSS_MARGIN then
-        return -1
+    if pending == 1 and after > 0 and after <= margin then
+        return nil, 1
+    elseif pending == -1 and after < 0 and after >= -margin then
+        return nil, -1
     end
     return nil
 end
@@ -105,6 +122,8 @@ function logic.updateFloor(zone, x, y, cameOut, px, py)
     local was = ix.floor or 0
     local floor = was
     local fell = px and logic.fellOnto(zone, floor, px, py, x, y)
+    -- the crossings pending from the last look (crossed), and this look's
+    local pendingBefore, pendingNow = ix.pendingJoins or {}, {}
     if fell then
         floor = fell
     elseif px then
@@ -123,7 +142,10 @@ function logic.updateFloor(zone, x, y, cameOut, px, py)
                         -- a join without a direction (a structure's, a step between two surfaces
                         -- of one cell) only leads from its a into its b: the piece is left by
                         -- walking off it, not by passing the point again
-                        local way = crossed(j, px, py, x, y)
+                        local way, pending = crossed(j, px, py, x, y, pendingBefore[j])
+                        if pending and (pending > 0) == (j.a == floor) then
+                            pendingNow[j] = pending
+                        end
                         if way and ((way == 0 and j.a == floor) or (way ~= 0 and (way > 0) == (j.a == floor))) then
                             other = j.a == floor and j.b or j.a
                             d = logic.dist(j.x, j.y, x, y)
@@ -156,12 +178,15 @@ function logic.updateFloor(zone, x, y, cameOut, px, py)
         floor = pick or 0
     end
     ix.floor = floor
+    -- a crossing pending leads off the floor it began on only
+    ix.pendingJoins = floor == was and pendingNow or {}
     return floor, floor ~= was
 end
 
 -- Sets the floor piece the player is on (0 the ground); every lookup follows it.
 function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
+    zone._index.pendingJoins = {}
 end
 
 -- The label of the place a floor piece carries at (x, y) (nil for the ground, or a piece without
