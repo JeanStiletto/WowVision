@@ -198,6 +198,19 @@ testRunner:addSuite("Surroundings", {
         -- and off their foot onto the main floor
         logic.updateFloor(layer, 98, 60, false, 98, 58)
         t:assertEqual(layer._index.floor, 0)
+        -- a look ending 0.3 yd past the foot's join (within the margin) changes nothing yet ...
+        logic.updateFloor(layer, 98, 58.7, false, 98, 61)
+        t:assertEqual(layer._index.floor, 0)
+        -- ... and the next look, beginning past the join, still counts the crossing (the zeppelin
+        -- tower's deck, walk 2026-10-06: the stairs were never entered)
+        logic.updateFloor(layer, 98, 56, false, 98, 58.7)
+        t:assertEqual(layer._index.floor, 1)
+        -- strafing along the join within the margin counts nothing
+        logic.updateFloor(layer, 98, 60, false, 98, 56)
+        t:assertEqual(layer._index.floor, 0)
+        logic.updateFloor(layer, 97, 59.2, false, 98, 59.3)
+        logic.updateFloor(layer, 99, 58.8, false, 97, 59.2)
+        t:assertEqual(layer._index.floor, 0)
     end,
 
     ["the indoor layer's doorways: a shop by entrance, a passage by name, the way outside"] = function(t)
