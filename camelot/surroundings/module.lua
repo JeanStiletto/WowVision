@@ -248,7 +248,8 @@ local function roomCandidateNames(z, x, y)
     return table.concat(names, "; ")
 end
 
--- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", ...),
+-- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", "floor"
+-- for a change of the floor piece, ...),
 -- text}, where the player was (the data's cell and its text, the room candidates indoors, the
 -- floor piece the player was on) and the facing in degrees (0 = north, counter-clockwise).
 local function logEntry(kind, text, x, y, extra)
@@ -293,7 +294,8 @@ local function logEntry(kind, text, x, y, extra)
 end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
--- outdoors), s (swimming), g (ghost) and f with the facing in degrees, as one token ("isf270").
+-- outdoors), s (swimming), g (ghost), f with the facing in degrees and p with the floor piece
+-- when it is not the ground, as one token ("isf270p33").
 local function logTrail(x, y)
     if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
@@ -304,9 +306,13 @@ local function logTrail(x, y)
     end
     trailX, trailY = x, y
     local facing = facingDegrees()
+    -- p with the floor piece the player is on when it is not the ground ("if270p33")
+    local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+    local piece = held and held._index.floor or 0
     local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
         .. (UnitIsGhost("player") and "g" or "")
         .. (facing and ("f" .. facing) or "")
+        .. (piece ~= 0 and ("p" .. piece) or "")
     table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
@@ -579,10 +585,12 @@ end
 -- the room its floor belongs to (its piece).
 local function checkEdges(z, x, y, px, py, rooms)
     if rooms == nil then
-        local _floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
+        local before = z._index.floor or 0
+        local floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
         if changed then
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
+            logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
     -- the way the player moves (not the facing: strafing and walking back count too)
@@ -982,8 +990,12 @@ local function updateIndoors(z, x, y, px, py)
         -- the floor piece the player is on in the hall (a gallery, the moat under the walkways, a
         -- building's floors), as on the city's floors outdoors
         local ix = layer._index
+        local before = ix.floor or 0
         local floor, floorChanged = logic.updateFloor(layer, x, y, false, px, py)
         if floorChanged then
+            -- logged as an entry of its own (the walk log tools show where the floor switched;
+            -- user 2026-10-06: a ground floor line at the top of the tavern's stairs)
+            logEntry("floor", before .. " -> " .. floor, x, y)
             -- the places found so far kept per floor piece, so stepping back onto a floor finds
             -- its places again with what was said there (a fresh flood at every hop said the
             -- stairs twice)
