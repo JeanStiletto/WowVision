@@ -810,7 +810,7 @@ local function checkAhead(z, x, y, px, py)
         if logic.sameWay(value, key, wayNamed) then
             text = logic.directionText(z, value)
         else
-            text = logic.describe(z, value, true)
+            text = logic.describe(z, value, true, nil, nil, logic.ownerOfPlace(z, logic.keyPlace(key)))
             wayNamed = logic.placeOf(value)
         end
         say(text, "ahead", x, y)

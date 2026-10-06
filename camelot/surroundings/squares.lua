@@ -34,13 +34,19 @@ function logic.isAroundPlace(zone, value)
 end
 
 -- The thing a border cell shows: label and class ("way" with the place's label; "water", "cliff
--- edge", "canal", which are their own label), or nil.
-local function borderThing(zone, value, key)
+-- edge", "canal", which are their own label), or nil; and for a way of a structure the player is
+-- not on (`here`: the structure of the region's place, or nil) its label as said, with the
+-- structure's name (logic.describe: "ramp of pier of Stormwind Harbor" from the dock beside it).
+local function borderThing(zone, value, key, here)
     if value ~= 0 then
         local p = logic.place(zone, logic.placeOf(value))
         local kind = p and p.kind
         if logic.WAYS[kind] then
-            return p.label, "way"
+            local spoken = nil
+            if p.of and p.of ~= here then
+                spoken = string.format(zone.ofTemplate or "%s of %s", p.label, p.of)
+            end
+            return p.label, "way", spoken
         elseif logic.WATER[kind] then
             return "water", "water"
         elseif logic.DROPS[kind] then
@@ -87,6 +93,7 @@ end
 -- north"): {label, class, rise, points {x, y, ...}, cells {border r, c, square r, c}}.
 local function findMouths(zone, cells, list, floors, own)
     local byLabel, order, seen, along, rising = {}, {}, {}, {}, {}
+    local here = logic.ownerOfPlace(zone, own)
     floors = floors or { [zone._index.floor or 0] = true }
     for i = 1, #list - 1, 2 do
         local r, c = list[i], list[i + 1]
@@ -106,10 +113,10 @@ local function findMouths(zone, cells, list, floors, own)
                 if own and value ~= 0 and logic.placeOf(value) == own then
                     value = 0
                 end
-                local label, class = borderThing(zone, value, key)
+                local label, class, spoken = borderThing(zone, value, key, here)
                 local rise = label and riseFrom(zone, cells, value, nr, nc)
                 if rise == "along" then
-                    along[#along + 1] = { label = label, class = class, value = value, piece = piece, cell = { nr, nc, r, c } }
+                    along[#along + 1] = { label = label, class = class, spoken = spoken, value = value, piece = piece, cell = { nr, nc, r, c } }
                 elseif label then
                     if rise then
                         rising[value] = true
@@ -117,7 +124,7 @@ local function findMouths(zone, cells, list, floors, own)
                     -- a climb's way up or down per climb (two stairs going down from a landing)
                     local group = label .. "|" .. (rise and rise .. value or "")
                     if byLabel[group] == nil then
-                        byLabel[group] = { label = label, class = class, rise = rise, value = value, piece = piece, cells = {} }
+                        byLabel[group] = { label = label, class = class, spoken = spoken, rise = rise, value = value, piece = piece, cells = {} }
                         order[#order + 1] = group
                     end
                     -- the border cell and the square's cell beside it (for the way on)
@@ -131,7 +138,7 @@ local function findMouths(zone, cells, list, floors, own)
         if not rising[a.value] then
             local group = byLabel[a.label .. "|"]
             if group == nil then
-                group = { label = a.label, class = a.class, value = a.value, piece = a.piece, cells = {} }
+                group = { label = a.label, class = a.class, spoken = a.spoken, value = a.value, piece = a.piece, cells = {} }
                 byLabel[a.label .. "|"] = group
                 order[#order + 1] = a.label .. "|"
             end
@@ -167,7 +174,7 @@ local function findMouths(zone, cells, list, floors, own)
                         points[#points + 1] = py
                     end
                     mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members,
-                        value = group.value, piece = group.piece }
+                        value = group.value, piece = group.piece, spoken = group.spoken }
                 end
             end
         end
@@ -305,6 +312,51 @@ local function regionJoins(zone, r, c, key, floors, value)
     return false
 end
 
+-- A ramp or stairs joined to the region's floor at a point on the region is a mouth there too,
+-- unless a mouth of that name is found already: a flight rising from the middle of a tower's deck
+-- lies over the deck's own cells, and the border never shows it (Alt-L on the zeppelin tower's deck
+-- named the stairs down, not the spiral up; user 2026-10-06).
+local function joinedClimbMouths(zone, region, cells, floors)
+    local have = {}
+    for _, m in ipairs(region.mouths) do
+        have[m.label] = true
+    end
+    local ix, cols = zone._index, zone.cols
+    for f in pairs(floors) do
+        for other, pts in pairs(ix.joinPoints[f] or {}) do
+            if not floors[other] then
+                for k = 1, #pts - 1, 2 do
+                    local jx, jy = pts[k], pts[k + 1]
+                    local r, c = logic.cellOf(zone, jx, jy)
+                    if cells[r * cols + c] then
+                        -- the climb's value at the join: in its cell, else one of the 8 around
+                        local v, vr, vc = 0, r, c
+                        for dr = -1, 1 do
+                            for dc = -1, 1 do
+                                if v == 0 then
+                                    local w = logic.valueOfFloor(zone, r + dr, c + dc, other)
+                                    if w ~= 0 then
+                                        v, vr, vc = w, r + dr, c + dc
+                                    end
+                                end
+                            end
+                        end
+                        if v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] then
+                            local label, _class, spoken = borderThing(zone, v, vr * cols + vc, logic.ownerOf(zone, region.value))
+                            if label and not have[label] then
+                                have[label] = true
+                                region.mouths[#region.mouths + 1] = { label = label, class = "way", points = { jx, jy },
+                                    cells = { { vr, vc, r, c } }, value = v, piece = other, spoken = spoken }
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
     if not logic.isAroundPlace(zone, value) then
@@ -328,6 +380,7 @@ function logic.regionAt(zone, x, y)
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
         mouths = findMouths(zone, cells, list, floors, logic.placeOf(value)),
     }
+    joinedClimbMouths(zone, region, cells, floors)
     if ix.covered then
         region.mouths = doorMouths(zone, region)
     end
@@ -589,7 +642,7 @@ function logic.wayBeginnings(zone, region)
             local mx, my, ix, iy = mouthMiddle(zone, m)
             local _d, bx, by = logic.nearestOfPoints(m.points, mx, my)
             list[#list + 1] = {
-                mouth = m, label = m.label, kind = kind, x = bx, y = by, span = mouthSpan(m),
+                mouth = m, label = m.label, spoken = m.spoken, kind = kind, x = bx, y = by, span = mouthSpan(m),
                 onward = onwardDirection(zone, region, m, mx - ix, my - iy),
             }
         end
@@ -673,7 +726,7 @@ end
 
 local function mouthFound(m, x, y)
     local d, dir = logic.mouthDistance(m, x, y)
-    return { label = m.label, class = m.class, rise = m.rise, d = d, dir = dir, mouth = m }
+    return { label = m.spoken or m.label, class = m.class, rise = m.rise, d = d, dir = dir, mouth = m }
 end
 
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
