@@ -1345,6 +1345,23 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(z._index.floor, 0)
     end,
 
+    ["a kept floor is found again by the place it carries at the spot, not by its number"] = function(t)
+        local z = newWalkZone()
+        -- piece 1 carries the square at (2, 2), piece 2 the canal walk at (2, 3) next to it
+        z.floorCells = { 2, 2, 1, 10000, 2, 3, 2, 21000 }
+        logic.unpack(z)
+        t:assertEqual(logic.pieceLabel(z, 90, 50, 1), "square of Test")
+        t:assertEqual(logic.pieceLabel(z, 90, 50, 0), nil)
+        t:assertEqual(logic.pieceLabel(z, 90, 50, 2), nil)
+        -- a number from before a re-export means another piece now: the label decides
+        t:assertEqual(logic.pieceWithLabel(z, 90, 50, "square of Test", 7), 1)
+        t:assertEqual(logic.pieceWithLabel(z, 90, 50, "canal walk", 2), 2)
+        t:assertEqual(logic.pieceWithLabel(z, 90, 50, "hall", 1), nil)
+        -- without a label only the number itself, where that piece lies
+        t:assertEqual(logic.pieceWithLabel(z, 90, 50, nil, 1), 1)
+        t:assertEqual(logic.pieceWithLabel(z, 90, 50, nil, 5), nil)
+    end,
+
     ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
         local z = newWalkZone()
         -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
