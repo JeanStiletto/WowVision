@@ -583,10 +583,17 @@ end
 -- only while the player is up there, a landing's only on the landing). Indoors (the indoor
 -- layer's edges) `rooms` is the set of rooms the player may be in: an edge inside warns only in
 -- the room its floor belongs to (its piece).
+-- Is the player pushing against something (the wall detection's "blocked", fresh)? Then a step
+-- past an edge's rim is a push against its railing, no fall (logic.updateFloor).
+local function pushing()
+    local walls = WowVision.base.navigation.walls
+    return walls ~= nil and walls.severity == 1 and GetTime() - (walls.severityAt or 0) <= BUMP_FRESH
+end
+
 local function checkEdges(z, x, y, px, py, rooms)
     if rooms == nil then
         local before = z._index.floor or 0
-        local floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py)
+        local floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py, pushing())
         if changed then
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
@@ -991,7 +998,7 @@ local function updateIndoors(z, x, y, px, py)
         -- building's floors), as on the city's floors outdoors
         local ix = layer._index
         local before = ix.floor or 0
-        local floor, floorChanged = logic.updateFloor(layer, x, y, false, px, py)
+        local floor, floorChanged = logic.updateFloor(layer, x, y, false, px, py, pushing())
         if floorChanged then
             -- logged as an entry of its own (the walk log tools show where the floor switched;
             -- user 2026-10-06: a ground floor line at the top of the tavern's stairs)

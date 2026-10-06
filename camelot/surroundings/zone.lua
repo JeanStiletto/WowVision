@@ -20,7 +20,7 @@ end
 
 -- Place kinds (the data's English kind keys)
 logic.ROADS = set("road", "fork", "crossing")
-logic.SQUARES = set("square", "hall") -- places that say what lies around them; no way begins there
+logic.SQUARES = set("square", "hall", "platform") -- places that say what lies around them (a structure's platform too: its stairs, user 2026-10-06); no way begins there
 logic.WAYS = set("street", "square", "hall", "road", "fork", "crossing", "bridge", "quay", "pier", "canal walk",
     "slime canal walk", "walk along the lava", "ramp", "stairs")
 logic.LANE_KINDS = set("road", "fork", "crossing", "street", "quay", "pier", "canal walk", "slime canal walk",
@@ -322,6 +322,12 @@ function logic.valueAtCell(zone, r, c)
                     return pv
                 end
             end
+        end
+        -- a piece that joins the ground nowhere (a tower's landing 12 yd up, reached by its
+        -- stairs) has no ground around it: the ground's paint there is nothing up here (the road
+        -- under the zeppelin tower came as "street at 9" on its landings, walk 2026-10-06)
+        if not (joined and joined[0]) then
+            return 0
         end
     end
     return v
@@ -690,7 +696,8 @@ function logic.unpack(zone, locale)
     eachRecord(zone.noGround, 2, function(r, c)
         ix.noGround[r * zone.cols + c] = true
     end)
-    ix.joinAt, ix.joined = {}, {}
+    -- (joinPoints: per pair of pieces the points where they meet, x, y flat, both ways)
+    ix.joinAt, ix.joined, ix.joinPoints = {}, {}, {}
     eachRecord(zone.joins, 5, function(a, b, x, y, angle)
         if angle ~= -2 then
             local r, c = logic.cellOf(zone, x, y)
@@ -701,6 +708,14 @@ function logic.unpack(zone, locale)
             ix.joined[a][b] = true
             ix.joined[b] = ix.joined[b] or {}
             ix.joined[b][a] = true
+            if angle ~= -2 then
+                ix.joinPoints[a] = ix.joinPoints[a] or {}
+                ix.joinPoints[b] = ix.joinPoints[b] or {}
+                local list = ix.joinPoints[a][b] or {}
+                ix.joinPoints[a][b], ix.joinPoints[b][a] = list, list
+                list[#list + 1] = x
+                list[#list + 1] = y
+            end
         end
     end)
     ix.floor = 0

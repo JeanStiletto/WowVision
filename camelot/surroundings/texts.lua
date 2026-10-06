@@ -252,12 +252,36 @@ end
 -- target: named like the climb ("ramp to the griffon roost"), the way on up it ("on to the
 -- southeast"; no "up" since 2026-10-04). User 2026-10-01: "hitting the ramp by ear still impossible, I always miss
 -- the entrance and walk on the street next to it".
+-- yd from where a climb joins the floor a foot stands on within which that foot is guided to from
+-- the climb: at the top of the flight, not all the way up a long ramp (the Valley of Heroes' ramp
+-- offered the street's other climbs from its foot, flicking between two, replay 2026-10-06)
+logic.CLIMB_NEXT_REACH = 4.0
+
+-- Is (x, y) within CLIMB_NEXT_REACH of a join of pieces a and b?
+local function nearJoin(ix, a, b, x, y)
+    local pts = ix.joinPoints[a]
+    pts = pts and pts[b]
+    local reach2 = logic.CLIMB_NEXT_REACH * logic.CLIMB_NEXT_REACH
+    for k = 1, pts and #pts - 1 or 0, 2 do
+        if logic.dist2(x, y, pts[k], pts[k + 1]) <= reach2 then
+            return true
+        end
+    end
+    return false
+end
+
 local function climbTarget(zone, x, y, reach, prefer, floor)
-    -- a foot on the floor piece the player is on (the ground, a landing, a building's floor)
-    local on = zone._index.floor or 0
+    -- a foot on the floor piece the player is on (the ground, a landing, a building's floor); on a
+    -- ramp or stairs also a foot on a floor the climb joins, but the one the player came from: the
+    -- next flight from the landing at the top (the zeppelin tower's spiral: on its first flight
+    -- nothing was guided to, walk 2026-10-06 11:18), the floor below going down
+    local ix = zone._index
+    local on = ix.floor or 0
+    local also = on ~= 0 and logic.CLIMBS[logic.kindOf(zone, logic.valueAt(zone, x, y))] and ix.joined[on] or nil
     local feet = {}
-    for _, f in ipairs(zone._index.climbFeet) do
-        if (f.floor or 0) == on then
+    for _, f in ipairs(ix.climbFeet) do
+        local fl = f.floor or 0
+        if fl == on or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
             feet[#feet + 1] = f
         end
     end
