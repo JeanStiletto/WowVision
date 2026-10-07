@@ -144,13 +144,19 @@ Each zone file calls `addon.addZone{...}` with:
   `c = 1` marks a city's own complex or a map that is one building (Ironforge, the Deeprun
   Tram): it is named after its zone, which the player knows, so its rooms are said without it.
 - `rooms`: `{interior, name, kind, floor boxes {x0, y0, x1, y1, ...}, outline box
-  (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional)}`,
+  (optional), f = floor (sq yd), a = axis (optional), w = winding (optional), s = 1 (optional),
+  d = district (optional), sn = short name (optional)}`,
   in the building's frame. `a`: the axis angle (0..179) a long, narrow room runs along, or for
   a piece of a staircase split into pieces (all named alike) the line from its lowest to its
   highest doorway;
   `w`: its floor winds up turning left (1, counter-clockwise seen from above) or right (-1);
   `s`: the room has a name of its own (a shop: "entrance of" it from a hall). A room of at least
   `logic.BIG_ROOM` sq yd says and guides to its doorways from the player's position.
+  `d` and `sn`: in a city complex spanning districts, the district the name says (or, for one
+  of its ways, the places the way joins) and the name without it ("canal" for "canal, Trade
+  Quarter", "lift" for "lift between Ruins of Lordaeron and Trade Quarter"); `describeRoom` says
+  the short name when the room one comes from, or stands in for a doorway list, has the same
+  `d`. The locales carry the short names as `roomsShort` ("" for none).
 - `doors`: `{room a, room b (0 = outside), interior, x, y, nx, ny, side of room a (0 = a
   flat opening)}`, in the building's frame.
 - `indoor` (optional): the indoor layer, the big halls of a city (Ironforge, the Undercity
