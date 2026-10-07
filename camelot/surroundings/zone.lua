@@ -589,7 +589,7 @@ local function prepareWords(zone, locale)
             zone.rooms[i].sn = name
         end
     end
-    for key, field in pairs({ roomsAtA = "ta", roomsAtB = "tb" }) do
+    for key, field in pairs({ roomsAtA = "ta", roomsAtB = "tb", roomsArea = "ar" }) do
         for i, name in ipairs(t[key] or {}) do
             if zone.rooms[i] and name ~= "" then
                 zone.rooms[i][field] = name
@@ -733,6 +733,11 @@ function logic.unpack(zone, locale)
         end
     end)
     ix.floor = 0
+    -- the cells where a hall the game calls outdoors lies on the ground (rooms.lua inHallFloor)
+    ix.hallGround = {}
+    eachRecord(zone.hallGround, 2, function(r, c)
+        ix.hallGround[r * zone.cols + c] = true
+    end)
     -- drop edges with a box each, so the edge search skips the far ones (cities have hundreds)
     ix.edges = {}
     for i, e in ipairs(zone.edges or {}) do
@@ -849,7 +854,10 @@ function logic.unpack(zone, locale)
         -- floor winds up turning left (1) or right (-1); floor: sq yd; named: a name of its own (a shop);
         -- hallMap: the game calls the room outdoors (IsIndoors() false), the UI map one stands on in it;
         -- district: the district a city complex's room names (its English name), short: the name
-        -- without it ("canal 3" for "canal, Trade Quarter 3"); place: the key of a place a city's
+        -- without it ("canal 3" for "canal, Trade Quarter 3"); subzone: a hall's area as the game
+        -- names where one stands in it; niche: a city's small dead end (no guidance into
+        -- it); zonePieces: the zone's floor pieces a hall lies on (0 the ground; rooms.lua
+        -- inHallFloor); place: the key of a place a city's
         -- ways join; wayA, wayB: a way's two places, atA, atB: its names said at each ("passage to
         -- War Quarter" in the canal)
         ix.rooms[i] = {
@@ -858,7 +866,11 @@ function logic.unpack(zone, locale)
             floor = room.f or 0,
             named = room.s == 1, hallMap = room.g, district = room.d, short = room.sn,
             place = room.e, wayA = room.wa, wayB = room.wb, atA = room.ta, atB = room.tb,
+            subzone = room.ar, niche = room.ni == 1, zonePieces = room.zp and {},
         }
+        for _, p in ipairs(room.zp or {}) do
+            ix.rooms[i].zonePieces[p] = true
+        end
     end
     -- doors between rooms (0 = outside), and per room its doors and the rooms they join
     ix.doors, ix.doorsOf, ix.neighbours = {}, {}, {}

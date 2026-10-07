@@ -1086,6 +1086,56 @@ testRunner:addSuite("Surroundings", {
         t:assertFalse(logic.inHall(z, 5, 5, 1455))             -- the inn is no such hall
     end,
 
+    ["a hall counts only on the floor piece it lies on, the game's area only makes it certain"] = function(t)
+        local z = newZone()
+        -- the barn moved to row 1, column 4 (x 80..90, y 10..20): a canal hall on the zone's floor
+        -- piece 7, deep under the ground's floor there (both in the cell)
+        z.rooms[4][4] = { 80, 10, 90, 20 }
+        z.rooms[4].g, z.rooms[4].ar, z.rooms[4].zp = 1458, "Canals", { 7 }
+        table.insert(z.floorCells, 1); table.insert(z.floorCells, 4); table.insert(z.floorCells, 7); table.insert(z.floorCells, 40000)
+        logic.unpack(z)
+        t:assertFalse(logic.inHallFloor(z, 85, 15, 1458, 0))     -- up on the ground over it: not in it
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 7))      -- on its floor piece
+        t:assertFalse(logic.inHallFloor(z, 85, 15, 1420, 7))     -- the game's map elsewhere
+        -- the game names its area: on its floor piece; another area, or already on it: nothing
+        t:assertEqual(logic.hallPieceForArea(z, 85, 15, 1458, "Canals", 0), 7)
+        t:assertNil(logic.hallPieceForArea(z, 85, 15, 1458, "Ruins of Lordaeron", 0))
+        t:assertNil(logic.hallPieceForArea(z, 85, 15, 1458, "Canals", 7))
+        t:assertNil(logic.hallPieceForArea(z, 85, 15, 1458, "", 0))
+        -- a hall on the ground and on piece 7: on the ground only where its floor is the ground
+        local function onBoth(hallGround)
+            local z2 = newZone()
+            z2.rooms[4][4] = { 80, 10, 90, 20 }
+            z2.rooms[4].g, z2.rooms[4].zp = 1458, { 0, 7 }
+            z2.hallGround = hallGround
+            logic.unpack(z2)
+            return z2
+        end
+        z = onBoth({})
+        t:assertFalse(logic.inHallFloor(z, 85, 15, 1458, 0))     -- the ground here is other floor (a courtyard over it)
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 7))
+        z = onBoth({ 1, 4 })
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 0))      -- here its floor is the ground
+        -- two halls with no doorway between them and no floor piece in common are apart
+        z = newZone()
+        z.rooms[1].g, z.rooms[1].zp = 1458, { 0 }
+        z.rooms[3].g, z.rooms[3].zp = 1458, { 7 }
+        z.rooms[4].g, z.rooms[4].zp = 1458, { 0, 7 }
+        logic.unpack(z)
+        t:assertTrue(logic.hallsApart(z, 1, 4) == false)          -- a piece in common
+        t:assertTrue(logic.hallsApart(z, 3, 4) == false)
+        z.rooms[4].zp = { 9 }
+        z._index = nil
+        logic.unpack(z)
+        t:assertTrue(logic.hallsApart(z, 1, 4))                   -- nothing in common, no doorway
+        -- a hall whose pieces are not known: only keeps the player in the halls
+        z = newZone()
+        z.rooms[4].g = 1458
+        logic.unpack(z)
+        t:assertFalse(logic.inHallFloor(z, 35, 5, 1458, 0))
+        t:assertTrue(logic.inHallFloor(z, 35, 5, 1458, 0, true))
+    end,
+
     ["a rotated building frame turns world positions into building positions"] = function(t)
         -- a building turned 90 degrees at world (100, 200): m = {{0,-1},{1,0}}, ox = 100, oy = 200
         local frame = { ox = 100, oy = 200, scale = 1, m00 = 0, m01 = -1, m10 = 1, m11 = 0 }
@@ -1200,6 +1250,15 @@ testRunner:addSuite("Surroundings", {
         local _d, door = logic.nearestDoorway(z, 1, 82, 6, 40)
         t:assertEqual(door.a, 0)
         t:assertNil(logic.nearestDoorway(z, 1, 82, 6, 5))
+    end,
+
+    ["a big room never guides into a niche"] = function(t)
+        local z = newHallZone()
+        z.rooms[3].ni = 1                -- the passage west of the hall as a niche: a small dead end
+        logic.unpack(z)
+        t:assertNil(logic.nearestDoorway(z, 1, 82, 6, 5))
+        local _d, door = logic.nearestDoorway(z, 1, 82, 6, 40)
+        t:assertEqual(door.a, 0)
     end,
 
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)

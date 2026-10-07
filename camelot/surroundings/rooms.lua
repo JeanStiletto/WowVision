@@ -554,8 +554,9 @@ function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer)
             local dx, dy = logic.doorWorld(zone, door)
             local other = ix.rooms[door.a == roomId and door.b or door.a]
             -- not into another piece of the same thing, as roomDoorways (the Undercity's canal
-            -- pieces, 2026-10-07: the seam between two was guided to and swung behind the player)
-            if dx and not (other and other.name == name) then
+            -- pieces, 2026-10-07: the seam between two was guided to and swung behind the player),
+            -- nor into a niche (the Ruins' throne room guided into one of its alcoves, a dead end)
+            if dx and not (other and (other.name == name or other.niche)) then
                 points[#points + 1] = { x = dx, y = dy, door = door }
             end
         end
@@ -586,9 +587,11 @@ function logic.isHallMap(zone, uiMap)
     return uiMap ~= nil and ix.hallMaps[uiMap] == true
 end
 
--- Is the player in such a hall: its floor within ROOM_SLACK, while the game's map is the hall's.
--- The game gives no height, but its map does: in the Ironforge halls it is Ironforge's, on the
--- ground above the Undercity Tirisfal's.
+-- Is a hall's floor here (within ROOM_SLACK) while the game's map is the hall's? Only that the
+-- hall lies here in x and y: the game gives no height, and its map does not tell the floors
+-- apart everywhere (in Ironforge's halls Ironforge's and on the mountain over them Dun Morogh's,
+-- but on the Ruins of Lordaeron's rose walk the Undercity's, as in the city 110 yd under it, walk
+-- 2026-10-07). Whether the player is in it is inHallFloor's.
 function logic.inHall(zone, x, y, uiMap)
     if not logic.isHallMap(zone, uiMap) then
         return false
@@ -600,6 +603,103 @@ function logic.inHall(zone, x, y, uiMap)
         end
     end
     return false
+end
+
+-- Is the player in a hall here (user 2026-10-07): a hall whose floor is here (inHall) lying on
+-- the zone's floor piece the player is on (`zoneFloor`, edges.lua updateFloor: followed from piece
+-- to piece at their joins, as on the zeppelin tower). Where the halls lie under other floor (the
+-- Undercity under the Ruins of Lordaeron, 110 yd down) their floor here in x and y is not enough:
+-- the rose walk's floor piece is none the canal under it lies on. The ground holds every floor
+-- that lies under nothing, at any height, so on the ground a hall counts only in the cells where
+-- its floor is the ground (zone.hallGround, or a cell next to one): the Ruins' courtyard is ground
+-- over the Magic Quarter's canal, the throne room's floor is ground and hall. A hall whose pieces
+-- are not known (none matched, an older export) counts only with `staying` (the caller's: just
+-- after the game's map became the halls', the game's own way in at Ironforge's gate).
+function logic.hallGroundNear(zone, r, c)
+    local hg = zone._index.hallGround
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            if hg[(r + dr) * zone.cols + c + dc] then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function logic.inHallFloor(zone, x, y, uiMap, zoneFloor, staying)
+    if not logic.isHallMap(zone, uiMap) then
+        return false
+    end
+    local ix = zone._index
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local floor = zoneFloor or 0
+    for _, id in ipairs(ix.hallRooms) do
+        local r = ix.rooms[id]
+        if r.hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
+            local pieces = r.zonePieces
+            if pieces == nil then
+                if staying then
+                    return true
+                end
+            elseif pieces[floor] and (floor ~= 0 or logic.hallGroundNear(zone, r0, c0)) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Are two halls apart: no doorway between them and no floor piece in common (both known)? A
+-- step from one into the other is none: the player went out (the right bell tower of the Ruins,
+-- left by its doorway unnoticed, and the Undercity's canal 110 yd under the rose walk beside it).
+function logic.hallsApart(zone, a, b)
+    local ix = zone._index
+    local ra, rb = ix.rooms[a], ix.rooms[b]
+    if not (ra and rb and ra.hallMap and rb.hallMap and ra.zonePieces and rb.zonePieces) then
+        return false
+    end
+    if ix.neighbours[a] and ix.neighbours[a][b] then
+        return false
+    end
+    for p in pairs(ra.zonePieces) do
+        if rb.zonePieces[p] then
+            return false
+        end
+    end
+    return true
+end
+
+-- Where the game makes it certain the player is in a hall here (its subzone is the area of a hall
+-- whose floor is here) but their floor piece is none it lies on (after a login, or a lift's ride,
+-- which the floor pieces cannot follow): the zone's floor piece of that hall present in this cell,
+-- when exactly one is; else nil. Only ever into a hall, never out of one (stairs where the area
+-- changes halfway would flicker).
+function logic.hallPieceForArea(zone, x, y, uiMap, area, zoneFloor)
+    if area == nil or area == "" or not logic.isHallMap(zone, uiMap) then
+        return nil
+    end
+    local ix = zone._index
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local key = r0 * zone.cols + c0
+    local found = nil
+    for _, id in ipairs(ix.hallRooms) do
+        local r = ix.rooms[id]
+        if r.hallMap == uiMap and r.subzone == area and r.zonePieces and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
+            if r.zonePieces[zoneFloor or 0] then
+                return nil   -- already on it
+            end
+            for p in pairs(r.zonePieces) do
+                if logic.floorHere(zone, key, p) then
+                    if found ~= nil and found ~= p then
+                        return nil
+                    end
+                    found = p
+                end
+            end
+        end
+    end
+    return found
 end
 
 -- Is the player in the indoor layer: in a room it covers, or, where the room is unknown (stacked

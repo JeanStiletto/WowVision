@@ -159,7 +159,14 @@ Each zone file calls `addon.addZone{...}` with:
   `d`. The locales carry the short names as `roomsShort` ("" for none). `e`: the key of a place
   the complex's ways join (a quarter's hall, a canal); `wa`, `wb`: a way's two places, `ta`,
   `tb`: its names said from each ("passage to canal" from the War Quarter, "passage to War
-  Quarter" from the canal); the locales carry them as `roomsAtA`, `roomsAtB`.
+  Quarter" from the canal); the locales carry them as `roomsAtA`, `roomsAtB`. `ar`: a hall's
+  area as the game names it (its subzone; locales `roomsArea`); `ni = 1`: a niche, a city's
+  small dead end, never a guidance target; `zp`: the zone's floor pieces a hall the game calls
+  outdoors lies on (0 the ground), with `hallGround` (row, column pairs: the cells where a hall's
+  floor is the ground): the module (`logic.inHallFloor`) takes the player into the halls only
+  when the floor piece they are on is one of these here, or where the game's subzone is a hall's
+  `ar` (`logic.hallPieceForArea`), or just after the game's map became the halls'; out of them
+  through a doorway to outside, or a step between two halls that are apart (`logic.hallsApart`).
 - `doors`: `{room a, room b (0 = outside), interior, x, y, nx, ny, side of room a (0 = a
   flat opening)}`, in the building's frame.
 - `indoor` (optional): the indoor layer, the big halls of a city (Ironforge, the Undercity
