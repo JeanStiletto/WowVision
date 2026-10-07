@@ -358,7 +358,7 @@ function logic.entrances(zone)
             local x, y = logic.toWorld(interior, door.x, door.y)
             local text = interior.name
             if not room.entrance and room.name ~= interior.name then
-                text = text .. ", " .. room.name
+                text = text .. ", " .. logic.spokenName(zone, room.name)
             end
             local out = logic.doorwayDirection(zone, door, inside)
             addEntrance(list, { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 })
@@ -386,8 +386,10 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     end
     local previous = previousRoomId and ix.rooms[previousRoomId]
     local interior = ix.interiors[room.interior]
-    -- a named floor is said once, as the building is: not again from a room on it (logic.floorOf)
-    local name = room.name
+    -- a named floor is said once, as the building is: not again from a room on it (logic.floorOf);
+    -- a numbered name without its number (logic.spokenName): a list of doorways then says the
+    -- rooms of one word once, with their directions ("mine to the east and west")
+    local name = logic.spokenName(zone, room.name)
     if previous and previous.interior == room.interior then
         if room.short and room.district == previous.district then
             name = room.short

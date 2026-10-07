@@ -564,6 +564,7 @@ local function prepareWords(zone, locale)
     zone.spokenAxes = t.axes
     zone.floors = t.floors or zone.floors
     zone.ofTemplate = t.ofTemplate or zone.ofTemplate
+    zone.spoken = t.spoken or zone.spoken
     for i, p in ipairs(t.places or {}) do
         local place = zone.places[i]
         if place then
@@ -658,6 +659,14 @@ function logic.unpack(zone, locale)
     prepareWords(zone, locale)
     local ix = {}
     zone._index = ix
+    -- the numbered room names said otherwise (logic.spokenText), the longest first
+    ix.spokenKeys = {}
+    for name in pairs(zone.spoken or {}) do
+        ix.spokenKeys[#ix.spokenKeys + 1] = name
+    end
+    table.sort(ix.spokenKeys, function(a, b)
+        return #a > #b or (#a == #b and a < b)
+    end)
 
     ix.rows = {}
     for r = 1, #zone.grid do
@@ -929,6 +938,7 @@ function logic.unpackLayer(zone, src, suffix)
         top = own and src.top or zone.top, left = own and src.left or zone.left,
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
+        spoken = zone.spoken,
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
@@ -1067,6 +1077,41 @@ function logic.floorLabel(zone, label, floor)
     return label
 end
 
+-- A room's name (or a place or climb named after a room) as said: the data keeps the numbered
+-- names as the rooms' identity ("mine 3"), said without the number where the zone's `spoken`
+-- gives that ("mine"; user 2026-10-07: the numbers mean nothing by ear, the directions in a list
+-- tell the rooms apart).
+function logic.spokenName(zone, name)
+    return name and zone.spoken and zone.spoken[name] or name
+end
+
+-- A text as said: a numbered room name still in it (a label said as it is) said as spokenName, where
+-- it stands as a name of its own (not "mine 30" for "mine 3").
+function logic.spokenText(zone, text)
+    local keys = text and zone and zone._index and zone._index.spokenKeys
+    if keys == nil or #keys == 0 or not text:find("%d") then
+        return text
+    end
+    for _, name in ipairs(keys) do
+        local from = 1
+        while true do
+            local a, b = text:find(name, from, true)
+            if a == nil then
+                break
+            end
+            local before, after = text:sub(a - 1, a - 1), text:sub(b + 1, b + 1)
+            if (a == 1 or before:find("[%s,(]")) and (after == "" or after:find("[%s,%.;:)]")) then
+                local said = zone.spoken[name]
+                text = text:sub(1, a - 1) .. said .. text:sub(b + 1)
+                from = a + #said
+            else
+                from = b + 1
+            end
+        end
+    end
+    return text
+end
+
 -- The structure a place belongs to (its name, as said), or nil: by place id, by cell value.
 function logic.ownerOfPlace(zone, id)
     local p = id and zone._index.places[id]
@@ -1092,7 +1137,7 @@ function logic.describe(zone, value, withDirection, noNearRoad, floor, here)
     if p == nil then
         return nil
     end
-    local text = logic.expandDirs(zone, logic.floorLabel(zone, p.label, floor))
+    local text = logic.expandDirs(zone, logic.floorLabel(zone, logic.spokenName(zone, p.label), floor))
     -- a place of a structure (a tower's platform, its stairs) says the structure's name where the
     -- player is not on it yet: `here`, the structure of the place the player is on or comes from
     -- (nil: none, or the name is always said, as Alt-L says a room's building); inside the

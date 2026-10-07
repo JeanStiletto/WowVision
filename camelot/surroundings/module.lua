@@ -430,6 +430,9 @@ end
 
 local function say(text, kind, x, y, walked, extra)
     text = logic.finishText(text)
+    if zone then
+        text = logic.spokenText(zone, text)
+    end
     if text and text ~= "" then
         module:fireAlert("place", { text = text })
     end
