@@ -109,28 +109,74 @@ local hallGap = nil
 -- Nordosten" right after going out through it)
 local passed = nil
 
--- The UI map the game puts the player on (it knows the height: in the Ironforge halls Ironforge's,
--- on the ground above the Undercity Tirisfal's).
+-- The UI map the game puts the player on (in Ironforge's halls Ironforge's, on the mountain over
+-- them Dun Morogh's; on the Ruins of Lordaeron the Undercity's, as in the city under them).
 local function gameMap()
     return C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player") or nil
 end
 
--- Is the player in a hall the game calls outdoors (IsIndoors() is false in all of Ironforge's big
--- halls, user's walk 2026-09-29): its floor here while the game's map is the hall's. Short gaps in
--- the floor data (HALL_GAP) keep it; leaving the city changes the game's map.
+-- The area the game says the player is in (the subzone; in a city's halls the hall's own).
+local function gameSubzone()
+    return GetSubZoneText and GetSubZoneText() or ""
+end
+
+-- In a hall the game calls outdoors (IsIndoors() is false in all of Ironforge's big halls and
+-- almost all of the Undercity). Into the halls only on evidence (user 2026-10-07: the Undercity
+-- under the Ruins of Lordaeron took over the rose walk by its floor in x and y alone): the zone's
+-- floor piece the player is on (followed at its joins outdoors, as on the zeppelin tower) is one a
+-- hall here lies on (logic.inHallFloor); the game's subzone is the area of a hall here
+-- (logic.hallPieceForArea: after a login, a lift); or the game's map just became the halls' (a
+-- gate). Inside, the halls' own floors and rooms take over; out of them through a doorway to
+-- outside (updateIndoors), on another map, or after HALL_GAP yards without hall floor near (a
+-- bridge, over lava). After a doorway out, no way back in until DOOR_AWAY yards from it.
+local HERE_SAME = 1.5 -- yd from the kept spot (keepHere) that still count as the same
+local DOOR_AWAY = 4.0 -- yd from the doorway left by before the halls can take the player again
+local hallMapWas = nil      -- the game's map at the last look
+local hallMapWalked = nil   -- yd walked since it became the halls' (nil: not just now)
+local hallDoorOut = nil     -- {x, y}: the doorway the player just came out of the halls by
+
 local function updateHall(z, x, y, px, py)
     local uiMap = gameMap()
-    if logic.inHall(z, x, y, uiMap) then
-        hallGap = 0
-    elseif hallGap and px and logic.isHallMap(z, uiMap) then
-        hallGap = hallGap + logic.dist(x, y, px, py)
-        if hallGap > HALL_GAP then
-            hallGap = nil
+    if hallMapWas ~= nil and uiMap ~= hallMapWas and logic.isHallMap(z, uiMap) then
+        hallMapWalked = 0
+    elseif hallMapWalked and px then
+        hallMapWalked = hallMapWalked + logic.dist(x, y, px, py)
+        if hallMapWalked > HALL_GAP then
+            hallMapWalked = nil
         end
-    else
-        hallGap = nil
     end
-    return hallGap ~= nil
+    hallMapWas = uiMap
+    if not logic.isHallMap(z, uiMap) then
+        hallGap, hallMapWalked, hallDoorOut = nil, nil, nil
+        return false
+    end
+    if hallDoorOut and logic.dist(hallDoorOut[1], hallDoorOut[2], x, y) > DOOR_AWAY then
+        hallDoorOut = nil
+    end
+    if hallGap ~= nil then
+        -- in the halls: until no hall floor is near for HALL_GAP yd
+        if logic.inHall(z, x, y, uiMap) then
+            hallGap = 0
+        elseif px then
+            hallGap = hallGap + logic.dist(x, y, px, py)
+            if hallGap > HALL_GAP then
+                hallGap = nil
+            end
+        end
+        return hallGap ~= nil
+    end
+    if hallDoorOut then
+        return false
+    end
+    local piece = logic.hallPieceForArea(z, x, y, uiMap, gameSubzone(), z._index.floor or 0)
+    if piece then
+        logic.setFloor(z, piece)
+    end
+    if logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil) then
+        hallGap = 0
+        return true
+    end
+    return false
 end
 
 -- Indoors: as the game says, or in one of the halls it calls outdoors (as of the last look).
@@ -267,6 +313,9 @@ local function logEntry(kind, text, x, y, extra)
     if zone and x then
         local value, r, c = logic.valueAt(zone, x, y)
         e.zone, e.r, e.c = zone.key, r, c
+        -- the game's own area (its subzone), what makes a hall here certain (hallPieceForArea)
+        local sub = gameSubzone()
+        e.subzone = sub ~= "" and sub or nil
         e.cell = logic.finishText(logic.describe(zone, value, true))
         if isInside() then
             e.indoors = true
@@ -943,7 +992,6 @@ end
 -- upstairs left the module on the floor below (the Brill tavern, trial 2026-10-03; a login on the
 -- zeppelin tower's deck said the street under it, walk 2026-10-06 14:21). Taken back only on the
 -- same spot.
-local HERE_SAME = 1.5 -- yd from the kept spot that still count as the same
 local hereRestored = false
 local hereKept = nil
 
@@ -1007,7 +1055,18 @@ local function updateIndoors(z, x, y, px, py)
     end
     local before = room
     local crossed = logic.crossedDoor(z, room, px, py, x, y)
+    if crossed == 0 and hallGap ~= nil and room and z._index.rooms[room].hallMap then
+        -- out of the halls through a doorway to outside (the throne room's onto the rose walk)
+        hallGap, hallDoorOut = nil, { x, y }
+        logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
+    end
     local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false, IsIndoors())
+    if found ~= nil and room ~= nil and found ~= room and hallGap ~= nil and logic.hallsApart(z, room, found) then
+        -- no step leads from this hall into that one: out of the halls (a doorway left unnoticed)
+        hallGap, hallDoorOut = nil, { x, y }
+        logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
+        found, room = nil, nil
+    end
     -- up on a level of the indoor layer (a building's upper floor, its stairs) a doorway of the
     -- floor below leads nowhere: no room the layer does not cover (trial 2026-10-03, the Brill
     -- tavern: upstairs over the entrance's doorway the module said the entrance)
@@ -1149,7 +1208,12 @@ module:hasUpdate(function(self)
     end
     local px, py = lastX, lastY
     lastX, lastY = x, y
+    local wasHall = hallGap ~= nil
     local inHall = updateHall(z, x, y, px, py)
+    if inHall ~= wasHall then
+        -- entering or leaving the halls, logged as a floor change (the walk log tools show where)
+        logEntry("floor", inHall and "into the halls" or "out of the halls", x, y, { subzone = gameSubzone() })
+    end
     logTrail(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
@@ -1235,8 +1299,8 @@ module:registerCommand({
                     parts[#parts + 1] = "Stop: " .. logic.finishText(logic.stopText(z, stop, x, y))
                 end
                 -- the game's own word on inside: IsIndoors, and its map (the halls it calls outdoors)
-                parts[#parts + 1] = string.format("Game: %s, map %s%s", IsIndoors() and "indoors" or "outdoors",
-                    tostring(gameMap()), hallGap and ", in a hall" or "")
+                parts[#parts + 1] = string.format("Game: %s, map %s, area %s%s", IsIndoors() and "indoors" or "outdoors",
+                    tostring(gameMap()), gameSubzone() ~= "" and gameSubzone() or "none", hallGap and ", in a hall" or "")
                 if isInside() then
                     local names = roomCandidateNames(z, x, y)
                     parts[#parts + 1] = "Indoors. Room candidates: " .. (names ~= "" and names or "none")
