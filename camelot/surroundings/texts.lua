@@ -271,6 +271,53 @@ local function nearJoin(ix, a, b, x, y)
     return false
 end
 
+-- The wall side of flights (setting wallSide, the module sets it): on a flight with a wall along
+-- one side and a drop along the other (zone.climbAims, export.climb_sides), its way up is said
+-- toward a point at its top in the third next to the wall, from wherever the player is on it, so
+-- a step off the line is said back (user 2026-10-07: the route's points, a yard or two toward the
+-- zeppelin tower's core, kept the player off the open side; the centre lines stay in the middle).
+logic.wallSide = false
+logic.AIM_DONE = 2.0     -- yd before the point (along the way up) from which it is no longer said
+logic.AIM_FOOT = 25.0    -- yd from a foot within which its flight's point is looked for
+
+-- The wall-side point of the flight whose foot `f` is (its place value, the nearest), or nil.
+local function aimOfFoot(zone, f)
+    if not logic.wallSide then
+        return nil
+    end
+    local best, bestD = nil, logic.AIM_FOOT ^ 2
+    for _, a in pairs(zone._index.climbAims or {}) do
+        local d = logic.dist2(a.x, a.y, f.x, f.y)
+        if a.value == f.value and d <= bestD then
+            best, bestD = a, d
+        end
+    end
+    return best
+end
+
+-- The guidance target on a flight with a wall side: its point at the top, said as the way on
+-- ("on to the 4 o'clock"), until AIM_DONE before it, while the player faces up it (`facing`,
+-- degrees; going down it said the way up); nil elsewhere or with the setting off.
+function logic.aimTarget(zone, x, y, facing)
+    if not logic.wallSide then
+        return nil
+    end
+    local ix = zone._index
+    local a = ix.climbAims and ix.climbAims[ix.floor or 0]
+    if not a then
+        return nil
+    end
+    local fx, fy = logic.compassVector(a.up)
+    if (a.x - x) * fx + (a.y - y) * fy < logic.AIM_DONE or (facing and logic.angleGap(facing, a.up) >= 90) then
+        return nil
+    end
+    local d = logic.dist(a.x, a.y, x, y)
+    return {
+        key = "a" .. a.piece, kind = "aim", d = d, dir = logic.bearingOf(a.x - x, a.y - y), x = a.x, y = a.y,
+        reach = d + logic.AIM_DONE,
+    }
+end
+
 local function climbTarget(zone, x, y, reach, prefer, floor)
     -- a foot on the floor piece the player is on (the ground, a landing, a building's floor); on a
     -- ramp or stairs also a foot on a floor the climb joins, but the one the player came from: the
@@ -291,6 +338,12 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         return nil
     end
     local up = logic.riseOf(zone, f.value)
+    -- a flight with a wall along one side and a drop along the other: the way on up toward its
+    -- wall side, as said on it (logic.aimTarget)
+    local aim = aimOfFoot(zone, f)
+    if aim then
+        up = logic.bearingOf(aim.x - f.x, aim.y - f.y)
+    end
     local name = logic.describe(zone, f.value, false, true, floor, logic.ownerOf(zone, logic.valueAt(zone, x, y)))
     return {
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
@@ -351,7 +404,7 @@ local function throughVector(t)
 end
 
 function logic.atTarget(zone, t, x, y)
-    if t.d > logic.GUIDE_AT then
+    if t.d > logic.GUIDE_AT or t.kind == "aim" then
         return false
     end
     if t.kind == "way" or not t.through then
@@ -441,6 +494,9 @@ end
 -- stays on one, a repeat is the yards and the direction alone ("7 southwest"): the first
 -- announcement named it (user 2026-10-01).
 function logic.guideText(zone, t, named, at)
+    if t.kind == "aim" then
+        return string.format(T("on to the %s"), logic.dirWord(zone, t.dir))
+    end
     local door = t.kind == "entrance" or t.kind == "doorway" or t.kind == "climb"
     local parts = {}
     if at then

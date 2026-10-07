@@ -760,6 +760,13 @@ function logic.unpack(zone, locale)
         ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil,
             floor = feetStride >= 5 and floor or 0 }
     end)
+    -- the flights with a wall along one side and a drop along the other (export.climb_sides): per
+    -- floor piece the point at its top on the wall side its way up is said toward (setting
+    -- wallSide), its place value and its way up (degrees)
+    ix.climbAims = {}
+    eachRecord(zone.climbAims, 5, function(piece, value, x, y, up)
+        ix.climbAims[piece] = { piece = piece, value = value, x = x, y = y, up = up }
+    end)
 
     ix.exits = {}
     eachRecord(zone.exits, 4, function(x, y, width, out)

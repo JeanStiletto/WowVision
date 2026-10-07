@@ -19,6 +19,9 @@ settings:add({ key = "dropEdges", type = "Bool", label = L["Warn at Drop Edges"]
 settings:add({ key = "guidance", type = "Bool", label = L["Guide to Entrances, Streets and Ways Out"], default = true })
 -- on stepping onto a road, street or walk: which way to turn to face along it; at gentle bends
 settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads and Streets"], default = true })
+-- on stairs with a wall along one side and a drop along the other: the way up said toward the
+-- wall side (user 2026-10-07)
+settings:add({ key = "wallSide", type = "Bool", label = L["Guide Up Stairs on Their Wall Side"], default = true })
 -- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
@@ -440,6 +443,7 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     if brief ~= guide.brief then
         guide.brief, guide.key, guide.named = brief, nil, nil
     end
+    logic.wallSide = module.settings.wallSide == true
     -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
     local prefer = guide.key and guide.x and { x = guide.x, y = guide.y } or nil
     local function lookup(reach)
@@ -485,6 +489,23 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         elseif logic.pastTarget(z, t, x, y) then
             t = nil
         end
+    end
+    -- up a flight with a wall along one side and a drop along the other: its way up toward the
+    -- wall side (setting wallSide), not while a beacon leads; coming off its foot, whose way on
+    -- said that direction already, it is said only once it turns
+    if t == nil and not roomId and not brief then
+        local facing = GetPlayerFacing()
+        t = logic.aimTarget(z, x, y, facing and logic.bearingOf(math.cos(facing), math.sin(facing)))
+        if t and guide.key ~= t.key and guide.through and logic.sameDir(guide.through, t.dir) then
+            guide.key, guide.dir, guide.at, guide.time, guide.named = t.key, t.dir, false, GetTime(), t.key
+            guide.x, guide.y, guide.reach, guide.through = t.x, t.y, t.reach, nil
+            return
+        end
+    end
+    if t and t.kind == "climb" then
+        guide.through = t.through
+    elseif t and t.kind ~= "aim" then
+        guide.through = nil
     end
     -- the doorway just walked through stays quiet (said again as new once the player left it)
     if t == nil or (passed and logic.dist2(t.x, t.y, passed.x, passed.y) <= PASSED_SAME ^ 2) then
