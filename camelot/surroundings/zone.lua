@@ -589,6 +589,13 @@ local function prepareWords(zone, locale)
             zone.rooms[i].sn = name
         end
     end
+    for key, field in pairs({ roomsAtA = "ta", roomsAtB = "tb" }) do
+        for i, name in ipairs(t[key] or {}) do
+            if zone.rooms[i] and name ~= "" then
+                zone.rooms[i][field] = name
+            end
+        end
+    end
     for _, key in ipairs({ "structs", "objectNames" }) do
         for i, name in ipairs(t[key] or {}) do
             if zone[key] and zone[key][i] then
@@ -842,12 +849,15 @@ function logic.unpack(zone, locale)
         -- floor winds up turning left (1) or right (-1); floor: sq yd; named: a name of its own (a shop);
         -- hallMap: the game calls the room outdoors (IsIndoors() false), the UI map one stands on in it;
         -- district: the district a city complex's room names (its English name), short: the name
-        -- without it ("canal 3" for "canal, Trade Quarter 3")
+        -- without it ("canal 3" for "canal, Trade Quarter 3"); place: the key of a place a city's
+        -- ways join; wayA, wayB: a way's two places, atA, atB: its names said at each ("passage to
+        -- War Quarter" in the canal)
         ix.rooms[i] = {
             interior = room[1], name = room[2], kind = room[3], boxes = room[4], outline = room[5],
             entrance = room.entrance or false, axis = room.a and room.a >= 0 and room.a or nil, winding = room.w,
             floor = room.f or 0,
             named = room.s == 1, hallMap = room.g, district = room.d, short = room.sn,
+            place = room.e, wayA = room.wa, wayB = room.wb, atA = room.ta, atB = room.tb,
         }
     end
     -- doors between rooms (0 = outside), and per room its doors and the rooms they join

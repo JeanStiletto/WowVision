@@ -376,7 +376,8 @@ end
 -- The text of a room: the interior's name when it changes, then the room; a city complex's district
 -- only when it is not the one of `previousRoomId` (the room one comes from, or for a doorway the
 -- room one stands in; user 2026-10-07, the Undercity's "canal, Trade Quarter 4" said from inside
--- the Trade Quarter).
+-- the Trade Quarter); likewise a way between two places from one of them says only the other
+-- ("passage to War Quarter" in the canal, not "passage between War Quarter and canal").
 function logic.describeRoom(zone, roomId, previousRoomId)
     local ix = zone._index
     local room = ix.rooms[roomId]
@@ -390,6 +391,10 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     if previous and previous.interior == room.interior then
         if room.short and room.district == previous.district then
             name = room.short
+        elseif previous.place and previous.place == room.wayA then
+            name = room.atA
+        elseif previous.place and previous.place == room.wayB then
+            name = room.atB
         else
             name = logic.floorLabel(zone, name, (logic.floorOf(zone, previous.name)))
         end
