@@ -1176,6 +1176,22 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describeRoom(z, 4, 1), "Kanal, Kriegsviertel 2")
     end,
 
+    ["a way between two places says only the other one from either"] = function(t)
+        local z = newHallZone()
+        z.rooms[1].e = "War Quarter"                   -- the quarter's hall: a place ways join
+        z.rooms[2].e = "canal"                         -- a canal
+        z.rooms[3] = { 1, "passage between War Quarter and canal", "corridor", { 70, 0, 80, 10 }, f = 25,
+            d = "way War Quarter|canal", sn = "passage", wa = "War Quarter", wb = "canal",
+            ta = "passage to canal", tb = "passage to War Quarter" }
+        z.rooms[4][2] = "passage between War Quarter and canal"
+        z.rooms[4].d, z.rooms[4].sn = "way War Quarter|canal", "passage"
+        logic.unpack(z)
+        t:assertEqual(logic.describeRoom(z, 3, 2), "passage to War Quarter")   -- from the canal
+        t:assertEqual(logic.describeRoom(z, 3, 1), "passage to canal")         -- from the quarter
+        t:assertEqual(logic.describeRoom(z, 3, 4), "passage")                  -- inside the way
+        t:assertEqual(logic.describeRoom(z, 3, nil), "passage between War Quarter and canal")
+    end,
+
     ["a big room never guides to a doorway into another piece of the same thing"] = function(t)
         local z = newHallZone()
         z.rooms[3][2] = "great hall"     -- the passage west of it is a piece of the same hall

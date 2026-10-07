@@ -156,7 +156,10 @@ Each zone file calls `addon.addZone{...}` with:
   of its ways, the places the way joins) and the name without it ("canal" for "canal, Trade
   Quarter", "lift" for "lift between Ruins of Lordaeron and Trade Quarter"); `describeRoom` says
   the short name when the room one comes from, or stands in for a doorway list, has the same
-  `d`. The locales carry the short names as `roomsShort` ("" for none).
+  `d`. The locales carry the short names as `roomsShort` ("" for none). `e`: the key of a place
+  the complex's ways join (a quarter's hall, a canal); `wa`, `wb`: a way's two places, `ta`,
+  `tb`: its names said from each ("passage to canal" from the War Quarter, "passage to War
+  Quarter" from the canal); the locales carry them as `roomsAtA`, `roomsAtB`.
 - `doors`: `{room a, room b (0 = outside), interior, x, y, nx, ny, side of room a (0 = a
   flat opening)}`, in the building's frame.
 - `indoor` (optional): the indoor layer, the big halls of a city (Ironforge, the Undercity
