@@ -373,7 +373,10 @@ function logic.nearestEntrance(zone, x, y, reach, prefer)
     return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer)
 end
 
--- The text of a room: the interior's name when it changes, then the room.
+-- The text of a room: the interior's name when it changes, then the room; a city complex's district
+-- only when it is not the one of `previousRoomId` (the room one comes from, or for a doorway the
+-- room one stands in; user 2026-10-07, the Undercity's "canal, Trade Quarter 4" said from inside
+-- the Trade Quarter).
 function logic.describeRoom(zone, roomId, previousRoomId)
     local ix = zone._index
     local room = ix.rooms[roomId]
@@ -385,7 +388,11 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     -- a named floor is said once, as the building is: not again from a room on it (logic.floorOf)
     local name = room.name
     if previous and previous.interior == room.interior then
-        name = logic.floorLabel(zone, name, (logic.floorOf(zone, previous.name)))
+        if room.short and room.district == previous.district then
+            name = room.short
+        else
+            name = logic.floorLabel(zone, name, (logic.floorOf(zone, previous.name)))
+        end
     end
     -- a city's own complex (Ironforge) is named after the zone the player knows: never said
     local city = interior ~= nil and interior.city
@@ -537,9 +544,13 @@ function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer)
     local points = ix.doorPoints[roomId]
     if points == nil then
         points = {}
+        local name = ix.rooms[roomId].name
         for _, door in ipairs(ix.doorsOf[roomId] or {}) do
             local dx, dy = logic.doorWorld(zone, door)
-            if dx then
+            local other = ix.rooms[door.a == roomId and door.b or door.a]
+            -- not into another piece of the same thing, as roomDoorways (the Undercity's canal
+            -- pieces, 2026-10-07: the seam between two was guided to and swung behind the player)
+            if dx and not (other and other.name == name) then
                 points[#points + 1] = { x = dx, y = dy, door = door }
             end
         end

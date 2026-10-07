@@ -1154,6 +1154,38 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describeRoom(z, 2, 1), "shop")
     end,
 
+    ["a city complex's room says its district only from another district"] = function(t)
+        local function quarters()
+            local z = newHallZone()
+            z.rooms[1].d = "Trade Quarter"                 -- the quarter's hall: its name is the district
+            z.rooms[3] = { 1, "canal, Trade Quarter 4", "corridor", { 70, 0, 80, 10 }, f = 90, d = "Trade Quarter", sn = "canal 4" }
+            z.rooms[4] = { 1, "canal, War Quarter 2", "corridor", { 70, 50, 80, 60 }, f = 90, d = "War Quarter", sn = "canal 2" }
+            z.locales = { deDE = { roomsShort = { "", "", "Kanal 4", "Kanal 2" },
+                rooms = { "Handwerksviertel", "Laden", "Kanal, Handwerksviertel 4", "Kanal, Kriegsviertel 2" } } }
+            return z
+        end
+        local z = quarters()
+        logic.unpack(z)
+        t:assertEqual(logic.describeRoom(z, 3, 1), "canal 4")                  -- from the quarter's hall
+        t:assertEqual(logic.describeRoom(z, 4, 3), "canal, War Quarter 2")     -- into another district
+        t:assertEqual(logic.describeRoom(z, 3, nil), "canal, Trade Quarter 4") -- the describe key: all of it
+        t:assertEqual(logic.describeRoom(z, 3, 2), "canal, Trade Quarter 4")   -- from a room that names none
+        z = quarters()
+        logic.unpack(z, "deDE")
+        t:assertEqual(logic.describeRoom(z, 3, 1), "Kanal 4")
+        t:assertEqual(logic.describeRoom(z, 4, 1), "Kanal, Kriegsviertel 2")
+    end,
+
+    ["a big room never guides to a doorway into another piece of the same thing"] = function(t)
+        local z = newHallZone()
+        z.rooms[3][2] = "great hall"     -- the passage west of it is a piece of the same hall
+        logic.unpack(z)
+        -- 2 yd from the passage's doorway (80, 5): the way out (100, 25) is the target, not the seam
+        local _d, door = logic.nearestDoorway(z, 1, 82, 6, 40)
+        t:assertEqual(door.a, 0)
+        t:assertNil(logic.nearestDoorway(z, 1, 82, 6, 5))
+    end,
+
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)
