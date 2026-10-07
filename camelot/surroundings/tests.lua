@@ -1073,6 +1073,32 @@ testRunner:addSuite("Surroundings", {
         t:assertFalse(logic.sameRoomName(z, 1, 4))             -- another building
     end,
 
+    ["numbered room names are said without their number, kept as the rooms' identity"] = function(t)
+        local z = newZone()
+        -- two back rooms the same way from the common room: numbered in the data, said plain
+        z.rooms[2] = { 1, "back room 2", "room", { 0, 0, 10, 10 } }
+        z.doors[2] = { 3, 1, 1, 10.5, 5, 1, 0, 1 }
+        z.spoken = { ["back room 2"] = "back room", ["stairs to the back room 2"] = "stairs to the back room" }
+        logic.unpack(z)
+        t:assertEqual(logic.describeRoom(z, 2, 1), "back room")
+        t:assertEqual(logic.describeRoom(z, 2, nil), "Test Inn, back room")
+        t:assertEqual(z._index.rooms[2].name, "back room 2")   -- the identity keeps the number
+        -- the doorways into both said once, with both directions
+        local items = logic.roomDoorways(z, 1)
+        local backRooms = 0
+        for _, item in ipairs(items) do
+            if item.label == "back room" then
+                backRooms = backRooms + 1
+            end
+        end
+        t:assertEqual(backRooms, 1)
+        -- a label said as it is: only where it stands as a name of its own
+        t:assertEqual(logic.spokenText(z, "back room 2 to the east, stairs to the back room 2"),
+            "back room to the east, stairs to the back room")
+        t:assertEqual(logic.spokenText(z, "back room 20"), "back room 20")
+        t:assertEqual(logic.spokenText(z, "the back room 2, 8 yards"), "the back room, 8 yards")
+    end,
+
     ["a hall the game calls outdoors counts while the game's map is the hall's"] = function(t)
         local z = newZone()
         z.rooms[4].g = 1455   -- the barn: a hall like Ironforge's, on UI map 1455
