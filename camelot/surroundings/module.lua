@@ -172,7 +172,7 @@ local function updateHall(z, x, y, px, py)
     if piece then
         logic.setFloor(z, piece)
     end
-    if logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil) then
+    if logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, gameSubzone()) then
         hallGap = 0
         return true
     end
@@ -801,7 +801,9 @@ local function checkBump(z, x, y, px, py, isIndoors)
         text, key = L["wall"], "wall"
     else
         local owner, what = logic.wallOwner(z, x, y, vx, vy, WALL_REACH)
-        if owner then
+        if owner and what == "place" then
+            text, key = string.format(z.ofTemplate or "%s of %s", L["wall"], owner), owner
+        elseif owner then
             text, key = string.format(what == "side" and L["%s, side"] or L["wall of %s"], owner), owner
         end
     end
