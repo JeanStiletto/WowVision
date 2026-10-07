@@ -1099,6 +1099,18 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.spokenText(z, "the back room 2, 8 yards"), "the back room, 8 yards")
     end,
 
+    ["the wall of a building named only by its place is the place's"] = function(t)
+        local z = newZone()
+        z.interiors[1].w = "Test Town"
+        logic.unpack(z)
+        local owner, what = logic.wallOwner(z, -1, 5, 1, 0, 3)
+        t:assertEqual(owner, "Test Town")
+        t:assertEqual(what, "place")
+        owner, what = logic.wallOwner(z, 29, 5, 1, 0, 3)       -- the barn keeps its name
+        t:assertEqual(owner, "Test Barn")
+        t:assertNil(what)
+    end,
+
     ["a hall the game calls outdoors counts while the game's map is the hall's"] = function(t)
         local z = newZone()
         z.rooms[4].g = 1455   -- the barn: a hall like Ironforge's, on UI map 1455
@@ -1142,6 +1154,12 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 7))
         z = onBoth({ 1, 4 })
         t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 0))      -- here its floor is the ground
+        -- on the ground the game's area must not name another place than the hall's own
+        z._index.rooms[4].subzone = "Test Quarter"
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 0, false, "Test Quarter"))
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 0, false, ""))
+        t:assertFalse(logic.inHallFloor(z, 85, 15, 1458, 0, false, "Test Ruins"))
+        t:assertTrue(logic.inHallFloor(z, 85, 15, 1458, 7, false, "Test Ruins"))   -- its own floor piece
         -- two halls with no doorway between them and no floor piece in common are apart
         z = newZone()
         z.rooms[1].g, z.rooms[1].zp = 1458, { 0 }

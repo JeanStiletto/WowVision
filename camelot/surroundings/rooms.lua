@@ -616,7 +616,10 @@ end
 -- its floor is the ground (zone.hallGround, or a cell next to one): the Ruins' courtyard is ground
 -- over the Magic Quarter's canal, the throne room's floor is ground and hall. A hall whose pieces
 -- are not known (none matched, an older export) counts only with `staying` (the caller's: just
--- after the game's map became the halls', the game's own way in at Ironforge's gate).
+-- after the game's map became the halls', the game's own way in at Ironforge's gate). On the
+-- ground a hall also needs the game's area (`area`, its subzone text) not to name another place
+-- than the hall's own: the Magic Quarter's floor counted as ground under the Ruins' courtyard canal
+-- walk, where the game said "Ruins of Lordaeron" (walk 2026-10-07 23:46).
 function logic.hallGroundNear(zone, r, c)
     local hg = zone._index.hallGround
     for dr = -1, 1 do
@@ -629,13 +632,14 @@ function logic.hallGroundNear(zone, r, c)
     return false
 end
 
-function logic.inHallFloor(zone, x, y, uiMap, zoneFloor, staying)
+function logic.inHallFloor(zone, x, y, uiMap, zoneFloor, staying, area)
     if not logic.isHallMap(zone, uiMap) then
         return false
     end
     local ix = zone._index
     local r0, c0 = logic.cellOf(zone, x, y)
     local floor = zoneFloor or 0
+    local known = area ~= nil and area ~= ""
     for _, id in ipairs(ix.hallRooms) do
         local r = ix.rooms[id]
         if r.hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
@@ -644,7 +648,8 @@ function logic.inHallFloor(zone, x, y, uiMap, zoneFloor, staying)
                 if staying then
                     return true
                 end
-            elseif pieces[floor] and (floor ~= 0 or logic.hallGroundNear(zone, r0, c0)) then
+            elseif pieces[floor] and (floor ~= 0 or (logic.hallGroundNear(zone, r0, c0)
+                    and not (known and r.subzone and r.subzone ~= area))) then
                 return true
             end
         end
