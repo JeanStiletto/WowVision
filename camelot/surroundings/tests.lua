@@ -246,6 +246,42 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(layer._index.floor, 0)
     end,
 
+    ["a flight with a wall side says its way up toward that side, and its foot the same way on"] = function(t)
+        local z = newTowerZone()
+        -- the first flight (piece 1, up to the east) aimed at its top on the north side; the next
+        -- flight (piece 3, foot at 96, 25) at 98, 15
+        z.climbAims = { 1, 20000, 97, 37, 90, 3, 50000, 98, 15, 90 }
+        logic.unpack(z)
+        local wallSide = logic.wallSide
+        logic.setFloor(z, 1)
+        -- the setting off: nothing
+        logic.wallSide = false
+        t:assertNil(logic.aimTarget(z, 92, 48))
+        logic.wallSide = true
+        -- 3 yd south of its line: the way up said toward the point, northeast, not east
+        local target = logic.aimTarget(z, 92, 48)
+        t:assertEqual(target.kind, "aim")
+        t:assertEqual(logic.guideText(z, target, true, false), "on to the northeast")
+        t:assertEqual(logic.atTarget(z, target, 92, 48), false)
+        -- facing down the flight: not said (it is the way up)
+        t:assertNil(logic.aimTarget(z, 92, 48, 270))
+        t:assertEqual(logic.aimTarget(z, 92, 48, 60).kind, "aim")
+        -- within AIM_DONE of the point along the way up: no longer said (the top's guidance)
+        t:assertNil(logic.aimTarget(z, 95, 38))
+        -- no point on the landing
+        logic.setFloor(z, 2)
+        t:assertNil(logic.aimTarget(z, 95, 30))
+        -- the next flight's foot: its way on toward its point (79 degrees); with the setting off
+        -- the climb's own (none in this test's value)
+        local foot = logic.footTarget(z, 95, 30)
+        t:assertEqual(foot.kind, "climb")
+        t:assertEqual(foot.through, 79)
+        logic.wallSide = false
+        foot = logic.footTarget(z, 95, 30)
+        t:assertNil(foot.through)
+        logic.wallSide = wallSide
+    end,
+
     ["a structure's place says the structure's name only where the player is not on it"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
