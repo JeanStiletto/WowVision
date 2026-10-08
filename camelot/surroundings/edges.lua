@@ -1,6 +1,5 @@
--- Surroundings logic: drop edges of structures (docks, bridges, walls, towers, the city water
--- edges), the high floor pieces they may lie on, and the water: what lies under a bridge and the
--- ways out of city water.
+-- Surroundings logic: drop edges (of the cities' floors, structures, buildings; a drop into a
+-- liquid is one like any other), the floor pieces they lie on, and the ways out of the liquids.
 --
 -- An edge on a floor piece (a gate's wall-walk, a bridge deck over a bank, a landing) warns only
 -- while the player is on that piece. There is no height on Forever (measured 2026-10-05), so the
@@ -9,17 +8,6 @@
 -- counts.
 
 local logic = WowVision.surroundingsLogic
-
--- The water under a bridge cell (or the canal under a city street), as a cell value, or nil.
-function logic.underBridge(zone, r, c)
-    return zone._index.under[r * zone.cols + c]
-end
-
--- The nearest way out of the water within `reach` yards: index, distance, the angle toward it,
--- the exit {x, y, width, out (the angle one climbs out toward, or nil)}.
-function logic.nearestExit(zone, x, y, reach)
-    return logic.nearestPoint(zone._index.exits, x, y, reach)
-end
 
 -- yd; a step (the move since the last look) crossing a join within this of one of its points
 -- counts (the points lie about 2 yd apart along the line where two floors meet; 1.5 missed the
@@ -117,9 +105,13 @@ end
 -- the ground. `px, py`: the position at the last look; `blocked`: the player pushes against
 -- something (the wall detection's "blocked"): no fall then (pressing against the zeppelin tower's
 -- railing ends just past an edge's rim, and the module dropped the player from the first flight
--- to the deck on a bump, walk 2026-10-06 11:21; a real fall is no push). Returns the floor and
+-- to the deck on a bump, walk 2026-10-06 11:21; a real fall is no push). `swimming` (true,
+-- false, or nil while in the air): a liquid's surface is a floor piece, and swimming is the one
+-- height the game tells (user 2026-10-08): swimming, the player is on a liquid's piece (the one
+-- the floor joins or drops onto here, else the only one here); not swimming, on none (the floor
+-- the liquid joins here, else the only floor here, else the ground). Returns the floor and
 -- whether it changed.
-function logic.updateFloor(zone, x, y, cameOut, px, py, blocked)
+function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local key = r * zone.cols + c
@@ -181,6 +173,9 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked)
         end
         floor = pick or 0
     end
+    if swimming ~= nil and (swimming == true) ~= (ix.liquids[floor] ~= nil) then
+        floor = logic.swimFloor(zone, key, floor, swimming) or floor
+    end
     ix.floor = floor
     -- a crossing pending leads off the floor it began on only
     ix.pendingJoins = floor == was and pendingNow or {}
@@ -189,6 +184,57 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked)
         ix.cameFrom = was
     end
     return floor, floor ~= was
+end
+
+-- The floor piece the swimming state puts the player on in the cell `key` (else the 8 around),
+-- coming from `floor`: swimming, a liquid's piece there (the one `floor` joins or drops onto,
+-- else the only one; nil where none or several); not swimming, a floor there (the one the liquid
+-- `floor` joins, else the only one, else the ground where it is there; nil where none).
+function logic.swimFloor(zone, key, floor, swimming)
+    local ix = zone._index
+    local cols = zone.cols
+    local r, c = math.floor(key / cols), key % cols
+    local found, list = {}, {}
+    local function add(k)
+        for p in pairs(ix.floorCells[k] or {}) do
+            if (ix.liquids[p] ~= nil) == swimming and not found[p] then
+                found[p] = true
+                list[#list + 1] = p
+            end
+        end
+    end
+    add(key)
+    if #list == 0 then
+        for dr = -1, 1 do
+            for dc = -1, 1 do
+                add((r + dr) * cols + c + dc)
+            end
+        end
+    end
+    if not swimming and not ix.noGround[key] then
+        found[0] = true
+        list[#list + 1] = 0
+    end
+    table.sort(list)
+    for _, p in ipairs(list) do
+        if logic.joinedPieces(zone, floor, p) or logic.landsOn(zone, floor, p) then
+            return p
+        end
+    end
+    if #list == 1 then
+        return list[1]
+    end
+    return not swimming and found[0] and 0 or nil
+end
+
+-- Does a drop edge of `floor` land on `piece`?
+function logic.landsOn(zone, floor, piece)
+    for _, e in ipairs(zone._index.edges) do
+        if e.floor == floor and e.under == piece then
+            return true
+        end
+    end
+    return false
 end
 
 -- Sets the floor piece the player is on (0 the ground); every lookup follows it.
@@ -250,13 +296,12 @@ end
 
 -- Whether edge `i` is looked at from (x, y) at all: not skipped, on the floor piece the player is
 -- on (zone._index.floor: an edge of the ground (floor 0) counts only on the ground, an edge of a
--- piece only up on it; down in the moat the walkways' edges are no drops; an edge with no floor
--- (nil: the zone's edges into water, a structure's low edges) on every floor), in one of the
--- rooms the player may be in (`rooms`, the indoor layers: an edge inside warns only in the room
+-- piece only up on it; down in the moat the walkways' edges are no drops), in one of the rooms
+-- the player may be in (`rooms`, the indoor layers: an edge inside warns only in the room
 -- its floor belongs to; nil: every room), and its box within `reach` yards.
 local function edgeCounts(zone, e, i, x, y, reach, rooms, skip)
     local floor = zone._index.floor or 0
-    if (skip and skip[i]) or (e.floor ~= nil and e.floor ~= floor and not (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor)))
+    if (skip and skip[i]) or (e.floor ~= floor and not (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor)))
         or (rooms and e.piece ~= 0 and not rooms[e.piece]) then
         return false
     end
@@ -278,11 +323,11 @@ function logic.joinedPieces(zone, a, b)
 end
 
 -- Does the point (qx, qy) of edge `e` count on the floor `floor`: every point of an edge of that
--- floor (or of no floor), and up on a piece (not the ground: it joins the foot of every stairs, and
+-- floor, and up on a piece (not the ground: it joins the foot of every stairs, and
 -- their side drops came as drops ahead from the street below, replay 2026-10-06) a point of an
 -- edge of a piece joined to it within JOIN_EDGE_REACH of one of their joins.
 local function pointCounts(zone, e, floor, qx, qy)
-    if e.floor == nil or e.floor == floor then
+    if e.floor == floor then
         return true
     elseif floor == 0 then
         return false
@@ -404,7 +449,7 @@ function logic.fellOnto(zone, floor, px, py, x, y)
         return nil
     end
     for _, e in ipairs(ix.edges) do
-        if e.under ~= nil and (e.floor == nil or e.floor == floor or (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor))) then
+        if e.under ~= nil and (e.floor == floor or (floor ~= 0 and logic.joinedPieces(zone, floor, e.floor))) then
             local b = e.box
             local reach = logic.FALL_REACH
             if x >= b[1] - reach and x <= b[2] + reach and y >= b[3] - reach and y <= b[4] + reach then

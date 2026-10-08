@@ -53,9 +53,8 @@ local ROAD_SIDE_REACH = 12 -- yd; off a road or street, where it is is said with
 -- to line up with it and heard nothing there)
 local GUIDE_REACH = 8
 logic.GUIDE_REACH = GUIDE_REACH
-local EXIT_REACH = 25 -- yd; ways out of the water guided to while swimming
-local MOAT_EXIT_REACH = 300 -- yd; a moat's way out, from anywhere down in it (the Commons' moat is a ring)
 logic.GUIDE_AT = 3 -- yd from a target that count as being at it
+local EXIT_REACH = 25 -- yd; a liquid's ways out guided to while swimming (a moat's from anywhere down in it)
 
 -- The names of the item classes that are their own word; the others (ways, rooms) carry a name.
 local NAMED_CLASSES = { way = true, room = true, entrance = true }
@@ -443,40 +442,28 @@ function logic.onClimb(zone, t, x, y, currentKey)
     return currentKey ~= nil and logic.outdoorKey(zone, t.value, currentKey) == currentKey
 end
 
--- The nearest way out of the water within reach, while swimming; one onto floor that joins
--- nothing or into a dead end says so. `down`: the place value of a hall's lower floor the player
--- is down on (the moat, a pool; a floor piece like any other, entered and left by updateFloor,
--- and said as a place): the ways out of the floor piece the player is on (`floor`; the moat's
--- nine place pieces are one floor and share them); a pool's named with it ("pool, way out, 17
--- yards at 9 o'clock").
-function logic.exitTarget(zone, x, y, down, floor)
-    local i, d, dir, exit
-    local kind = down and logic.kindOf(zone, down) or nil
-    if down then
-        -- down on a hall's lower floor: its own ways out
-        local own = {}
-        for _, e in ipairs(zone._index.exits) do
-            if (e.floor or 0) == (floor or 0) then
-                own[#own + 1] = e
-            end
+-- The nearest way out of the floor piece the player is on (`floor`: a liquid's within EXIT_REACH;
+-- the moat's from anywhere down in it, its nine place pieces are one floor and share them); one
+-- onto floor that joins nothing or into a dead end says so. `down`: the place value of a hall's
+-- lower floor the player is down on (the moat): named as its way out.
+function logic.exitTarget(zone, x, y, floor, down)
+    local own = {}
+    for _, e in ipairs(zone._index.exits) do
+        if (e.floor or 0) == (floor or 0) then
+            own[#own + 1] = e
         end
-        i, d, dir, exit = logic.nearestPoint(own, x, y, kind == "moat" and MOAT_EXIT_REACH or math.huge)
-    else
-        i, d, dir, exit = logic.nearestExit(zone, x, y, EXIT_REACH)
     end
+    local i, d, dir, exit = logic.nearestPoint(own, x, y, down and math.huge or EXIT_REACH)
     if i == nil then
         return nil
     end
     local dead = exit.dead
     local name = L["way out of the water"]
-    if kind == "moat" then
+    if down and logic.kindOf(zone, down) == "moat" then
         name = L["way out of the moat"]
-    elseif kind then
-        local place = logic.place(zone, logic.placeOf(down))
-        name = place and place.label .. ", " .. L["way out"] or name
     end
     return {
-        key = exit.i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
+        key = exit.group or exit.i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
         name = dead and L["way out of the water to a dead end"] or name,
         short = dead and L["way out to a dead end"] or L["way out"],
         atName = dead and L["at the way out to a dead end"] or L["at the way out"],
