@@ -54,6 +54,10 @@ local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-wal
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
 local GUIDE_AWAY = 2 -- beyond "at" a target before it is guided to again
+-- yd: a new direction only when the last said one would also pass the target more than this beside
+-- it (near a door a step sideways turns the bearing a lot, the way to it hardly: 10 lines in 35 s
+-- at a shop door, walk 2026-10-08 16:06)
+local GUIDE_MISS = 2
 local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
 local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (it stops while disabled)
 local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
@@ -251,7 +255,9 @@ end
 -- position trail, kept in WowVisionDump.surroundings, so walks can be compared with the data
 -- offline after a /reload or logout (the walklog tools of wv-surroundings). Off until switched
 -- on, then on until switched off.
-local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 4
+-- (a trail point every 2 yd: at 4 the replays walked straight past the steps around a door,
+-- 2026-10-08)
+local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 2
 local trailX, trailY = nil, nil
 local sessionLogged = false
 
@@ -456,7 +462,8 @@ end
 
 -- Guidance to the nearest target within reach (on foot an entrance or a street's beginning, a way
 -- out of the water while swimming): said with distance and direction; again when the direction
--- has turned (GUIDE_TURN degrees off the last said one, after GUIDE_REPEAT), and once at it. The
+-- has turned (GUIDE_TURN degrees off the last said one, after GUIDE_REPEAT, and the last said
+-- one would pass it more than GUIDE_MISS beside it or lie behind), and once at it. The
 -- name and the way through only until another target is named: then "entrance, 6 to the north".
 -- `brief` (a beacon leads): only that the target is there and its name, once.
 local function guideTo(z, g, t, x, y, brief)
@@ -479,6 +486,11 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > GUIDE_TURN
+    if turned and g.dir then
+        local vx, vy = logic.compassVector(g.dir)
+        local along = (t.x - x) * vx + (t.y - y) * vy
+        turned = along < 0 or math.abs((t.x - x) * vy - (t.y - y) * vx) > GUIDE_MISS
+    end
     if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
         say(logic.guideText(z, t, named, false), t.kind, x, y)
         g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
@@ -943,8 +955,15 @@ local function checkPlace(z, x, y, forced)
     outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y) then
         leftWay = logic.isWayKey(previous) and previous or nil
+        -- off a way onto a square: at the way's end the square's description, before its end (a
+        -- step off it sideways) where the way is (logic.leftAtEnd)
+        local sideways = false
+        if leftWay and logic.isAroundPlace(z, value) then
+            local sq = logic.regionAt(z, x, y)
+            sideways = sq ~= nil and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
+        end
         local text, square, said = logic.spotText(z, x, y, value, previous,
-            { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed })
+            { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways })
         if not logic.sameWay(value, previous, wayNamed) then
             wayNamed = logic.placeOf(value)
         end

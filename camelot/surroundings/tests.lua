@@ -1888,6 +1888,27 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(text, "square of Test, street of Test to the north, entrance of Test Bank to the southeast")
     end,
 
+    ["off a street at its end the square's ways on; stepping off it sideways where the street is"] = function(t)
+        local z = newSquareZone()
+        -- the street goes on into a road at the north: it leads on, so it begins on the square
+        table.insert(z.places, { "road", "road of Test" })
+        z.grid[1] = "30000*2,28000*2,60000,30000*2"
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        -- the street (place 2) begins on the square at its north side, about x 90, y 40
+        t:assertEqual(logic.leftAtEnd(z, region, 2, 91, 40), true)
+        t:assertEqual(logic.leftAtEnd(z, region, 2, 82, 62), false)   -- 23 yd from its beginning
+        t:assertEqual(logic.leftAtEnd(z, region, 1, 91, 40), false)   -- no beginning of that place
+        -- sideways: as open land, the square's name and where the street is; nothing of it comes
+        -- close (every mouth counts as said)
+        local text, sq, said = logic.spotText(z, 88, 35, 10000, 2, { cut = true, sideways = true })   -- 2 yd off the street
+        t:assertEqual(text, "square of Test, street to the north")
+        t:assertEqual(sq.label, "square of Test")
+        for _, m in ipairs(sq.mouths) do
+            t:assertEqual(said[m], true)
+        end
+    end,
+
     ["a stop says what to wait for and which way it will be; outdoors only open floor, indoors its room"] = function(t)
         local z = newZone()
         -- a ship lying along x = 75 south of row 1 (y 40 to 20); a lift in the back room (room 3)
