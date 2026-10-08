@@ -958,7 +958,7 @@ local function checkPlace(z, x, y, forced)
         -- off a way onto a square: at the way's end the square's description, before its end (a
         -- step off it sideways) where the way is (logic.leftAtEnd)
         local sideways = false
-        if leftWay and logic.isAroundPlace(z, value) then
+        if leftWay and logic.hasEdge(z, value) then
             local sq = logic.regionAt(z, x, y)
             sideways = sq ~= nil and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
         end

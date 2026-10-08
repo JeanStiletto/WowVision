@@ -505,10 +505,17 @@ end
 
 -- Spots -------------------------------------------------------------------------------------------
 
--- A square's exits (streets, roads, squares that lead on; nearest first) and the water, canals
--- and cliff edges within APPROACH yards, which are marked in `said`; the building entrances on it
--- only without `cut` (the announcements leave them to the entrance guidance).
-local function squareItems(zone, x, y, region, cut, previous, said)
+-- One rule for every outdoor place (user 2026-10-08: "why two rule sets, if we can have just one list
+-- of landmarks working everywhere"): the place's name, then what lies around the player, from one
+-- of two sources. A place with an edge (logic.hasEdge: a square, hall or platform, whose region
+-- logic.regionAt floods) says what its edge leads to (edgeItems), unless the player stepped onto
+-- it off a way before that way's end (`opts.sideways`); every other place, and that one, says
+-- what lies around the player within reach (radiusParts).
+
+-- From the edge: the place's ways on (streets, roads, squares that lead on; nearest first) and the
+-- water, canals and cliff edges within APPROACH yards, which are marked in `said`; the building
+-- entrances on it only without `cut` (the announcements leave them to the entrance guidance).
+local function edgeItems(zone, x, y, region, cut, previous, said)
     local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = zone }
     if cut then
         opts.max = ITEMS_MAX
@@ -531,40 +538,65 @@ local function squareItems(zone, x, y, region, cut, previous, said)
             items[#items + 1] = item
         end
     end
+    for _, item in ipairs(items) do
+        for _, m in ipairs(item.mouths or {}) do
+            said[m] = true
+        end
+    end
     return items
 end
 
--- Cliffs and water near an outdoor place: "forest, cliff edge to the west and north". Not on roads
--- nor what the place itself is; announcements also leave out what the player just left (the shore
--- behind them).
-local function featuresText(zone, x, y, kind, previous, cut)
-    if FEATURE_SKIP[kind] then
-        return nil
+-- Around the player, by radius: off a way (just stepped off one, or the describe key) where the
+-- nearest road or street is, toward its centre line where it has one (across the way, so it does
+-- not flicker; the same rule for both, in a city the word is street), within ROAD_SIDE_REACH; and
+-- the cliffs and water within FEATURE_REACH (logic.featuresAround; not on roads nor what the place
+-- itself is, announcements also leave out what the player just left: the shore behind them; not
+-- while `opts.swimming`). Returns the parts (texts) and whether the way beside was found (the
+-- place's own stored nearest road is then left out of its name).
+local function radiusParts(zone, x, y, kind, previous, opts)
+    local parts, beside = {}, false
+    local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
+    if not logic.LANE_KINDS[kind] and (wasWay or not opts.cut) then
+        local d, dir, street
+        local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
+        if ld then
+            d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
+        else
+            d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
+            local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
+            if sd and (d == nil or sd < d) then
+                d, dir, street = sd, sdir, true
+            end
+        end
+        if d then
+            local format = street and T("street to the %s") or T("road to the %s")
+            parts[#parts + 1] = string.format(format, logic.dirWord(zone, dir))
+            beside = true
+        end
     end
-    local skip = {}
-    if FEATURES[kind] then
-        skip[FEATURES[kind]] = true
+    if not opts.swimming and not FEATURE_SKIP[kind] then
+        local skip = {}
+        if FEATURES[kind] then
+            skip[FEATURES[kind]] = true
+        end
+        local before = opts.cut and FEATURES[logic.kind(zone, logic.keyPlace(previous))]
+        if before then
+            skip[before] = true
+        end
+        local items = logic.featuresAround(zone, x, y, FEATURE_REACH, FEATURES, skip)
+        if #items > 0 then
+            parts[#parts + 1] = logic.itemsText(zone, items)
+        end
     end
-    local before = cut and FEATURES[logic.kind(zone, logic.keyPlace(previous))]
-    if before then
-        skip[before] = true
-    end
-    local items = logic.featuresAround(zone, x, y, FEATURE_REACH, FEATURES, skip)
-    if #items == 0 then
-        return nil
-    end
-    return logic.itemsText(zone, items)
+    return parts, beside
 end
 
--- The outdoor spot of a cell value: the place, its direction and nearest road; on a road, street
--- or walk which way to turn to face along it (with `opts.facing`), only where the words cannot
--- tell; on a square its exits and what is close, unless the player stepped onto it off a way
--- before that way's end (`opts.sideways`): then, as on open land, where the way is; elsewhere
--- where a road or street is (within ROAD_SIDE_REACH, off a way; announcements only on stepping
--- off one) and the cliffs and water near (not while `opts.swimming`). opts.cut: an announcement (see the top); the next piece of the
--- way the player is on says only its direction (nil when it has none) while that way was the last
--- named (`opts.named`, logic.sameWay). Returns the text, and on a square its region and the set of
--- its mouths said now.
+-- The outdoor spot of a cell value (see above): the place, its direction and nearest road, then
+-- what lies around. opts.cut: an announcement (see the top); the next piece of the way the player
+-- is on says only its direction (nil when it has none) while that way was the last named
+-- (`opts.named`, logic.sameWay). Returns the text, and for a place with an edge its region and the
+-- set of its mouths said now (all of them after a step onto it off a way: nothing of it comes
+-- close then).
 local function spotBody(zone, x, y, value, previous, opts)
     if opts.cut and logic.sameWay(value, previous, opts.named) then
         return logic.directionText(zone, value)
@@ -579,63 +611,34 @@ local function spotBody(zone, x, y, value, previous, opts)
         return nil
     end
     local kind = logic.kindOf(zone, value)
-    -- stepped off a way onto a square beside it (user 2026-10-08: "if I leave the street and just
-    -- want to go back onto it, that's the perfect case"): said as open land, where the way is
-    local sideRegion = opts.sideways and logic.isAroundPlace(zone, value) and logic.regionAt(zone, x, y) or nil
-    if logic.isAroundPlace(zone, value) and not sideRegion then
+    local region = logic.hasEdge(zone, value) and logic.regionAt(zone, x, y) or nil
+    if logic.hasEdge(zone, value) and region == nil then
         -- (a square beside a way decided by its centre line may lie off the player's own cell)
-        local region = logic.regionAt(zone, x, y)
-        if region == nil then
-            return text
-        end
-        -- said: the ways the entry line names (its cut leaves the farther ones out: a ramp 43 yd
-        -- across the square comes as "near" once within APPROACH, as before) and the water and
-        -- drops approaching; not every way of the square
-        local said = {}
-        local items = squareItems(zone, x, y, region, opts.cut, previous, said)
-        for _, item in ipairs(items) do
-            for _, m in ipairs(item.mouths or {}) do
-                said[m] = true
-            end
-        end
+        return text
+    end
+    local said = {}
+    if region and not opts.sideways then
+        local items = edgeItems(zone, x, y, region, opts.cut, previous, said)
         if #items > 0 then
             text = text .. ", " .. logic.itemsText(zone, items, logic.floorOfValue(zone, value))
         end
         return text, region, said
     end
-    -- off a way: where the nearest road or street is (the same rule for both; in a city the word
-    -- is street)
-    local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
-    if not logic.LANE_KINDS[kind] and (wasWay or not opts.cut) then
-        -- toward the way's centre line where it has one: across the way, so it does not flicker
-        local d, dir, street
-        local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
-        if ld then
-            d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
-        else
-            d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
-            local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
-            if sd and (d == nil or sd < d) then
-                d, dir, street = sd, sdir, true
-            end
-        end
-        if d then
-            -- instead of the place's stored nearest road, which may be another one
-            local format = street and T("street to the %s") or T("road to the %s")
-            text = logic.describe(zone, value, true, true, from, here) .. ", " .. string.format(format, logic.dirWord(zone, dir))
-        end
+    local parts, beside = radiusParts(zone, x, y, kind, previous, opts)
+    if beside then
+        -- (the way beside said instead of the place's stored nearest road, which may be another one)
+        text = logic.describe(zone, value, true, true, from, here)
     end
-    local near = not opts.swimming and featuresText(zone, x, y, kind, previous, opts.cut)
-    if near then
-        text = text .. ", " .. near
+    for _, part in ipairs(parts) do
+        text = text .. ", " .. part
     end
-    if sideRegion then
-        -- (the square's region for the guidance; nothing of it comes close after a step off a way)
-        local said = {}
-        for _, m in ipairs(sideRegion.mouths or {}) do
+    if region then
+        -- stepped onto it off a way (user 2026-10-08: "if I leave the street and just want to go
+        -- back onto it, that's the perfect case"): nothing of the place comes close
+        for _, m in ipairs(region.mouths or {}) do
             said[m] = true
         end
-        return text, sideRegion, said
+        return text, region, said
     end
     return text
 end
