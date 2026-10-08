@@ -23,14 +23,14 @@ logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
 logic.RISE_ALONG = 60
 logic.DOOR_NEAR = 3 -- cells; a doorway this close to a border cell of a room's opening is the opening
 
--- Does a cell value belong to a place that says what lies around it? Only squares and halls: a
--- street without a direction (a piece without centre line) is a way like a road without one (one
--- rule for roads and streets, user 2026-09-30).
-function logic.isAroundPlace(zone, value)
+-- Does a cell value belong to a place with an edge (logic.EDGED: a square, hall or platform), which
+-- says what its edge leads to (texts.lua spotBody)? A street without a direction (a piece without
+-- centre line) is a way like a road without one (one rule for roads and streets, user 2026-09-30).
+function logic.hasEdge(zone, value)
     if value == nil or value == 0 then
         return false
     end
-    return logic.SQUARES[logic.kindOf(zone, value)] or false
+    return logic.EDGED[logic.kindOf(zone, value)] or false
 end
 
 -- The thing a border cell shows: label and class ("way" with the place's label; "water", "cliff
@@ -361,7 +361,7 @@ end
 
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
-    if not logic.isAroundPlace(zone, value) then
+    if not logic.hasEdge(zone, value) then
         return nil
     end
     local ix = zone._index
@@ -420,7 +420,7 @@ end
 -- (the square before the Cathedral of Light lies between two parts of an unnamed square and the
 -- cathedral; it was dropped as leading nowhere, 2026-09-29). leadsOn is for streets and ramps.
 local function isSquareMouth(zone, m)
-    return logic.SQUARES[mouthKind(zone, m)] or false
+    return logic.EDGED[mouthKind(zone, m)] or false
 end
 
 -- The middle of a mouth's border cells, and of the square's cells beside them (world yards).
@@ -451,7 +451,7 @@ local function streetTouches(zone, mouth)
         if label == mouth.label then
             return true
         end
-        if logic.SQUARES[kind] then
+        if logic.EDGED[kind] then
             local x, y = logic.cellCentre(zone, r, c)
             local region = logic.regionAt(zone, x, y)
             if region then
@@ -639,7 +639,7 @@ function logic.wayBeginnings(zone, region)
     local list = {}
     for _, m in ipairs(region.mouths) do
         local kind = m.class == "way" and mouthKind(zone, m)
-        if kind and not logic.SQUARES[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
+        if kind and not logic.EDGED[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
             -- the middle of the opening: the border point nearest to the border's centre
             local mx, my, ix, iy = mouthMiddle(zone, m)
             local _d, bx, by = logic.nearestOfPoints(m.points, mx, my)

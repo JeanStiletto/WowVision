@@ -20,7 +20,10 @@ end
 
 -- Place kinds (the data's English kind keys)
 logic.ROADS = set("road", "fork", "crossing")
-logic.SQUARES = set("square", "hall", "platform") -- places that say what lies around them (a structure's platform too: its stairs, user 2026-10-06); no way begins there
+-- places with an edge (their region: logic.regionAt), which says what they lead to (a structure's
+-- platform too: its stairs, user 2026-10-06); no way begins there. Every other place says what lies
+-- around the player by radius (texts.lua spotBody: one rule for both)
+logic.EDGED = set("square", "hall", "platform")
 logic.WAYS = set("street", "square", "hall", "road", "fork", "crossing", "bridge", "quay", "pier", "canal walk",
     "slime canal walk", "walk along the lava", "ramp", "stairs")
 logic.LANE_KINDS = set("road", "fork", "crossing", "street", "quay", "pier", "canal walk", "slime canal walk",

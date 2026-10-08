@@ -333,8 +333,8 @@ testRunner:addSuite("Surroundings", {
     ["a structure's platform says what lies around it, as a square"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
-        t:assertEqual(logic.isAroundPlace(z, 30000), true)
-        t:assertEqual(logic.isAroundPlace(z, 20000), false)
+        t:assertEqual(logic.hasEdge(z, 30000), true)
+        t:assertEqual(logic.hasEdge(z, 20000), false)
     end,
 
     ["up on a piece, the drop edge of a piece joined to it counts near their join"] = function(t)
@@ -1315,10 +1315,10 @@ testRunner:addSuite("Surroundings", {
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)
-        t:assertEqual(logic.isAroundPlace(z, 10000), true)
-        t:assertEqual(logic.isAroundPlace(z, 28000), false)   -- a street with a direction
-        t:assertEqual(logic.isAroundPlace(z, 20000), false)   -- a street without one: a way, as a road
-        t:assertEqual(logic.isAroundPlace(z, 30000), false)
+        t:assertEqual(logic.hasEdge(z, 10000), true)
+        t:assertEqual(logic.hasEdge(z, 28000), false)   -- a street with a direction
+        t:assertEqual(logic.hasEdge(z, 20000), false)   -- a street without one: a way, as a road
+        t:assertEqual(logic.hasEdge(z, 30000), false)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(logic.regionAt(z, 65, 55), region)    -- the same square, cached
         t:assertNil(logic.regionAt(z, 95, 65))              -- open land
