@@ -34,7 +34,8 @@ function logic.isAroundPlace(zone, value)
 end
 
 -- The thing a border cell shows: label and class ("way" with the place's label; "water", "cliff
--- edge", "canal", which are their own label), or nil; and for a way of a structure the player is
+-- edge", "canal" (a city's water lying there, a liquid piece of its own), which are their own
+-- label), or nil; and for a way of a structure the player is
 -- not on (`here`: the structure of the region's place, or nil) its label as said, with the
 -- structure's name (logic.describe: "ramp of pier of Stormwind Harbor" from the dock beside it).
 local function borderThing(zone, value, key, here)
@@ -55,7 +56,7 @@ local function borderThing(zone, value, key, here)
         end
         return nil
     end
-    if zone._index.under[key] then
+    if logic.liquidIn(zone, key) == 2 then
         return "canal", "canal"
     end
     return nil

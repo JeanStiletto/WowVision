@@ -20,8 +20,11 @@ local function newZone()
             { "landmark", "at the well", "Test road to the north" },
         },
         grid = { "10000*2,21090*2,38090*2", "40000*6", "0*6" },
-        bridgeUnder = { 0, 5, 50000 },
-        exits = { 95, 20, 10, 0 },   -- climbed out toward the north (angle 0)
+        -- the lake's water under the bridge (row 0, column 5) is a floor piece of its own, a
+        -- liquid's (piece 3, water); its way out at 95, 20, climbed out toward the north (angle 0)
+        liquids = { 3, 1 },
+        exits = { 95, 20, 10, 0 },
+        exitFloors = { 3 },
         -- a dock over row 1, columns 1 and 2 (world y 40 to 20), its north side a drop into water;
         -- a wall over row 1, columns 4 and 5, its wall-walk (high piece 1) dropping 12 yd to the
         -- south at x = 81; stepped onto from the ground at its east end (x 88, y 1) or out of a
@@ -29,15 +32,15 @@ local function newZone()
         structs = { "dock", "wall" },
         structCells = { 1, 1, 1, 1, 2, 1, 1, 4, 2, 1, 5, 2 },
         edges = {
-            { 1, 0, 3, 1, 0, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26 },
+            { 1, 0, 3, 1, 0, 90, 34, 90, 32, 90, 30, 90, 28, 90, 26, l = 0, u = 3 },
             { 2, 180, 12, 0, 0, 81, 14, 81, 12, l = 1 },
-            -- a low edge of the dock's structure, with no floor: warned on every floor
-            { 1, 180, 3, 0, 0, 82, 38, 82, 36 },
+            -- a low edge of the dock's structure
+            { 1, 180, 3, 0, 0, 82, 38, 82, 36, l = 0 },
         },
         -- the floor pieces: the wall-walk (1) and the tower top (2) with their values, the ground
         -- under both; joins: from the ground at the wall-walk's east end, from the building's door
         -- (a = -1), the wall-walk to the tower top at x 90
-        floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090 },
+        floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090, 0, 5, 3, 50000 },
         noGround = {},
         joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1 },
         -- frames chosen so that the building frame equals world x and y
@@ -62,9 +65,9 @@ end
 
 -- A square in a city: 5 rows x 7 columns of 10 yd cells; north edge at x = 100, west edge at
 -- y = 70. The square fills rows 1 to 3, columns 1 to 5; a street (running north-south) meets it
--- at row 0, columns 2 and 3; deep water east of it (rows 2 and 3, column 6); a canal (no place,
--- said while swimming) south of it (row 4, columns 1 to 3); open land elsewhere; the Test Bank's
--- door on its south-east corner.
+-- at row 0, columns 2 and 3; deep water east of it (rows 2 and 3, column 6); a canal (a liquid's
+-- piece of its own, no place on the grid) south of it (row 4, columns 1 to 3); open land
+-- elsewhere; the Test Bank's door on its south-east corner.
 local function newSquareZone()
     local z = newZone()
     z.rows, z.cols, z.top, z.left = 5, 7, 100, 70
@@ -76,8 +79,11 @@ local function newSquareZone()
         { "canal", "canal of Test" },
     }
     z.grid = { "30000*2,28000*2,30000*3", "30000,10000*5,30000", "30000,10000*5,40000", "30000,10000*5,40000", "0*7" }
-    z.bridgeUnder = { 4, 1, 50000, 4, 2, 50000, 4, 3, 50000 }
-    z.structs, z.structCells, z.edges, z.floorCells, z.noGround, z.joins = {}, {}, {}, {}, {}, {}
+    z.structs, z.structCells, z.edges, z.joins = {}, {}, {}, {}
+    z.floorCells = { 4, 1, 1, 50000, 4, 2, 1, 50000, 4, 3, 1, 50000 }
+    z.noGround = { 4, 1, 4, 2, 4, 3 }
+    z.liquids = { 1, 2 }
+    z.exits, z.exitFloors = {}, {}
     z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
     z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
     z.doors = { { 0, 1, 1, 65, 15, 1, 0, 0 } }
@@ -144,7 +150,7 @@ local function newHallZone()
         lanes = {},
         structs = { "Test City" }, waterStructs = { 1 },
         structCells = { 1, 1, 1, 1, 2, 1 },
-        edges = { { 1, 180, 80, 3, 1, 72, 20, 72, 22 } }, -- its floor belongs to the great hall (room 1)
+        edges = { { 1, 180, 80, 3, 1, 72, 20, 72, 22, l = 0 } }, -- its floor belongs to the great hall (room 1)
     }
     return z
 end
@@ -165,7 +171,7 @@ local function newTowerZone()
         { "stairs", "stairs to the top", of = "tower" },
     }
     z.grid = { "10000*6", "10000*6", "40000*6" }
-    z.bridgeUnder, z.exits, z.interiors, z.rooms, z.doors = {}, {}, {}, {}, {}
+    z.liquids, z.exits, z.exitFloors, z.interiors, z.rooms, z.doors = {}, {}, {}, {}, {}, {}
     z.structs = { "tower" }
     z.structCells = { 0, 1, 1, 0, 2, 1, 0, 3, 1 }
     z.edges = {
@@ -669,12 +675,27 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.describe(z, 90000, true))
     end,
 
-    ["the water under a bridge is known per cell"] = function(t)
+    ["a liquid is a floor piece: swimming puts the player on it, on foot off it"] = function(t)
         local z = newZone()
         logic.unpack(z)
         local _v, r, c = logic.valueAt(z, 95, 5)
-        t:assertEqual(logic.underBridge(z, r, c), 50000)
-        t:assertNil(logic.underBridge(z, 0, 0))
+        t:assertEqual(logic.liquidIn(z, r * z.cols + c), 1)
+        t:assertNil(logic.liquidIn(z, 0))
+        -- on the bridge: the bridge; swimming under it: the lake's piece, and the lake
+        t:assertEqual(logic.valueAt(z, 95, 5), 38090)
+        logic.updateFloor(z, 95, 5, false, 95, 6, false, true)
+        t:assertEqual(z._index.floor, 3)
+        t:assertEqual(logic.valueAt(z, 95, 5), 50000)
+        -- in the air (jumping out of the water): no change; on foot again: off the liquid, onto
+        -- the ground here (no floor here joins the lake)
+        logic.updateFloor(z, 95, 4, false, 95, 5, false, nil)
+        t:assertEqual(z._index.floor, 3)
+        logic.updateFloor(z, 95, 4, false, 95, 4, false, false)
+        t:assertEqual(z._index.floor, 0)
+        -- falling off the dock's north edge into the lake: on the lake's piece
+        logic.updateFloor(z, 89, 30, false, 89, 30)
+        logic.updateFloor(z, 91, 30, false, 89, 30)
+        t:assertEqual(z._index.floor, 3)
         logic.pack(z)
         t:assertNil(z._index)
     end,
@@ -737,54 +758,40 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.angleOff(-10, 0, 0), 180)
     end,
 
-    ["the nearest way out of the water, with its direction"] = function(t)
+    ["the nearest way out of the liquid the player is on, with its direction"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        local i, d, dir, exit = logic.nearestExit(z, 95, 30, 25)
-        t:assertEqual(exit.out, 0)                         -- one climbs out toward the north
-        t:assertEqual(i, 1)
-        t:assertEqual(d, 10)
-        t:assertEqual(dir, 90)                             -- y 20 is east of y 30
-        t:assertNil(logic.nearestExit(z, 95, 60, 25))
+        local target = logic.exitTarget(z, 95, 30, 3)
+        t:assertEqual(target.name, "way out of the water")
+        t:assertEqual(target.through, 0)                   -- one climbs out toward the north
+        t:assertEqual(target.key, 1)
+        t:assertEqual(target.d, 10)
+        t:assertEqual(target.dir, 90)                      -- y 20 is east of y 30
+        t:assertNil(logic.exitTarget(z, 95, 30, 0))        -- on the ground: none of its own
+        -- two stretches of one way out (a long shore) share their group: one target to the
+        -- guidance, whichever stretch is nearer
+        z = newZone()
+        z.exits, z.exitFloors, z.exitGroups = { 95, 20, 10, 0, 95, 10, 10, 0 }, { 3, 3 }, { 1, 1 }
+        logic.unpack(z)
+        local a, b = logic.exitTarget(z, 95, 22, 3), logic.exitTarget(z, 95, 8, 3)
+        t:assertEqual(a.key, b.key)
+        t:assertEqual(a.y, 20)
+        t:assertEqual(b.y, 10)
+        t:assertNil(logic.exitTarget(z, 95, 60, 3))        -- beyond EXIT_REACH while swimming
     end,
 
     ["a moat: its edge says moat, its way out is found from anywhere down in it"] = function(t)
         local z = newZone()
         z.edges[1][4] = 4   -- the dock's edge now drops into a moat
         z.places[7] = { "moat", "moat" }
+        z.exitFloors = { 0 }  -- the moat is the ground here
         logic.unpack(z)
         t:assertEqual(logic.edgeText(z, 1), "north, moat")
         t:assertEqual(logic.edgeText(z, 1, 6.2), "6 north, moat")
-        t:assertNil(logic.exitTarget(z, 95, 60))                       -- as a swimmer: too far
-        local target = logic.exitTarget(z, 95, 60, 70000, 0)           -- down in the moat: 40 yd away
+        t:assertNil(logic.exitTarget(z, 95, 60, 1))                    -- on another piece: none
+        local target = logic.exitTarget(z, 95, 60, 0, 70000)           -- down in the moat: 40 yd away
         t:assertEqual(target.name, "way out of the moat")
         t:assertEqual(target.through, 0)
-    end,
-
-    ["a pool is a hall's lower level: in on its own floor, its way out is its own, out off it"] = function(t)
-        local z = newZone()
-        -- the pool, level 3 (the wall-walk and the tower top are 1 and 2): over row 1, columns 0 and
-        -- 1 (world x 80 to 90, y 60 to 40); column 0 only its floor, column 1 stacked over the open
-        -- land; its way out at 84, 52, toward the northwest, after the zone's (95, 20)
-        z.places[7] = { "pool", "pool" }
-        z.floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090, 1, 0, 3, 70000, 1, 1, 3, 70000 }
-        z.noGround = { 1, 0 }
-        z.exits = { 95, 20, 10, 0, 84, 52, 3, 315 }
-        z.exitFloors = { 0, 3 }
-        logic.unpack(z)
-        t:assertEqual(logic.valueAt(z, 85, 45), 40000)                -- beside it: the open land
-        logic.updateFloor(z, 85, 58, false, 85, 58)                   -- on its own floor: down in it
-        t:assertEqual(z._index.floor, 3)
-        t:assertEqual(logic.valueAt(z, 85, 45), 70000)                -- the cell over the land: the pool
-        local target = logic.exitTarget(z, 85, 45, 70000, 3)           -- its own way out, not the zone's
-        t:assertEqual(target.name, "pool, way out")
-        t:assertEqual(target.key, 2)
-        t:assertEqual(target.through, 315)
-        logic.updateFloor(z, 85, 35, false, 85, 45)                   -- the cell beside it: still in (a gap in a piece's cells is tolerated)
-        t:assertEqual(z._index.floor, 3)
-        logic.updateFloor(z, 85, 15, false, 85, 35)                   -- two cells onto the open land: out
-        t:assertEqual(z._index.floor, 0)
-        t:assertEqual(logic.valueAt(z, 85, 45), 40000)
     end,
 
     ["a drop edge warns only on the structure, in front of the edge"] = function(t)
@@ -801,7 +808,7 @@ testRunner:addSuite("Surroundings", {
     ["the edge ahead in the view wins over a nearer one; warned edges are left out"] = function(t)
         local z = newZone()
         -- a second dock edge, its drop to the west at y = 40
-        z.edges[3] = { 1, 270, 3, 1, 0, 84, 40, 86, 40 }
+        z.edges[3] = { 1, 270, 3, 1, 0, 84, 40, 86, 40, l = 0 }
         logic.unpack(z)
         -- at 87, 36: the north edge 3.6 yd away (north-northeast), the west edge 4.1 yd (west)
         t:assertEqual(logic.nearestEdge(z, 87, 36, 5, {}), 1)
@@ -1406,6 +1413,7 @@ testRunner:addSuite("Surroundings", {
         table.insert(z.places, { "road", "road of Test" })
         -- along the west side (rows 1 to 4, 30 yd of border), going on into a road at the north
         z.grid = { "60000,30000*6", "28000,10000*5,30000", "28000,10000*5,40000", "28000,10000*5,40000", "28000,10000*5,40000" }
+        z.floorCells, z.noGround, z.liquids = {}, {}, {}   -- (row 4 is the square here: no canal)
         logic.unpack(z)
         local region = logic.regionAt(z, 78, 35)
         t:assertEqual(#logic.wayBeginnings(z, region), 0)
@@ -1502,11 +1510,13 @@ testRunner:addSuite("Surroundings", {
     ["swimming under a bridge: the water, never decided by a centre line"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        t:assertEqual(logic.outdoorValue(z, 95, 5, false, false), 38090)   -- on the bridge
-        local v, decided = logic.outdoorValue(z, 95, 5, true, true)
+        t:assertEqual(logic.outdoorValue(z, 95, 5, false), 38090)          -- on the bridge
+        logic.setFloor(z, 3)                                              -- on the lake's piece
+        local v, decided = logic.outdoorValue(z, 95, 5, true)
         t:assertEqual(v, 50000)
         t:assertEqual(decided, false)
-        t:assertEqual(logic.outdoorValue(z, 75, 30, false, false), 0)    -- no data
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.outdoorValue(z, 75, 30, false), 0)             -- no data
     end,
 
     ["things around are said as a list with their directions"] = function(t)
@@ -1553,7 +1563,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, true), "in to the north")
         t:assertEqual(logic.guideText(z, target, true, true), "in to the north")
         t:assertNil(logic.footTarget(z, 20, 5))   -- beyond the guidance reach
-        target = logic.exitTarget(z, 95, 30)
+        target = logic.exitTarget(z, 95, 30, 3)
         t:assertEqual(logic.guideText(z, target, true, false), "way out of the water, 10 to the east, out to the north")
     end,
 
@@ -1646,7 +1656,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         z.deadExits = { 1 }
         logic.unpack(z)
-        local target = logic.exitTarget(z, 95, 30)
+        local target = logic.exitTarget(z, 95, 30, 3)
         t:assertEqual(logic.guideText(z, target, true, false), "way out of the water to a dead end, 10 to the east, out to the north")
         t:assertEqual(logic.guideText(z, target, false, false), "way out to a dead end, 10 to the east")
         t:assertEqual(logic.guideText(z, target, false, true), "at the way out to a dead end, out to the north")
@@ -2002,9 +2012,9 @@ testRunner:addSuite("Surroundings", {
         z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
         z.lanes = { 100, 50, 84, 50, 21000, 20, 40 }
         logic.unpack(z)
-        t:assertEqual((logic.outdoorValue(z, 92, 50, false, false)), 21000)
+        t:assertEqual((logic.outdoorValue(z, 92, 50, false)), 21000)
         -- 6 yd off the line, past its leave distance: the square again
-        t:assertEqual((logic.outdoorValue(z, 92, 44, false, true)), 10000)
+        t:assertEqual((logic.outdoorValue(z, 92, 44, true)), 10000)
     end,
 
     ["clock hours: bare numbers, o'clock once at the end of a list or after a yard count"] = function(t)

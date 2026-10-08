@@ -694,11 +694,6 @@ function logic.unpack(zone, locale)
         ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of }
     end
 
-    -- water under a bridge (or a city canal under the streets), said while swimming
-    ix.under = {}
-    eachCellTriple(zone, zone.bridgeUnder, function(key, value)
-        ix.under[key] = value
-    end)
     -- structures with drop edges: the structure on each of their floor cells
     ix.struct = {}
     eachCellTriple(zone, zone.structCells, function(key, struct)
@@ -745,6 +740,13 @@ function logic.unpack(zone, locale)
                 list[#list + 1] = y
             end
         end
+    end)
+    -- the liquid pieces (water, city water, lava: a liquid's surface is a floor piece like any
+    -- other, and swimming is the one height the game tells): piece -> kind (1 water, 2 city
+    -- water, 3 lava)
+    ix.liquids = {}
+    eachRecord(zone.liquids, 2, function(piece, kind)
+        ix.liquids[piece] = kind
     end)
     ix.floor = 0
     -- the cells where a hall the game calls outdoors lies on the ground (rooms.lua inHallFloor)
@@ -804,11 +806,18 @@ function logic.unpack(zone, locale)
         -- out: the angle one climbs out toward, -1 unknown
         ix.exits[#ix.exits + 1] = { x = x, y = y, width = width, out = out >= 0 and out or nil, i = #ix.exits + 1 }
     end)
-    -- per way out the floor piece it leads out of (zone.exitFloors: the moat's, a pool's; 0 or
-    -- none: the ground, the canals')
+    -- per way out the floor piece it leads out of (zone.exitFloors: a liquid's, the moat's; 0 or
+    -- none: the ground)
     for i, fl in ipairs(zone.exitFloors or {}) do
         if ix.exits[i] then
             ix.exits[i].floor = fl
+        end
+    end
+    -- per way out its group (zone.exitGroups): the stretches of one way out (a long shore) share
+    -- one, so the guidance names it once while it follows the nearest stretch
+    for i, g in ipairs(zone.exitGroups or {}) do
+        if ix.exits[i] then
+            ix.exits[i].group = g
         end
     end
     -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
@@ -946,10 +955,11 @@ function logic.unpackLayer(zone, src, suffix)
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
         lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
-        structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, interiors = zone.interiors, rooms = zone.rooms,
+        structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
+        interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
         -- zone's: one rule for every floor over or under another
-        floorCells = src.floorCells, noGround = src.noGround, joins = src.joins,
+        floorCells = src.floorCells, noGround = src.noGround, joins = src.joins, liquids = src.liquids,
         -- the feet of a building's staircases, guided to as the city's climbs' feet
         climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
@@ -1239,21 +1249,32 @@ function logic.keyLabel(zone, key)
     return p and p.label
 end
 
--- The outdoor cell value at a position: while swimming the water under a bridge (or the city
--- canal under the streets); near a centre line what the line decides (`onWay`: the player is on
--- a way now, see laneValue). Returns the value (0 = no data) and whether a lane decided it.
-function logic.outdoorValue(zone, x, y, swimming, onWay)
-    local value, r, c = logic.valueAt(zone, x, y)
-    if swimming then
-        local under = logic.underBridge(zone, r, c)
-        if under then
-            return under, false
-        end
-    end
-    if value == 0 then
-        return 0, false
+-- The outdoor cell value at a position, on the floor piece the player is on: near a centre line
+-- what the line decides (`onWay`: the player is on a way now, see laneValue); on a liquid's piece
+-- the liquid's own (a centre line is a way's, on its floor: the street beside the canal is no
+-- place of the swimmer's). Returns the value (0 = no data) and whether a lane decided it.
+function logic.outdoorValue(zone, x, y, onWay)
+    local value = logic.valueAt(zone, x, y)
+    if value == 0 or logic.liquidKind(zone, zone._index.floor) then
+        return value, false
     end
     return logic.laneValue(zone, x, y, value, onWay)
+end
+
+-- The liquid kind of a floor piece (1 water, 2 city water, 3 lava), or nil for floor.
+function logic.liquidKind(zone, piece)
+    return piece and zone._index.liquids[piece] or nil
+end
+
+-- The kind of a liquid lying in the cell `key` (one of its pieces there), or nil.
+function logic.liquidIn(zone, key)
+    local ix = zone._index
+    for piece in pairs(ix.floorCells[key] or {}) do
+        if ix.liquids[piece] then
+            return ix.liquids[piece]
+        end
+    end
+    return nil
 end
 
 -- The entry rule ---------------------------------------------------------------------------------

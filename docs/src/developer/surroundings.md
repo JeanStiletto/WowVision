@@ -81,24 +81,25 @@ Each zone file calls `addon.addZone{...}` with:
   heading stays within KEY_STICK degrees of it. A new key of the way the player is on says only
   its direction while that way was the last place named (`logic.sameWay`): the name once, then
   "north to south", until the player leaves the way or another way is named.
-- `bridgeUnder`: row, column, value triples: the water under a bridge or the city canal
-  under a street, said while swimming.
-- `exits`: x, y, width, out quadruples: ways out of city water; out is the angle one climbs out
-  toward (-1 = unknown).
+- `exits`: x, y, width, out quadruples: ways out of the liquids (the joins of a liquid's piece
+  with floor, in stretches of 10 yards at most); out is the angle one climbs out toward (-1 =
+  unknown); `exitFloors`: per way out the floor piece it leads out of (the liquid's): guided to
+  only from that piece.
 - `deadExits`: 1-based indexes into the ways out that lead onto floor joining nothing, or into
   a dead end (decided offline with the heights; optional).
 - `noContact`: row, column, row, column quadruples: neighbouring cells of two squares with no
   walkable crossing between them (decided offline with the heights; optional). Such cells are
   no border between the squares.
 - `structs`: names of structures with drop edges; `structCells`: row, column, structure
-  triples (their floors); `waterStructs`: the structures that are city water edges (no wall).
+  triples (their floors); `waterStructs`: the structures that are a city's floor edges (no wall).
 - `edges`: per drop edge `{structure, facing (the angle of the drop), drop yards, into
-  (0 a plain drop, 1 water, 2 a city canal, 3 lava, 4 a moat), room (indoor layers: the room
+  (0 a plain drop, 1 water, 2 a city canal, 3 lava: the liquid the drop lands in; 4 a moat's
+  floor), room (indoor layers: the room
   the edge's floor belongs to, 0 any; 0 outdoors), x1, y1, x2, y2, ...}`: points about 2 yards
   apart along the edge; named fields after them (optional): `d = {...}` the depth per point (a
   ramp's side edge: 2 yd at the foot, 9 at the top), `l = piece` the floor piece the edge's
-  floor is on (left out for the ground), `u = piece` the piece its drop lands on (0 the
-  ground). An edge warns only while the player is on its floor piece.
+  floor is on (0 the ground), `u = piece` the piece its drop lands on (0 the ground, a liquid's
+  piece for a drop into it). An edge warns only while the player is on its floor piece.
 - Floor pieces (one rule for every floor over or under another, 2026-10-05; `floors.py` in the
   exporter): the player is always on exactly one piece, 0 being the ground. A piece is connected
   walkable floor cut where a climb begins (every flight of stairs or ramp is a piece) and where a
@@ -111,7 +112,14 @@ Each zone file calls `addon.addZone{...}` with:
   (`logic.updateFloor`) changes the floor only at a join crossed in its direction, at a drop edge
   of the floor crossed (onto `u`), or when the floor is no longer under the player: then the
   piece here that the floor joins or drops onto, else the only piece here where the ground is
-  absent, else the ground. `logic.valueAtCell` returns the floor piece's value where the cell
+  absent, else the ground. A liquid's surface (water, lava, slime) is a floor piece of its own
+  (`liquids`: piece, kind pairs, kind 1 water, 2 city water, 3 lava; its cells in `floorCells`
+  with the liquid's place, the canal's name or the water under a bridge): swimming is the one
+  height the game tells, so `updateFloor` (its `swimming` argument: true, false, nil in the air)
+  puts a swimming player on a liquid's piece here (the one the floor joins or drops onto, else
+  the only one) and a player on foot off it (the floor it joins here, else the only floor, else
+  the ground); on a liquid's piece no centre line decides the place, and its ways out are
+  guided to (`logic.exitTarget` with the piece). `logic.valueAtCell` returns the floor piece's value where the cell
   lists it, else the grid's, so every lookup (places, squares, lanes, guidance) follows the
   floor the player is on; a square's neighbours are the cells its floor goes on into and the
   pieces it joins there (`logic.mouthValue`). In a house's layer a room's opening into another room is its
@@ -134,8 +142,8 @@ Each zone file calls `addon.addZone{...}` with:
 - Indoor layer of mapped buildings (split.room_levels: every built house with stairs or a
   sloped floor): its rooms are pieces on a fine grid, its floors floor pieces on the building's
   own walk graph, with drop edges from it (`deadends.dry_edges` with `head`) and its staircases'
-  feet in `climbFeet`; `exitFloors` (optional, indoor layers): per way out the floor piece it
-  leads out of (a moat's, a pool's).
+  feet in `climbFeet`; `exitFloors` (indoor layers too): per way out the floor piece it leads
+  out of (a moat's, a liquid's); `liquids` as the zone's.
 - `objects`: 7 values each: x, y, half length and half width in 0.1 yards, the long axis'
   angle in degrees (0 = north, toward west), name index into `objectNames`, room (0 =
   outdoors).
@@ -193,7 +201,7 @@ Each zone file calls `addon.addZone{...}` with:
   objects, stops, and its platforms' drop edges into the pits under the tracks as the indoor
   layer's `edges` (piece = the platform's room), with no layer grid or rooms.
 - Docks and piers are ways: kinds `quay` and `pier` (a spur that joins one other piece), the wide
-  parts `square` ("dock of ..."); the water under them is in `bridgeUnder`.
+  parts `square` ("dock of ..."); the water under them is the water's own floor piece.
 - `locales`: per client language the words with the same indexes as the English lists
   (`dirs`, `compass`, `axes`, `places` as `{label, road}`, `interiors`, `rooms`, `structs`,
   `objectNames`, `stops` as the destinations). Unpacking puts them in place once and drops the other languages.
