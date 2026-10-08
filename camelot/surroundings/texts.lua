@@ -558,9 +558,10 @@ end
 
 -- The outdoor spot of a cell value: the place, its direction and nearest road; on a road, street
 -- or walk which way to turn to face along it (with `opts.facing`), only where the words cannot
--- tell; on a square its exits and what is close; elsewhere where a road or street is (within
--- ROAD_SIDE_REACH, off a way; announcements only on stepping off one) and the cliffs and water
--- near (not while `opts.swimming`). opts.cut: an announcement (see the top); the next piece of the
+-- tell; on a square its exits and what is close, unless the player stepped onto it off a way
+-- before that way's end (`opts.sideways`): then, as on open land, where the way is; elsewhere
+-- where a road or street is (within ROAD_SIDE_REACH, off a way; announcements only on stepping
+-- off one) and the cliffs and water near (not while `opts.swimming`). opts.cut: an announcement (see the top); the next piece of the
 -- way the player is on says only its direction (nil when it has none) while that way was the last
 -- named (`opts.named`, logic.sameWay). Returns the text, and on a square its region and the set of
 -- its mouths said now.
@@ -578,7 +579,10 @@ local function spotBody(zone, x, y, value, previous, opts)
         return nil
     end
     local kind = logic.kindOf(zone, value)
-    if logic.isAroundPlace(zone, value) then
+    -- stepped off a way onto a square beside it (user 2026-10-08: "if I leave the street and just
+    -- want to go back onto it, that's the perfect case"): said as open land, where the way is
+    local sideRegion = opts.sideways and logic.isAroundPlace(zone, value) and logic.regionAt(zone, x, y) or nil
+    if logic.isAroundPlace(zone, value) and not sideRegion then
         -- (a square beside a way decided by its centre line may lie off the player's own cell)
         local region = logic.regionAt(zone, x, y)
         if region == nil then
@@ -624,6 +628,14 @@ local function spotBody(zone, x, y, value, previous, opts)
     local near = not opts.swimming and featuresText(zone, x, y, kind, previous, opts.cut)
     if near then
         text = text .. ", " .. near
+    end
+    if sideRegion then
+        -- (the square's region for the guidance; nothing of it comes close after a step off a way)
+        local said = {}
+        for _, m in ipairs(sideRegion.mouths or {}) do
+            said[m] = true
+        end
+        return text, sideRegion, said
     end
     return text
 end

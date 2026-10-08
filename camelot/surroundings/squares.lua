@@ -664,6 +664,20 @@ end
 logic.BEGINNING_EXTRA = 7
 
 -- From how far a way beginning is guided to: the reach plus half its opening, capped.
+-- Did the player leave the way `wayKey` at its end onto the square `region`: the step off it began
+-- at (fx, fy) within a beginning's reach (beginningReach, GUIDE_REACH) of that way's beginning on
+-- the square (wayBeginnings)? A way running along the square's side has none there: a step off it
+-- is a step off sideways.
+function logic.leftAtEnd(zone, region, wayKey, fx, fy)
+    local label = logic.keyLabel(zone, wayKey)
+    for _, b in ipairs(logic.wayBeginnings(zone, region)) do
+        if b.label == label and logic.dist(b.x, b.y, fx, fy) <= logic.beginningReach(logic.GUIDE_REACH, b) then
+            return true
+        end
+    end
+    return false
+end
+
 function logic.beginningReach(reach, b)
     return reach + math.min(b.span / 2, logic.BEGINNING_EXTRA)
 end
