@@ -7,11 +7,10 @@ local ControlId = graph.ControlId
 local kinds = graph.kinds
 
 -- The tree page: three Legacy talent trees (professions, adventure,
--- progression) bought with Legacy points. The tree buttons pick the tree;
--- the points line reads what is left to spend; the shown tree reads its
--- name and the points spent in it; then the talent search, the talents row
--- by row as drawn (top to bottom, left to right), and the apply, undo, and
--- reset buttons. Buying is staged as on the class talent tree: nothing is
+-- progression) bought with Legacy points. The tree buttons pick the tree
+-- and read the points spent in each; the points line reads what is left to
+-- spend; then the talent search, the talents row by row as drawn (top to
+-- bottom, left to right), and the apply, undo, and reset buttons. Buying is staged as on the class talent tree: nothing is
 -- learned until Apply.
 --
 -- The talent part works on any tree built on the shared talent frame
@@ -365,18 +364,35 @@ end
 
 -- ---- the Legacy tree page ----
 
--- The three tree buttons: a click shows that tree. They switch what the
--- page below shows, so they read as a row, like tabs.
+-- The points spent in a tree, staged changes included as the tree's own
+-- counter shows them; asked of every tree, not only the one shown.
+local function pointsSpent(treeID)
+    local configID = C_Traits.GetConfigIDByTreeID(treeID)
+    if configID == nil then
+        return nil
+    end
+    local currencies = C_Traits.GetTreeCurrencyInfo(configID, treeID, false)
+    local currencyInfo = currencies ~= nil and currencies[1] or nil
+    return currencyInfo ~= nil and currencyInfo.spentInTree or nil
+end
+
+-- The three tree buttons, each with the points spent in it: a click shows
+-- that tree. They switch what the page below shows, so they read as a row,
+-- like tabs.
 local function renderTreeButtons(builder, panel)
     builder:beginStop("trees")
     builder:pushContext("trees", L["Trees"])
     builder:startRow()
     for _, button in ipairs(panel.treeButtons) do
         local captured = button
+        local treeData = captured.treeData
         local vtable = nodes.proxyButton({
             target = captured,
             hover = false,
-            label = captured.treeData.name,
+            label = function()
+                local spent = pointsSpent(treeData.treeID)
+                return nodes.joinLabel(treeData.name, spent ~= nil and (spent .. " " .. L["Points"]))
+            end,
         })
         if vtable ~= nil then
             tinsert(vtable.announcements, {
@@ -385,7 +401,7 @@ local function renderTreeButtons(builder, panel)
                 end,
                 kind = kinds.selected,
             })
-            builder:addItem(ControlId.structural("tree:" .. captured.treeData.treeID), vtable)
+            builder:addItem(ControlId.structural("tree:" .. treeData.treeID), vtable)
         end
     end
     builder:endRow()
@@ -393,10 +409,9 @@ local function renderTreeButtons(builder, panel)
 end
 
 -- The points left to spend (the summary's own line) with the season's cap
--- (its hover tooltip), and the shown tree with the points spent in it.
+-- (its hover tooltip). The points spent read on the tree buttons.
 local function renderPoints(builder, page)
     local summary = page.LegacyTreePointSummary
-    local panel = page.LegacyTreeTraitPanel
     builder:beginStop("points")
     builder:addItem(
         ControlId.structural("available"),
@@ -408,17 +423,6 @@ local function renderPoints(builder, page)
                     cap = LEGACY_POINTS_SEASONAL_CAP:format(currencyInfo.maxQuantity)
                 end
                 return nodes.joinLabel(nodes.shownText(summary.AvailablePointsLabel), cap)
-            end,
-        })
-    )
-    builder:addItem(
-        ControlId.structural("spent"),
-        nodes.text({
-            label = function()
-                return nodes.joinLabel(
-                    nodes.shownText(panel.SelectedTreeIcon.SelectedTreeLabel),
-                    L["Points spent: %s"]:format(panel.SpentPointsFrame.Text:GetText() or "0")
-                )
             end,
         })
     )
