@@ -221,7 +221,7 @@ end
 -- Backspace refunds one, drag picks up an active ability. The button is
 -- pooled and found by its node on every read and press. The context menu
 -- adds the shift-clicks: link in chat, and buy back what a reset removed.
-local function talentNode(talentFrame, nodeID, gateText)
+local function talentNode(talentFrame, nodeID)
     local function find()
         local button = talentFrame:GetTalentButtonByNodeID(nodeID)
         if button ~= nil and button:IsShown() and button:GetNodeInfo() ~= nil then
@@ -236,9 +236,7 @@ local function talentNode(talentFrame, nodeID, gateText)
     local choice = isSelectionNode(button:GetNodeInfo())
     local vtable = nodes.proxyFoundButton({
         find = find,
-        label = function(button)
-            return nodes.joinLabel(talentLabel(button), gateText)
-        end,
+        label = talentLabel,
         tooltip = talentTooltip,
         drag = true,
         clickLabels = { left = not choice and L["Learn"] or nil, right = L["Unlearn"] },
@@ -338,10 +336,8 @@ local function talentRows(talentFrame)
     return rows
 end
 
--- One stop. A row holding several talents is a context (with its gate, if
--- any) over a bar, so up and down move between rows and left and right
--- along one; a lone talent stands in the list by itself, its gate read
--- after its label, since a row of one adds nothing to say.
+-- One stop: a context per row (with its gate, if any) over the row's
+-- talents, so up and down move between rows and left and right along one.
 function module.renderTalents(builder, talentFrame, key)
     local rows = talentRows(talentFrame)
     builder:beginStop(key)
@@ -355,19 +351,14 @@ function module.renderTalents(builder, talentFrame, key)
         for _, button in ipairs(row.buttons) do
             gateText = gateText or gates[button:GetNodeID()]
         end
-        if #row.buttons == 1 then
-            local nodeID = row.buttons[1]:GetNodeID()
-            builder:addItem(ControlId.structural("talent:" .. nodeID), talentNode(talentFrame, nodeID, gateText))
-        else
-            builder:pushContext("row:" .. row.posY, nodes.joinLabel(L["Row"] .. " " .. rowIndex, gateText))
-            builder:startRow()
-            for _, button in ipairs(row.buttons) do
-                local nodeID = button:GetNodeID()
-                builder:addItem(ControlId.structural("talent:" .. nodeID), talentNode(talentFrame, nodeID))
-            end
-            builder:endRow()
-            builder:popContext()
+        builder:pushContext("row:" .. row.posY, nodes.joinLabel(L["Row"] .. " " .. rowIndex, gateText))
+        builder:startRow()
+        for _, button in ipairs(row.buttons) do
+            local nodeID = button:GetNodeID()
+            builder:addItem(ControlId.structural("talent:" .. nodeID), talentNode(talentFrame, nodeID))
         end
+        builder:endRow()
+        builder:popContext()
     end
     builder:popContext()
 end
