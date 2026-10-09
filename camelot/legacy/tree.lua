@@ -14,7 +14,7 @@ local spellSearch = WowVision.spellSearch
 -- spend; then the talent search, the talents row by row as drawn (top to
 -- bottom, left to right), and the apply, undo, and reset buttons. Buying
 -- is staged as on the class talent tree: nothing is learned until Apply.
--- The talents themselves are the shared talent tree (talentTree.lua).
+-- The talents themselves are the shared talent tree (retail/talentTree.lua).
 
 -- The points spent in a tree, staged changes included as the tree's own
 -- counter shows them; asked of every tree, not only the one shown.

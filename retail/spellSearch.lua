@@ -5,8 +5,9 @@ local L = WowVision:getLocale()
 local graph = WowVision.graph
 local nodes = graph.nodes
 
--- The modern spell search box (the spellbook, the class talents, the Legacy
--- trees). Typing fills a suggestion list under the box; while the box has
+-- The modern spell search box of retail and WoW: Forever (on Forever the
+-- spellbook, the class talents, the Legacy trees; no retail window uses it
+-- yet). Typing fills a suggestion list under the box; while the box has
 -- the keyboard, Up and Down move the list's highlight and Enter picks the
 -- highlighted suggestion (else it searches the typed text). Those are the
 -- game's own keys, but the highlight is only drawn, so a hook after the
