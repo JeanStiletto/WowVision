@@ -145,9 +145,11 @@ function module.renderClassTalents(builder, talentsFrame)
         nodes.proxyDropdown({ target = talentsFrame.SearchOptionsDropdown, label = L["Options"] })
     )
 
+    -- The specializations sit right under the page: the game shows all
+    -- three side by side at once, a stop each, with nothing to switch.
     talentTree.renderTalents(builder, talentsFrame, {
         key = "tree",
-        label = talentsFrame:GetClassName(),
+        label = false,
         groups = specGroups(talentsFrame),
     })
     -- The reset button is a menu: the whole tree, or one currency's part.
