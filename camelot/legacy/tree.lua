@@ -365,10 +365,12 @@ end
 
 -- ---- the Legacy tree page ----
 
--- The three tree buttons: a click shows that tree.
+-- The three tree buttons: a click shows that tree. They switch what the
+-- page below shows, so they read as a row, like tabs.
 local function renderTreeButtons(builder, panel)
     builder:beginStop("trees")
     builder:pushContext("trees", L["Trees"])
+    builder:startRow()
     for _, button in ipairs(panel.treeButtons) do
         local captured = button
         local vtable = nodes.proxyButton({
@@ -386,6 +388,7 @@ local function renderTreeButtons(builder, panel)
             builder:addItem(ControlId.structural("tree:" .. captured.treeData.treeID), vtable)
         end
     end
+    builder:endRow()
     builder:popContext()
 end
 

@@ -247,12 +247,15 @@ local function emitChallenge(builder, data, index, helpers)
     end
 end
 
+-- The list is named after the category it holds. Only a category with
+-- challenges of its own fills it: opening or closing a parent category
+-- folds the tree and leaves the list as it was, as on screen.
 local function renderChallenges(builder, pane)
     builder:beginStop("challenges")
     nodes.scrollBoxList(builder, {
         scrollBox = pane.ScrollBox,
         key = "challenges",
-        label = L["Challenges"],
+        label = nodes.joinLabel(L["Challenges"], pane.info ~= nil and pane.info.name or nil),
         emit = emitChallenge,
     })
 end

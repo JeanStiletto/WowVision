@@ -16,10 +16,12 @@ local ControlId = graph.ControlId
 
 -- The side tabs are plain frames that switch on mouse up through a custom
 -- handler, so a secure click cannot reach them; the handler's one call, the
--- page event every tab sends, is made directly.
+-- page event every tab sends, is made directly. Drawn down the window's
+-- side, they read as a row like every other tab bar.
 local function renderTabs(builder, frame)
     builder:beginStop("tabs")
     builder:pushContext("tabs", L["Tabs"])
+    builder:startRow()
     for _, tab in ipairs(frame.Tabs) do
         if tab:IsShown() then
             local pageID = tab:GetID()
@@ -37,6 +39,7 @@ local function renderTabs(builder, frame)
             )
         end
     end
+    builder:endRow()
     builder:popContext()
 end
 
