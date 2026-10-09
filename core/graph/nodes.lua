@@ -747,6 +747,7 @@ end
 --   tooltip = function(tooltip, frame)?,
 --   rightClick = false?,           -- the right button does nothing here
 --   drag = true?,                  -- Drag runs the found button's drag script
+--   clickLabels = { left, right }?, -- what each click does (proxyButton's)
 -- }
 function nodes.proxyFoundButton(config)
     local find = config.find
@@ -778,7 +779,7 @@ function nodes.proxyFoundButton(config)
     end
     -- The standard click entries, and the standard Drag entry only when the
     -- caller asked for drag.
-    local clickActions = nodes.proxyContextActions(find)
+    local clickActions = nodes.proxyContextActions(find, config.clickLabels)
     local vtable = {
         controlType = graph.controlTypes.button,
         contextActions = function(add)
