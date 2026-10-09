@@ -82,27 +82,65 @@ local function requirementsText(talentFrame, nodeID)
     return L["Requires %s"]:format(table.concat(names, ", "))
 end
 
+local function stripColors(text)
+    return (text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+end
+
+-- The points a locked talent still waits for, in the game's own words: the
+-- largest unmet spend condition on its node, the line its tooltip shows
+-- (the classic tiers: so many points in the specialization). Asked of the
+-- game directly, so the talent frame's condition cache keeps its colors.
+local function pointsRequirementText(button)
+    local talentFrame = button:GetTalentFrame()
+    local nodeInfo = button:GetNodeInfo()
+    local configID = talentFrame:GetConfigID()
+    if configID == nil or nodeInfo.conditionIDs == nil then
+        return nil
+    end
+    local treeName = talentFrame:GetTraitTreeName(talentFrame:GetTalentTreeID(), nodeInfo.groupIDs)
+    local best = nil
+    for _, conditionID in ipairs(nodeInfo.conditionIDs) do
+        local condInfo = C_Traits.GetConditionInfo(configID, conditionID, true, treeName)
+        if
+            condInfo ~= nil
+            and condInfo.isGate
+            and not condInfo.isMet
+            and condInfo.tooltipText ~= nil
+            and (best == nil or (condInfo.spentAmountRequired or 0) > (best.spentAmountRequired or 0))
+        then
+            best = condInfo
+        end
+    end
+    return best ~= nil and stripColors(best.tooltipText) or nil
+end
+
 -- The state the button's border shows: available (buyable now), locked
--- (with what it waits for), or invalid (a refund broke what depends on it).
--- Partly bought, maxed, and unaffordable read through the rank alone.
-local function stateText(button)
+-- (with the points and the talents it waits for), or invalid (a refund
+-- broke what depends on it). Partly bought, maxed, and unaffordable read
+-- through the rank alone. A row that already says its gate leaves the
+-- points out.
+local function stateText(button, rowGated)
     local states = TalentButtonUtil.BaseVisualState
     local state = button:GetVisualState()
     if state == states.Selectable then
         return L["Available"]
     elseif state == states.Gated or state == states.Locked then
-        return nodes.joinLabel(L["Locked"], requirementsText(button:GetTalentFrame(), button:GetNodeID()))
+        return nodes.joinLabel(
+            L["Locked"],
+            not rowGated and pointsRequirementText(button) or nil,
+            requirementsText(button:GetTalentFrame(), button:GetNodeID())
+        )
     elseif state == states.RefundInvalid or state == states.DisplayError then
         return L["Invalid"]
     end
     return nil
 end
 
-local function talentLabel(button)
+local function talentLabel(button, rowGated)
     return nodes.joinLabel(
         talentName(button),
         rankText(button),
-        stateText(button),
+        stateText(button, rowGated),
         button:GetSearchMatchType() ~= nil and L["Search Match"]
     )
 end
@@ -222,7 +260,7 @@ end
 -- Backspace refunds one, drag picks up an active ability. The button is
 -- pooled and found by its node on every read and press. The context menu
 -- adds the shift-clicks: link in chat, and buy back what a reset removed.
-local function talentNode(talentFrame, nodeID)
+local function talentNode(talentFrame, nodeID, rowGated)
     local function find()
         local button = talentFrame:GetTalentButtonByNodeID(nodeID)
         if button ~= nil and button:IsShown() and button:GetNodeInfo() ~= nil then
@@ -237,7 +275,9 @@ local function talentNode(talentFrame, nodeID)
     local choice = isSelectionNode(button:GetNodeInfo())
     local vtable = nodes.proxyFoundButton({
         find = find,
-        label = talentLabel,
+        label = function(button)
+            return talentLabel(button, rowGated)
+        end,
         tooltip = talentTooltip,
         drag = true,
         clickLabels = { left = not choice and L["Learn"] or nil, right = L["Unlearn"] },
@@ -358,15 +398,19 @@ local function emitRows(builder, talentFrame, buttons, gates)
         builder:startRow()
         for _, button in ipairs(row.buttons) do
             local nodeID = button:GetNodeID()
-            builder:addItem(ControlId.structural("talent:" .. nodeID), talentNode(talentFrame, nodeID))
+            builder:addItem(
+                ControlId.structural("talent:" .. nodeID),
+                talentNode(talentFrame, nodeID, gateText ~= nil)
+            )
         end
         builder:endRow()
         builder:popContext()
     end
 end
 
--- The tree's talents under a context (Talents unless the caller names it).
--- Without groups they are one stop. With groups ({ { id, label } }, in
+-- The tree's talents under a context (Talents unless the caller names it;
+-- label = false leaves it out, for a page already named so). Without groups
+-- they are one stop. With groups ({ { id, label } }, in
 -- reading order), each group is a stop of its own under its label, holding
 -- the talents whose node belongs to it; talents of no listed group follow
 -- in a stop of their own.
@@ -375,7 +419,10 @@ function talentTree.renderTalents(builder, talentFrame, config)
     local key = config.key
     local buttons = visibleButtons(talentFrame)
     local gates = gateTexts(talentFrame)
-    builder:pushContext(key, config.label or L["Talents"])
+    local wrapped = config.label ~= false
+    if wrapped then
+        builder:pushContext(key, config.label or L["Talents"])
+    end
     if #buttons == 0 then
         builder:beginStop(key)
         builder:addItem(ControlId.structural(key .. ":empty"), nodes.text({ label = L["Empty"] }))
@@ -411,7 +458,9 @@ function talentTree.renderTalents(builder, talentFrame, config)
             emitRows(builder, talentFrame, others, gates)
         end
     end
-    builder:popContext()
+    if wrapped then
+        builder:popContext()
+    end
 end
 
 -- Apply (saying when changes wait for it, or why it cannot apply them),
