@@ -50,6 +50,7 @@ local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
 local EDGE_REPEAT = 1 -- the same edge warning is not said again within this
 local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead along
+local AHEAD_FORGET = 6 -- yd farther from a piece said ahead than when it was said: forgotten
 local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-walk this long
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
@@ -96,8 +97,10 @@ local saidMouths = {} -- its streets, water and the like already said on this vi
 local saidLabels = {} -- the names said on a place, over the place's copies per floor piece
 local bendFrom = nil -- where the road led at the last message (radians), nil: take it anew
 local bendWalked = 0 -- walked on the way since the last announcement or bend hint
-local aheadKey = nil -- the next piece of a city street, said before reaching it (not again on it)
-local aheadX, aheadY = nil, nil -- where it was said: walking far from there forgets it
+-- the next pieces of a way said before reaching them (not again on them, nor again ahead): key ->
+-- { x, y, d }, the point on the line where the piece begins and the yards to it when said; walking
+-- away from it forgets it
+local aheadSaid = {}
 local wayNamed = nil -- the place last said by name (on entering it or ahead): its next pieces say only their direction
 -- Guidance: the target last said (key and position), the direction said, whether it was "at"
 -- it, when, the target last said by name, and whether it was said briefly (a beacon led)
@@ -199,7 +202,8 @@ local function forgetWays()
     outdoor:reset()
     indoor:reset()
     region, saidMouths, saidLabels = nil, {}, {}
-    bendFrom, aheadKey, leftWay, wayNamed = nil, nil, nil, nil
+    bendFrom, leftWay, wayNamed = nil, nil, nil
+    aheadSaid = {}
 end
 
 -- Forget where the player was: after a flight, in a new zone, on going in or out of a building.
@@ -875,7 +879,12 @@ end
 -- ("street to Cathedral Square, northeast to southwest"; no distance, the user found it spam and
 -- stops and turns on hearing it), so there is time to turn where a street ends at the water and
 -- goes on to the side (Stormwind 2026-09-29: the new direction came 4 to 8 yd before the water).
--- Stepping onto that piece then says nothing more. Looked for along the way one MOVES, only while
+-- Stepping onto that piece then says nothing more, also after a short next piece of the same way
+-- on the way to it (a fork said ahead, a bit of street, the fork again: walk 2026-10-09 22:04),
+-- and it is not said ahead again while the player stays near it (at the ramp's corner east of the
+-- griffon street the next piece ahead took turns with each small step: the fork and the Canals'
+-- street, six lines in 25 s, walk 2026-10-09 22:08); it is forgotten once the player is
+-- AHEAD_FORGET yd farther from it than when it was said. Looked for along the way one MOVES, only while
 -- moving: taken from the facing it spoke on every turn on the spot, a different piece each time
 -- among the short lines at the griffon ramp's foot (nine lines in 50 s, user's walk 2026-09-30),
 -- and it kept talking while a beacon led (then the beacon says where to go).
@@ -884,20 +893,22 @@ local function checkAhead(z, x, y, px, py)
     if not logic.isWayKey(key) or px == nil or beaconGuides() then
         return
     end
-    if aheadKey and logic.dist2(x, y, aheadX, aheadY) > (logic.AHEAD_LOOK + 6) ^ 2 then
-        aheadKey = nil
+    for k, a in pairs(aheadSaid) do
+        if logic.dist2(x, y, a.x, a.y) > (a.d + AHEAD_FORGET) ^ 2 then
+            aheadSaid[k] = nil
+        end
     end
     if logic.dist(x, y, px, py) < MOVE_MIN then
         return
     end
     local heading = math.atan2(y - py, x - px)
-    local value, yards = logic.pieceAhead(z, x, y, heading, key, logic.AHEAD_LOOK)
+    local value, yards, tx, ty = logic.pieceAhead(z, x, y, heading, key, logic.AHEAD_LOOK)
     if value == nil or yards < logic.AHEAD_MIN then
         return
     end
     local nextKey = logic.outdoorKey(z, value, key)
-    if nextKey ~= aheadKey then
-        aheadKey, aheadX, aheadY = nextKey, x, y
+    if not aheadSaid[nextKey] then
+        aheadSaid[nextKey] = { x = tx or x, y = ty or y, d = yards }
         -- the next piece of this way: its direction only ("north to south"), as on stepping onto it
         local text
         if logic.sameWay(value, key, wayNamed) then
@@ -979,13 +990,13 @@ local function checkPlace(z, x, y, forced)
             notePassedBeginning(z, outdoor.fromX or x, outdoor.fromY or y, square, previous)
         end
         bendFrom, bendWalked = nil, 0
-        if outdoor.current == aheadKey then
+        if aheadSaid[outdoor.current] then
             -- said before reaching it (checkAhead): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), early = true })
+            aheadSaid[outdoor.current] = nil
         else
             say(text, "place", x, y, outdoor.walked)
         end
-        aheadKey = nil
     elseif region and outdoor.current == logic.placeOf(region.value) then
         -- also from the square's edge (a step onto the street beside it does not leave it)
         checkApproach(z, x, y)
