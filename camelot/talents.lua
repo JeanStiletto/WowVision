@@ -14,8 +14,8 @@ local spellSearch = WowVision.spellSearch
 -- under a header with the points spent in it. The page reads the
 -- specialization tabs (primary and secondary, once dual specialization is
 -- learned) with the activate button, the unspent points, the talent search
--- and its options, the talents a stop per specialization (retail/talentTree.lua),
--- then apply, undo, and the reset menu.
+-- and its options, the talents a stop per specialization
+-- (retail/talentTree.lua), then apply, undo, and the reset menu.
 
 -- The tabs come from the tab system: real buttons, so real clicks. The
 -- selected tab is disabled by the tab system, so it reads as selected
