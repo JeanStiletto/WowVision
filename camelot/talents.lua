@@ -6,6 +6,7 @@ local nodes = graph.nodes
 local ControlId = graph.ControlId
 local kinds = graph.kinds
 local talentTree = WowVision.talentTree
+local spellSearch = WowVision.spellSearch
 
 -- The WoW: Forever class talents: the talents page of PlayerSpellsFrame,
 -- opened by the talents key. One tree holds the class's three
@@ -25,39 +26,46 @@ local function renderSpecTabs(builder, talentsFrame)
     if not tabSystem:IsShown() then
         return
     end
+    local tabs = {}
+    for _, tab in ipairs(tabSystem.tabs) do
+        if tab:IsShown() then
+            tinsert(tabs, tab)
+        end
+    end
+    if #tabs == 0 then
+        return
+    end
     builder:beginStop("specTabs")
     builder:pushContext("specTabs", L["Tabs"])
     builder:startRow()
-    for _, tab in ipairs(tabSystem.tabs) do
-        if tab:IsShown() then
-            local captured = tab
-            local vtable = nodes.proxyFoundButton({
-                find = function()
-                    return captured
-                end,
-                label = function()
-                    return captured.tabText
-                end,
-                selected = function()
-                    return captured.isSelected
-                end,
-                rightClick = false,
-            })
-            tinsert(vtable.announcements, {
-                text = function()
-                    if captured:IsActive() then
-                        return L["Active"]
-                    end
-                    local disabled, reason = captured:IsForceDisabled()
-                    if disabled then
-                        return reason or L["Locked"]
-                    end
-                    return nil
-                end,
-                kind = kinds.value,
-            })
-            builder:addItem(ControlId.structural("specTab:" .. captured:GetTabID()), vtable)
-        end
+    for _, tab in ipairs(tabs) do
+        local captured = tab
+        local vtable = nodes.proxyFoundButton({
+            find = function()
+                return captured
+            end,
+            label = function()
+                return captured.tabText
+            end,
+            selected = function()
+                return captured.isSelected
+            end,
+            rightClick = false,
+        })
+        tinsert(vtable.announcements, {
+            text = function()
+                if captured:IsActive() then
+                    return L["Active"]
+                end
+                local disabled, reason = captured:IsForceDisabled()
+                if disabled then
+                    return reason or L["Locked"]
+                end
+                return nil
+            end,
+            kind = kinds.value,
+        })
+        builder:addItem(ControlId.structural("specTab:" .. captured:GetTabID()), vtable)
     end
     builder:endRow()
     builder:popContext()
@@ -103,9 +111,14 @@ local function renderUnspentPoints(builder, talentsFrame)
 end
 
 -- The specializations as the headers over the tree name them, with the
--- points spent in each (the header's number).
+-- points spent in each (the header's number). None while the frame has no
+-- tree yet (a character without a talent loadout).
 local function specGroups(talentsFrame)
-    local displayInfos = C_Traits.GetGroupDisplayInfoByTreeID(talentsFrame:GetTalentTreeID()) or {}
+    local treeID = talentsFrame:GetTalentTreeID()
+    if treeID == nil then
+        return {}
+    end
+    local displayInfos = C_Traits.GetGroupDisplayInfoByTreeID(treeID) or {}
     local groupIDs = {}
     for _, displayInfo in ipairs(displayInfos) do
         tinsert(groupIDs, displayInfo.groupID)
@@ -135,10 +148,7 @@ function module.renderClassTalents(builder, talentsFrame)
     renderUnspentPoints(builder, talentsFrame)
 
     builder:beginStop("search")
-    builder:addItem(
-        ControlId.structural("search"),
-        WowVision.spellSearch.node(talentsFrame.SearchBox)
-    )
+    builder:addItem(ControlId.structural("search"), spellSearch.node(talentsFrame.SearchBox))
     builder:beginStop("searchOptions")
     builder:addItem(
         ControlId.forObject(talentsFrame.SearchOptionsDropdown),

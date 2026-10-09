@@ -28,6 +28,9 @@ end
 -- its spell's).
 local function entryName(talentFrame, entryID)
     local entryInfo = talentFrame:GetAndCacheEntryInfo(entryID)
+    if entryInfo == nil then
+        return ""
+    end
     if entryInfo.subTreeID ~= nil then
         local subTreeInfo = talentFrame:GetAndCacheSubTreeInfo(entryInfo.subTreeID)
         if subTreeInfo ~= nil and subTreeInfo.name ~= nil then
@@ -42,11 +45,12 @@ local function entryName(talentFrame, entryID)
 end
 
 -- A choice node with nothing chosen shows a question mark; it reads its
--- options instead.
+-- options instead. Any other talent reads its name (empty only for the
+-- moment its spell is still loading).
 local function talentName(button)
     local name = button:GetName()
-    if name ~= nil and name ~= "" then
-        return name
+    if (name ~= nil and name ~= "") or not isSelectionNode(button:GetNodeInfo()) then
+        return name or ""
     end
     local options = {}
     for _, entryID in ipairs(button:GetNodeInfo().entryIDs) do
@@ -63,23 +67,41 @@ local function rankText(button)
     return L["rank"] .. " " .. nodeInfo.currentRank .. "/" .. nodeInfo.maxRanks
 end
 
--- The talents a locked talent waits for: the start of every inactive arrow
--- into it, as a sighted player follows the arrows.
+-- The talents a locked talent waits for, as a sighted player follows the
+-- arrows into it, read by the arrow's type as the game decides
+-- availability: each unlearned required talent ("A, B"), and the
+-- sufficient ones while none of them is learned ("C or D", any one will
+-- do). Arrows that are only drawn require nothing.
 local function requirementsText(talentFrame, nodeID)
-    local names = {}
+    local edgeTypes = Enum.TraitEdgeType
+    local required = {}
+    local sufficient = {}
+    local sufficientMet = false
     for edge in talentFrame.edgePool:EnumerateActive() do
         local edgeInfo = edge:GetEdgeInfo()
-        if edgeInfo ~= nil and edgeInfo.targetNode == nodeID and not edgeInfo.isActive then
-            local start = edge:GetStartButton()
-            if start ~= nil then
-                tinsert(names, talentName(start))
+        local start = edge:GetStartButton()
+        if edgeInfo ~= nil and edgeInfo.targetNode == nodeID and start ~= nil then
+            if edgeInfo.type == edgeTypes.RequiredForAvailability then
+                if not edgeInfo.isActive then
+                    tinsert(required, talentName(start))
+                end
+            elseif edgeInfo.type == edgeTypes.SufficientForAvailability then
+                if edgeInfo.isActive then
+                    sufficientMet = true
+                else
+                    tinsert(sufficient, talentName(start))
+                end
             end
         end
     end
-    if #names == 0 then
+    local parts = table.concat(required, ", ")
+    if not sufficientMet and #sufficient > 0 then
+        parts = nodes.joinLabel(parts, table.concat(sufficient, " " .. L["or"] .. " "))
+    end
+    if parts == "" then
         return nil
     end
-    return L["Requires %s"]:format(table.concat(names, ", "))
+    return L["Requires %s"]:format(parts)
 end
 
 local function stripColors(text)
@@ -136,13 +158,22 @@ local function stateText(button, rowGated)
     return nil
 end
 
+-- What the full search marked the talent with: a match of the searched
+-- text, or, after the not-on-action-bar search, the game's name for that
+-- search.
+local function searchText(button)
+    local matchType = button:GetSearchMatchType()
+    if matchType == nil then
+        return nil
+    end
+    if SpellSearchUtil.IsActionBarMatchType(matchType) then
+        return TALENT_FRAME_SEARCH_NOT_ON_ACTIONBAR
+    end
+    return L["Search Match"]
+end
+
 local function talentLabel(button, rowGated)
-    return nodes.joinLabel(
-        talentName(button),
-        rankText(button),
-        stateText(button, rowGated),
-        button:GetSearchMatchType() ~= nil and L["Search Match"]
-    )
+    return nodes.joinLabel(talentName(button), rankText(button), stateText(button, rowGated), searchText(button))
 end
 
 -- The button's own tooltip (rank, description, next rank, cost, the click
@@ -204,7 +235,7 @@ end
 -- picks one and returns to the tree; a locked option stays put.
 local function renderChoices(builder, talentFrame, nodeID)
     local button = talentFrame:GetTalentButtonByNodeID(nodeID)
-    if button == nil or button:GetNodeInfo() == nil then
+    if button == nil or not button:IsShown() or button:GetNodeInfo() == nil then
         return
     end
     builder:pushContext("choices", talentName(button))
@@ -280,11 +311,12 @@ local function talentNode(talentFrame, nodeID, rowGated)
         end,
         tooltip = talentTooltip,
         drag = true,
-        clickLabels = { left = not choice and L["Learn"] or nil, right = L["Unlearn"] },
+        -- A choice node's plain left click does nothing (it only links);
+        -- its options open on hover, so Enter opens them here instead.
+        leftClick = not choice,
+        clickLabels = { left = L["Learn"], right = L["Unlearn"] },
     })
     if choice then
-        -- The left click only links; the options open on hover.
-        table.remove(vtable.bindings, 1)
         vtable.controlType = graph.controlTypes.dropdown
         vtable.onActivate = function()
             local host = WowVision.graphHost
@@ -301,12 +333,7 @@ local function talentNode(talentFrame, nodeID, rowGated)
     end
     local clickActions = vtable.contextActions
     vtable.contextActions = function(add)
-        clickActions(function(entry)
-            -- A choice node's left click does nothing unmodified.
-            if not (choice and entry.click ~= nil and entry.click.emulatedKey == "LeftButton") then
-                add(entry)
-            end
-        end)
+        clickActions(add)
         local current = find()
         if current == nil then
             return
@@ -410,10 +437,10 @@ end
 
 -- The tree's talents under a context (Talents unless the caller names it;
 -- label = false leaves it out, for a page already named so). Without groups
--- they are one stop. With groups ({ { id, label } }, in
--- reading order), each group is a stop of its own under its label, holding
--- the talents whose node belongs to it; talents of no listed group follow
--- in a stop of their own.
+-- they are one stop. With groups ({ { id, label } }, in reading order),
+-- each group is a stop of its own under its label, holding the talents
+-- whose node belongs to it; talents of no listed group follow in a stop of
+-- their own.
 -- config: { key, label?, groups? }
 function talentTree.renderTalents(builder, talentFrame, config)
     local key = config.key
