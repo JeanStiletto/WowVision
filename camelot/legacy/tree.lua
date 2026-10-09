@@ -85,7 +85,7 @@ function module.renderTree(builder, page)
     renderTreeButtons(builder, page.LegacyTreeSelectionPanel)
     renderPoints(builder, page)
     builder:beginStop("search")
-    builder:addItem(ControlId.structural("search"), nodes.proxyEditBox({ editBox = panel.SearchBox, label = L["Search"] }))
+    builder:addItem(ControlId.structural("search"), WowVision.spellSearch.node(panel.SearchBox))
     talentTree.renderTalents(builder, panel, { key = "talents" })
     -- Reset refunds the whole tree, staged until Apply like the rest.
     talentTree.renderCommitButtons(

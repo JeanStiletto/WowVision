@@ -156,7 +156,7 @@ local function renderSpellBook(builder, book)
     builder:beginStop("search")
     -- No clear button stop, like the other search boxes: emptying the box and
     -- pressing Enter leaves search results the same way.
-    builder:addItem(ControlId.structural("search"), nodes.proxyEditBox({ editBox = book.SearchBox, label = L["Search"] }))
+    builder:addItem(ControlId.structural("search"), WowVision.spellSearch.node(book.SearchBox))
 
     builder:beginStop("options")
     builder:addItem(
