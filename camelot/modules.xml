@@ -15,8 +15,13 @@
        collections/ replaces the tab bar and adds the other tabs. -->
   <Include file="..\mists\collections\modules.xml" />
   <Include file="collections\modules.xml" />
+  <!-- The talent trees on the shared talent frame: the class talents and
+       the Legacy trees read them through it. -->
+  <Script file="talentTree.lua" />
   <!-- Forever's spellbook is the modern PlayerSpellsFrame, not Mists'. -->
   <Script file="spellbook.lua" />
+  <!-- The class talents, the spellbook window's other page. -->
+  <Script file="talents.lua" />
   <!-- The professions book and the crafting page are the two pages of the
        retail ProfessionsFrame. -->
   <Script file="professions.lua" />

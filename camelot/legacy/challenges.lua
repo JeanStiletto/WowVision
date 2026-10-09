@@ -139,7 +139,7 @@ local function challengeLabel(data)
     local info = challengeInfo(data)
     return nodes.joinLabel(
         info.name,
-        info.points > 0 and module.pointsText(info.points),
+        info.points > 0 and WowVision.talentTree.pointsText(info.points),
         info.completedDate ~= nil and (L["Completed"] .. " " .. info.completedDate),
         isTracked(info.id) and L["Tracked"],
         info.description,
