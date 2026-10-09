@@ -18,11 +18,6 @@ local ControlId = graph.ControlId
 -- handler, so a secure click cannot reach them; the handler's one call, the
 -- page event every tab sends, is made directly. Drawn down the window's
 -- side, they read as a row like every other tab bar.
--- A count of points, singular for one: "1 Point", "5 Points".
-function module.pointsText(count)
-    return count .. " " .. (count == 1 and L["Point"] or L["Points"])
-end
-
 local function renderTabs(builder, frame)
     builder:beginStop("tabs")
     builder:pushContext("tabs", L["Tabs"])
