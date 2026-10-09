@@ -5,6 +5,8 @@ local graph = WowVision.graph
 local nodes = graph.nodes
 local ControlId = graph.ControlId
 local kinds = graph.kinds
+local talentTree = WowVision.talentTree
+local spellSearch = WowVision.spellSearch
 
 -- The tree page: three Legacy talent trees (professions, adventure,
 -- progression) bought with Legacy points. The tree buttons pick the tree
@@ -13,8 +15,6 @@ local kinds = graph.kinds
 -- bottom, left to right), and the apply, undo, and reset buttons. Buying
 -- is staged as on the class talent tree: nothing is learned until Apply.
 -- The talents themselves are the shared talent tree (talentTree.lua).
-
-local talentTree = WowVision.talentTree
 
 -- The points spent in a tree, staged changes included as the tree's own
 -- counter shows them; asked of every tree, not only the one shown.
@@ -32,9 +32,7 @@ end
 -- that tree. They switch what the page below shows, so they read as a row,
 -- like tabs.
 local function renderTreeButtons(builder, panel)
-    builder:beginStop("trees")
-    builder:pushContext("trees", L["Trees"])
-    builder:startRow()
+    local entries = {}
     for _, button in ipairs(panel.treeButtons) do
         local captured = button
         local treeData = captured.treeData
@@ -53,8 +51,17 @@ local function renderTreeButtons(builder, panel)
                 end,
                 kind = kinds.selected,
             })
-            builder:addItem(ControlId.structural("tree:" .. treeData.treeID), vtable)
+            tinsert(entries, { id = ControlId.structural("tree:" .. treeData.treeID), vtable = vtable })
         end
+    end
+    if #entries == 0 then
+        return
+    end
+    builder:beginStop("trees")
+    builder:pushContext("trees", L["Trees"])
+    builder:startRow()
+    for _, entry in ipairs(entries) do
+        builder:addItem(entry.id, entry.vtable)
     end
     builder:endRow()
     builder:popContext()
@@ -85,7 +92,7 @@ function module.renderTree(builder, page)
     renderTreeButtons(builder, page.LegacyTreeSelectionPanel)
     renderPoints(builder, page)
     builder:beginStop("search")
-    builder:addItem(ControlId.structural("search"), WowVision.spellSearch.node(panel.SearchBox))
+    builder:addItem(ControlId.structural("search"), spellSearch.node(panel.SearchBox))
     talentTree.renderTalents(builder, panel, { key = "talents" })
     -- Reset refunds the whole tree, staged until Apply like the rest.
     talentTree.renderCommitButtons(

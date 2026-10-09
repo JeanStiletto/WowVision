@@ -5,6 +5,7 @@ local graph = WowVision.graph
 local nodes = graph.nodes
 local ControlId = graph.ControlId
 local kinds = graph.kinds
+local talentTree = WowVision.talentTree
 
 -- The challenges page: Forever's achievements, worth Legacy points. The
 -- Legacy points first, then the search box, the filter menu (completed,
@@ -139,7 +140,7 @@ local function challengeLabel(data)
     local info = challengeInfo(data)
     return nodes.joinLabel(
         info.name,
-        info.points > 0 and WowVision.talentTree.pointsText(info.points),
+        info.points > 0 and talentTree.pointsText(info.points),
         info.completedDate ~= nil and (L["Completed"] .. " " .. info.completedDate),
         isTracked(info.id) and L["Tracked"],
         info.description,
@@ -158,7 +159,11 @@ local function criteriaLabel(id, criteriaIndex)
         and bit.band(flags, EVALUATION_TREE_FLAG_PROGRESS_BAR) == EVALUATION_TREE_FLAG_PROGRESS_BAR
     local count = nil
     if counted then
-        count = (quantityString ~= nil and quantityString ~= "") and quantityString or (quantity .. "/" .. reqQuantity)
+        if quantityString ~= nil and quantityString ~= "" then
+            count = quantityString
+        elseif quantity ~= nil then
+            count = quantity .. "/" .. reqQuantity
+        end
     end
     if count ~= nil and (text == nil or text == "") then
         text = L["Progress"]
@@ -190,13 +195,14 @@ local function emitDetails(builder, data, helpers)
                 local frame = helpers.target()
                 return frame ~= nil and frame.Tracked or nil
             end,
+            -- Replaced below: a found label reads nothing until the row
+            -- frame has scrolled in.
             label = function()
                 return L["Track"]
             end,
             rightClick = false,
         })
         vtable.controlType = graph.controlTypes.toggle
-        -- Read before the row frame scrolls in.
         vtable.announcements[1] = { text = L["Track"], kind = kinds.label }
         tinsert(vtable.announcements, {
             text = function()

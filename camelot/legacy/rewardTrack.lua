@@ -8,9 +8,9 @@ local kinds = graph.kinds
 
 -- The reward track page: the Legacy renown (a renown faction) with its
 -- level, the progress to the next level, and every level of the track with
--- its reward. The mouse track shows a few cards at a time
--- and scrolls them sideways; every card is listed here, so its arrows are
--- left out, and a card's click only centers it. A level's tooltip is the
+-- its reward. The mouse track shows a few cards at a time and scrolls them
+-- sideways; every card is listed here, so its arrows are left out, and a
+-- card's click only centers it. A level's tooltip is the
 -- card's own (the reward and what it does).
 
 local function rewardNames(levelInfo)
