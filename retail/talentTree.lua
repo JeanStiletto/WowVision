@@ -7,8 +7,11 @@ local nodes = graph.nodes
 local ControlId = graph.ControlId
 local kinds = graph.kinds
 
--- Talent trees built on the shared talent frame (TalentFrameBaseMixin):
--- the Legacy trees (legacy/tree.lua) and the class talents (talents.lua).
+-- Talent trees built on the shared talent frame (TalentFrameBaseMixin),
+-- the modern talent UI of retail and WoW: Forever. Used by Forever's class
+-- talents (camelot/talents.lua) and Legacy trees (camelot/legacy/tree.lua);
+-- written against the shared frame only, so a retail talent window can use
+-- it too, though none does yet and nothing here is tested on retail.
 -- Each talent reads its name, rank, and state; Enter buys a rank (a choice
 -- node opens its options), Backspace refunds one. The talents read row by
 -- row as drawn, each row a context; a tree holding several groups (the
@@ -119,7 +122,12 @@ local function pointsRequirementText(button)
     if configID == nil or nodeInfo.conditionIDs == nil then
         return nil
     end
-    local treeName = talentFrame:GetTraitTreeName(talentFrame:GetTalentTreeID(), nodeInfo.groupIDs)
+    -- Forever's frames name the tree for the condition text; retail's have
+    -- no such method and its condition text needs no name.
+    local treeName = nil
+    if talentFrame.GetTraitTreeName ~= nil then
+        treeName = talentFrame:GetTraitTreeName(talentFrame:GetTalentTreeID(), nodeInfo.groupIDs)
+    end
     local best = nil
     for _, conditionID in ipairs(nodeInfo.conditionIDs) do
         local condInfo = C_Traits.GetConditionInfo(configID, conditionID, true, treeName)
