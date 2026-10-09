@@ -176,26 +176,36 @@ local function talentLabel(button, rowGated)
     return nodes.joinLabel(talentName(button), rankText(button), stateText(button, rowGated), searchText(button))
 end
 
--- The button's own tooltip (rank, description, next rank, cost, the click
--- instructions, and what blocks it), built into the reader's tooltip the
--- way the button builds it on hover. A choice node's own tooltip is only
--- its errors (its options carry the rest), so it reads the chosen option.
+-- A talent display's own tooltip (rank, description, next rank, cost, the
+-- click instructions, and what blocks it), built into the reader's tooltip
+-- the way the display builds it on hover: for a talent and for a choice
+-- node's option alike.
+local function displayTooltip(tooltip, display)
+    display:AddTooltipTitle(tooltip)
+    display:AddTooltipInfo(tooltip)
+    display:AddTooltipDescription(tooltip)
+    display:AddTooltipCost(tooltip)
+    if display:ShouldShowTooltipInstructions() then
+        display:AddTooltipInstructions(tooltip)
+    end
+    if display:ShouldShowTooltipErrors() then
+        display:AddTooltipErrors(tooltip)
+    end
+    tooltip:Show()
+end
+
+-- A choice node's own tooltip is only its errors (its options carry the
+-- rest), so it reads the chosen option.
 local function talentTooltip(tooltip, button)
     local nodeInfo = button:GetNodeInfo()
-    if isSelectionNode(nodeInfo) then
-        GameTooltip_SetTitle(tooltip, talentName(button))
-        local entryID = button:GetSelectedEntryID()
-        if entryID ~= nil then
-            tooltip:AppendInfo("GetTraitEntry", entryID, nodeInfo.currentRank)
-        end
-    else
-        button:AddTooltipTitle(tooltip)
-        button:AddTooltipInfo(tooltip)
-        button:AddTooltipDescription(tooltip)
-        button:AddTooltipCost(tooltip)
-        if button:ShouldShowTooltipInstructions() then
-            button:AddTooltipInstructions(tooltip)
-        end
+    if not isSelectionNode(nodeInfo) then
+        displayTooltip(tooltip, button)
+        return
+    end
+    GameTooltip_SetTitle(tooltip, talentName(button))
+    local entryID = button:GetSelectedEntryID()
+    if entryID ~= nil then
+        tooltip:AppendInfo("GetTraitEntry", entryID, nodeInfo.currentRank)
     end
     if button:ShouldShowTooltipErrors() then
         button:AddTooltipErrors(tooltip)
@@ -203,86 +213,65 @@ local function talentTooltip(tooltip, button)
     tooltip:Show()
 end
 
--- A choice is open when the node can take a choice and the option is
--- available (the choice button's own test).
-local function choiceAvailable(button, entryID)
-    local talentFrame = button:GetTalentFrame()
-    return button:CanSelectChoice()
-        and talentFrame:GetAndCacheEntryInfo(entryID).isAvailable
-        and not talentFrame:IsLocked()
+-- Choice nodes whose options box WowVision opened, by talent frame: the
+-- box stays up while its list is open and closes when the tree reads again.
+local openedChoices = setmetatable({}, { __mode = "k" })
+
+local function closeOpenedChoices(talentFrame)
+    local button = openedChoices[talentFrame]
+    if button == nil then
+        return
+    end
+    openedChoices[talentFrame] = nil
+    if talentFrame:AreSelectionsOpen(button) then
+        button:ClearSelections()
+    end
 end
 
--- What clicking an option does: picks it, or buys another rank of the
--- option already chosen. True when it did either.
-local function chooseEntry(button, entryID)
-    if not choiceAvailable(button, entryID) then
-        return false
-    end
-    if button:GetSelectedEntryID() == entryID then
-        local nodeInfo = button:GetNodeInfo()
-        if nodeInfo.canPurchaseRank and not button:IsLocked() and button:CanAfford() then
-            button:PlaySelectSound()
-            button:GetTalentFrame():PurchaseRank(button:GetNodeID())
-            return true
-        end
-        return false
-    end
-    button:SetSelectedEntryID(entryID)
-    return true
-end
-
--- The options of a choice node, as the mouse's hover menu shows them: Enter
--- picks one and returns to the tree; a locked option stays put.
+-- The options of a choice node: the game's own options box (the one the
+-- mouse opens by hovering the node), its option buttons clicked for real,
+-- so the game decides what a click does: left picks the option or buys a
+-- rank of the chosen one, right unlearns it. The list stays open after a
+-- pick, as the box does; Escape returns to the tree.
 local function renderChoices(builder, talentFrame, nodeID)
     local button = talentFrame:GetTalentButtonByNodeID(nodeID)
-    if button == nil or not button:IsShown() or button:GetNodeInfo() == nil then
+    if button == nil or not button:IsShown() or not talentFrame:AreSelectionsOpen(button) then
         return
     end
     builder:pushContext("choices", talentName(button))
-    for _, entryID in ipairs(button:GetNodeInfo().entryIDs) do
-        local capturedEntry = entryID
-        builder:addItem(ControlId.structural("choice:" .. capturedEntry), {
-            controlType = graph.controlTypes.button,
-            announcements = {
-                {
-                    text = function()
-                        return entryName(talentFrame, capturedEntry)
-                    end,
-                    kind = kinds.label,
-                },
-                {
-                    text = function()
-                        return button:GetSelectedEntryID() == capturedEntry and L["Selected"] or nil
-                    end,
-                    kind = kinds.selected,
-                    live = "focus",
-                },
-                {
-                    text = function()
-                        return not choiceAvailable(button, capturedEntry) and L["Locked"] or nil
-                    end,
-                    kind = kinds.enabled,
-                },
-            },
-            onActivate = function()
-                if chooseEntry(button, capturedEntry) then
-                    local host = WowVision.graphHost
-                    host:pop(host:focusedStack())
-                end
+    for index, option in ipairs(talentFrame.SelectionChoiceFrame.selectionFrameArray) do
+        local captured = option
+        local vtable = nodes.proxyButton({
+            target = captured,
+            hover = false,
+            label = function()
+                return captured:GetName()
             end,
-            tooltipFrame = button,
+            clickLabels = { left = L["Learn"], right = L["Unlearn"] },
             tooltip = {
                 type = "Game",
                 mode = "immediate",
                 populate = function(tooltip)
-                    local nodeInfo = button:GetNodeInfo()
-                    local isCurrent = button:GetSelectedEntryID() == capturedEntry
-                    GameTooltip_SetTitle(tooltip, entryName(talentFrame, capturedEntry))
-                    tooltip:AppendInfo("GetTraitEntry", capturedEntry, isCurrent and nodeInfo.currentRank or 0)
-                    tooltip:Show()
+                    displayTooltip(tooltip, captured)
                 end,
             },
         })
+        if vtable ~= nil then
+            tinsert(vtable.announcements, {
+                text = function()
+                    return captured.isCurrentSelection and L["Selected"] or nil
+                end,
+                kind = kinds.selected,
+                live = "focus",
+            })
+            tinsert(vtable.announcements, {
+                text = function()
+                    return not captured:IsChoiceAvailable() and L["Locked"] or nil
+                end,
+                kind = kinds.value,
+            })
+            builder:addItem(ControlId.structural("choice:" .. (captured:GetEntryID() or index)), vtable)
+        end
     end
     builder:popContext()
 end
@@ -290,7 +279,7 @@ end
 -- A talent: Enter buys a rank (a choice node opens its options instead),
 -- Backspace refunds one, drag picks up an active ability. The button is
 -- pooled and found by its node on every read and press. The context menu
--- adds the shift-clicks: link in chat, and buy back what a reset removed.
+-- adds the shift-click's link in chat.
 local function talentNode(talentFrame, nodeID, rowGated)
     local function find()
         local button = talentFrame:GetTalentButtonByNodeID(nodeID)
@@ -319,16 +308,23 @@ local function talentNode(talentFrame, nodeID, rowGated)
     if choice then
         vtable.controlType = graph.controlTypes.dropdown
         vtable.onActivate = function()
+            local current = find()
             local host = WowVision.graphHost
             local stack = host:focusedStack()
-            if stack ~= nil then
-                host:push(stack, {
-                    key = "choices",
-                    render = function(builder)
-                        renderChoices(builder, talentFrame, nodeID)
-                    end,
-                })
+            if current == nil or stack == nil then
+                return
             end
+            current:ShowSelections()
+            if not talentFrame:AreSelectionsOpen(current) then
+                return
+            end
+            openedChoices[talentFrame] = current
+            host:push(stack, {
+                key = "choices",
+                render = function(builder)
+                    renderChoices(builder, talentFrame, nodeID)
+                end,
+            })
         end
     end
     local clickActions = vtable.contextActions
@@ -344,14 +340,6 @@ local function talentNode(talentFrame, nodeID, rowGated)
                 label = L["Link %s in Chat"]:format(talentName(current)),
                 onActivate = function()
                     WowVision.chatLinks.shiftClick({ kind = "link", text = C_Spell.GetSpellLink(spellID) })
-                end,
-            })
-        end
-        if current:CanCascadeRepurchaseRanks() then
-            add({
-                label = L["Buy Back"],
-                onActivate = function()
-                    current:CascadeRepurchaseRanks()
                 end,
             })
         end
@@ -443,6 +431,7 @@ end
 -- their own.
 -- config: { key, label?, groups? }
 function talentTree.renderTalents(builder, talentFrame, config)
+    closeOpenedChoices(talentFrame)
     local key = config.key
     local buttons = visibleButtons(talentFrame)
     local gates = gateTexts(talentFrame)

@@ -15,15 +15,17 @@ local ControlId = graph.ControlId
 -- (tree.lua). The window title names the page shown.
 
 -- The side tabs are plain frames that switch on mouse up through a custom
--- handler, so a secure click cannot reach them; the handler's one call, the
--- page event every tab sends, is made directly. Drawn down the window's
--- side, they read as a row like every other tab bar.
+-- handler, so a secure click cannot reach them; Enter runs the tab's own
+-- mouse up script as a left click releases it (the tab sound, then the
+-- page switch), as the cooldown manager runs its items'. Drawn down the
+-- window's side, they read as a row like every other tab bar.
 local function renderTabs(builder, frame)
     builder:beginStop("tabs")
     builder:pushContext("tabs", L["Tabs"])
     builder:startRow()
     for _, tab in ipairs(frame.Tabs) do
         if tab:IsShown() then
+            local captured = tab
             local pageID = tab:GetID()
             builder:addItem(
                 ControlId.structural("tab:" .. pageID),
@@ -33,7 +35,10 @@ local function renderTabs(builder, frame)
                         return frame.currentPage == pageID
                     end,
                     onActivate = function()
-                        EventRegistry:TriggerEvent("Legacy.SelectPage", pageID)
+                        local script = captured:GetScript("OnMouseUp")
+                        if script ~= nil then
+                            script(captured, "LeftButton", true)
+                        end
                     end,
                 })
             )
