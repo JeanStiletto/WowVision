@@ -391,7 +391,7 @@ local function renderTreeButtons(builder, panel)
             hover = false,
             label = function()
                 local spent = pointsSpent(treeData.treeID)
-                return nodes.joinLabel(treeData.name, spent ~= nil and (spent .. " " .. L["Points"]))
+                return nodes.joinLabel(treeData.name, spent ~= nil and module.pointsText(spent))
             end,
         })
         if vtable ~= nil then
