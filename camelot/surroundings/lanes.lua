@@ -244,7 +244,7 @@ function logic.pieceAhead(zone, x, y, heading, current, look)
         end
         walked = walked + step
         if logic.outdoorKey(zone, next.value, currentKey) ~= currentKey then
-            return next.value, walked
+            return next.value, walked, nx, ny
         end
         if walked >= look then
             return nil
