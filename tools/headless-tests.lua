@@ -253,6 +253,7 @@ local parseOnly = {
     "core/windows/colorPicker.lua",
     "camelot/character.lua",
     "camelot/talentTree.lua",
+    "camelot/spellSearch.lua",
     "camelot/talents.lua",
     "camelot/legacy/legacy.lua",
     "camelot/legacy/rewardTrack.lua",

@@ -18,6 +18,8 @@
   <!-- The talent trees on the shared talent frame: the class talents and
        the Legacy trees read them through it. -->
   <Script file="talentTree.lua" />
+  <!-- The spell search box's suggestions, spoken (spellbook, talents). -->
+  <Script file="spellSearch.lua" />
   <!-- Forever's spellbook is the modern PlayerSpellsFrame, not Mists'. -->
   <Script file="spellbook.lua" />
   <!-- The class talents, the spellbook window's other page. -->

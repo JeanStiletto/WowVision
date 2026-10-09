@@ -137,7 +137,7 @@ function module.renderClassTalents(builder, talentsFrame)
     builder:beginStop("search")
     builder:addItem(
         ControlId.structural("search"),
-        nodes.proxyEditBox({ editBox = talentsFrame.SearchBox, label = L["Search"] })
+        WowVision.spellSearch.node(talentsFrame.SearchBox)
     )
     builder:beginStop("searchOptions")
     builder:addItem(
