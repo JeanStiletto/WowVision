@@ -21,6 +21,9 @@
        retail ProfessionsFrame. -->
   <Script file="professions.lua" />
   <Script file="crafting.lua" />
+  <!-- The Legacy window: reward track, challenges, and the Legacy talent
+       trees. -->
+  <Include file="legacy\modules.xml" />
   <Include file="surroundings\modules.xml" />
   <!-- Diagnostic: can a secret steer pitch and volume (/wv sprobe). -->
   <Script file="secretSpeechProbe.lua" />
