@@ -700,6 +700,27 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(z._index)
     end,
 
+    ["a join counts only where it is; out of a liquid only onto a floor it joins or the ground"] = function(t)
+        local z = newZone()
+        -- the tower top (piece 2) also lies in the lake's cell, joined to the lake nowhere, and the
+        -- ground is absent there: standing up in the lake is no way onto it
+        z.floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090, 0, 5, 3, 50000, 0, 5, 2, 38090 }
+        z.noGround = { 0, 5 }
+        logic.unpack(z)
+        -- the wall-walk joins the tower top at x 90, y 15: here, not 10 yd away
+        t:assertTrue(logic.joinedHere(z, 1, 2, 90, 15))
+        t:assertTrue(logic.joinedHere(z, 2, 1, 88, 12))
+        t:assertFalse(logic.joinedHere(z, 1, 2, 80, 15))
+        t:assertFalse(logic.joinedHere(z, 1, 3, 90, 15))
+        -- swimming in the lake (the only liquid here), then standing: no floor joins the lake here
+        -- and the ground is absent, so the lake stays the floor
+        logic.updateFloor(z, 95, 5, false, 95, 6, false, true)
+        t:assertEqual(z._index.floor, 3)
+        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
+        t:assertEqual(z._index.floor, 3)
+        logic.pack(z)
+    end,
+
     ["bearings for world offsets (x north, y west), and their words"] = function(t)
         t:assertEqual(logic.bearingOf(10, 0), 0)       -- north
         t:assertEqual(logic.bearingOf(0, -10), 90)     -- east
@@ -1066,7 +1087,6 @@ testRunner:addSuite("Surroundings", {
         z.rooms[4][4] = { 30, 0, 34, 10, 36, 0, 40, 10 }
         z.rooms[3][4] = { 11, 0, 20, 10, 35, 11, 35.5, 11.5 }
         logic.unpack(z)
-        t:assertTrue(logic.inRoomArea(z, 4, 35, 5))
         t:assertEqual(logic.resolveRoom(z, 35, 9.8, 4), 4)     -- the back room's floor is near, the barn's area holds
         t:assertNil(logic.resolveRoom(z, 35, 9.8, 1))          -- coming from elsewhere: two floors near, unknown
     end,

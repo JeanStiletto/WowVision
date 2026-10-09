@@ -320,8 +320,9 @@ function logic.valueAtCell(zone, r, c)
         end
         local joined = ix.joined[floor]
         if here and joined then
+            local cx, cy = logic.cellCentre(zone, r, c)
             for p, pv in pairs(here) do
-                if joined[p] then
+                if joined[p] and logic.joinedHere(zone, floor, p, cx, cy) then
                     return pv
                 end
             end

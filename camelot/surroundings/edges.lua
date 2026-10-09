@@ -101,16 +101,16 @@ end
 -- floor crossed, onto the piece the drop lands on; (2) at a join crossed in its direction, from
 -- the floor into the piece it meets there (a join from a building's door counts while `cameOut`,
 -- within ROOMS_REACH); (3) when the floor is no longer under the player: then the piece here
--- that the floor joins or drops onto, else the only piece here where the ground is absent, else
--- the ground. `px, py`: the position at the last look; `blocked`: the player pushes against
+-- that the floor joins or drops onto here (within JOINED_HERE: a join a kilometre away says
+-- nothing about this spot; the Brill tavern's upper floor took a player downstairs, replay
+-- 2026-10-08), else the only piece here where the ground is absent, else the ground. `px, py`: the position at the last look; `blocked`: the player pushes against
 -- something (the wall detection's "blocked"): no fall then (pressing against the zeppelin tower's
 -- railing ends just past an edge's rim, and the module dropped the player from the first flight
 -- to the deck on a bump, walk 2026-10-06 11:21; a real fall is no push). `swimming` (true,
 -- false, or nil while in the air): a liquid's surface is a floor piece, and swimming is the one
 -- height the game tells (user 2026-10-08): swimming, the player is on a liquid's piece (the one
 -- the floor joins or drops onto here, else the only one here); not swimming, on none (the floor
--- the liquid joins here, else the only floor here, else the ground). Returns the floor and
--- whether it changed.
+-- the liquid joins here, else the ground). Returns the floor and whether it changed.
 function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
@@ -164,7 +164,7 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         local pick, only, count = nil, nil, 0
         for p in pairs(here or {}) do
             only, count = p, count + 1
-            if ix.joined[floor] and ix.joined[floor][p] and (pick == nil or p < pick) then
+            if logic.joinedHere(zone, floor, p, x, y) and (pick == nil or p < pick) then
                 pick = p
             end
         end
@@ -174,7 +174,7 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         floor = pick or 0
     end
     if swimming ~= nil and (swimming == true) ~= (ix.liquids[floor] ~= nil) then
-        floor = logic.swimFloor(zone, key, floor, swimming) or floor
+        floor = logic.swimFloor(zone, key, floor, swimming, x, y) or floor
     end
     ix.floor = floor
     -- a crossing pending leads off the floor it began on only
@@ -187,10 +187,13 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
 end
 
 -- The floor piece the swimming state puts the player on in the cell `key` (else the 8 around),
--- coming from `floor`: swimming, a liquid's piece there (the one `floor` joins or drops onto,
--- else the only one; nil where none or several); not swimming, a floor there (the one the liquid
--- `floor` joins, else the only one, else the ground where it is there; nil where none).
-function logic.swimFloor(zone, key, floor, swimming)
+-- coming from `floor` at (x, y): swimming, a liquid's piece there that `floor` joins or drops onto
+-- here, else the only one there (swimming tells the height: one liquid here is the one swum in;
+-- nil where several); not swimming, a floor there that the liquid `floor` joins here, else the
+-- ground where it is there; nil where none. Standing tells no height: the only floor in the cell
+-- is no way out of a liquid (out of the Ruins of Lordaeron's courtyard canal it was the
+-- Undercity's canal walk 116 yd under it, walk 2026-10-07 23:44).
+function logic.swimFloor(zone, key, floor, swimming, x, y)
     local ix = zone._index
     local cols = zone.cols
     local r, c = math.floor(key / cols), key % cols
@@ -217,20 +220,23 @@ function logic.swimFloor(zone, key, floor, swimming)
     end
     table.sort(list)
     for _, p in ipairs(list) do
-        if logic.joinedPieces(zone, floor, p) or logic.landsOn(zone, floor, p) then
+        if logic.joinedHere(zone, floor, p, x, y) or logic.landsOnHere(zone, floor, p, x, y) then
             return p
         end
     end
-    if #list == 1 then
+    if swimming and #list == 1 then
         return list[1]
     end
     return not swimming and found[0] and 0 or nil
 end
 
--- Does a drop edge of `floor` land on `piece`?
-function logic.landsOn(zone, floor, piece)
+-- Does a drop edge of `floor` land on `piece` within JOINED_HERE of (x, y)?
+function logic.landsOnHere(zone, floor, piece, x, y)
+    local reach = logic.JOINED_HERE
     for _, e in ipairs(zone._index.edges) do
-        if e.floor == floor and e.under == piece then
+        local b = e.box
+        if e.floor == floor and e.under == piece and x >= b[1] - reach and x <= b[2] + reach
+            and y >= b[3] - reach and y <= b[4] + reach then
             return true
         end
     end
@@ -320,6 +326,29 @@ logic.JOIN_EDGE_REACH = 3.0
 function logic.joinedPieces(zone, a, b)
     local joined = zone._index.joined[a]
     return joined ~= nil and joined[b] == true
+end
+
+-- Are pieces a and b joined within JOINED_HERE of (x, y)? What a floor leads to at this spot,
+-- when the player's floor must be found again (updateFloor, swimFloor, valueAtCell).
+logic.JOINED_HERE = 6.0
+function logic.joinedHere(zone, a, b, x, y)
+    if not logic.joinedPieces(zone, a, b) then
+        return false
+    end
+    local ix = zone._index
+    local reach = logic.JOINED_HERE
+    local r, c = logic.cellOf(zone, x, y)
+    local n = math.ceil(reach / zone.cell)
+    for dr = -n, n do
+        for dc = -n, n do
+            for _, j in ipairs(ix.joinAt[(r + dr) * zone.cols + c + dc] or {}) do
+                if ((j.a == a and j.b == b) or (j.a == b and j.b == a)) and logic.dist(j.x, j.y, x, y) <= reach then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 -- Does the point (qx, qy) of edge `e` count on the floor `floor`: every point of an edge of that
