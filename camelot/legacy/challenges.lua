@@ -211,6 +211,35 @@ local function emitDetails(builder, data, helpers)
     builder:popContext()
 end
 
+-- The row's tooltip. The game has none (hovering a card only lights it),
+-- and a card lists its objectives -- the zones, dungeons, or raids to do --
+-- only while unfolded, so the tooltip carries them: the description, the
+-- reward, then every objective as the unfolded card reads it.
+local function challengeTooltip(data)
+    return {
+        type = "Game",
+        mode = "immediate",
+        populate = function(tooltip)
+            local info = challengeInfo(data)
+            GameTooltip_SetTitle(tooltip, info.name)
+            if info.description ~= nil and info.description ~= "" then
+                tooltip:AddLine(info.description, 1, 1, 1, true)
+            end
+            if info.rewardText ~= nil and info.rewardText ~= "" then
+                tooltip:AddLine(info.rewardText, 1, 1, 1, true)
+            end
+            local numCriteria = GetAchievementNumCriteria(info.id) or 0
+            if numCriteria > 0 then
+                tooltip:AddLine(L["Objectives"])
+                for criteriaIndex = 1, numCriteria do
+                    tooltip:AddLine(criteriaLabel(info.id, criteriaIndex), 1, 1, 1, true)
+                end
+            end
+            tooltip:Show()
+        end,
+    }
+end
+
 -- A challenge row: a click selects it and unfolds it (a second click folds
 -- it again). The context menu links it in chat, as a shift-click does.
 local function emitChallenge(builder, data, index, helpers)
@@ -232,6 +261,7 @@ local function emitChallenge(builder, data, index, helpers)
                 kind = kinds.selected,
             },
         }, {
+            tooltip = challengeTooltip(data),
             contextActions = function(add)
                 add({
                     label = L["Link %s in Chat"]:format(challengeInfo(data).name),
