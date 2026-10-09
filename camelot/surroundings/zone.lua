@@ -903,7 +903,8 @@ function logic.unpack(zone, locale)
     -- doors between rooms (0 = outside), and per room its doors and the rooms they join
     ix.doors, ix.doorsOf, ix.neighbours = {}, {}, {}
     for i, d in ipairs(zone.doors or {}) do
-        local door = { a = d[1], b = d[2], interior = d[3], x = d[4], y = d[5], nx = d[6], ny = d[7], side = d[8] }
+        -- half: half the opening's width along its plane (nil in older exports)
+        local door = { a = d[1], b = d[2], interior = d[3], x = d[4], y = d[5], nx = d[6], ny = d[7], side = d[8], half = d[9] }
         ix.doors[i] = door
         for _, pair in ipairs({ { door.a, door.b }, { door.b, door.a } }) do
             local room, other = pair[1], pair[2]

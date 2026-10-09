@@ -1227,6 +1227,20 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.crossedDoor(z, 3, 30, 5, 29, 5))          -- far from any doorway
     end,
 
+    ["a doorway with its width is crossed anywhere across its opening"] = function(t)
+        local z = newZone()
+        -- the back room's doorway at x = 10.5, y = 5: 4 yd off its centre the old 3 yd circle
+        -- missed the crossing; with the opening 5 yd to either side it counts, 7 yd off not
+        logic.unpack(z)
+        t:assertNil(logic.crossedDoor(z, 3, 11, 9, 10, 9))
+        logic.pack(z)
+        z.doors[2][9] = 5
+        logic.unpack(z)
+        t:assertEqual(logic.crossedDoor(z, 3, 11, 9, 10, 9), 2)
+        t:assertNil(logic.crossedDoor(z, 3, 11, 12, 10, 12))
+        t:assertNil(logic.crossedDoor(z, 3, 15, 9, 14, 9))           -- 3.5 yd from its plane
+    end,
+
     ["a room entered through a doorway holds while its floor is near, even over another room's floor"] = function(t)
         local z = newZone()
         -- the landing's floor shrunk to a patch in the common room's middle (the Abbey's stairs:

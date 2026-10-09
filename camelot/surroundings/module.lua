@@ -141,6 +141,8 @@ local hallDoorOut = nil     -- {x, y}: the doorway the player just came out of t
 
 local function updateHall(z, x, y, px, py)
     local uiMap = gameMap()
+    -- the game's area at this look (the halls' rooms are checked against it: logic.onFloorRooms)
+    z._index.gameArea = gameSubzone()
     if hallMapWas ~= nil and uiMap ~= hallMapWas and logic.isHallMap(z, uiMap) then
         hallMapWalked = 0
     elseif hallMapWalked and px then
@@ -159,7 +161,7 @@ local function updateHall(z, x, y, px, py)
     end
     if hallGap ~= nil then
         -- in the halls: until no hall floor is near for HALL_GAP yd
-        if logic.inHall(z, x, y, uiMap) then
+        if logic.inHall(z, x, y, uiMap, room) then
             hallGap = 0
         elseif px then
             hallGap = hallGap + logic.dist(x, y, px, py)
@@ -172,12 +174,15 @@ local function updateHall(z, x, y, px, py)
     if hallDoorOut then
         return false
     end
-    local piece = logic.hallPieceForArea(z, x, y, uiMap, gameSubzone(), z._index.floor or 0)
+    local piece = logic.hallPieceForArea(z, x, y, uiMap, z._index.gameArea, z._index.floor or 0)
     if piece then
         logic.setFloor(z, piece)
     end
-    if logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, gameSubzone()) then
-        hallGap = 0
+    local inFloor, entryRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
+    if inFloor then
+        -- the room whose floor let the player in is the room they are in (not one found by x and y
+        -- at another height; an older room held from before is forgotten)
+        hallGap, room, roomByDoor = 0, entryRoom, false
         return true
     end
     return false

@@ -20,7 +20,8 @@ function logic.toWorld(frame, vx, vy)
     return frame.ox - frame.scale * (frame.m00 * vx + frame.m01 * vy), frame.oy - frame.scale * (frame.m10 * vx + frame.m11 * vy)
 end
 
-logic.DOOR_REACH = 3.0 -- yards from a doorway's centre within which a crossing counts
+logic.DOOR_REACH = 3.0 -- yards from a doorway's plane (or centre, without its width) within which a crossing counts
+logic.DOOR_SIDE = 1.0 -- yards past the edges of the opening that still count as through it
 logic.DOOR_HOLD = 4.0 -- ... within which the room entered through it holds (resolveRoom)
 
 -- Is the building-frame position (vx, vy) in the box at index i of a flat box list {x0, y0, x1,
@@ -54,7 +55,15 @@ function logic.crossedDoor(zone, current, px, py, x, y)
             local interior = ix.interiors[door.interior]
             local ax, ay = logic.toBuilding(interior, px, py)
             local bx, by = logic.toBuilding(interior, x, y)
+            -- across the whole opening (its width known), else within DOOR_REACH of its centre: the
+            -- Ruins of Lordaeron's sewer openings are 12 to 15 yd wide, and walking out at their
+            -- sides went unnoticed (walk 2026-10-07 23:43)
             local near = function(u, v)
+                if door.half and door.half > 0 then
+                    local along = math.abs((u - door.x) * -door.ny + (v - door.y) * door.nx)
+                    local off = math.abs((u - door.x) * door.nx + (v - door.y) * door.ny)
+                    return along <= door.half + logic.DOOR_SIDE and off <= logic.DOOR_REACH
+                end
                 return logic.dist2(u, v, door.x, door.y) <= logic.DOOR_REACH * logic.DOOR_REACH
             end
             if near(ax, ay) or near(bx, by) then
@@ -167,6 +176,27 @@ end
 -- this step, when the caller has it already (false: none crossed). indoors (optional): IsIndoors();
 -- the candidates are those that fit it (fittingRooms), and a current room that does not fit while
 -- one here does is left, held by its door or not.
+-- The candidate rooms one can be in, coming from `current`: rooms change as floors do, through a
+-- doorway or onto floor one is on. A hall stays a candidate only as the current room, one joined to
+-- it by a doorway, or a hall lying on the zone's floor piece here (hallOnFloor, the test that lets
+-- the player into the halls; the game's area as last looked, zone._index.gameArea). The rooms of
+-- the Undercity under the Ruins of Lordaeron hold the same x and y as the throne room and the
+-- bell towers 110 yd over them and join them nowhere (walks 2026-10-07: canal names beside the
+-- bell tower, "room unknown" at a login in the throne room).
+function logic.onFloorRooms(zone, x, y, cands, current)
+    local ix = zone._index
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local nb = current and ix.neighbours[current] or nil
+    local out = {}
+    for _, id in ipairs(cands) do
+        if not ix.rooms[id].hallMap or id == current or (nb and nb[id])
+            or logic.hallOnFloor(zone, id, r0, c0, ix.floor or 0, false, ix.gameArea) then
+            out[#out + 1] = id
+        end
+    end
+    return out
+end
+
 function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors)
     if crossed == nil then
         crossed = logic.crossedDoor(zone, current, px, py, x, y)
@@ -174,7 +204,7 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors
     if crossed then
         return crossed ~= 0 and crossed or nil
     end
-    local cands = logic.fittingRooms(zone, logic.roomCandidates(zone, x, y), indoors)
+    local cands = logic.onFloorRooms(zone, x, y, logic.fittingRooms(zone, logic.roomCandidates(zone, x, y), indoors), current)
     if current ~= nil and not gameFits(zone, current, indoors) and #cands > 0 and gameFits(zone, cands[1], indoors) then
         current, byDoor = nil, false
     end
@@ -190,7 +220,7 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors
         end
     end
     if #cands == 0 then
-        cands = logic.fittingRooms(zone, logic.roomCandidates(zone, x, y, logic.ROOM_SLACK), indoors)
+        cands = logic.onFloorRooms(zone, x, y, logic.fittingRooms(zone, logic.roomCandidates(zone, x, y, logic.ROOM_SLACK), indoors), current)
     end
     if #cands == 0 then
         return nil
@@ -570,17 +600,25 @@ end
 -- apart everywhere (in Ironforge's halls Ironforge's and on the mountain over them Dun Morogh's,
 -- but on the Ruins of Lordaeron's rose walk the Undercity's, as in the city 110 yd under it, walk
 -- 2026-10-07). Whether the player is in it is inHallFloor's.
-function logic.inHall(zone, x, y, uiMap)
+-- With `current` (the room the player is in) only the halls they can be in coming from it count
+-- (logic.onFloorRooms: it, a room joined to it by a doorway, a hall on the zone's floor piece
+-- here): out of the Ruins of Lordaeron's sewer, whose mouth onto the courtyard is no doorway, the
+-- Undercity's canals under the courtyard kept the player in the halls (walk 2026-10-07 23:43).
+function logic.inHall(zone, x, y, uiMap, current)
     if not logic.isHallMap(zone, uiMap) then
         return false
     end
     local ix = zone._index
+    local here = {}
     for _, id in ipairs(ix.hallRooms) do
         if ix.rooms[id].hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
-            return true
+            if current == nil then
+                return true
+            end
+            here[#here + 1] = id
         end
     end
-    return false
+    return #logic.onFloorRooms(zone, x, y, here, current) > 0
 end
 
 -- Is the player in a hall here (user 2026-10-07): a hall whose floor is here (inHall) lying on
@@ -608,26 +646,32 @@ function logic.hallGroundNear(zone, r, c)
     return false
 end
 
+-- Does hall room `id` lie on the zone's floor piece `floor` in the cell (r0, c0), as the game's
+-- area `area` allows (the test of inHallFloor for one room)?
+function logic.hallOnFloor(zone, id, r0, c0, floor, staying, area)
+    local r = zone._index.rooms[id]
+    local pieces = r.zonePieces
+    if pieces == nil then
+        return staying and true or false
+    end
+    local known = area ~= nil and area ~= ""
+    return (pieces[floor] and (floor ~= 0 or (logic.hallGroundNear(zone, r0, c0)
+        and not (known and r.subzone and r.subzone ~= area)))) and true or false
+end
+
+-- Returns true and the hall room whose floor is here and lies on the zone's floor piece (the
+-- room the player comes into the halls by), else false.
 function logic.inHallFloor(zone, x, y, uiMap, zoneFloor, staying, area)
     if not logic.isHallMap(zone, uiMap) then
         return false
     end
     local ix = zone._index
     local r0, c0 = logic.cellOf(zone, x, y)
-    local floor = zoneFloor or 0
-    local known = area ~= nil and area ~= ""
     for _, id in ipairs(ix.hallRooms) do
         local r = ix.rooms[id]
-        if r.hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK) then
-            local pieces = r.zonePieces
-            if pieces == nil then
-                if staying then
-                    return true
-                end
-            elseif pieces[floor] and (floor ~= 0 or (logic.hallGroundNear(zone, r0, c0)
-                    and not (known and r.subzone and r.subzone ~= area))) then
-                return true
-            end
+        if r.hallMap == uiMap and roomHolds(zone, id, x, y, logic.ROOM_SLACK)
+            and logic.hallOnFloor(zone, id, r0, c0, zoneFloor or 0, staying, area) then
+            return true, id
         end
     end
     return false
