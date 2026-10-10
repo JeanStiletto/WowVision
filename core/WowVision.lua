@@ -396,6 +396,10 @@ function WowVision:registerCommands()
                     if err.stack ~= nil then
                         tinsert(lines, err.stack)
                     end
+                    if err.locals ~= nil then
+                        tinsert(lines, "Locals:")
+                        tinsert(lines, err.locals)
+                    end
                     tinsert(lines, "")
                     if lastMessage == nil then
                         lastMessage = err.message

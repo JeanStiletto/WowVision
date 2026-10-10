@@ -334,14 +334,47 @@ local inHandler = false
 local lastSpokenError = nil
 local lastSpokenAt = 0
 
+-- The local variables of the stack levels around an error (what BugGrabber
+-- records): the arguments a failing call got, such as the event and message
+-- a chat handler was adding. The stack alone often cannot tell which input
+-- failed, above all where Blizzard's secure wrappers hide the failing line
+-- and show only "[C]". Levels count as in the handler's own frame (1 = the
+-- handler, 2 = where the error was raised, 3 = the stack's first line);
+-- levels 2..LOCALS_LEVELS are kept, each cut to LOCALS_MAX characters.
+local LOCALS_LEVELS = 6
+local LOCALS_MAX = 1500
+
+local function captureLocals()
+    if debuglocals == nil then
+        return nil
+    end
+    local parts = {}
+    for level = 2, LOCALS_LEVELS do
+        -- Two frames deeper here: this function, and the pcall around it.
+        local ok, text = pcall(debuglocals, level + 2)
+        if ok and type(text) == "string" and text ~= "" then
+            if #text > LOCALS_MAX then
+                text = text:sub(1, LOCALS_MAX) .. "..."
+            end
+            tinsert(parts, "level " .. level .. ":\n" .. text)
+        end
+    end
+    if #parts == 0 then
+        return nil
+    end
+    return table.concat(parts, "\n")
+end
+
 local function onLuaError(message)
     if inHandler then
         return
     end
     inHandler = true
+    local okLocals, locals = pcall(captureLocals)
     tinsert(module.luaErrors, {
         message = message,
         stack = debugstack(3),
+        locals = okLocals and locals or nil,
         time = date("%H:%M:%S"),
         date = date("%Y-%m-%d"),
     })
