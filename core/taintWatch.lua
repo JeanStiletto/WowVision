@@ -38,17 +38,59 @@ local function focusDescription()
     return table.concat(parts, ", ")
 end
 
+-- What tainted a blocked call: the game names only the addon. Modules
+-- register the game tables their screens drive (taintWatch.watch), and each
+-- record lists every field of them that addon code wrote, with the addon
+-- (issecurevariable) -- the variable Logs\taint.log would name, without the
+-- taintLog console variable, which on WoW: Forever raises Lua errors in chat
+-- and crashes the client.
+local watched = {}
+
+WowVision.taintWatch = {}
+
+-- name: how the record names the table; get: returns it (or nil while the
+-- game has not built it).
+function WowVision.taintWatch.watch(name, get)
+    tinsert(watched, { name = name, get = get })
+end
+
+local function taintedFields()
+    if issecurevariable == nil then
+        return nil
+    end
+    local found = {}
+    for _, entry in ipairs(watched) do
+        local ok, tbl = pcall(entry.get)
+        if ok and type(tbl) == "table" then
+            for key in pairs(tbl) do
+                if type(key) == "string" then
+                    local okCheck, secure, taintedBy = pcall(issecurevariable, tbl, key)
+                    if okCheck and not secure then
+                        tinsert(found, entry.name .. "." .. key .. " (" .. tostring(taintedBy) .. ")")
+                    end
+                end
+            end
+        end
+    end
+    if #found == 0 then
+        return #watched > 0 and "none" or nil
+    end
+    return table.concat(found, ", ")
+end
+
 local function record(event, addon, func)
     WowVisionDump = WowVisionDump or {}
     local list = WowVisionDump.taint or {}
     WowVisionDump.taint = list
     local okFocus, focus = pcall(focusDescription)
+    local okTainted, tainted = pcall(taintedFields)
     tinsert(list, {
         time = date("%Y-%m-%d %H:%M:%S"),
         event = event,
         addon = tostring(addon),
         func = tostring(func),
         focus = okFocus and focus or ("focus error: " .. tostring(focus)),
+        tainted = okTainted and tainted or ("tainted error: " .. tostring(tainted)),
         stack = debugstack(3, 30, 0),
     })
     while #list > MAX_ENTRIES do
@@ -60,37 +102,16 @@ local function record(event, addon, func)
     end
 end
 
--- The game's own taint log (Logs	aint.log) names the variable that tainted
--- a blocked call, which these records cannot. It is the taintLog console
--- variable, which some clients (WoW: Forever) forget on every launch, so
--- /wv taint log keeps it on: the choice lives in WowVisionDump and is set
--- again at each login. The file reaches disk when the game quits; a reload
--- starts it fresh.
-local function applyTaintLog(on)
-    local setCVar = C_CVar ~= nil and C_CVar.SetCVar or SetCVar
-    local getCVar = C_CVar ~= nil and C_CVar.GetCVar or GetCVar
-    pcall(setCVar, "taintLog", on and "1" or "0")
-    local ok, value = pcall(getCVar, "taintLog")
-    return ok and value or nil
-end
-
 local frame = CreateFrame("Frame")
 for _, event in ipairs({
     "ADDON_ACTION_BLOCKED",
     "ADDON_ACTION_FORBIDDEN",
     "MACRO_ACTION_BLOCKED",
     "MACRO_ACTION_FORBIDDEN",
-    "PLAYER_LOGIN",
 }) do
     pcall(frame.RegisterEvent, frame, event)
 end
 frame:SetScript("OnEvent", function(_, event, ...)
-    if event == "PLAYER_LOGIN" then
-        if WowVisionDump ~= nil and WowVisionDump.taintLog then
-            applyTaintLog(true)
-        end
-        return
-    end
     -- Macro events carry only the function; the addon ones name the addon first.
     local addon, func = ...
     if event:find("^MACRO") then
@@ -102,19 +123,9 @@ end)
 function WowVision:registerTaintCommand()
     self.base:registerCommand({
         name = "taint",
-        description = "Show blocked protected calls recorded in WowVisionDump ('clear' resets, 'log' turns the game's taint.log on or off for every login); /reload writes them to disk",
+        description = "Show blocked protected calls recorded in WowVisionDump ('clear' resets); /reload writes them to disk",
         func = function(args)
             WowVisionDump = WowVisionDump or {}
-            if args == "log" then
-                WowVisionDump.taintLog = not WowVisionDump.taintLog
-                local value = applyTaintLog(WowVisionDump.taintLog)
-                local text = (WowVisionDump.taintLog and "Taint log on" or "Taint log off")
-                    .. ", game value "
-                    .. tostring(value)
-                print(text)
-                WowVision:speak(text)
-                return
-            end
             if args == "clear" then
                 WowVisionDump.taint = {}
                 print("Taint records cleared")
@@ -129,6 +140,9 @@ function WowVision:registerTaintCommand()
             for _, entry in ipairs(list) do
                 tinsert(lines, entry.time .. " " .. entry.event .. " " .. entry.addon .. " " .. entry.func)
                 tinsert(lines, "  " .. entry.focus)
+                if entry.tainted ~= nil then
+                    tinsert(lines, "  tainted: " .. entry.tainted)
+                end
             end
             local text = table.concat(lines, "\n")
             WowVision.testing.showResults(text)
