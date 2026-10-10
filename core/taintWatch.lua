@@ -24,15 +24,28 @@ local function focusDescription()
     local parts = { "screen " .. tostring(screen.key) }
     local node = screen.keyGraph ~= nil and screen.keyGraph:currentNode() or nil
     if node ~= nil then
-        tinsert(parts, "node " .. tostring(node.id ~= nil and node.id.key or nil))
+        -- Frame-keyed nodes print as "table: ..."; their debug name says which.
+        local key = node.id ~= nil and node.id.key or nil
+        if type(key) == "table" and key.GetDebugName ~= nil then
+            local okName, name = pcall(key.GetDebugName, key)
+            if okName and name ~= nil then
+                key = name
+            end
+        end
+        tinsert(parts, "node " .. tostring(key))
         local debug = WowVision.graph.scrollBoxDebug ~= nil and WowVision.graph.scrollBoxDebug[tostring(node.id.key)]
             or nil
         if debug ~= nil then
             tinsert(parts, "row " .. tostring(debug.template) .. " '" .. tostring(debug.name) .. "'")
         end
         local first = node.vtable ~= nil and node.vtable.announcements ~= nil and node.vtable.announcements[1] or nil
-        if first ~= nil and type(first.text) == "string" then
-            tinsert(parts, "label '" .. first.text .. "'")
+        local label = first ~= nil and first.text or nil
+        if type(label) == "function" then
+            local okLabel, text = pcall(label)
+            label = okLabel and text or nil
+        end
+        if type(label) == "string" then
+            tinsert(parts, "label '" .. label .. "'")
         end
     end
     return table.concat(parts, ", ")
@@ -48,16 +61,8 @@ local watched = {}
 
 WowVision.taintWatch = {}
 
--- name: how the record names the table; get: returns it (or nil while the
--- game has not built it).
-function WowVision.taintWatch.watch(name, get)
-    tinsert(watched, { name = name, get = get })
-end
-
-local function taintedFields()
-    if issecurevariable == nil then
-        return nil
-    end
+-- Every watched field addon code wrote: { [ "Table.key" ] = addon }.
+local function scanTainted()
     local found = {}
     for _, entry in ipairs(watched) do
         local ok, tbl = pcall(entry.get)
@@ -66,16 +71,87 @@ local function taintedFields()
                 if type(key) == "string" then
                     local okCheck, secure, taintedBy = pcall(issecurevariable, tbl, key)
                     if okCheck and not secure then
-                        tinsert(found, entry.name .. "." .. key .. " (" .. tostring(taintedBy) .. ")")
+                        found[entry.name .. "." .. key] = tostring(taintedBy)
                     end
                 end
             end
         end
     end
+    return found
+end
+
+local function taintedFields()
+    if issecurevariable == nil then
+        return nil
+    end
+    local found = {}
+    for field, addon in pairs(scanTainted()) do
+        tinsert(found, field .. " (" .. addon .. ")")
+    end
     if #found == 0 then
         return #watched > 0 and "none" or nil
     end
+    table.sort(found)
     return table.concat(found, ", ")
+end
+
+-- The taint timeline: once a second the watched fields are scanned, and a
+-- field that turns tainted (or clean again) is saved with the time and the
+-- graph's focus then -- which action wrote it, read from the file after a
+-- reload with no probe typed in game. WowVisionDump.taintTimeline, newest
+-- last, MAX_TIMELINE entries.
+local MAX_TIMELINE = 150
+local lastTainted = nil
+local ticker = nil
+
+local function addTimeline(change, field, addon)
+    WowVisionDump = WowVisionDump or {}
+    local list = WowVisionDump.taintTimeline or {}
+    WowVisionDump.taintTimeline = list
+    local okFocus, focus = pcall(focusDescription)
+    tinsert(list, {
+        time = date("%Y-%m-%d %H:%M:%S"),
+        change = change,
+        field = field,
+        addon = addon,
+        focus = okFocus and focus or ("focus error: " .. tostring(focus)),
+    })
+    while #list > MAX_TIMELINE do
+        tremove(list, 1)
+    end
+end
+
+local function scanTimeline()
+    local now = scanTainted()
+    if lastTainted ~= nil then
+        for field, addon in pairs(now) do
+            if lastTainted[field] == nil then
+                addTimeline("tainted", field, addon)
+            end
+        end
+        for field in pairs(lastTainted) do
+            if now[field] == nil then
+                addTimeline("clean", field, nil)
+            end
+        end
+    end
+    lastTainted = now
+end
+
+local function startTimeline()
+    if ticker ~= nil or issecurevariable == nil or C_Timer == nil then
+        return
+    end
+    ticker = C_Timer.NewTicker(1, function()
+        pcall(scanTimeline)
+    end)
+end
+
+-- name: how the record names the table; get: returns it (or nil while the
+-- game has not built it).
+function WowVision.taintWatch.watch(name, get)
+    tinsert(watched, { name = name, get = get })
+    startTimeline()
 end
 
 local function record(event, addon, func)
@@ -128,6 +204,7 @@ function WowVision:registerTaintCommand()
             WowVisionDump = WowVisionDump or {}
             if args == "clear" then
                 WowVisionDump.taint = {}
+                WowVisionDump.taintTimeline = {}
                 print("Taint records cleared")
                 return
             end
