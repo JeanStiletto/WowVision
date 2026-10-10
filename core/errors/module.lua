@@ -340,9 +340,26 @@ local lastSpokenAt = 0
 -- failed, above all where Blizzard's secure wrappers hide the failing line
 -- and show only "[C]". Levels count as in the handler's own frame (1 = the
 -- handler, 2 = where the error was raised, 3 = the stack's first line);
--- levels 2..LOCALS_LEVELS are kept, each cut to LOCALS_MAX characters.
+-- levels 2..LOCALS_LEVELS are kept. Tables are listed by name only:
+-- debuglocals also dumps their fields (a chat frame's run to thousands of
+-- characters and would crowd out the event and message after them).
 local LOCALS_LEVELS = 6
 local LOCALS_MAX = 1500
+
+local function compactLocals(text)
+    local lines = {}
+    for line in text:gmatch("[^\n]+") do
+        -- Field lines of a dumped table are indented; its closing brace too.
+        if line:sub(1, 1) ~= " " and line ~= "}" then
+            tinsert(lines, (line:gsub("{$", "")))
+        end
+    end
+    text = table.concat(lines, "\n")
+    if #text > LOCALS_MAX then
+        text = text:sub(1, LOCALS_MAX) .. "..."
+    end
+    return text
+end
 
 local function captureLocals()
     if debuglocals == nil then
@@ -350,13 +367,11 @@ local function captureLocals()
     end
     local parts = {}
     for level = 2, LOCALS_LEVELS do
-        -- Two frames deeper here: this function, and the pcall around it.
-        local ok, text = pcall(debuglocals, level + 2)
+        -- debuglocals counts three frames deeper from here: this function,
+        -- the pcall around it, and the pcall of debuglocals itself.
+        local ok, text = pcall(debuglocals, level + 3)
         if ok and type(text) == "string" and text ~= "" then
-            if #text > LOCALS_MAX then
-                text = text:sub(1, LOCALS_MAX) .. "..."
-            end
-            tinsert(parts, "level " .. level .. ":\n" .. text)
+            tinsert(parts, "level " .. level .. ":\n" .. compactLocals(text))
         end
     end
     if #parts == 0 then
