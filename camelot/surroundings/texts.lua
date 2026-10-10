@@ -552,11 +552,13 @@ end
 -- the cliffs and water within FEATURE_REACH (logic.featuresAround; not on roads nor what the place
 -- itself is, announcements also leave out what the player just left: the shore behind them; not
 -- while `opts.swimming`). Returns the parts (texts) and whether the way beside was found (the
--- place's own stored nearest road is then left out of its name).
+-- place's own stored nearest road is then left out of its name). Not on a bridge either: it has a
+-- way at each end, and its direction and edges are what counts there (user 2026-10-10: "I know
+-- there must be one street at my back and one in front while I follow the bridge's centre line").
 local function radiusParts(zone, x, y, kind, previous, opts)
     local parts, beside = {}, false
     local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
-    if not logic.LANE_KINDS[kind] and (wasWay or not opts.cut) then
+    if not logic.LANE_KINDS[kind] and kind ~= "bridge" and (wasWay or not opts.cut) then
         local d, dir, street
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
