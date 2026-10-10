@@ -1878,6 +1878,15 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, { cut = true }), "grass")
     end,
 
+    ["on a bridge the street beside is not said"] = function(t)
+        local z = newWalkZone()
+        z.places[1] = { "bridge", "bridge" }
+        logic.unpack(z)
+        -- stepped off the walk onto the bridge, 11 yd west of the walk's centre line
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, "r2:0", { cut = true }), "bridge")
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, {}), "bridge")
+    end,
+
     ["inside one way only the direction changes: its name is said once"] = function(t)
         local z = newWalkZone()
         logic.unpack(z)
