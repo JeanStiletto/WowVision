@@ -324,11 +324,22 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     -- nothing was guided to, walk 2026-10-06 11:18), the floor below going down
     local ix = zone._index
     local on = ix.floor or 0
-    local also = on ~= 0 and logic.CLIMBS[logic.kindOf(zone, logic.valueAt(zone, x, y))] and ix.joined[on] or nil
+    local here = logic.valueAt(zone, x, y)
+    local also = on ~= 0 and logic.CLIMBS[logic.kindOf(zone, here)] and ix.joined[on] or nil
+    -- in a fork that names the climb among its ways ("ramp to the griffon roost to the
+    -- southeast") its foot is not guided to: the fork said it (user 2026-10-11, forks at the
+    -- climbs' feet)
+    local hereKind = logic.kindOf(zone, here)
+    local forkLabel = (hereKind == "fork" or hereKind == "crossing") and (logic.place(zone, logic.placeOf(here)) or {}).label or nil
     local feet = {}
     for _, f in ipairs(ix.climbFeet) do
         local fl = f.floor or 0
-        if fl == on or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
+        local named = false
+        if forkLabel then
+            local cp = logic.place(zone, logic.placeOf(f.value))
+            named = cp ~= nil and cp.label ~= nil and forkLabel:find(cp.label .. " to the ", 1, true) ~= nil
+        end
+        if not named and (fl == on or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y))) then
             feet[#feet + 1] = f
         end
     end
