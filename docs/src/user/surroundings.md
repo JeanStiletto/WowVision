@@ -3,8 +3,10 @@
 On WoW: Forever, WowVision describes where you walk, from map data: the land you are on,
 the roads and streets, the rooms of buildings, drop edges, and what you bump into. It needs the
 **WowVision_Surroundings** data addon, installed next to WowVision. Without it the
-surroundings are silent. The data currently covers Elwynn Forest with Stormwind, Dun Morogh
-with Ironforge, and Tirisfal Glades with Undercity.
+surroundings are silent, and `/wv surr` tells you the data addon is missing. The data currently
+covers Elwynn Forest with Stormwind, Dun Morogh with Ironforge, Tirisfal Glades with Undercity,
+and the Deeprun Tram. If the data addon and WowVision do not fit together (another data
+format), WowVision says so once and stays silent; update both.
 
 To install the data, download
 [WowVision_Surroundings.zip](https://github.com/JeanStiletto/WowVision_Surroundings/releases/latest/download/WowVision_Surroundings.zip),
@@ -13,21 +15,34 @@ the latest release of the
 and extract it into the WoW: Forever client's addons folder, so the files sit in
 `World of Warcraft/_classic_beta_/Interface/AddOns/WowVision_Surroundings`.
 
-Announcements made while walking are spoken by the game's voice 0, not by your speech voice:
-a screen reader would cut its own speech off at every key press.
+Announcements made while walking are spoken by a game voice, not by your screen reader: a
+screen reader cuts its own speech off at every key press. The voice is the Voice setting of the
+Surroundings Announcements alert's TTS Alert output (default: game voice 0). Rate and volume
+follow WowVision's speech settings.
+
+Directions are said as the 8 compass words ("north", "southwest"). With the compass module's
+Directions setting (under Navigation, Compass) on Clock Hours, they are the 12 hours of a
+clock with north at 12 ("water at 3"), whichever way you face.
 
 ## What you hear
 
 - **Outdoors**, each place you walk into: "forest", "shore of Crystal Lake, water to the
   north", "Goldshire road, north to south". A place counts only after you have walked a few
-  yards inside it (on roads and streets 3 yards, elsewhere 8), so walking along a border does
-  not flicker. Roads and city streets (canal walks too) follow the same rules: they follow
-  their centre lines, so drifting toward the side of a road or street is heard as leaving it,
-  and a new direction is said at once. On a city street or canal walk the next piece is said
-  about 12 yards before you reach it, just as if you had stepped onto it, so there is time to
-  stop and turn where a street ends at the water and goes on to the side; stepping onto it then
-  says nothing more. Coming out of the water, the place on land is said
-  after 3 yards on it.
+  yards inside it (3 yards on every way: roads, streets, bridges, forks, crossings, quays,
+  piers, ramps, stairs and walks; elsewhere 8), so walking along a border does not flicker. A
+  step from one piece of a way onto the next counts at once. Roads and city streets (canal walks
+  too) follow the same rules: they follow their centre lines, so drifting toward the side of a
+  road or street is heard as leaving it, and a new direction is said at once. Coming out of the
+  water, the place on land is said after 3 yards on it.
+- **Looking ahead** on every way with a centre line (roads, streets, walks, quays, piers, ramps,
+  stairs): the next piece is said about 12 yards before you reach it, just as if you had stepped
+  onto it, so there is time to stop and turn where a street ends at the water and goes on to the
+  side. A piece closer than 4 yards is not said ahead. It is said once, and not again until you
+  are 6 yards farther from it than when it was said; stepping onto it then says nothing more.
+  This is automatic while you walk, and quiet while a beacon guides you (with the setting
+  Quieter While a Beacon Guides on).
+- **Forks** name their ways with the direction of each ("fork, road to the bridge to the north,
+  Iceflow Lake road to the west").
 - Next to a place, the **cliffs and water** near it ("forest, cliff edge to the west"), and
   after stepping off a road or street, where it is ("open land, road to the northwest";
   in a city "Trade District, street to the east", or "grass, street to the east" where there
@@ -46,6 +61,9 @@ a screen reader would cut its own speech off at every key press.
   landing where the stairs turn: the stairs that go up north, cross a landing to the west and go
   on up south say "north to south", "east to west", "north to south". On a square or in a room they
   are listed with its other ways ("stairs to the upstairs landing to the east").
+- **Platforms**: the raised floors of structures (a zeppelin tower, a harbor) are places of
+  their own ("platform of Stormwind Harbor") that list their stairs and ramps like a square. Their
+  drop edges warn only while you are up there.
 - **Indoors**, the room and its doorways: "Lion's Pride Inn, common room, hallway to the
   north, kitchen to the east". The building's name is said when you enter it. A long, narrow
   room says which way it runs ("passage of Ironforge, north to south"); winding stairs say so
@@ -75,45 +93,65 @@ a screen reader would cut its own speech off at every key press.
   "pier of Stormwind Harbor"; the wide parts of a dock are a square ("dock of Stormwind
   Harbor") that says its piers and quays. The water under them is said only while swimming.
 - **Drop edges** on docks, bridges, walls and canal sides, kept short: the direction and what
-  lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava");
+  lies below ("southeast, canal", "north, water", "east, drop 12", indoors also "west, lava",
+  and in Ironforge's Commons "east, moat");
   ahead of you the distance in yards first ("9 southwest, canal"). In buildings whose floors are
   mapped (the Brill tavern) also an open stairwell or the open side of a staircase, only on the
   floor it lies on; going over it counts you on the floor below.
 - **Feet of ramps and stairs**: within 8 yards of the foot, guidance to it with the way up
-  ("stairs, 2 to the east, on to the north"), lined up with the climb; in mapped buildings only
-  from the floor the foot is on.
+  ("stairs, 2 to the east, on to the north"), lined up with the climb; everywhere only from the
+  floor the foot is on. On stairs with a wall along one side and a drop along the other, the way
+  up is said toward the wall side ("on to the northeast"), so a step toward the open side is said
+  back to you; this needs the setting Guide Up Stairs on Their Wall Side.
 - **Guidance**: within 8 yards of a building entrance or of where a street begins on a square,
   its name, distance and direction ("entrance of the bank, 6 to the northeast"), again when the
   direction changes, and once when you are at it. Once named, it keeps saying its direction
-  out to 10 yards, so you can step back and strafe to line up with a door. While swimming, the nearest way out of the
-  water; one that only leads onto a ledge or into a dead end says so ("way out of the water to
-  a dead end").
+  out to 10 yards, so you can step back and strafe to line up with a door. While swimming, the
+  nearest way out of the water within 25 yards (ways out that only lead onto a ledge or into a
+  dead end are left out of the data). A long shore is one way out: it is named
+  once while the guidance follows its nearest stretch. Down in Ironforge's moat you are guided to
+  the nearest "way out of the moat", from anywhere down there.
 - **Turn hints** on roads and streets (not on ramps and stairs): "left" or "right" when the
   direction words cannot tell you that you are facing a little off the way, and at gentle bends
-  of a road.
+  of roads and streets. Ramps and stairs get no bend hints.
 - **Bumps**: when wall detection finds you blocked, what you are pushing against ("wagon",
-  "wall of auction house", indoors "wall"); beside a raised ramp or stairs its side ("ramp to the
-  bank, side"). This needs the wall detection module enabled.
+  "wall of auction house", indoors "wall"); the wall of a structure ("wall of gate of
+  Northshire Valley"), or of a building named only by its place ("wall of Ruins of Lordaeron"); beside a
+  raised ramp or stairs its side ("ramp to the bank, side"). Nothing is named while swimming.
+  This needs the wall detection module enabled.
+- **Stops**: stepping onto a spot where one waits for a ship, zeppelin, lift or tram says what
+  to wait for and where it will be ("wait for the ship to Auberdine, ship to the southwest",
+  "wait for the lift down, lift to the west"). The same stop is said again only after you have
+  walked 3 yards off every stop.
+- **After a reload or login** on the same spot, the room and the floor you were on are taken
+  back, so a reload upstairs does not put you on the floor below.
 
 ## Keys and commands
 
 - **Alt-L** (Describe Surroundings): the full description of where you stand, without the
-  shortening of the announcements, plus the nearest guidance target.
-- `/wv surr`: position, data cell, place, nearest entrance and, indoors, the room; spoken and
-  printed.
+  shortening of the announcements, plus the nearest guidance target and the stop you stand on.
+  Outdoors it adds a drop edge within 3 yards, or one ahead of you within 10 yards.
+  `/wv surr around` does the same.
+- `/wv surr`: position, data cell, place, nearest entrance, the stop you stand on, whether the
+  game says indoors or outdoors with its map and area, and, indoors, the room candidates, the
+  current room and the indoor layer; spoken and printed.
 - `/wv surr log on`, `/wv surr log off`: a walk log for reporting problems, kept in
-  WowVision's saved variables until you switch it off. `/wv surr log` says the last entries,
+  WowVision's saved variables until you switch it off. `/wv surr log` says the last 5 entries,
+  `/wv surr log 20` the last 20 (any count); they are also printed to chat.
   `/wv surr log clear` empties it.
 
 ## Settings
 
-Under Navigation, Surroundings:
+Under Navigation, Surroundings (all six are on by default):
 
 - Warn at Drop Edges
 - Guide to Entrances, Streets and Ways Out
 - Turn Hints on Roads and Streets
+- Guide Up Stairs on Their Wall Side: on stairs with a wall along one side and a drop along the
+  other, the way up is said toward the wall side.
 - Quieter While a Beacon Guides: while a WowVision beacon or route leads you, entrances and
-  street beginnings are said once by name only, and there are no turn hints.
+  street beginnings are said once by name only, and there are no turn hints, no look-ahead to
+  the next piece of a way, and no wall-side guidance on stairs.
 - Name What I Bump Into
 
 The announcements themselves are an alert ("Surroundings Announcements") that can be switched
