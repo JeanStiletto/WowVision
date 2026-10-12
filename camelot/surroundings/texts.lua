@@ -359,7 +359,7 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and T("on to the %s") or nil,
-        bearing = f.bearing,
+        bearing = f.bearing, floor = f.floor or 0,
     }
 end
 
@@ -425,12 +425,40 @@ function logic.atTarget(zone, t, x, y)
     return math.abs((t.x - x) * fy - (t.y - y) * fx) <= side
 end
 
+-- Did the player fall off a climb onto the floor its foot `t` lies on (the last floor change
+-- crossed a drop edge of one of the climb's floor pieces, within a cell of the foot)? Then, while
+-- they stay on that floor, they are not on the climb nor past its foot, wherever they stand:
+-- fallen off the griffon ramp's side into the bay beside it, the bay lay up the ramp's way from
+-- the foot and carried the ramp's place, so the foot was never guided to again until the player
+-- stood on the fork (walk 2026-10-12 16:48). Walked down and off at the foot, or by on the
+-- ground, pastTarget and onClimb hold as before (lifting them there guided back to every foot
+-- just left and along every stairs one passed: 39 more lines over the Elwynn walks).
+function logic.belowClimb(zone, t)
+    local ix = zone._index
+    local fl = t.floor or 0
+    if (ix.floor or 0) ~= fl then
+        return false
+    end
+    local place = logic.placeOf(t.value)
+    local r, c = logic.cellOf(zone, t.x, t.y)
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            for p, v in pairs(ix.floorCells[(r + dr) * zone.cols + c + dc] or {}) do
+                if p ~= fl and p == ix.fellFrom and logic.placeOf(v) == place then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Is the player past a climb's foot: more than GUIDE_AT yards beyond it along the way up? Then
 -- the foot is no target any more (user 2026-10-01: the foot was dropped as soon as the place
 -- said "ramp", which the junction stretch did 2 yd before the foot, so "hinauf nach Südosten"
 -- never came).
 function logic.pastTarget(zone, t, x, y)
-    if not t.through then
+    if not t.through or logic.belowClimb(zone, t) then
         return false
     end
     local fx, fy = throughVector(t)
@@ -444,7 +472,7 @@ end
 -- Within GUIDE_AT it stays: the cells say the climb about 2 yd before its foot, and "up to the
 -- west" must still come there (see pastTarget).
 function logic.onClimb(zone, t, x, y, currentKey)
-    if t.d <= logic.GUIDE_AT then
+    if t.d <= logic.GUIDE_AT or logic.belowClimb(zone, t) then
         return false
     end
     if logic.valueAt(zone, x, y) == t.value then

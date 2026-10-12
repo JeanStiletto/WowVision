@@ -191,7 +191,11 @@ function logic.wayAhead(zone, x, y, facing, look)
     return math.atan2(ay - py, ax - px), aheadLane.value
 end
 
-logic.AHEAD_LOOK = 12 -- yd; on a way the next piece is said this far before it
+-- yd; on a way the next piece is said this far before it (12 until 2026-10-12: over the walks of
+-- 2026-09-29 to 10-12 the player stopped or turned a median 6 yd after the line, on the piece where
+-- it was 9 yd off or less when said, 6 yd short of it where it was 12; capped at 8, 44 of 79 such
+-- stops early -> 36)
+logic.AHEAD_LOOK = 8
 logic.AHEAD_MIN = 4 -- yd; a next piece closer than this is left to its own announcement
 local AHEAD_STEP = 2 -- yd between the looks ahead along the way
 -- yd; a look ahead finds the line's next stretch this close to it (stretches of one line meet

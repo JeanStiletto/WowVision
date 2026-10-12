@@ -1761,6 +1761,41 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.onClimb(z, target, 92, 48, nil), false)
     end,
 
+    ["fallen off a climb with a floor piece of its own its foot is still guided to"] = function(t)
+        local z = newWalkZone()
+        z.dirs = { "running %s", "up to the %s" }
+        z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
+        z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
+        z.lanes = {}
+        z.climbFeetFields = 4
+        z.climbFeet = { 92, 44, 22045, 60 }
+        -- the ramp is floor piece 1 over the ground, from its foot's cell up to the northeast
+        z.floorCells = { 2, 4, 1, 22045, 1, 3, 1, 22045, 1, 4, 1, 22045 }
+        logic.unpack(z)
+        -- walking by on the ground, never on the ramp: past its foot as before
+        local target = logic.footTarget(z, 94, 40.5)
+        t:assertEqual(logic.belowClimb(z, target), false)
+        t:assertEqual(logic.pastTarget(z, target, 94, 40.5), true)
+        -- walked down the ramp and off it (no fall): the same
+        z._index.floor, z._index.cameFrom = 0, 1
+        t:assertEqual(logic.belowClimb(z, target), false)
+        -- fallen off its side onto the ground 4 yd up the ramp's way from its foot (the ground
+        -- painted with the ramp): neither past the foot nor on the ramp
+        -- (what updateFloor leaves after a fall from piece 1: a drop edge of it crossed)
+        z._index.floor, z._index.cameFrom, z._index.fellFrom = 0, 1, 1
+        target = logic.footTarget(z, 94, 40.5)
+        t:assertEqual(target.kind, "climb")
+        t:assertEqual(logic.belowClimb(z, target), true)
+        t:assertEqual(logic.pastTarget(z, target, 94, 40.5), false)
+        target = logic.footTarget(z, 92, 48)
+        t:assertEqual(logic.onClimb(z, target, 92, 48, nil), false)
+        -- up on the ramp's piece the rules hold as before
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.belowClimb(z, target), false)
+        t:assertEqual(logic.onClimb(z, target, 92, 48, nil), true)
+        t:assertEqual(logic.pastTarget(z, target, 94, 40.5), true)
+    end,
+
     ["the guidance target stays unless another is clearly nearer"] = function(t)
         local list = { { x = 0, y = 0 }, { x = 10, y = 0 } }
         -- nearer to the second by 1 yd, the first guided to last: the first stays
@@ -1827,10 +1862,10 @@ testRunner:addSuite("Surroundings", {
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 84, 42, 21045, 20, 40 }
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        -- the distance along the line (8 yd to the bend, then onto the next stretch)
-        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 9.4)
+        -- the distance along the line (6 yd to the bend, then onto the next stretch)
+        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 7.4)
         t:assertEqual(logic.describe(z, value, true), "canal walk, northeast to southwest")
         -- walking north, away from it: nothing ahead
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
@@ -1951,9 +1986,9 @@ testRunner:addSuite("Surroundings", {
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 88, 30, 21045, 20, 40 }
         logic.pack(z)
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        t:assertEqual(yards, 8)
+        t:assertEqual(yards, 6)
     end,
 
     ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)
