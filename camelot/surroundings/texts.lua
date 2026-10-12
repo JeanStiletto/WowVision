@@ -189,7 +189,7 @@ local function doorwayTarget(key, d, dir, x, y, label, through)
 end
 
 local function entranceTarget(zone, x, y, reach, prefer, floor)
-    local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer)
+    local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer, true)
     if i == nil then
         return nil
     end

@@ -426,13 +426,21 @@ end
 
 logic.ENTRANCE_MERGE = 4 -- yd; doorways of one building closer than this are one entrance
 
--- Adds an entrance to the list unless one of the same text lies within ENTRANCE_MERGE of it.
-local function addEntrance(list, entrance)
+-- Adds an entrance to the list unless one of the same text lies within ENTRANCE_MERGE of it (then
+-- its doorway's floor joins that one's floors; an unknown floor makes them unknown). `floor`: the
+-- floor piece the doorway's sill lies on, or nil.
+local function addEntrance(list, entrance, floor)
     for _, e in ipairs(list) do
         if e.text == entrance.text and logic.dist2(e.x, e.y, entrance.x, entrance.y) < logic.ENTRANCE_MERGE ^ 2 then
+            if e.floors and floor ~= nil then
+                e.floors[floor] = true
+            else
+                e.floors = nil
+            end
             return
         end
     end
+    entrance.floors = floor ~= nil and { [floor] = true } or nil
     list[#list + 1] = entrance
 end
 
@@ -464,7 +472,7 @@ local function layerEntrances(layer)
                 addEntrance(list, {
                     x = x, y = y, text = text, building = text, plain = plain, wayOut = wayOut,
                     inDir = logic.doorwayDirection(layer, door, hall),
-                })
+                }, door.floor)
             end
         end
     end
@@ -496,16 +504,40 @@ function logic.entrances(zone)
                 text = text .. ", " .. logic.spokenName(zone, room.name)
             end
             local out = logic.doorwayDirection(zone, door, inside)
-            addEntrance(list, { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 })
+            addEntrance(list, { x = x, y = y, text = text, building = interior.name, inDir = out and (out + 180) % 360 }, door.floor)
         end
     end
     ix.entrances = list
     return list
 end
 
+-- Is the player at (x, y) on an entrance's floor: the floor piece they are on is one its doorways'
+-- sills lie on, or one joined to such (a doorstep, a shop's landing up a few steps; true where the
+-- data does not say)?
+function logic.onEntranceFloor(zone, e, x, y)
+    if e.floors == nil then
+        return true
+    end
+    local floor = zone._index.floor or 0
+    if e.floors[floor] then
+        return true
+    end
+    for f in pairs(e.floors) do
+        if logic.joinedPieces(zone, floor, f) then
+            return true
+        end
+    end
+    return false
+end
+
 -- The nearest entrance within `reach` yards: index, distance, the angle toward it, the entrance.
-function logic.nearestEntrance(zone, x, y, reach, prefer)
-    return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer)
+-- `onFloor`: only one on the player's floor (onEntranceFloor; the guidance: the Trade Quarter's
+-- shops up on the ring were guided to from the canal hall 17 yd under them, walk 2026-10-11 23:47).
+function logic.nearestEntrance(zone, x, y, reach, prefer, onFloor)
+    local opts = onFloor and { skip = function(e)
+        return not logic.onEntranceFloor(zone, e, x, y)
+    end } or nil
+    return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer, opts)
 end
 
 -- The text of a room: the interior's name when it changes, then the room; a city complex's district
