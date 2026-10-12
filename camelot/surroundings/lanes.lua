@@ -6,7 +6,9 @@
 
 local logic = WowVision.surroundingsLogic
 
-local LANE_KEEP = { bridge = true } -- places a lane never replaces
+-- places a lane never replaces (a platform: what lies beside or under it is not where one stands;
+-- the street under the griffon ramp's walkway was said up there, walk 2026-10-12 18:36)
+local LANE_KEEP = { bridge = true, platform = true }
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
@@ -195,7 +197,7 @@ end
 -- 2026-09-29 to 10-12 the player stopped or turned a median 6 yd after the line, on the piece where
 -- it was 9 yd off or less when said, 6 yd short of it where it was 12; capped at 8, 44 of 79 such
 -- stops early -> 36)
-logic.AHEAD_LOOK = 8
+logic.AHEAD_LOOK = 6
 logic.AHEAD_MIN = 4 -- yd; a next piece closer than this is left to its own announcement
 local AHEAD_STEP = 2 -- yd between the looks ahead along the way
 -- yd; a look ahead finds the line's next stretch this close to it (stretches of one line meet
