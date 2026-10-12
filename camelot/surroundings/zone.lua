@@ -921,6 +921,10 @@ function logic.unpack(zone, locale)
     for i, d in ipairs(zone.doors or {}) do
         -- half: half the opening's width along its plane (nil in older exports)
         local door = { a = d[1], b = d[2], interior = d[3], x = d[4], y = d[5], nx = d[6], ny = d[7], side = d[8], half = d[9] }
+        -- the floor piece its sill lies on (doorFloors; -1 none, nil older data): an entrance is guided
+        -- to only from it (rooms.lua nearestEntrance)
+        local fl = zone.doorFloors and zone.doorFloors[i]
+        door.floor = fl and fl >= 0 and fl or nil
         ix.doors[i] = door
         for _, pair in ipairs({ { door.a, door.b }, { door.b, door.a } }) do
             local room, other = pair[1], pair[2]
@@ -983,6 +987,8 @@ function logic.unpackLayer(zone, src, suffix)
         floorCells = src.floorCells, noGround = src.noGround, joins = src.joins, liquids = src.liquids,
         -- the rooms by their floor: per cell and piece the rooms whose floor it is
         floorRooms = src.floorRooms,
+        -- per door the layer's floor piece its sill lies on
+        doorFloors = src.doorFloors,
         -- the feet of a building's staircases, guided to as the city's climbs' feet
         climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying

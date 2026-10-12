@@ -424,6 +424,21 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.edgeText(layer, 1, 6.2), "6 south, lava")
     end,
 
+    ["an entrance is guided to only from the floor its doorway lies on"] = function(t)
+        local z = newHallZone()
+        z.indoor.doorFloors = { 2, 0, 0 }   -- the shop's doorway lies on piece 2 (a walkway over the hall)
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        t:assertEqual(select(4, logic.nearestEntrance(layer, 90, 36, 8, nil, false)).text, "shop")   -- unfiltered
+        t:assertNil(logic.nearestEntrance(layer, 90, 36, 8, nil, true))                            -- on the hall's floor
+        logic.setFloor(layer, 2)
+        t:assertEqual(select(4, logic.nearestEntrance(layer, 90, 36, 8, nil, true)).text, "shop")    -- up on its floor
+        -- data without doorFloors: as before
+        local old = newHallZone()
+        logic.unpack(old)
+        t:assertEqual(select(4, logic.nearestEntrance(logic.layer(old), 90, 36, 8, nil, true)).text, "shop")
+    end,
+
     ["a stairs' edge beside the player warns only while they face its drop"] = function(t)
         local z = newHallZone()
         z.indoor.edges[1][5] = 4   -- its floor is the stairs' (room 4, kind stairs); the drop is to the south
