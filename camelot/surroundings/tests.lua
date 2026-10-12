@@ -1862,10 +1862,10 @@ testRunner:addSuite("Surroundings", {
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 84, 42, 21045, 20, 40 }
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        -- the distance along the line (8 yd to the bend, then onto the next stretch)
-        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 9.4)
+        -- the distance along the line (6 yd to the bend, then onto the next stretch)
+        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 7.4)
         t:assertEqual(logic.describe(z, value, true), "canal walk, northeast to southwest")
         -- walking north, away from it: nothing ahead
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
@@ -1986,9 +1986,9 @@ testRunner:addSuite("Surroundings", {
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 88, 30, 21045, 20, 40 }
         logic.pack(z)
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        t:assertEqual(yards, 8)
+        t:assertEqual(yards, 6)
     end,
 
     ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)
