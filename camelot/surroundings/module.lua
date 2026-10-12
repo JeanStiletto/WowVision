@@ -45,6 +45,7 @@ local CHECK_INTERVAL = 0.2 -- seconds between two looks at the position
 local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
 local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
 local ENTRY_INDOORS = 3 -- ... inside a room, and a place of a building's floors on their own fine grid
+local CAME_IN_STEP = 10 -- yd between two looks at most for coming indoors to be a step (more: a hearthstone, a portal)
 local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
@@ -90,6 +91,7 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
 local outAt = nil -- when the player last came out of a building
+local cameIn = nil -- {x, y}: where the player walked in from outside (a step, not a jump), until ENTRY_INDOORS walked from it
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
@@ -1183,7 +1185,13 @@ local function updateIndoors(z, x, y, px, py)
             entryDoor = door
         end
     end
-    if indoor:update(room, x, y) then
+    -- walked in from outside without a doorway crossed: the room is said after ENTRY_INDOORS yd inside, so
+    -- a step into a doorway and back says nothing (The Gilded Rose's door, where the floor names the inn;
+    -- after a hearthstone, a jump, the room is said at once)
+    if cameIn and logic.dist(cameIn[1], cameIn[2], x, y) >= ENTRY_INDOORS then
+        cameIn = nil
+    end
+    if indoor:update(not cameIn and room or nil, x, y) then
         if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
             -- the next section of the same thing (a mine's passages, tram tunnel 6, 7..., the pieces
             -- of one staircase): no name, the way it runs when that changed and its doorways on
@@ -1278,6 +1286,7 @@ module:hasUpdate(function(self)
         end
         forgetPlace()
         outAt = (wasIndoors and not isIndoors) and now or nil
+        cameIn = (isIndoors and wasIndoors == false and px and logic.dist(x, y, px, py) <= CAME_IN_STEP) and { x, y } or nil
         wasIndoors = isIndoors
         -- (into the halls by a hall's floor: on that hall's floor piece, updateHall)
         local layer = inHall and hallEntryFloor and logic.layer(z, IsIndoors())
