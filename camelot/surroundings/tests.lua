@@ -1072,6 +1072,53 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.resolveRoom(z, 50, 50, 1))
     end,
 
+    ["stacked rooms: the floor piece the player is on names the room (rooms by floor)"] = function(t)
+        local z = newZone()
+        -- the inn's indoor layer on a grid of its own (5 yd cells, x 20 to 0, y 20 to 0): the common
+        -- room's floor is its ground, the upstairs landing piece 1 over it (joined), the back room
+        -- the ground east of them; the landing's piece also reaches the cell north of (5, 5)
+        z.indoorIn = {
+            top = 20, left = 20, cell = 5, rows = 4, cols = 4,
+            rooms = {}, grid = { "0*4", "0*4", "0*4", "0*4" }, lanes = {}, edges = {},
+            floorCells = {}, noGround = {}, joins = { 0, 1, 5, 2, -1 },
+            floorRooms = { 3, 3, 0, 1, 3, 3, 1, 2, 1, 3, 0, 3, 2, 3, 1, 2 },
+        }
+        logic.unpack(z)
+        local layer = logic.layer(z, true)
+        -- on the ground: the common room, where the boxes alone leave it unknown
+        local boxesOnly = newZone()
+        logic.unpack(boxesOnly)
+        t:assertNil(logic.resolveRoom(boxesOnly, 5, 5, nil, nil, nil, false, false, true))
+        t:assertEqual(logic.resolveRoom(z, 5, 5, nil, nil, nil, false, false, true), 1)
+        t:assertEqual(logic.resolveRoom(z, 15, 5, nil, nil, nil, false, false, true), 3)
+        -- up on the landing's piece: the landing, even coming from the common room
+        logic.setFloor(layer, 1)
+        t:assertEqual(logic.resolveRoom(z, 5, 5, 1, nil, nil, false, false, true), 2)
+        -- a cell that does not list the piece: the cells around it say
+        t:assertEqual(logic.floorRoomsAt(layer, 12, 2)[1], 2)
+        -- a piece no record names: the boxes decide, as before (two of them here: unknown)
+        logic.setFloor(layer, 5)
+        t:assertNil(logic.floorRoomsAt(layer, 5, 5))
+        t:assertNil(logic.resolveRoom(z, 5, 5, nil, nil, nil, false, false, true))
+        -- the common room's floor lies on the ground: not near from piece 5
+        t:assertFalse(logic.roomFloorNear(layer, 1, 5, 5))
+        -- through the common room's doorway from piece 5: onto the common room's floor, the ground
+        t:assertEqual(logic.roomPieceHere(layer, 1, 5, 5), 0)
+        t:assertEqual(logic.roomPieceHere(layer, 2, 12, 2), 1)   -- the landing's, from the cell beside
+        t:assertNil(logic.roomPieceHere(layer, 4, 5, 5))         -- the barn has no floor here
+        logic.setFloor(layer, 1)
+        t:assertFalse(logic.roomFloorNear(layer, 1, 5, 5))        -- a piece joined to its floor is not its floor
+        t:assertTrue(logic.roomFloorNear(layer, 2, 5, 5))
+        t:assertEqual(logic.roomPieceHere(layer, 1, 5, 5), 0)    -- onto its floor
+        logic.setFloor(layer, 0)
+        t:assertTrue(logic.roomFloorNear(layer, 1, 5, 5))
+        t:assertNil(logic.roomPieceHere(layer, 1, 5, 5))         -- on its floor: the floor stays
+        logic.setFloor(layer, 1)
+        t:assertNil(logic.roomFloorNear(layer, 4, 5, 5))          -- the barn: no floor in the records, nothing known
+        -- data without rooms by floor: nothing known
+        t:assertNil(logic.roomFloorNear(logic.layer(newZone(), true), 1, 5, 5))
+    end,
+
     ["no floor right under the player: a floor within the slack names the room (the tram over its pit)"] = function(t)
         local z = newZone()
         logic.unpack(z)

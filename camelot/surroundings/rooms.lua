@@ -197,6 +197,117 @@ function logic.onFloorRooms(zone, x, y, cands, current)
     return out
 end
 
+-- The rooms whose floor the player stands on (user 2026-10-12: the room under the player is found
+-- by the floor, not by the room boxes, which have no height: under the Undercity Trade Quarter's
+-- shops their boxes held the canal hall 18 yd below): in indoor layer `layer` the rooms of the
+-- floor piece the player is on (logic.updateFloor) in this cell, else in the 8 cells around; nil
+-- where the layer does not say (older data, or no room's floor of that piece here).
+function logic.floorRoomsAt(layer, x, y)
+    local fr = layer and layer._index and layer._index.floorRooms
+    if fr == nil then
+        return nil
+    end
+    local floor = layer._index.floor or 0
+    local r0, c0 = logic.cellOf(layer, x, y)
+    local here = fr[r0 * layer.cols + c0]
+    if here and here[floor] then
+        return here[floor]
+    end
+    local seen, out = {}, {}
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            local cell = (dr ~= 0 or dc ~= 0) and c0 + dc >= 0 and c0 + dc < layer.cols and fr[(r0 + dr) * layer.cols + c0 + dc]
+            for _, id in ipairs(cell and cell[floor] or {}) do
+                if not seen[id] then
+                    seen[id] = true
+                    out[#out + 1] = id
+                end
+            end
+        end
+    end
+    return #out > 0 and out or nil
+end
+
+-- Does room `id` have floor here (this cell or the 8 around) on the floor piece the player is on in
+-- `layer`? (Not a piece joined to it: the ground holds floors at several heights, and swimming
+-- under the Trade Quarter's shops the canal's water, joined to the ground, let the Inn's doorway
+-- overhead be walked through.) nil where the layer knows no floor of that room (older data, a room
+-- of no city: a house's, a mapped building's).
+function logic.roomFloorNear(layer, id, x, y)
+    local fr = layer and layer._index and layer._index.floorRooms
+    if fr == nil or not layer._index.floorRoomIds[id] then
+        return nil
+    end
+    local floor = layer._index.floor or 0
+    local r0, c0 = logic.cellOf(layer, x, y)
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            local cell = c0 + dc >= 0 and c0 + dc < layer.cols and fr[(r0 + dr) * layer.cols + c0 + dc]
+            for _, r in ipairs(cell and cell[floor] or {}) do
+                if r == id then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- The floor piece of `layer` that room `id` lies on here, where it does not lie on the player's:
+-- coming into the halls by a hall's floor the player is on that room's floor (the floor follows
+-- the room the evidence gives; at the Ruins of Lordaeron's entrance the halls layer's floor was
+-- still the ground, which holds the canal 110 yd below in the same cells, and the floor named the
+-- canal). Looked for in this cell, else in the cells around: the piece most of those cells list
+-- the room on (the fewer number where as many), nil to keep the floor where that is the player's
+-- piece (a scrap of the room's floor on the ground beside it, the ground's canal under it, kept
+-- the wrong floor); nil where the data does not know the room.
+function logic.roomPieceHere(layer, id, x, y)
+    local ix = layer and layer._index
+    if id == nil or ix == nil or ix.floorRooms == nil or not ix.floorRoomIds[id] then
+        return nil
+    end
+    local floor = ix.floor or 0
+    local r0, c0 = logic.cellOf(layer, x, y)
+    for ring = 0, 1 do
+        local count, best = {}, nil
+        for dr = -ring, ring do
+            for dc = -ring, ring do
+                local cell = math.max(math.abs(dr), math.abs(dc)) == ring and c0 + dc >= 0 and c0 + dc < layer.cols
+                    and ix.floorRooms[(r0 + dr) * layer.cols + c0 + dc]
+                for p, list in pairs(cell or {}) do
+                    for _, r in ipairs(list) do
+                        if r == id then
+                            count[p] = (count[p] or 0) + 1
+                            if best == nil or count[p] > count[best] or (count[p] == count[best] and p < best) then
+                                best = p
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if best ~= nil then
+            if best == floor or (ring == 0 and count[floor]) then
+                return nil
+            end
+            return best
+        end
+    end
+    return nil
+end
+
+-- The room candidates here: the rooms of the floor the player is on in the layer the game's word
+-- picks (floorRoomsAt; the floor is the evidence, so no hall test), else the rooms whose boxes
+-- hold the position within `margin` that fit the game's word and the way the player came
+-- (fittingRooms, onFloorRooms).
+function logic.roomsAt(zone, x, y, margin, indoors, current)
+    local byFloor = logic.floorRoomsAt(logic.layer(zone, indoors), x, y)
+    if byFloor then
+        return logic.fittingRooms(zone, byFloor, indoors)
+    end
+    return logic.onFloorRooms(zone, x, y, logic.fittingRooms(zone, logic.roomCandidates(zone, x, y, margin), indoors), current)
+end
+
 function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors)
     if crossed == nil then
         crossed = logic.crossedDoor(zone, current, px, py, x, y)
@@ -204,7 +315,7 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors
     if crossed then
         return crossed ~= 0 and crossed or nil
     end
-    local cands = logic.onFloorRooms(zone, x, y, logic.fittingRooms(zone, logic.roomCandidates(zone, x, y), indoors), current)
+    local cands = logic.roomsAt(zone, x, y, nil, indoors, current)
     if current ~= nil and not gameFits(zone, current, indoors) and #cands > 0 and gameFits(zone, cands[1], indoors) then
         current, byDoor = nil, false
     end
@@ -220,7 +331,7 @@ function logic.resolveRoom(zone, x, y, current, px, py, byDoor, crossed, indoors
         end
     end
     if #cands == 0 then
-        cands = logic.onFloorRooms(zone, x, y, logic.fittingRooms(zone, logic.roomCandidates(zone, x, y, logic.ROOM_SLACK), indoors), current)
+        cands = logic.roomsAt(zone, x, y, logic.ROOM_SLACK, indoors, current)
     end
     if #cands == 0 then
         return nil
@@ -739,7 +850,7 @@ function logic.inLayer(layer, roomId, x, y)
     if logic.valueAt(layer, x, y) == 0 then
         return false
     end
-    local cands = logic.roomCandidates(layer, x, y)
+    local cands = logic.floorRoomsAt(layer, x, y) or logic.roomCandidates(layer, x, y)
     if #cands == 0 then
         return false
     end
