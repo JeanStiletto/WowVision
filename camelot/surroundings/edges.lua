@@ -182,6 +182,8 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     -- the floor the player came onto this one from (the guidance on a flight: logic.footTarget)
     if floor ~= was then
         ix.cameFrom = was
+        -- and the floor fallen from, while on the one fallen onto (logic.belowClimb)
+        ix.fellFrom = fell and was or nil
     end
     return floor, floor ~= was
 end
@@ -248,6 +250,7 @@ function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
     zone._index.pendingJoins = {}
     zone._index.cameFrom = nil
+    zone._index.fellFrom = nil
 end
 
 -- The label of the place a floor piece carries at (x, y) (nil for the ground, or a piece without
