@@ -139,6 +139,8 @@ end
 -- outside (updateIndoors), on another map, or after HALL_GAP yards without hall floor near (a
 -- bridge, over lava). After a doorway out, no way back in until DOOR_AWAY yards from it.
 local HERE_SAME = 1.5 -- yd from the kept spot (keepHere) that still count as the same
+local hereRestored = false -- the kept spot was looked at after loading (restoreHere)
+local hereKept = nil
 local DOOR_AWAY = 4.0 -- yd from the doorway left by before the halls can take the player again
 local hallMapWas = nil      -- the game's map at the last look
 local hallMapWalked = nil   -- yd walked since it became the halls' (nil: not just now)
@@ -179,6 +181,14 @@ local function updateHall(z, x, y, px, py)
     end
     if hallDoorOut then
         return false
+    end
+    -- after a reload or login on the spot of the last look, in the halls as then (restoreHere takes the
+    -- room and the floor pieces back): swimming in a canal right after a login nothing else told it,
+    -- 12 s of "place unknown" (walk 2026-10-12 10:59)
+    local kept = not hereRestored and WowVisionDB and WowVisionDB.surroundingsHere
+    if type(kept) == "table" and kept.halls and kept.zone == z.key and logic.dist(kept.x, kept.y, x, y) <= HERE_SAME then
+        hallGap = 0
+        return true
     end
     local piece = logic.hallPieceForArea(z, x, y, uiMap, z._index.gameArea, z._index.floor or 0)
     if piece then
@@ -1045,9 +1055,6 @@ end
 -- upstairs left the module on the floor below (the Brill tavern, trial 2026-10-03; a login on the
 -- zeppelin tower's deck said the street under it, walk 2026-10-06 14:21). Taken back only on the
 -- same spot.
-local hereRestored = false
-local hereKept = nil
-
 local function keepHere(z, x, y)
     if WowVisionDB == nil then
         return
@@ -1055,7 +1062,7 @@ local function keepHere(z, x, y)
     local layer = logic.layer(z, IsIndoors())
     local floor = layer and (layer._index.floor or 0) or 0
     local ground = z._index.floor or 0
-    local sig = tostring(room) .. "|" .. floor .. "|" .. ground
+    local sig = tostring(room) .. "|" .. floor .. "|" .. ground .. "|" .. tostring(hallGap ~= nil)
     local h = WowVisionDB.surroundingsHere
     if hereKept == sig and h and logic.dist(h.x, h.y, x, y) < HERE_SAME / 2 then
         return
@@ -1066,7 +1073,7 @@ local function keepHere(z, x, y)
     -- numbers the pieces anew, and the number of the tavern's upper floor became another
     -- building's piece after the floor-pieces export, so a login upstairs landed on the ground
     -- (walk 2026-10-05)
-    WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name,
+    WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name, halls = hallGap ~= nil,
         layer = layer and layer.key, floor = floor, floorLabel = layer and logic.pieceLabel(layer, x, y, floor) or nil,
         ground = ground, groundLabel = logic.pieceLabel(z, x, y, ground) }
 end
