@@ -1116,6 +1116,15 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.resolveRoom(z, 5, 5, 1, nil, nil, false, false, true), 2)
         -- a cell that does not list the piece: the cells around it say
         t:assertEqual(logic.floorRoomsAt(layer, 12, 2)[1], 2)
+        -- on the ground the cells around count only for the room the player is in or one joined to
+        -- it by a doorway (the ground holds floors at any height)
+        logic.setFloor(layer, 0)
+        local around, aside = logic.floorRoomsAt(layer, 8, 2)
+        t:assertTrue(aside)
+        t:assertEqual(#around, 2)                                                    -- back room, common room
+        t:assertEqual(logic.resolveRoom(z, 8, 2, 4, nil, nil, false, false, true), nil)  -- from the barn: neither
+        t:assertEqual(logic.resolveRoom(z, 8, 2, 1, nil, nil, false, false, true), 1)    -- in the common room: it holds
+        logic.setFloor(layer, 1)
         -- a piece no record names: the boxes decide, as before (two of them here: unknown)
         logic.setFloor(layer, 5)
         t:assertNil(logic.floorRoomsAt(layer, 5, 5))
