@@ -201,7 +201,9 @@ end
 -- by the floor, not by the room boxes, which have no height: under the Undercity Trade Quarter's
 -- shops their boxes held the canal hall 18 yd below): in indoor layer `layer` the rooms of the
 -- floor piece the player is on (logic.updateFloor) in this cell, else in the 8 cells around; nil
--- where the layer does not say (older data, or no room's floor of that piece here).
+-- where the layer does not say (older data, or no room's floor of that piece here). The second
+-- value is true where the rooms come from the cells around on the ground, which holds floors at
+-- any height (roomsAt takes them only from the room the player is in or one joined to it).
 function logic.floorRoomsAt(layer, x, y)
     local fr = layer and layer._index and layer._index.floorRooms
     if fr == nil then
@@ -211,7 +213,7 @@ function logic.floorRoomsAt(layer, x, y)
     local r0, c0 = logic.cellOf(layer, x, y)
     local here = fr[r0 * layer.cols + c0]
     if here and here[floor] then
-        return here[floor]
+        return here[floor], false
     end
     local seen, out = {}, {}
     for dr = -1, 1 do
@@ -225,7 +227,10 @@ function logic.floorRoomsAt(layer, x, y)
             end
         end
     end
-    return #out > 0 and out or nil
+    if #out == 0 then
+        return nil
+    end
+    return out, floor == 0
 end
 
 -- Does room `id` have floor here (this cell or the 8 around) on the floor piece the player is on in
@@ -301,7 +306,20 @@ end
 -- hold the position within `margin` that fit the game's word and the way the player came
 -- (fittingRooms, onFloorRooms).
 function logic.roomsAt(zone, x, y, margin, indoors, current)
-    local byFloor = logic.floorRoomsAt(logic.layer(zone, indoors), x, y)
+    local byFloor, aside = logic.floorRoomsAt(logic.layer(zone, indoors), x, y)
+    if byFloor and aside and current ~= nil then
+        -- (from the cells around on the ground: only the room the player is in or one joined to it
+        -- by a doorway; the Ruins of Lordaeron's passage 120 yd over the Trade Quarter's island was
+        -- said there, walk 2026-10-12 11:02:48)
+        local nb = zone._index.neighbours[current] or {}
+        local kept = {}
+        for _, id in ipairs(byFloor) do
+            if id == current or nb[id] then
+                kept[#kept + 1] = id
+            end
+        end
+        byFloor = #kept > 0 and kept or nil
+    end
     if byFloor then
         return logic.fittingRooms(zone, byFloor, indoors)
     end
