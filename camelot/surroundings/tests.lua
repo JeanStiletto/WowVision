@@ -340,17 +340,20 @@ testRunner:addSuite("Surroundings", {
     ["up on a piece, the drop edge of a piece joined to it counts near their join"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
+        -- (the flight's rims are a stairs' edges: they warn facing their drop, to the south)
+        local south = math.pi
         -- on the landing beside the join: the flight's rim there warns
         logic.setFloor(z, 2)
-        t:assertEqual(logic.nearestEdge(z, 95, 35, 4), 1)
+        t:assertEqual(logic.nearestEdge(z, 95, 35, 4, nil, south), 1)
+        t:assertNil(logic.nearestEdge(z, 95, 35, 4, nil, math.pi / 2))   -- walking along it: quiet
         -- on the landing, the flight's rim 15 yd from the join does not
-        t:assertEqual(logic.nearestEdge(z, 95, 51, 4), nil)
+        t:assertEqual(logic.nearestEdge(z, 95, 51, 4, nil, south), nil)
         -- on the flight itself both do
         logic.setFloor(z, 1)
-        t:assertEqual(logic.nearestEdge(z, 95, 51, 4), 2)
+        t:assertEqual(logic.nearestEdge(z, 95, 51, 4, nil, south), 2)
         -- on the ground (it joins the foot of every flight) neither
         logic.setFloor(z, 0)
-        t:assertEqual(logic.nearestEdge(z, 95, 35, 4), nil)
+        t:assertEqual(logic.nearestEdge(z, 95, 35, 4, nil, south), nil)
     end,
 
     ["a step over a rim falls, a push against its railing does not"] = function(t)
@@ -419,6 +422,23 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.nearestEdge(layer, 74, 21, 3, { [3] = true }, nil, nil), nil)
         t:assertEqual(logic.edgeText(layer, 1), "south, lava")
         t:assertEqual(logic.edgeText(layer, 1, 6.2), "6 south, lava")
+    end,
+
+    ["a stairs' edge beside the player warns only while they face its drop"] = function(t)
+        local z = newHallZone()
+        z.indoor.edges[1][5] = 4   -- its floor is the stairs' (room 4, kind stairs); the drop is to the south
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        local stairs = { [4] = true }
+        t:assertTrue(logic.isStairEdge(layer, 1))
+        t:assertEqual(logic.nearestEdge(layer, 74, 21, 3, stairs, math.pi, nil), 1)     -- facing south, into it
+        t:assertNil(logic.nearestEdge(layer, 74, 21, 3, stairs, math.pi / 2, nil))      -- walking along it
+        t:assertNil(logic.nearestEdge(layer, 74, 21, 3, stairs, 0, nil))                -- facing away
+        t:assertNil(logic.nearestEdge(layer, 74, 21, 3, stairs, nil, nil))              -- no facing known
+        -- a path into it still warns
+        t:assertEqual(logic.edgeAhead(layer, 76, 21, -1, 0, 10, stairs, nil), 1)
+        -- any other room's edge as before
+        t:assertFalse(logic.isStairEdge(logic.layer((function() local h = newHallZone(); logic.unpack(h); return h end)()), 1))
     end,
 
     ["a big room says its doorways from where the player stands, nearest first"] = function(t)
