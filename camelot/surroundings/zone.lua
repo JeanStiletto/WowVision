@@ -753,6 +753,22 @@ function logic.unpack(zone, locale)
         ix.liquids[piece] = kind
     end)
     ix.floor = 0
+    -- the rooms by their floor (indoor layers, floorRooms: row, col, piece, room): per cell, per
+    -- floor piece the rooms whose floor that piece is there (rooms.lua floorRoomsAt); nil in data
+    -- without them
+    if zone.floorRooms then
+        -- (floorRoomIds: the rooms with floor in the records)
+        ix.floorRooms, ix.floorRoomIds = {}, {}
+        eachRecord(zone.floorRooms, 4, function(r, c, piece, room)
+            ix.floorRoomIds[room] = true
+            local key = r * zone.cols + c
+            local byPiece = ix.floorRooms[key] or {}
+            ix.floorRooms[key] = byPiece
+            local list = byPiece[piece] or {}
+            byPiece[piece] = list
+            list[#list + 1] = room
+        end)
+    end
     -- the cells where a hall the game calls outdoors lies on the ground (rooms.lua inHallFloor)
     ix.hallGround = {}
     eachRecord(zone.hallGround, 2, function(r, c)
@@ -965,6 +981,8 @@ function logic.unpackLayer(zone, src, suffix)
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
         -- zone's: one rule for every floor over or under another
         floorCells = src.floorCells, noGround = src.noGround, joins = src.joins, liquids = src.liquids,
+        -- the rooms by their floor: per cell and piece the rooms whose floor it is
+        floorRooms = src.floorRooms,
         -- the feet of a building's staircases, guided to as the city's climbs' feet
         climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying

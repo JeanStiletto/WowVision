@@ -45,6 +45,7 @@ local CHECK_INTERVAL = 0.2 -- seconds between two looks at the position
 local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
 local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
 local ENTRY_INDOORS = 3 -- ... inside a room, and a place of a building's floors on their own fine grid
+local CAME_IN_STEP = 10 -- yd between two looks at most for coming indoors to be a step (more: a hearthstone, a portal)
 local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
@@ -90,6 +91,7 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
 local outAt = nil -- when the player last came out of a building
+local cameIn = nil -- {x, y}: where the player walked in from outside (a step, not a jump), until ENTRY_INDOORS walked from it
 local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
@@ -141,6 +143,7 @@ local DOOR_AWAY = 4.0 -- yd from the doorway left by before the halls can take t
 local hallMapWas = nil      -- the game's map at the last look
 local hallMapWalked = nil   -- yd walked since it became the halls' (nil: not just now)
 local hallDoorOut = nil     -- {x, y}: the doorway the player just came out of the halls by
+local hallEntryFloor = nil  -- the halls layer's floor piece the player came in on (kept over forgetPlace)
 
 local function updateHall(z, x, y, px, py)
     local uiMap = gameMap()
@@ -184,8 +187,15 @@ local function updateHall(z, x, y, px, py)
     local inFloor, entryRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
     if inFloor then
         -- the room whose floor let the player in is the room they are in (not one found by x and y
-        -- at another height; an older room held from before is forgotten)
+        -- at another height; an older room held from before is forgotten), and the halls layer's
+        -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor)
         hallGap, room, roomByDoor = 0, entryRoom, false
+        local layer = logic.layer(z, IsIndoors())
+        local piece = layer and logic.roomPieceHere(layer, entryRoom, x, y)
+        if piece then
+            logic.setFloor(layer, piece)
+        end
+        hallEntryFloor = piece
         return true
     end
     return false
@@ -941,13 +951,15 @@ local function checkStop(z, x, y, px, py, rooms)
     end
 end
 
--- Indoors: the rooms the player may be in: the room when known, else the candidates here.
+-- Indoors: the rooms the player may be in: the room when known, else the candidates here (the
+-- rooms of the floor they are on, logic.floorRoomsAt, else those whose boxes hold the spot).
 local function roomsHere(z, x, y)
     local here = {}
     if room then
         here[room] = true
     else
-        for _, id in ipairs(logic.fittingRooms(z, logic.roomCandidates(z, x, y), IsIndoors())) do
+        local byFloor = logic.floorRoomsAt(logic.layer(z, IsIndoors()), x, y)
+        for _, id in ipairs(logic.fittingRooms(z, byFloor or logic.roomCandidates(z, x, y), IsIndoors())) do
             here[id] = true
         end
     end
@@ -1110,9 +1122,15 @@ local function updateIndoors(z, x, y, px, py)
     end
     -- up on a level of the indoor layer (a building's upper floor, its stairs) a doorway of the
     -- floor below leads nowhere: no room the layer does not cover (trial 2026-10-03, the Brill
-    -- tavern: upstairs over the entrance's doorway the module said the entrance)
+    -- tavern: upstairs over the entrance's doorway the module said the entrance). Where the layer
+    -- knows the room's floor (logic.roomFloorNear: a city's rooms by their floor) that floor decides,
+    -- on any piece: a room whose floor is not here on the player's piece or one joined to it is
+    -- none they walked into (a doorway has no height: the shops' doors on the Trade Quarter's ring
+    -- lie over the canal hall)
     local held = logic.layer(z, IsIndoors())
-    if held and (held._index.floor or 0) ~= 0 and found ~= nil and not held._index.covered[found] then
+    local near = held and found ~= nil and logic.roomFloorNear(held, found, x, y)
+    if near == false or (near == nil and held and (held._index.floor or 0) ~= 0 and found ~= nil
+        and not held._index.covered[found]) then
         crossed, found = nil, nil
     end
     if found ~= nil then
@@ -1167,7 +1185,13 @@ local function updateIndoors(z, x, y, px, py)
             entryDoor = door
         end
     end
-    if indoor:update(room, x, y) then
+    -- walked in from outside without a doorway crossed: the room is said after ENTRY_INDOORS yd inside, so
+    -- a step into a doorway and back says nothing (The Gilded Rose's door, where the floor names the inn;
+    -- after a hearthstone, a jump, the room is said at once)
+    if cameIn and logic.dist(cameIn[1], cameIn[2], x, y) >= ENTRY_INDOORS then
+        cameIn = nil
+    end
+    if indoor:update(not cameIn and room or nil, x, y) then
         if room and lastRoom and logic.sameRoomName(z, room, lastRoom) then
             -- the next section of the same thing (a mine's passages, tram tunnel 6, 7..., the pieces
             -- of one staircase): no name, the way it runs when that changed and its doorways on
@@ -1262,8 +1286,15 @@ module:hasUpdate(function(self)
         end
         forgetPlace()
         outAt = (wasIndoors and not isIndoors) and now or nil
+        cameIn = (isIndoors and wasIndoors == false and px and logic.dist(x, y, px, py) <= CAME_IN_STEP) and { x, y } or nil
         wasIndoors = isIndoors
+        -- (into the halls by a hall's floor: on that hall's floor piece, updateHall)
+        local layer = inHall and hallEntryFloor and logic.layer(z, IsIndoors())
+        if layer then
+            logic.setFloor(layer, hallEntryFloor)
+        end
     end
+    hallEntryFloor = nil
     checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
         updateIndoors(z, x, y, px, py)

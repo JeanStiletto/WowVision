@@ -20,7 +20,8 @@ tested in `tests.lua`:
   (`logic.exitTarget`) lives in `texts.lua`.
 - `lanes.lua`: centre lines of roads and streets: whether the player is on the way, turn
   hints, where a road leads, gentle bends.
-- `rooms.lua`: building frames, rooms without a height (stacked floors resolved by the
+- `rooms.lua`: building frames, rooms without a height (in a city's indoor layer the room whose floor
+  the player's floor piece is, `logic.floorRoomsAt` from the layer's `floorRooms`; elsewhere stacked floors resolved by the
   doorway walked through; a room entered that way holds while its floor is within
   `logic.ROOM_SLACK` or one of its doorways within `logic.DOOR_HOLD`, 4 yd: `resolveRoom`'s
   `byDoor`), doorways, entrances. Rooms change as floors do (`logic.onFloorRooms`): a hall stays
@@ -232,7 +233,14 @@ Each zone file calls `addon.addZone{...}` with:
   frame and places as the zone's), `lanes`, `noContact`, `structs`, `waterStructs`,
   `structCells` and `edges` (the edges of floors inside: lava, water, canals; they warn in every
   room), `exits`, `exitFloors`, `exitGroups`, and its floor pieces (`floorCells`, `noGround`,
-  `joins`, `liquids`); `indoorIn` also `climbFeet` and `climbFeetFields`.
+  `joins`, `liquids`); `indoorIn` also `climbFeet` and `climbFeetFields`. `floorRooms` (optional):
+  row, column, piece, room: the rooms whose dry floor that floor piece (0 the ground) is in the cell,
+  by the model group each floor surface comes from (every room of a city has its floor in a layer); on the
+  ground only a room with a third of its floor on it, never on a liquid's piece. The module takes the room
+  of the player's floor piece in the cell, else in the 8 around (`logic.floorRoomsAt`), and the boxes only
+  where the layer does not say; coming into the halls by a hall's floor puts the player on its piece
+  (`logic.roomPieceHere`), and a doorway into a room whose floor the layer knows counts only where that
+  floor lies on the player's piece (`logic.roomFloorNear`).
   `logic.unpackLayer` makes it a zone of its own (`logic.layer(zone, indoors)`) that shares the zone's
   words, places, interiors, rooms and doors; its entrances are the doorways from a covered room
   into one that is not (a shop by "entrance of", a passage by its name, the way outside). While

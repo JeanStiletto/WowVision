@@ -381,10 +381,31 @@ local function inFront(qx, qy, x, y, fx, fy)
 end
 
 
+logic.STAIR_FACING = 0.5 -- cosine: a stairs' edge beside the player warns only facing within 60 degrees of its drop
+
+-- Is edge `i` a stairs' edge: its floor is a staircase room's, or a floor piece whose place is
+-- stairs (cached on the edge)?
+function logic.isStairEdge(zone, i)
+    local e = zone._index.edges[i]
+    if e.stair == nil then
+        local room = e.piece and e.piece ~= 0 and zone._index.rooms and zone._index.rooms[e.piece]
+        local stair = room and room.kind == "stairs" or false
+        if not stair and (e.floor or 0) ~= 0 and #e.points >= 2 then
+            local r, c = logic.cellOf(zone, e.points[1], e.points[2])
+            stair = logic.kindOf(zone, logic.valueOfFloor(zone, r, c, e.floor)) == "stairs"
+        end
+        e.stair = stair
+    end
+    return e.stair
+end
+
 -- The drop edge to warn about within `reach` yards: one the player stands in front of, on the
 -- structure's floor; the edge index and distance. With `facing`, an edge ahead (within 90 degrees
--- of the view) wins over a nearer one beside or behind. `rooms`: the rooms the player may be in
--- (indoors), nil outdoors; `skip`: a set of edge indexes left out (warned already).
+-- of the view) wins over a nearer one beside or behind. A stairs' edge (isStairEdge: the inner rim
+-- of a winding stair) counts only while the player faces within 60 degrees of its drop (user
+-- 2026-10-12: walking round Ironforge's east stairs the stairwell's rim warned at every pass; a path
+-- into it still warns, edgeAhead). `rooms`: the rooms the player may be in (indoors), nil outdoors;
+-- `skip`: a set of edge indexes left out (warned already).
 function logic.nearestEdge(zone, x, y, reach, rooms, facing, skip)
     local ix = zone._index
     local floor = ix.floor or 0
@@ -395,8 +416,9 @@ function logic.nearestEdge(zone, x, y, reach, rooms, facing, skip)
     end
     local best, bestD, ahead, aheadD = nil, reach, nil, reach
     for i, e in ipairs(ix.edges) do
-        if edgeCounts(zone, e, i, x, y, reach, rooms, skip) then
-            local fx, fy = logic.compassVector(e.facing)
+        local fx, fy = logic.compassVector(e.facing)
+        if edgeCounts(zone, e, i, x, y, reach, rooms, skip)
+            and not (logic.isStairEdge(zone, i) and not (vx and fx * vx + fy * vy >= logic.STAIR_FACING)) then
             local p = e.points
             for k = 1, #p - 1, 2 do
                 local qx, qy = p[k], p[k + 1]
