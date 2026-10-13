@@ -872,6 +872,7 @@ function logic.unpack(zone, locale)
     -- leave left of the stretch's direction, then right: a wall on one side no longer narrows the other)
     local stride = zone.laneFields or 7
     local wide = stride >= 10
+    local order = {}
     eachRecord(zone.lanes, stride, function(x1, y1, x2, y2, value, enter, leave, f8, f9, f10)
         local lane = {
             x1 = x1, y1 = y1, x2 = x2, y2 = y2, value = value, kind = logic.kindOf(zone, value),
@@ -881,7 +882,23 @@ function logic.unpack(zone, locale)
         }
         addToCells(zone, ix.lanes, math.min(x1, x2), math.max(x1, x2), math.min(y1, y2), math.max(y1, y2),
             logic.LANE_REACH, lane)
+        order[#order + 1] = lane
     end)
+    -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
+    -- lane_headings, for the turn key): per stretch in order the number of samples, then per
+    -- sample (the stretch cut in that many equal parts, one at each part's middle) the bearing
+    -- toward its end and back (degrees clockwise from north, -1 none)
+    local h, list = 1, zone.laneHeadings
+    if list then
+        for _, lane in ipairs(order) do
+            local n = list[h]
+            if n == nil then
+                break
+            end
+            lane.headings = { unpack(list, h + 1, h + 2 * n) }
+            h = h + 1 + 2 * n
+        end
+    end
 
     ix.interiors = {}
     for i, f in ipairs(zone.interiors or {}) do
@@ -979,7 +996,7 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
-        lanes = src.lanes, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        lanes = src.lanes, laneHeadings = src.laneHeadings, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the

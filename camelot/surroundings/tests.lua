@@ -601,7 +601,7 @@ testRunner:addSuite("Surroundings", {
         t:assertNil((logic.lineFacings(z, 82, 48, 30000, 0)))
     end,
 
-    ["the turn key without a beacon faces along a bridge: its line, else the direction it is said with"] = function(t)
+    ["the turn key without a beacon faces along a bridge: the direction it is said with"] = function(t)
         local function near(a, degrees)
             return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 1
         end
@@ -612,47 +612,52 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(#facings, 2)
         t:assertTrue(near(logic.lineTurnFacing(facings, 0, false), -45))
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(170), false), 135))
-        -- the bridge's own line (running east, 6 degrees off), over the direction said
+        -- a line on the bridge (running east, 6 degrees off) changes nothing: the direction said
         z = newLaneZone()
         z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 83, 58, 81, 38, 31045, 20, 40 }
         logic.unpack(z)
         facings = logic.lineFacings(z, 82, 48, 31045, math.rad(-90))
-        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -95.7))
-        facings = logic.lineFacings(z, 82, 48, 30000, math.rad(-90))
-        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -95.7))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -45))
     end,
 
-    ["the turn key without a beacon looks along the line ahead into a bend"] = function(t)
+    ["the turn key without a beacon reads the heading of the way ahead stored with the stretch"] = function(t)
+        local function near(a, bearing)
+            return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 0.5
+        end
+        -- the stretch runs south (x falls), 16 yd in two samples; stored at the second (x 88): 190
+        -- going south, 3 going north
+        local z = newLaneZone()
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40 }
+        z.laneHeadings = { 2, 180, 0, 190, 3 }
+        logic.unpack(z)
+        local facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-170), false), 190))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(10), false), 3))
+        -- the first sample (x 96): the straight line
+        facings = logic.lineFacings(z, 96, 48, 21000, math.rad(180))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-170), false), 180))
+        -- near the line's end no heading ahead (-1): the other one turned round
+        z = newLaneZone()
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40 }
+        z.laneHeadings = { 2, 180, 0, -1, 3 }
+        logic.unpack(z)
+        facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-170), false), 183))
+    end,
+
+    ["the turn key without a beacon faces along the stretch of the line it stands by"] = function(t)
         local z = newLaneZone()
         -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
         z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 90, 48, 80, 44, 21000, 20, 40 }
         logic.unpack(z)
-        -- 2 yd before the bend, facing south: 8 yd on along the line lie 6 yd into the bend
-        -- (the bend runs at 202 degrees; a stretch centred on the player gave the straight 180)
-        local facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
-        local f = math.deg(logic.lineTurnFacing(facings, math.rad(180), false)) % 360
-        t:assertTrue(f > 192 and f < 200)
-        -- facing north the line ahead is straight
-        f = math.deg(logic.lineTurnFacing(facings, math.rad(10), false))
-        t:assertTrue(math.abs(f) < 0.5)
-    end,
-
-    ["the turn key without a beacon takes a bridge's axis from all its stretches, scraps counting little"] = function(t)
         local function near(a, degrees)
-            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 2
+            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 0.5
         end
-        -- the deck's line north to south, a 1.4 yd scrap at its edge right beside the player
-        local z = newLaneZone()
-        z.lanes = { 92, 44, 81, 44, 31045, 20, 40, 83, 47, 82, 48, 31045, 20, 40 }
-        logic.unpack(z)
-        local facings = logic.lineFacings(z, 82.5, 47, 31045, 0)
-        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(10), false), 0))
-        -- stretches as long one way as the other: the direction said (northeast to southwest)
-        z = newLaneZone()
-        z.lanes = { 92, 44, 82, 44, 31045, 20, 40, 84, 52, 84, 42, 31045, 20, 40 }
-        logic.unpack(z)
-        facings = logic.lineFacings(z, 84, 46, 31045, 0)
-        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-30), false), -45))
+        -- before the bend the straight stretch, past it the bend's (201.8 degrees facing south)
+        local facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(180), false), 180))
+        facings = logic.lineFacings(z, 86, 46.4, 21000, math.rad(180))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(180), false), 201.8))
     end,
 
     ["the turn key without a beacon turns to a fork's arms, the next clockwise each press"] = function(t)
