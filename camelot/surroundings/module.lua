@@ -92,7 +92,9 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 local entryRoom, entryDoor, entryAway = nil, nil, false
 local outAt = nil -- when the player last came out of a building
 local cameIn = nil -- {x, y}: where the player walked in from outside (a step, not a jump), until ENTRY_INDOORS walked from it
-local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
+-- drop edges warned about (again after stepping out of reach), per zone or layer: each numbers its
+-- own edges (a halls edge's number kept into the Brill tavern's layer after a hearthstone, 2026-10-13)
+local warnedEdges = {}
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
@@ -721,22 +723,24 @@ local function checkEdges(z, x, y, px, py, rooms)
     if moved >= MOVE_MIN then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
+    local warned = warnedEdges[z] or {}
+    warnedEdges[z] = warned
     local inPath = {}
     if vx then
         logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, nil, inPath)
     end
-    for i in pairs(warnedEdges) do
+    for i in pairs(warned) do
         if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
-            warnedEdges[i] = nil
+            warned[i] = nil
         end
     end
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, rooms, GetPlayerFacing(), warnedEdges)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, rooms, GetPlayerFacing(), warned)
     local along, qx, qy = nil, nil, nil
     if i == nil and vx then
-        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, warnedEdges, nil)
+        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, warned, nil)
     end
     if i then
         local text = logic.edgeText(z, i, along, x, y, qx, qy)
@@ -745,7 +749,7 @@ local function checkEdges(z, x, y, px, py, rooms)
             say(text, "edge", x, y)
             lastEdgeText, edgeAt = text, now
         end
-        warnedEdges[i] = true
+        warned[i] = true
     end
 end
 
