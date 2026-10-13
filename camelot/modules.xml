@@ -27,8 +27,9 @@
        trees. -->
   <Include file="legacy\modules.xml" />
   <Include file="surroundings\modules.xml" />
-  <!-- Diagnostic: can a secret steer pitch and volume (/wv sprobe). -->
-  <Script file="secretSpeechProbe.lua" />
+  <!-- Developer tool: checks the group health readback in game
+       (/wv ghprobe). -->
+  <Script file="groupHealthProbe.lua" />
   <!-- The group finder is the TBC tool on a newer build of the same
        Blizzard addon; lfg.lua adds what that build changed. -->
   <Script file="..\tbc\lfg.lua" />
