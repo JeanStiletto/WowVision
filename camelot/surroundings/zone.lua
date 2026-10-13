@@ -1278,16 +1278,74 @@ function logic.keyLabel(zone, key)
     return p and p.label
 end
 
+-- Is `value` a climb's whose floor piece lies in the cell (with `around`, or the 8 around it),
+-- while the player is on the ground?
+local function climbPieceHere(zone, r, c, value, around)
+    local ix = zone._index
+    if not tostring(zone.key):match("/indoor$") or (ix.floor or 0) ~= 0 or not logic.CLIMBS[logic.kindOf(zone, value)] then
+        return false
+    end
+    local place = logic.placeOf(value)
+    local reach = around and 1 or 0
+    for dr = -reach, reach do
+        for dc = -reach, reach do
+            for _, pv in pairs(ix.floorCells[(r + dr) * zone.cols + c + dc] or {}) do
+                if logic.placeOf(pv) == place then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- In the halls layer, on the ground, a cell named by a ramp or stairs with a floor piece of its own
+-- there is the ground beside it (the cells are 4 yd; at a ramp's foot its points lie at the
+-- ground's height): it takes the name most of the ground's cells around have that is no climb's,
+-- else keeps its own. The player is on the climb when the floor model has them on its piece. The
+-- data keeps the climb's name there: the squares find a climb as an opening and the forks as an
+-- arm by it. (The Trade Quarter's island said "ramp" 3 to 5 yd beside the ramps; following the
+-- ramp's direction ran the player past it, walk 2026-10-13 17:05.) Only the halls: outdoors and in
+-- buildings that name is how a square's guidance meets the climb (everywhere, Stormwind's Trade
+-- District stairs went to a guidance between their feet, 15 lines in 30 s instead of 7).
+function logic.groundBesideClimb(zone, r, c, value)
+    if not climbPieceHere(zone, r, c, value, false) then
+        return value
+    end
+    local count, best = {}, nil
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            if (dr ~= 0 or dc ~= 0) and logic.inGrid(zone, r + dr, c + dc) then
+                local v = logic.paintedAtCell(zone, r + dr, c + dc)
+                if v ~= 0 and not logic.CLIMBS[logic.kindOf(zone, v)] then
+                    count[v] = (count[v] or 0) + 1
+                    if best == nil or count[v] > count[best] or (count[v] == count[best] and v < best) then
+                        best = v
+                    end
+                end
+            end
+        end
+    end
+    return best or value
+end
+
 -- The outdoor cell value at a position, on the floor piece the player is on: near a centre line
 -- what the line decides (`onWay`: the player is on a way now, see laneValue); on a liquid's piece
 -- the liquid's own (a centre line is a way's, on its floor: the street beside the canal is no
 -- place of the swimmer's). Returns the value (0 = no data) and whether a lane decided it.
 function logic.outdoorValue(zone, x, y, onWay)
-    local value = logic.valueAt(zone, x, y)
+    local value, r, c = logic.valueAt(zone, x, y)
+    value = logic.groundBesideClimb(zone, r, c, value)
     if value == 0 or logic.liquidKind(zone, zone._index.floor) then
         return value, false
     end
-    return logic.laneValue(zone, x, y, value, onWay)
+    -- (so the line joining a climb's foot to the ways on the ground: it names the climb along
+    -- its foot, a yard wide)
+    local lane, decided = logic.laneValue(zone, x, y, value, onWay)
+    if lane ~= value and climbPieceHere(zone, r, c, lane, true) then
+        return value, false
+    end
+    return lane, decided
 end
 
 -- The liquid kind of a floor piece (1 water, 2 city water, 3 lava), or nil for floor.

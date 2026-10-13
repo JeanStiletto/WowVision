@@ -202,6 +202,28 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
+    ["in the halls the ground beside a ramp with a piece of its own keeps the hall's name"] = function(t)
+        local z = newHallZone()
+        table.insert(z.places, { "ramp", "ramp" }) -- place 9
+        -- a ramp (piece 1) in row 0, column 2; the ground's cell there carries its name
+        z.indoor.grid = { "70000*2,90000,70000*3", "70000*6", "0*6" }
+        z.indoor.floorCells = { 0, 2, 1, 90000 }
+        z.indoor.noGround = {}
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        local x, y = logic.cellCentre(layer, 0, 2)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "great hall of Test")
+        -- on the ramp's piece the ramp
+        logic.setFloor(layer, 1)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+        -- without a piece of its own there the cell stays the ramp
+        logic.pack(z)
+        z.indoor.floorCells = {}
+        logic.unpack(z)
+        layer = logic.layer(z)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+    end,
+
     ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
         local z = newHallZone()
         -- the halls the game calls indoors, on cells of 5 yd: stairs (level 1) from their foot at
