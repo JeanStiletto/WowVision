@@ -76,6 +76,7 @@ loadAddonFile("retail/groupHealth/logic.lua")
 loadAddonFile("retail/groupHealth/voices.lua")
 loadAddonFile("retail/groupHealth/tests.lua")
 loadAddonFile("retail/groupHealth/readback.lua")
+loadAddonFile("retail/groupHealth/checks.lua")
 loadAddonFile("tools/groupHealthSimTests.lua")
 loadAddonFile("core/colors/names.lua")
 loadAddonFile("core/colors/colors.lua")
@@ -350,6 +351,7 @@ local parseOnly = {
     "core/minimap/scanner.lua",
     "core/minimap/tracking.lua",
     "retail/groupHealth/module.lua",
+    "retail/groupHealth/log.lua",
     "core/scanner/module.lua",
     "core/scanner/ui.lua",
     "core/scanner/providers.lua",
