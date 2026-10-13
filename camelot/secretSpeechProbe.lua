@@ -45,9 +45,7 @@ local NBSP = "\194\160"
 local PARTY_UNITS = { "player", "party1", "party2", "party3", "party4" }
 local PARTY_INDEX = { player = 1, party1 = 2, party2 = 3, party3 = 4, party4 = 5 }
 
-local function isSecret(value)
-    return issecretvalue ~= nil and issecretvalue(value) == true
-end
+local isSecret = WowVision.secrets.isSecret
 
 -- Bust the engine's audio cache from the inside of the tags: trailing
 -- no-break spaces are inaudible, and the engine keys its cache after
