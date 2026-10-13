@@ -44,8 +44,11 @@ end
 -- Did the player walk through a doorway of the current room between the previous position and
 -- this one? A door {a, b (rooms, 0 = outside), interior, x, y (centre), nx, ny (its plane's
 -- normal), side (the side of room a, 0 = a flat opening)}, in the building frame. Returns the room
--- behind it (0 = outside) or nil.
-function logic.crossedDoor(zone, current, px, py, x, y)
+-- behind it (0 = outside) or nil. `fits` (optional): a doorway into a room with fits(room) false
+-- is passed over (a doorway has no height: the Trade Quarter's doorway into its shop lies 0.8 yd
+-- from the canal tunnel's 17 yd below it, one step crossed both and the tunnel's came first, walk
+-- 2026-10-13 16:59).
+function logic.crossedDoor(zone, current, px, py, x, y, fits)
     if current == nil or px == nil then
         return nil
     end
@@ -70,8 +73,9 @@ function logic.crossedDoor(zone, current, px, py, x, y)
                 local mine = current == door.a and door.side or -door.side
                 local before = ((ax - door.x) * door.nx + (ay - door.y) * door.ny) * mine
                 local after = ((bx - door.x) * door.nx + (by - door.y) * door.ny) * mine
-                if before > 0 and after < 0 then
-                    return current == door.a and door.b or door.a
+                local behind = current == door.a and door.b or door.a
+                if before > 0 and after < 0 and (fits == nil or fits(behind)) then
+                    return behind
                 end
             end
         end

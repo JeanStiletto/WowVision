@@ -46,6 +46,7 @@ local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
 local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
 local ENTRY_INDOORS = 3 -- ... inside a room, and a place of a building's floors on their own fine grid
 local CAME_IN_STEP = 10 -- yd between two looks at most for coming indoors to be a step (more: a hearthstone, a portal)
+local JUMP = 100 -- yd between two looks from which the player was moved (a hearthstone, a portal; the tram runs up to 70 yd a second)
 local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
@@ -92,7 +93,9 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 local entryRoom, entryDoor, entryAway = nil, nil, false
 local outAt = nil -- when the player last came out of a building
 local cameIn = nil -- {x, y}: where the player walked in from outside (a step, not a jump), until ENTRY_INDOORS walked from it
-local warnedEdges = {} -- drop edges warned about (again after stepping out of reach)
+-- drop edges warned about (again after stepping out of reach), per zone or layer: each numbers its
+-- own edges (a halls edge's number kept into the Brill tavern's layer after a hearthstone, 2026-10-13)
+local warnedEdges = {}
 local lastEdgeText, edgeAt = nil, 0 -- the last edge warning and when: a neighbouring piece of the same edge stays quiet
 local region = nil -- the square the player is on (announced), for what comes close
 local saidMouths = {} -- its streets, water and the like already said on this visit
@@ -721,22 +724,24 @@ local function checkEdges(z, x, y, px, py, rooms)
     if moved >= MOVE_MIN then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
+    local warned = warnedEdges[z] or {}
+    warnedEdges[z] = warned
     local inPath = {}
     if vx then
         logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, nil, inPath)
     end
-    for i in pairs(warnedEdges) do
+    for i in pairs(warned) do
         if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
-            warnedEdges[i] = nil
+            warned[i] = nil
         end
     end
     if not module.settings.dropEdges then
         return
     end
-    local i = logic.nearestEdge(z, x, y, EDGE_REACH, rooms, GetPlayerFacing(), warnedEdges)
+    local i = logic.nearestEdge(z, x, y, EDGE_REACH, rooms, GetPlayerFacing(), warned)
     local along, qx, qy = nil, nil, nil
     if i == nil and vx then
-        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, warnedEdges, nil)
+        i, along, qx, qy = logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, warned, nil)
     end
     if i then
         local text = logic.edgeText(z, i, along, x, y, qx, qy)
@@ -745,7 +750,7 @@ local function checkEdges(z, x, y, px, py, rooms)
             say(text, "edge", x, y)
             lastEdgeText, edgeAt = text, now
         end
-        warnedEdges[i] = true
+        warned[i] = true
     end
 end
 
@@ -1114,7 +1119,12 @@ local function updateIndoors(z, x, y, px, py)
         restoreHere(z, x, y)
     end
     local before = room
-    local crossed = logic.crossedDoor(z, room, px, py, x, y)
+    -- a doorway into a room whose floor is not here is passed over (see below), so the one behind
+    -- it in the same step still counts
+    local held = logic.layer(z, IsIndoors())
+    local crossed = logic.crossedDoor(z, room, px, py, x, y, held and function(id)
+        return logic.roomFloorNear(held, id, x, y) ~= false
+    end)
     if crossed == 0 and hallGap ~= nil and room and z._index.rooms[room].hallMap then
         -- out of the halls through a doorway to outside (the throne room's onto the rose walk)
         hallGap, hallDoorOut = nil, { x, y }
@@ -1134,7 +1144,6 @@ local function updateIndoors(z, x, y, px, py)
     -- on any piece: a room whose floor is not here on the player's piece or one joined to it is
     -- none they walked into (a doorway has no height: the shops' doors on the Trade Quarter's ring
     -- lie over the canal hall)
-    local held = logic.layer(z, IsIndoors())
     local near = held and found ~= nil and logic.roomFloorNear(held, found, x, y)
     if near == false or (near == nil and held and (held._index.floor or 0) ~= 0 and found ~= nil
         and not held._index.covered[found]) then
@@ -1287,7 +1296,10 @@ module:hasUpdate(function(self)
     logTrail(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
-    if isIndoors ~= wasIndoors then
+    -- a jump inside (a hearthstone, a portal) starts afresh as a step in or out does: from the
+    -- Undercity's halls into the Brill tavern, inside both times, the halls' room held (2026-10-13)
+    local jumped = isIndoors and wasIndoors and px ~= nil and logic.dist(x, y, px, py) > JUMP
+    if isIndoors ~= wasIndoors or jumped then
         if wasIndoors ~= nil then
             notePassed(z, x, y)
         end

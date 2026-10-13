@@ -202,6 +202,28 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
+    ["in the halls the ground beside a ramp with a piece of its own keeps the hall's name"] = function(t)
+        local z = newHallZone()
+        table.insert(z.places, { "ramp", "ramp" }) -- place 9
+        -- a ramp (piece 1) in row 0, column 2; the ground's cell there carries its name
+        z.indoor.grid = { "70000*2,90000,70000*3", "70000*6", "0*6" }
+        z.indoor.floorCells = { 0, 2, 1, 90000 }
+        z.indoor.noGround = {}
+        logic.unpack(z)
+        local layer = logic.layer(z)
+        local x, y = logic.cellCentre(layer, 0, 2)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "great hall of Test")
+        -- on the ramp's piece the ramp
+        logic.setFloor(layer, 1)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+        -- without a piece of its own there the cell stays the ramp
+        logic.pack(z)
+        z.indoor.floorCells = {}
+        logic.unpack(z)
+        layer = logic.layer(z)
+        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+    end,
+
     ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
         local z = newHallZone()
         -- the halls the game calls indoors, on cells of 5 yd: stairs (level 1) from their foot at
@@ -1347,6 +1369,17 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.crossedDoor(z, 3, 11, 9, 10, 9), 2)
         t:assertNil(logic.crossedDoor(z, 3, 11, 12, 10, 12))
         t:assertNil(logic.crossedDoor(z, 3, 15, 9, 14, 9))           -- 3.5 yd from its plane
+    end,
+
+    ["one step through two doorways side by side takes the one whose room fits"] = function(t)
+        local z = newZone()
+        -- a second doorway of the common room 0.8 yd before the stairs', into the back room (the
+        -- Trade Quarter's: the canal tunnel's doorway under the shop's)
+        table.insert(z.doors, 3, { 1, 3, 1, 5, 4.2, 0, 1, -1 })
+        logic.unpack(z)
+        t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7), 3)
+        t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7, function(id) return id ~= 3 end), 2)
+        t:assertNil(logic.crossedDoor(z, 1, 5, 3, 5, 7, function() return false end))
     end,
 
     ["a room entered through a doorway holds while its floor is near, even over another room's floor"] = function(t)
