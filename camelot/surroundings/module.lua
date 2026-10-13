@@ -46,6 +46,7 @@ local ENTRY_OUTDOORS = 8 -- walked inside an outdoor place before it counts
 local ENTRY_NARROW = 3 -- ... inside a road, bridge, fork, crossing or city street
 local ENTRY_INDOORS = 3 -- ... inside a room, and a place of a building's floors on their own fine grid
 local CAME_IN_STEP = 10 -- yd between two looks at most for coming indoors to be a step (more: a hearthstone, a portal)
+local JUMP = 100 -- yd between two looks from which the player was moved (a hearthstone, a portal; the tram runs up to 70 yd a second)
 local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
@@ -1295,7 +1296,10 @@ module:hasUpdate(function(self)
     logTrail(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
-    if isIndoors ~= wasIndoors then
+    -- a jump inside (a hearthstone, a portal) starts afresh as a step in or out does: from the
+    -- Undercity's halls into the Brill tavern, inside both times, the halls' room held (2026-10-13)
+    local jumped = isIndoors and wasIndoors and px ~= nil and logic.dist(x, y, px, py) > JUMP
+    if isIndoors ~= wasIndoors or jumped then
         if wasIndoors ~= nil then
             notePassed(z, x, y)
         end
