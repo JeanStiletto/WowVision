@@ -622,6 +622,39 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -95.7))
     end,
 
+    ["the turn key without a beacon looks along the line ahead into a bend"] = function(t)
+        local z = newLaneZone()
+        -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
+        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 90, 48, 80, 44, 21000, 20, 40 }
+        logic.unpack(z)
+        -- 2 yd before the bend, facing south: 8 yd on along the line lie 6 yd into the bend
+        -- (the bend runs at 202 degrees; a stretch centred on the player gave the straight 180)
+        local facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
+        local f = math.deg(logic.lineTurnFacing(facings, math.rad(180), false)) % 360
+        t:assertTrue(f > 192 and f < 200)
+        -- facing north the line ahead is straight
+        f = math.deg(logic.lineTurnFacing(facings, math.rad(10), false))
+        t:assertTrue(math.abs(f) < 0.5)
+    end,
+
+    ["the turn key without a beacon takes a bridge's axis from all its stretches, scraps counting little"] = function(t)
+        local function near(a, degrees)
+            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 2
+        end
+        -- the deck's line north to south, a 1.4 yd scrap at its edge right beside the player
+        local z = newLaneZone()
+        z.lanes = { 92, 44, 81, 44, 31045, 20, 40, 83, 47, 82, 48, 31045, 20, 40 }
+        logic.unpack(z)
+        local facings = logic.lineFacings(z, 82.5, 47, 31045, 0)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(10), false), 0))
+        -- stretches as long one way as the other: the direction said (northeast to southwest)
+        z = newLaneZone()
+        z.lanes = { 92, 44, 82, 44, 31045, 20, 40, 84, 52, 84, 42, 31045, 20, 40 }
+        logic.unpack(z)
+        facings = logic.lineFacings(z, 84, 46, 31045, 0)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-30), false), -45))
+    end,
+
     ["the turn key without a beacon turns to a fork's arms, the next clockwise each press"] = function(t)
         local z = newLaneZone()
         z.places[4] = { "fork", "fork, Test road <d0,120>, street <d240>" }

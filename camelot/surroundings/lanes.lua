@@ -110,10 +110,9 @@ logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
 local TURN_SPAN = 6 -- yd before and after the nearest point
 
 -- The nearest lane of a way with one direction here (not a fork or crossing): as nearestLane.
--- `kinds`: the kinds that count as such (default TURN_KINDS).
-local function directedLane(zone, x, y, kinds)
+local function directedLane(zone, x, y)
     local d, lane, px, py = logic.nearestLane(zone, x, y)
-    if d == nil or not (kinds or logic.TURN_KINDS)[lane.kind] then
+    if d == nil or not logic.TURN_KINDS[lane.kind] then
         return nil
     end
     return d, lane, px, py
@@ -123,17 +122,15 @@ end
 -- direction under the player, the line about TURN_SPAN yd before and after that point along the
 -- facing (short stretches alone bend too much; a city street's line has short bits at forks).
 -- Returns px, py and the offset (dx, dy) from the point behind to the point ahead, or nil (no such
--- way here, or the line too short). `kinds`, `along`: the kinds of the line here and of the line
--- before and after it (default TURN_KINDS and LANE_KINDS).
-local function lineHere(zone, x, y, facing, kinds, along)
-    local d, _lane, px, py = directedLane(zone, x, y, kinds)
+-- way here, or the line too short).
+local function lineHere(zone, x, y, facing)
+    local d, _lane, px, py = directedLane(zone, x, y)
     if d == nil then
         return nil
     end
-    along = along or logic.LANE_KINDS
     local fx, fy = math.cos(facing), math.sin(facing)
-    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, along)
-    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, along)
+    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
     ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
     local dx, dy = ax - bx, ay - by
     if dx * dx + dy * dy < MIN_SPAN * MIN_SPAN then
@@ -170,30 +167,142 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
--- The facings along the centre lines where the player stands, for the turn key while no beacon
--- leads (radians like a facing): on a way with one direction or a bridge both ways of its line
--- here (lineHere), where it has no line long enough both ways of the direction it is said with;
--- on a fork or crossing its arms (the label's angles: each arm's line once out of the fork, as
--- the fork is said). Returns the list and whether it is a fork's, or nil (no way here, a square).
-local BRIDGE_LINE = { bridge = true } -- on a bridge its own line, not a way's beside or under it
-local BRIDGE_ALONG = { bridge = true } -- ... before and after it the ways it leads onto too
-for kind in pairs(logic.LANE_KINDS) do
-    BRIDGE_ALONG[kind] = true
+-- yd; the turn key faces the point this far on along the centre line (the line followed through
+-- its bends): over a 12 yd stretch centred on the player (until 2026-10-14) a bend turned the key
+-- half way, the stretch behind counting as much as the one ahead (walk 2026-10-13 23:07)
+logic.TURN_LOOK = 8
+local TURN_STEP = 2 -- yd between the looks along the line
+local TURN_JOIN = 3 -- yd; as AHEAD_JOIN: the next stretch of the line this close
+
+-- From the nearest point (px, py) on `lane`, along the line in the direction (dx, dy) (a unit
+-- vector along the stretch), following it from stretch to stretch (lines of `kinds`) up to `look`
+-- yd: the point reached, or nil (the line ends before MIN_SPAN).
+local function alongLine(zone, px, py, lane, dx, dy, kinds, look)
+    local sx, sy, last, walked = px, py, lane, 0
+    while walked < look do
+        local qx, qy = px + dx * TURN_STEP, py + dy * TURN_STEP
+        local _d, next, nx, ny = logic.nearestLane(zone, qx, qy, TURN_JOIN, kinds)
+        if next == nil then
+            break
+        end
+        local step = logic.dist(nx, ny, px, py)
+        if step < 0.5 and next == last then
+            -- the stretch's end: the one meeting it there (a corner), else the line ends
+            _d, next, nx, ny = logic.nearestLane(zone, qx, qy, TURN_JOIN, kinds, last)
+            if next == nil then
+                break
+            end
+            step = logic.dist(nx, ny, px, py)
+        end
+        if step < 0.5 then
+            break
+        end
+        walked = walked + step
+        local ex, ey = next.x2 - next.x1, next.y2 - next.y1
+        local en = math.sqrt(ex * ex + ey * ey)
+        if en > 0 then
+            ex, ey = ex / en, ey / en
+            if ex * dx + ey * dy < 0 then
+                ex, ey = -ex, -ey
+            end
+            dx, dy = ex, ey
+        end
+        px, py, last = nx, ny, next
+    end
+    if logic.dist2(px, py, sx, sy) < MIN_SPAN * MIN_SPAN then
+        return nil
+    end
+    return px, py
 end
 
+-- The two facings along the way here for the turn key: from the nearest point on its centre line
+-- to the point TURN_LOOK yd on along the line, each way; nil (no way with one direction here, the
+-- line too short both ways).
+local function lineAhead(zone, x, y)
+    local d, lane, px, py = directedLane(zone, x, y)
+    if d == nil then
+        return nil
+    end
+    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+    local n = math.sqrt(dx * dx + dy * dy)
+    if n == 0 then
+        return nil
+    end
+    dx, dy = dx / n, dy / n
+    local facings = {}
+    for _, s in ipairs({ 1, -1 }) do
+        local ax, ay = alongLine(zone, px, py, lane, s * dx, s * dy, logic.LANE_KINDS, logic.TURN_LOOK)
+        if ax then
+            facings[#facings + 1] = math.atan2(ay - py, ax - px)
+        end
+    end
+    if #facings == 0 then
+        return nil
+    end
+    if #facings == 1 then
+        facings[2] = facings[1] + math.pi
+    end
+    return facings
+end
+
+local BRIDGE_REACH = 8 -- yd; a bridge's stretches this near count for its direction (20: another stretch of a long bridge)
+local BRIDGE_STRAIGHT = 0.8 -- the stretches' agreement (1 all one way) below which the said direction leads
+
+-- A bridge's direction for the turn key: the axis of all its stretches within
+-- BRIDGE_REACH, whatever floor piece each lies on (the Ruins courtyard bridge: the deck's 7.5 yd
+-- line on its piece, scraps of 1 to 2.5 yd on the ground beside it; up to 2026-10-14 the nearest
+-- stretch on the player's floor alone counted, a 1.5 yd scrap 30 degrees off, and the player ran
+-- off the deck, walk 2026-10-13 23:09; the scraps also spoilt the deck's 23 degree said direction).
+-- Each stretch counts by its length squared. Radians, either end; nil (under MIN_SPAN of line, or the
+-- stretches disagree: a zigzag line, the direction said leads).
+local function bridgeAxis(zone, x, y, value)
+    local place = logic.placeOf(value)
+    local ix = zone._index
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local span = math.ceil(BRIDGE_REACH / zone.cell)
+    local seen, sc, ss, total = {}, 0, 0, 0
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+                if not seen[lane] and lane.kind == "bridge" and logic.placeOf(lane.value) == place then
+                    seen[lane] = true
+                    local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+                    if d <= BRIDGE_REACH then
+                        local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+                        -- weighted by the square of the length: scraps at a deck's edges point anywhere
+                        local w = dx * dx + dy * dy
+                        local a = 2 * math.atan2(dy, dx)
+                        sc, ss, total = sc + w * math.cos(a), ss + w * math.sin(a), total + w
+                    end
+                end
+            end
+        end
+    end
+    if total < MIN_SPAN * MIN_SPAN or math.sqrt(sc * sc + ss * ss) < BRIDGE_STRAIGHT * total then
+        return nil
+    end
+    return math.atan2(ss, sc) / 2
+end
+
+-- The facings along the centre lines where the player stands, for the turn key while no beacon
+-- leads (radians like a facing): on a way with one direction both ways along its line (lineAhead),
+-- where it has no line long enough the direction it is said with; on a bridge both ends of its
+-- axis (bridgeAxis), else the direction it is said with; on a fork or crossing its arms (the
+-- label's angles: each arm's line once out of the fork, as the fork is said). Returns the list and
+-- whether it is a fork's, or nil (no way here, a square).
 function logic.lineFacings(zone, x, y, value, facing)
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
         local along
-        local px, _py, dx, dy
         if kind == "bridge" then
-            px, _py, dx, dy = lineHere(zone, x, y, facing, BRIDGE_LINE, BRIDGE_ALONG)
+            along = bridgeAxis(zone, x, y, value)
         else
-            px, _py, dx, dy = lineHere(zone, x, y, facing)
+            local facings = lineAhead(zone, x, y)
+            if facings then
+                return facings, false
+            end
         end
-        if px ~= nil then
-            along = math.atan2(dy, dx)
-        else
+        if along == nil then
             -- the direction said (degrees clockwise from north, an axis; a climb's rise)
             local axis = logic.axisOf(zone, value) or logic.riseOf(zone, value)
             if axis == nil then
