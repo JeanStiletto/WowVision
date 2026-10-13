@@ -188,8 +188,17 @@ local function doorwayTarget(key, d, dir, x, y, label, through)
     }
 end
 
-local function entranceTarget(zone, x, y, reach, prefer, floor)
-    local i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer, true)
+local function entranceTarget(zone, x, y, reach, prefer, floor, platform)
+    local i, d, dir, e
+    if platform then
+        -- a door at the platform's edge only
+        i, d, dir, e = logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer, { skip = function(e_)
+            local er, ec = logic.cellOf(zone, e_.x, e_.y)
+            return not logic.nearCell(zone, platform.cells, er, ec, true) or not logic.onEntranceFloor(zone, e_, x, y)
+        end })
+    else
+        i, d, dir, e = logic.nearestEntrance(zone, x, y, reach, prefer, true)
+    end
     if i == nil then
         return nil
     end
@@ -366,11 +375,24 @@ end
 -- The guidance target on foot: the nearest entrance, street beginning or climb's foot within
 -- reach; the one guided to last (`prefer`, its position) stays unless another is nearer by more
 -- than GUIDE_STICK. `reach` (optional): searched within, GUIDE_REACH when not given.
+logic.PLATFORM_REACH = 30 -- yd: on a platform its doors are guided to from anywhere on it (within this)
+
 function logic.footTarget(zone, x, y, square, prefer, reach)
     reach = reach or GUIDE_REACH
     local floor = logic.floorOfValue(zone, logic.valueAt(zone, x, y))
+    local entrance = entranceTarget(zone, x, y, reach, prefer, floor)
+    -- on a platform (a raised floor between flights, a tower's deck) its doors from anywhere on
+    -- it, as a tower's next flight is near: on the walkway at the griffon ramp's top the roost's
+    -- door lay 17 yd off and nothing said the turn toward it (walk 2026-10-12 18:36)
+    square = square or logic.regionAt(zone, x, y)
+    if entrance == nil and square and logic.kindOf(zone, square.value) == "platform" then
+        entrance = entranceTarget(zone, x, y, logic.PLATFORM_REACH, prefer, floor, square)
+        if entrance then
+            entrance.reach = logic.PLATFORM_REACH
+        end
+    end
     local candidates = {
-        entranceTarget(zone, x, y, reach, prefer, floor),
+        entrance,
         beginningTarget(zone, x, y, reach, square, prefer),
         climbTarget(zone, x, y, reach, prefer, floor),
     }
@@ -597,7 +619,9 @@ end
 local function radiusParts(zone, x, y, kind, previous, opts)
     local parts, beside = {}, false
     local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
-    if not logic.LANE_KINDS[kind] and kind ~= "bridge" and (wasWay or not opts.cut) then
+    -- (nor on a platform: what lies around it is its edge; the street 9 yd under the griffon
+    -- ramp's walkway came as "street at 9" there)
+    if not logic.LANE_KINDS[kind] and kind ~= "bridge" and kind ~= "platform" and (wasWay or not opts.cut) then
         local d, dir, street
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then

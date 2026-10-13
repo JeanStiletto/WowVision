@@ -288,6 +288,23 @@ testRunner:addSuite("Surroundings", {
         logic.wallSide = wallSide
     end,
 
+    ["on a platform its doors are guided to from anywhere on it"] = function(t)
+        local z = newTowerZone()
+        -- a roost's door at the landing's east end (x 95, y 21), 17 yd from its west end
+        z.interiors = { { "Test Roost", 0, 0, 1, -1, 0, 0, -1 } }
+        z.rooms = { { 1, "Test Roost", "large hall", { 90, 10, 100, 20 } } }
+        z.doors = { { 0, 1, 1, 95, 21, 0, -1, 0 } }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        local target = logic.footTarget(z, 95, 38)
+        t:assertEqual(target.kind, "entrance")
+        t:assertEqual(math.floor(target.d + 0.5), 17)
+        t:assertEqual(target.reach, logic.PLATFORM_REACH)
+        -- on the ground beside the tower: the door is beyond the guidance reach
+        logic.setFloor(z, 0)
+        t:assertNil(logic.footTarget(z, 95, 45))
+    end,
+
     ["a structure's place says the structure's name only where the player is not on it"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
@@ -1862,10 +1879,10 @@ testRunner:addSuite("Surroundings", {
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 84, 42, 21045, 20, 40 }
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 92, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        -- the distance along the line (6 yd to the bend, then onto the next stretch)
-        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 7.4)
+        -- the distance along the line (4 yd to the bend, then onto the next stretch)
+        t:assertEqual(math.floor(yards * 10 + 0.5) / 10, 5.4)
         t:assertEqual(logic.describe(z, value, true), "canal walk, northeast to southwest")
         -- walking north, away from it: nothing ahead
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
@@ -1986,9 +2003,9 @@ testRunner:addSuite("Surroundings", {
         z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 88, 30, 21045, 20, 40 }
         logic.pack(z)
         logic.unpack(z)
-        local value, yards = logic.pieceAhead(z, 94, 46, math.pi, 21000, logic.AHEAD_LOOK)
+        local value, yards = logic.pieceAhead(z, 92, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
-        t:assertEqual(yards, 6)
+        t:assertEqual(yards, 4)
     end,
 
     ["streets follow the road rules: keyed by direction, and off one it says where it is"] = function(t)
