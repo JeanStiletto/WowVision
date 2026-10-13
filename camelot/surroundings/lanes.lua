@@ -110,9 +110,10 @@ logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
 local TURN_SPAN = 6 -- yd before and after the nearest point
 
 -- The nearest lane of a way with one direction here (not a fork or crossing): as nearestLane.
-local function directedLane(zone, x, y)
+-- `kinds`: the kinds that count as such (default TURN_KINDS).
+local function directedLane(zone, x, y, kinds)
     local d, lane, px, py = logic.nearestLane(zone, x, y)
-    if d == nil or not logic.TURN_KINDS[lane.kind] then
+    if d == nil or not (kinds or logic.TURN_KINDS)[lane.kind] then
         return nil
     end
     return d, lane, px, py
@@ -122,15 +123,17 @@ end
 -- direction under the player, the line about TURN_SPAN yd before and after that point along the
 -- facing (short stretches alone bend too much; a city street's line has short bits at forks).
 -- Returns px, py and the offset (dx, dy) from the point behind to the point ahead, or nil (no such
--- way here, or the line too short).
-local function lineHere(zone, x, y, facing)
-    local d, _lane, px, py = directedLane(zone, x, y)
+-- way here, or the line too short). `kinds`, `along`: the kinds of the line here and of the line
+-- before and after it (default TURN_KINDS and LANE_KINDS).
+local function lineHere(zone, x, y, facing, kinds, along)
+    local d, _lane, px, py = directedLane(zone, x, y, kinds)
     if d == nil then
         return nil
     end
+    along = along or logic.LANE_KINDS
     local fx, fy = math.cos(facing), math.sin(facing)
-    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
-    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, along)
+    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, along)
     ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
     local dx, dy = ax - bx, ay - by
     if dx * dx + dy * dy < MIN_SPAN * MIN_SPAN then
@@ -165,6 +168,84 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
         return 0
     end
     return diff > 0 and 1 or -1
+end
+
+-- The facings along the centre lines where the player stands, for the turn key while no beacon
+-- leads (radians like a facing): on a way with one direction or a bridge both ways of its line
+-- here (lineHere), where it has no line long enough both ways of the direction it is said with;
+-- on a fork or crossing its arms (the label's angles: each arm's line once out of the fork, as
+-- the fork is said). Returns the list and whether it is a fork's, or nil (no way here, a square).
+local BRIDGE_LINE = { bridge = true } -- on a bridge its own line, not a way's beside or under it
+local BRIDGE_ALONG = { bridge = true } -- ... before and after it the ways it leads onto too
+for kind in pairs(logic.LANE_KINDS) do
+    BRIDGE_ALONG[kind] = true
+end
+
+function logic.lineFacings(zone, x, y, value, facing)
+    local kind = logic.kindOf(zone, value)
+    if logic.TURN_KINDS[kind] or kind == "bridge" then
+        local along
+        local px, _py, dx, dy
+        if kind == "bridge" then
+            px, _py, dx, dy = lineHere(zone, x, y, facing, BRIDGE_LINE, BRIDGE_ALONG)
+        else
+            px, _py, dx, dy = lineHere(zone, x, y, facing)
+        end
+        if px ~= nil then
+            along = math.atan2(dy, dx)
+        else
+            -- the direction said (degrees clockwise from north, an axis; a climb's rise)
+            local axis = logic.axisOf(zone, value) or logic.riseOf(zone, value)
+            if axis == nil then
+                return nil
+            end
+            along = math.rad(-axis)
+        end
+        return { along, along + math.pi }, false
+    end
+    if kind ~= "fork" and kind ~= "crossing" then
+        return nil
+    end
+    local place = logic.place(zone, logic.placeOf(value))
+    local facings = {}
+    for list in ((place and place.label) or ""):gmatch("<d([%d,]+)>") do
+        for a in list:gmatch("%d+") do
+            -- degrees clockwise from north to a facing (counter-clockwise from north)
+            facings[#facings + 1] = math.rad(-tonumber(a))
+        end
+    end
+    if #facings == 0 then
+        return nil
+    end
+    return facings, true
+end
+
+-- degrees; at a fork an arm this close to the facing is the one faced (the turn key's calm zone,
+-- turnTo.lua's TOLERANCE: farther off, a press corrects onto it)
+logic.LINE_FACED = 3
+
+-- Which of `facings` the turn key turns to: the one nearest the facing; at a fork (`cycle`), when
+-- the player faces an arm already, the next arm clockwise (each press turns to the next).
+function logic.lineTurnFacing(facings, facing, cycle)
+    local best, bestOff = nil, nil
+    for _, f in ipairs(facings) do
+        local off = math.abs(logic.degreesBetween(f, facing))
+        if bestOff == nil or off < bestOff then
+            best, bestOff = f, off
+        end
+    end
+    if not cycle or bestOff > logic.LINE_FACED then
+        return best
+    end
+    -- clockwise is a falling facing: the smallest clockwise gap beyond the arm faced
+    local next, nextGap = nil, nil
+    for _, f in ipairs(facings) do
+        local gap = (-logic.degreesBetween(f, facing)) % 360
+        if gap > logic.LINE_FACED and (nextGap == nil or gap < nextGap) then
+            next, nextGap = f, gap
+        end
+    end
+    return next or best
 end
 
 -- Where a road or street leads ahead: from the nearest point on its centre line toward the point

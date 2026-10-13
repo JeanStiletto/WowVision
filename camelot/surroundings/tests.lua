@@ -582,6 +582,76 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 0), -1)
     end,
 
+    ["the turn key without a beacon faces along the centre line, the way nearer the facing"] = function(t)
+        local z = newLaneZone()
+        logic.unpack(z)
+        local function near(a, degrees)
+            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 0.5
+        end
+        local facings, fork = logic.lineFacings(z, 92, 48, 21000, math.rad(12))
+        t:assertEqual(#facings, 2)
+        t:assertEqual(fork, false)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(12), fork), 0))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-80), fork), 0))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(170), fork), 180))
+        -- facing along it already: the same way again (turning around is not the key's)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(1), fork), 0))
+        -- no centre line: the forest, a bridge with neither a line nor a direction
+        t:assertNil((logic.lineFacings(z, 92, 56, 10000, 0)))
+        t:assertNil((logic.lineFacings(z, 82, 48, 30000, 0)))
+    end,
+
+    ["the turn key without a beacon faces along a bridge: its line, else the direction it is said with"] = function(t)
+        local function near(a, degrees)
+            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 1
+        end
+        -- no line on the bridge: the direction said, northeast to southwest (axis 45)
+        local z = newLaneZone()
+        logic.unpack(z)
+        local facings = logic.lineFacings(z, 82, 48, 31045, 0)
+        t:assertEqual(#facings, 2)
+        t:assertTrue(near(logic.lineTurnFacing(facings, 0, false), -45))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(170), false), 135))
+        -- the bridge's own line (running east, 6 degrees off), over the direction said
+        z = newLaneZone()
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 83, 58, 81, 38, 31045, 20, 40 }
+        logic.unpack(z)
+        facings = logic.lineFacings(z, 82, 48, 31045, math.rad(-90))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -95.7))
+        facings = logic.lineFacings(z, 82, 48, 30000, math.rad(-90))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -95.7))
+    end,
+
+    ["the turn key without a beacon turns to a fork's arms, the next clockwise each press"] = function(t)
+        local z = newLaneZone()
+        z.places[4] = { "fork", "fork, Test road <d0,120>, street <d240>" }
+        logic.unpack(z)
+        local function near(a, bearing)
+            -- a facing is counter-clockwise from north, the label's angles clockwise
+            return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 0.5
+        end
+        local facings, fork = logic.lineFacings(z, 92, 48, 40000, 0)
+        t:assertEqual(#facings, 3)
+        t:assertEqual(fork, true)
+        -- first the arm nearest the facing (east-southeast: the arm at 120)
+        local f = logic.lineTurnFacing(facings, math.rad(-100), fork)
+        t:assertTrue(near(f, 120))
+        -- facing it, the next press turns on clockwise: 240, then 0, then 120 again
+        f = logic.lineTurnFacing(facings, f + math.rad(2), fork)
+        t:assertTrue(near(f, 240))
+        f = logic.lineTurnFacing(facings, f, fork)
+        t:assertTrue(near(f, 0))
+        f = logic.lineTurnFacing(facings, f - math.rad(2.5), fork)
+        t:assertTrue(near(f, 120))
+        -- out of the 3 degree calm zone the press corrects onto the arm nearest, as on a way
+        t:assertTrue(near(logic.lineTurnFacing(facings, f + math.rad(4), fork), 120))
+        -- a fork whose label carries no directions: nothing
+        z = newLaneZone()
+        z.places[4] = { "fork", "fork" }
+        logic.unpack(z)
+        t:assertNil((logic.lineFacings(z, 92, 48, 40000, 0)))
+    end,
+
     ["where the road leads ahead follows its centre line into a gentle bend"] = function(t)
         local z = newLaneZone()
         -- north-south to x = 90, then bending toward the east (y falls) down to x = 80

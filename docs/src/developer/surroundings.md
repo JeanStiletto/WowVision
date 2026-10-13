@@ -19,7 +19,9 @@ tested in `tests.lua`:
   `logic.swimFloor`, `logic.setFloor`, `logic.joinedPieces`). The way-out target
   (`logic.exitTarget`) lives in `texts.lua`.
 - `lanes.lua`: centre lines of roads and streets: whether the player is on the way, turn
-  hints, where a road leads, gentle bends.
+  hints, where a road leads, gentle bends, the facings the turn key turns to without a beacon
+  (`logic.lineFacings`: a way's or bridge's line, else its said direction; `logic.lineTurnFacing`; the module hands them to the maps module's
+  `facingWithoutWaypoint`).
 - `rooms.lua`: building frames, rooms without a height (in a city's indoor layer the room whose floor
   the player's floor piece is, `logic.floorRoomsAt` from the layer's `floorRooms`; elsewhere stacked floors resolved by the
   doorway walked through; a room entered that way holds while its floor is within
