@@ -33,6 +33,10 @@
 -- /wv sprobe tpar [count]          samples your health count times at once
 --                                   (default 5, at most 20): does the engine
 --                                   play that many side by side?
+-- /wv sprobe flood [voiceID]       10, 20, 40, then 80 silent utterances in one
+--                                   frame each: how many does the engine start
+--                                   and finish, and do they still play their
+--                                   length? (results in WowVisionDump.secretFlood)
 -- /wv sprobe tpair                  two-digit samples: is the lower utterance
 --                                   id the first call? Then your health
 --
@@ -1566,6 +1570,108 @@ local function runParallel(voice, count)
     end)
 end
 
+-- Flood: many silent utterances called in one frame, as the group health
+-- monitor's checks and numbers pile up in a fight. Does the engine drop
+-- any (no start, no finish), and does each still play its length? A drop
+-- would cap how many members can be watched; a stretch would skew the
+-- checks. Every utterance is 'a' and 1500 ms of silence at rate 10 and
+-- volume 0: about 690 ms played (the fixed line).
+local FLOOD_SIZES = { 10, 20, 40, 80 }
+local FLOOD_SILENCE = 1500
+local FLOOD_WAIT = 4
+local FLOOD_GAP = 5
+local floodFrame = CreateFrame("Frame")
+local flood = nil
+
+floodFrame:SetScript("OnEvent", function(_, event, utteranceID)
+    local run = flood
+    if run == nil then
+        return
+    end
+    local now = debugprofilestop()
+    if event == "VOICE_CHAT_TTS_PLAYBACK_STARTED" then
+        run.starts[utteranceID] = now
+    elseif event == "VOICE_CHAT_TTS_PLAYBACK_FINISHED" then
+        run.finishes[utteranceID] = now
+    else
+        run.failed = run.failed + 1
+    end
+end)
+
+local function median(list)
+    if #list == 0 then
+        return 0
+    end
+    table.sort(list)
+    return list[math.ceil(#list / 2)]
+end
+
+local function floodSummary(run)
+    local started, finished, played, startAfter = 0, 0, {}, {}
+    for id, startMs in pairs(run.starts) do
+        started = started + 1
+        tinsert(startAfter, startMs - run.calledMs)
+        local finishMs = run.finishes[id]
+        if finishMs ~= nil then
+            tinsert(played, finishMs - startMs)
+        end
+    end
+    for _ in pairs(run.finishes) do
+        finished = finished + 1
+    end
+    table.sort(played)
+    table.sort(startAfter)
+    return string.format(
+        "%d called in one frame: %d started, %d finished, %d failed; played min %d, median %d, max %d ms (expected about %d); started %d to %d ms after the call",
+        run.count, started, finished, run.failed,
+        round(played[1] or 0), round(median(played)), round(played[#played] or 0),
+        round(190 + 0.3314 * FLOOD_SILENCE),
+        round(startAfter[1] or 0), round(startAfter[#startAfter] or 0)
+    )
+end
+
+local function runFlood(voice)
+    if flood ~= nil then
+        say("Flood test already running")
+        return
+    end
+    local GroupHealth = WowVision.groupHealth
+    if GroupHealth == nil or GroupHealth.readbackPad == nil then
+        say("This client has no group health readback, the flood test cannot run")
+        return
+    end
+    floodFrame:RegisterEvent("VOICE_CHAT_TTS_PLAYBACK_STARTED")
+    floodFrame:RegisterEvent("VOICE_CHAT_TTS_PLAYBACK_FINISHED")
+    floodFrame:RegisterEvent("VOICE_CHAT_TTS_PLAYBACK_FAILED")
+    local lines = { string.format("Flood test, voice %d, %s", voice, framerate()) }
+    say("Flood test, silent. Keep still at full health, about 40 seconds")
+    local index = 0
+    local function nextRound()
+        index = index + 1
+        local count = FLOOD_SIZES[index]
+        if count == nil then
+            flood = nil
+            floodFrame:UnregisterAllEvents()
+            WowVisionDump = WowVisionDump or {}
+            WowVisionDump.secretFlood = lines
+            chat(table.concat(lines, "\n"))
+            WowVision.testing.showResults(table.concat(lines, "\n"))
+            say("Flood test done")
+            return
+        end
+        flood = { count = count, calledMs = debugprofilestop(), starts = {}, finishes = {}, failed = 0 }
+        for _ = 1, count do
+            asideSpeak(voice, 'a<silence msec="' .. FLOOD_SILENCE .. '"/>' .. GroupHealth.readbackPad(nextReadbackCount()), 10, 0)
+        end
+        C_Timer.After(FLOOD_WAIT, function()
+            tinsert(lines, floodSummary(flood))
+            flood = nil
+            C_Timer.After(FLOOD_GAP - FLOOD_WAIT, nextRound)
+        end)
+    end
+    C_Timer.After(TIMING_START_DELAY, nextRound)
+end
+
 -- Pair check: does the lower utterance id belong to the first call? Fixed
 -- digits instead of health: pattern A says digits 0 and 3 (step 3), pattern
 -- B digits 2 and 1 (step 9). In the wrong order A would read out of range
@@ -1660,7 +1766,7 @@ end
 
 WowVision.base:registerCommand({
     name = "sprobe",
-    description = "Secret speech probe: 'run [voice] [unit]' ten spoken steps, 'events [seconds]' counts health and power events, 'monitor [voice] [percent]' toggles a pitch party health monitor, 'pitch [voice]' tests how far pitch reaches, 'timing [voice] [unit]' reads a health bucket back from silent speech timing, 'twatch [voice] [unit]' toggles the monitor's step readback on one unit, 'tpar [count]' samples your health that many times at once, 'tpair' checks the two-digit id order, 'log' shows the engine statuses",
+    description = "Secret speech probe: 'run [voice] [unit]' ten spoken steps, 'events [seconds]' counts health and power events, 'monitor [voice] [percent]' toggles a pitch party health monitor, 'pitch [voice]' tests how far pitch reaches, 'timing [voice] [unit]' reads a health bucket back from silent speech timing, 'twatch [voice] [unit]' toggles the monitor's step readback on one unit, 'tpar [count]' samples your health that many times at once, 'tpair' checks the two-digit id order, 'flood [voice]' counts how many silent utterances at once the engine plays, 'log' shows the engine statuses",
     func = function(args)
         local words = {}
         for word in tostring(args or ""):lower():gmatch("%S+") do
@@ -1699,10 +1805,13 @@ WowVision.base:registerCommand({
         elseif command == "tpair" then
             local voice = parseArgs(words)
             runPairCheck(voice or 0)
+        elseif command == "flood" then
+            local voice = parseArgs(words)
+            runFlood(voice or 0)
         elseif command == "log" then
             showLog()
         else
-            say("Usage: slash w v s probe run, events, monitor, pitch, timing, twatch, tpar, tpair, or log")
+            say("Usage: slash w v s probe run, events, monitor, pitch, timing, twatch, tpar, tpair, flood, or log")
         end
     end,
 })
