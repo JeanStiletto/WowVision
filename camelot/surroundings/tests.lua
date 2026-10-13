@@ -1349,6 +1349,17 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.crossedDoor(z, 3, 15, 9, 14, 9))           -- 3.5 yd from its plane
     end,
 
+    ["one step through two doorways side by side takes the one whose room fits"] = function(t)
+        local z = newZone()
+        -- a second doorway of the common room 0.8 yd before the stairs', into the back room (the
+        -- Trade Quarter's: the canal tunnel's doorway under the shop's)
+        table.insert(z.doors, 3, { 1, 3, 1, 5, 4.2, 0, 1, -1 })
+        logic.unpack(z)
+        t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7), 3)
+        t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7, function(id) return id ~= 3 end), 2)
+        t:assertNil(logic.crossedDoor(z, 1, 5, 3, 5, 7, function() return false end))
+    end,
+
     ["a room entered through a doorway holds while its floor is near, even over another room's floor"] = function(t)
         local z = newZone()
         -- the landing's floor shrunk to a patch in the common room's middle (the Abbey's stairs:

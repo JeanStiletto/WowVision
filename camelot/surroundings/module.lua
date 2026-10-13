@@ -1118,7 +1118,12 @@ local function updateIndoors(z, x, y, px, py)
         restoreHere(z, x, y)
     end
     local before = room
-    local crossed = logic.crossedDoor(z, room, px, py, x, y)
+    -- a doorway into a room whose floor is not here is passed over (see below), so the one behind
+    -- it in the same step still counts
+    local held = logic.layer(z, IsIndoors())
+    local crossed = logic.crossedDoor(z, room, px, py, x, y, held and function(id)
+        return logic.roomFloorNear(held, id, x, y) ~= false
+    end)
     if crossed == 0 and hallGap ~= nil and room and z._index.rooms[room].hallMap then
         -- out of the halls through a doorway to outside (the throne room's onto the rose walk)
         hallGap, hallDoorOut = nil, { x, y }
@@ -1138,7 +1143,6 @@ local function updateIndoors(z, x, y, px, py)
     -- on any piece: a room whose floor is not here on the player's piece or one joined to it is
     -- none they walked into (a doorway has no height: the shops' doors on the Trade Quarter's ring
     -- lie over the canal hall)
-    local held = logic.layer(z, IsIndoors())
     local near = held and found ~= nil and logic.roomFloorNear(held, found, x, y)
     if near == false or (near == nil and held and (held._index.floor or 0) ~= 0 and found ~= nil
         and not held._index.covered[found]) then
