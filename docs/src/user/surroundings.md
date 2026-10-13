@@ -132,6 +132,11 @@ clock with north at 12 ("water at 3"), whichever way you face.
   shortening of the announcements, plus the nearest guidance target and the stop you stand on.
   Outdoors it adds a drop edge within 3 yards, or one ahead of you within 10 yards.
   `/wv surr around` does the same.
+- **I** (Turn to Waypoint) with no beacon active: on a road, street, walk, ramp or stairs it
+  turns you along the way's centre line, the way nearer your facing. On a fork or crossing it
+  turns you to the arm nearest your facing, the way the fork names it; each further press turns
+  you to the next arm clockwise. Nothing is spoken; elsewhere (a square, a room, a bridge) it
+  says there is no active waypoint, as before.
 - `/wv surr`: position, data cell, place, nearest entrance, the stop you stand on, whether the
   game says indoors or outdoors with its map and area, and, indoors, the room candidates, the
   current room and the indoor layer; spoken and printed.

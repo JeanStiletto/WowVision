@@ -167,6 +167,64 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
+-- The facings along the centre lines where the player stands, for the turn key while no beacon
+-- leads (radians like a facing): on a way with one direction both ways of its line here
+-- (lineHere), on a fork or crossing its arms (the label's angles: each arm's line once out of the
+-- fork, as the fork is said). Returns the list and whether it is a fork's, or nil (no centre line
+-- here: no way, a square, a bridge, the line too short).
+function logic.lineFacings(zone, x, y, value, facing)
+    local kind = logic.kindOf(zone, value)
+    if logic.TURN_KINDS[kind] then
+        local px, _py, dx, dy = lineHere(zone, x, y, facing)
+        if px == nil then
+            return nil
+        end
+        local along = math.atan2(dy, dx)
+        return { along, along + math.pi }, false
+    end
+    if kind ~= "fork" and kind ~= "crossing" then
+        return nil
+    end
+    local place = logic.place(zone, logic.placeOf(value))
+    local facings = {}
+    for list in ((place and place.label) or ""):gmatch("<d([%d,]+)>") do
+        for a in list:gmatch("%d+") do
+            -- degrees clockwise from north to a facing (counter-clockwise from north)
+            facings[#facings + 1] = math.rad(-tonumber(a))
+        end
+    end
+    if #facings == 0 then
+        return nil
+    end
+    return facings, true
+end
+
+logic.LINE_FACED = 5 -- degrees; at a fork an arm this close to the facing is the one faced
+
+-- Which of `facings` the turn key turns to: the one nearest the facing; at a fork (`cycle`), when
+-- the player faces an arm already, the next arm clockwise (each press turns to the next).
+function logic.lineTurnFacing(facings, facing, cycle)
+    local best, bestOff = nil, nil
+    for _, f in ipairs(facings) do
+        local off = math.abs(logic.degreesBetween(f, facing))
+        if bestOff == nil or off < bestOff then
+            best, bestOff = f, off
+        end
+    end
+    if not cycle or bestOff > logic.LINE_FACED then
+        return best
+    end
+    -- clockwise is a falling facing: the smallest clockwise gap beyond the arm faced
+    local next, nextGap = nil, nil
+    for _, f in ipairs(facings) do
+        local gap = (-logic.degreesBetween(f, facing)) % 360
+        if gap > logic.LINE_FACED and (nextGap == nil or gap < nextGap) then
+            next, nextGap = f, gap
+        end
+    end
+    return next or best
+end
+
 -- Where a road or street leads ahead: from the nearest point on its centre line toward the point
 -- on the line about `look` yards further on, taking the end nearer the facing. The player's own position
 -- across the road does not change it, so walking a little aside is no bend. Returns the direction

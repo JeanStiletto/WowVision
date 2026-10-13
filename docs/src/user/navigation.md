@@ -4,6 +4,8 @@
 
 Press `I` while following a route to face its current waypoint. The turn takes a few frames and lands within about two degrees, standing or on the move. While you move, it aims at where the waypoint will be when the turn lands, so you do not circle waypoints you are about to reach. Nothing is spoken: if you already face the waypoint, the press does nothing. A press while a turn is still running is ignored, and the turn keys stop a turn.
 
+On WoW: Forever with no beacon active, `I` turns you along the centre line of the way you stand on instead (see Surroundings).
+
 Turning needs the camera following style "Always adjust camera". WowVision sets it once on each character's first login and says so in chat; if you change it back, turning to waypoints lands in the wrong places. WowVision also uses saved camera view 5 for turning, so anything you saved there is overwritten.
 
 `/wv turnlog` lists the last turns with their error, also in chat.

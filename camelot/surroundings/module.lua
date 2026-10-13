@@ -1474,6 +1474,33 @@ function module:describeAround()
     say(text, "around", x, y)
 end
 
+-- The turn key with no beacon (maps' turn to waypoint): along the centre line where the player
+-- stands, the way nearer the facing; on a fork or crossing its arm nearest the facing, the next
+-- arm clockwise with each further press. Outdoors and in a city's big halls; nil elsewhere (a
+-- room, a square, no way here), and the key says there is no waypoint.
+local function lineFacing()
+    if not module:getEnabled() then
+        return nil
+    end
+    local x, y, _z, map = UnitPosition("player")
+    local facing = GetPlayerFacing()
+    local z = x and facing and findZone(x, y, map)
+    if z == nil then
+        return nil
+    end
+    if isInside() then
+        local layer = logic.layer(z, IsIndoors())
+        if not (layerMode and layer) then
+            return nil
+        end
+        z = layer
+    end
+    local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
+    local facings, fork = logic.lineFacings(z, x, y, value, facing)
+    return facings and logic.lineTurnFacing(facings, facing, fork) or nil
+end
+WowVision.base.navigation.maps.facingWithoutWaypoint = lineFacing
+
 module:registerBinding({
     type = "Script",
     key = "surroundings/describe",
