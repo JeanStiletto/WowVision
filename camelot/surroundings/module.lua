@@ -1475,9 +1475,10 @@ function module:describeAround()
 end
 
 -- The turn key with no beacon (maps' turn to waypoint): along the centre line where the player
--- stands, the way nearer the facing; on a fork or crossing its arm nearest the facing, the next
--- arm clockwise with each further press. Outdoors and in a city's big halls; nil elsewhere (a
--- room, a square, no way here), and the key says there is no waypoint.
+-- stands (a way or a bridge; without a line, the direction it is said with), the way nearer the
+-- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
+-- further press. Outdoors and in a city's big halls; nil elsewhere (a room, a square, no way
+-- here), and the key says there is no waypoint.
 local function lineFacing()
     if not module:getEnabled() then
         return nil
