@@ -110,10 +110,9 @@ logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
 local TURN_SPAN = 6 -- yd before and after the nearest point
 
 -- The nearest lane of a way with one direction here (not a fork or crossing): as nearestLane.
--- `kinds`: the kinds that count as such (default TURN_KINDS).
-local function directedLane(zone, x, y, kinds)
+local function directedLane(zone, x, y)
     local d, lane, px, py = logic.nearestLane(zone, x, y)
-    if d == nil or not (kinds or logic.TURN_KINDS)[lane.kind] then
+    if d == nil or not logic.TURN_KINDS[lane.kind] then
         return nil
     end
     return d, lane, px, py
@@ -123,17 +122,15 @@ end
 -- direction under the player, the line about TURN_SPAN yd before and after that point along the
 -- facing (short stretches alone bend too much; a city street's line has short bits at forks).
 -- Returns px, py and the offset (dx, dy) from the point behind to the point ahead, or nil (no such
--- way here, or the line too short). `kinds`, `along`: the kinds of the line here and of the line
--- before and after it (default TURN_KINDS and LANE_KINDS).
-local function lineHere(zone, x, y, facing, kinds, along)
-    local d, _lane, px, py = directedLane(zone, x, y, kinds)
+-- way here, or the line too short).
+local function lineHere(zone, x, y, facing)
+    local d, _lane, px, py = directedLane(zone, x, y)
     if d == nil then
         return nil
     end
-    along = along or logic.LANE_KINDS
     local fx, fy = math.cos(facing), math.sin(facing)
-    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, along)
-    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, along)
+    local _a, _l1, ax, ay = logic.nearestLane(zone, px + fx * TURN_SPAN, py + fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
+    local _b, _l2, bx, by = logic.nearestLane(zone, px - fx * TURN_SPAN, py - fy * TURN_SPAN, TURN_SPAN, logic.LANE_KINDS)
     ax, ay, bx, by = ax or px, ay or py, bx or px, by or py
     local dx, dy = ax - bx, ay - by
     if dx * dx + dy * dy < MIN_SPAN * MIN_SPAN then
@@ -170,37 +167,52 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
--- The facings along the centre lines where the player stands, for the turn key while no beacon
--- leads (radians like a facing): on a way with one direction or a bridge both ways of its line
--- here (lineHere), where it has no line long enough both ways of the direction it is said with;
--- on a fork or crossing its arms (the label's angles: each arm's line once out of the fork, as
--- the fork is said). Returns the list and whether it is a fork's, or nil (no way here, a square).
-local BRIDGE_LINE = { bridge = true } -- on a bridge its own line, not a way's beside or under it
-local BRIDGE_ALONG = { bridge = true } -- ... before and after it the ways it leads onto too
-for kind in pairs(logic.LANE_KINDS) do
-    BRIDGE_ALONG[kind] = true
+-- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
+-- each way: toward the stretch's end and back (bearings, or nil where it stored none).
+local function storedHeadings(lane, px, py)
+    local h = lane.headings
+    if h == nil then
+        return nil, nil
+    end
+    local n = #h / 2
+    local length = logic.dist(lane.x1, lane.y1, lane.x2, lane.y2)
+    local t = length > 0 and logic.dist(lane.x1, lane.y1, px, py) / length or 0
+    local j = math.min(n - 1, math.max(0, math.floor(t * n)))
+    local toEnd, back = h[2 * j + 1], h[2 * j + 2]
+    return toEnd and toEnd >= 0 and toEnd or nil, back and back >= 0 and back or nil
 end
 
-function logic.lineFacings(zone, x, y, value, facing)
+-- The facings along the centre lines where the player stands, for the turn key while no beacon
+-- leads (radians like a facing), read from the data, nothing worked out here: on a way with one
+-- direction the headings of the way ahead the export stored for the spot of the stretch under the
+-- player, one each way (lane_headings: every 2 yd the line's heading 5 yd on, by the bend rule;
+-- near a line's end the other one turned round; until 2026-10-14 the key took a 12 yd stretch
+-- centred on the player, which in bends turned it half way, walk 2026-10-13 23:07); without them
+-- the stretch's own direction, without a stretch the direction the way is said with; on a bridge
+-- the direction it is said with; on a fork or crossing its arms (the label's angles, as the fork
+-- is said). Returns the list and whether it is a fork's, or nil (no way here, a square).
+function logic.lineFacings(zone, x, y, value, _facing)
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
-        local along
-        local px, _py, dx, dy
-        if kind == "bridge" then
-            px, _py, dx, dy = lineHere(zone, x, y, facing, BRIDGE_LINE, BRIDGE_ALONG)
-        else
-            px, _py, dx, dy = lineHere(zone, x, y, facing)
+        local d, lane, px, py = nil, nil, nil, nil
+        if kind ~= "bridge" then
+            d, lane, px, py = directedLane(zone, x, y)
         end
-        if px ~= nil then
-            along = math.atan2(dy, dx)
-        else
-            -- the direction said (degrees clockwise from north, an axis; a climb's rise)
-            local axis = logic.axisOf(zone, value) or logic.riseOf(zone, value)
-            if axis == nil then
-                return nil
-            end
-            along = math.rad(-axis)
+        if d ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
+            -- a stored heading (clockwise from north) as a facing; near the line's end (none ahead)
+            -- the heading the other way turned round, the way the line came; else the stretch's own
+            local h1, h2 = storedHeadings(lane, px, py)
+            local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along
+            local f2 = (h2 and math.rad(-h2)) or (h1 and math.rad(-h1) + math.pi) or along + math.pi
+            return { f1, f2 }, false
         end
+        -- the direction said (degrees clockwise from north, an axis; a climb's rise)
+        local axis = logic.axisOf(zone, value) or logic.riseOf(zone, value)
+        if axis == nil then
+            return nil
+        end
+        local along = math.rad(-axis)
         return { along, along + math.pi }, false
     end
     if kind ~= "fork" and kind ~= "crossing" then
