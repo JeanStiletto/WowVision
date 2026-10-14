@@ -3,11 +3,13 @@
 -- on. Separate from the monitor: it only uses the monitor's public pieces
 -- and can be left out without the monitor noticing.
 --
--- /wv ghprobe check [voice]   twelve samples of fixed digits (no health):
---                              does each read back as called (the lower
---                              utterance id is the first digit), and do the
---                              played times lie on the readback's fixed line
---                              on this machine and voice?
+-- /wv ghprobe check [voice]   samples of fixed levels (no health): twelve
+--                              pairs of digits (does each read back as
+--                              called, the lower utterance id the first
+--                              digit?) and the sixteen levels one utterance
+--                              uses (up to 1.8 seconds); do the played
+--                              times lie on the readback's fixed line on
+--                              this machine and voice, the long ones too?
 -- /wv ghprobe watch [voice] [unit]
 --                              toggles: a readback in ten percent steps on one
 --                              unit (default you), woken by its health events;
@@ -196,7 +198,8 @@ end
 -- Every pair of digits a plan of base 4 can hold once in each order where
 -- they differ: twelve samples, three to a slot as in a fight.
 local CHECK_PAIRS = { { 0, 3 }, { 3, 0 }, { 1, 2 }, { 2, 1 }, { 0, 0 }, { 3, 3 }, { 0, 1 }, { 1, 0 }, { 2, 3 }, { 3, 2 }, { 1, 1 }, { 2, 2 } }
-local CHECK_WAIT = 6
+-- The sixteen levels of one utterance (R.SINGLE_LEVELS), value by value.
+local CHECK_WAIT = 10
 
 -- Least squares line through { level, playedMs }: played = a + b * level.
 local function fitLine(points)
@@ -225,16 +228,32 @@ local function runCheck(voice)
     if not start("check") then
         return
     end
-    local pairsByUnit = {}
+    local pairsByUnit, singleByUnit = {}, {}
     local right, wrong, discards, played = 0, 0, {}, {}
-    local worst = 0
+    local singleRight, singleWrong = 0, 0
+    local worst, worstSingle = 0, 0
     local readback
     readback = newReadback(voice, {
-        -- Fixed digits instead of health: the unit names the pair.
+        -- Fixed levels instead of health: the unit names them.
         through = function(unit, _, digit)
+            if singleByUnit[unit] ~= nil then
+                return R.SILENCE_OFFSET + R.SINGLE_LEVELS[singleByUnit[unit] + 1] * R.LEVEL_SILENCE
+            end
             return R.SILENCE_OFFSET + pairsByUnit[unit][digit] * R.LEVEL_SILENCE
         end,
         onReading = function(unit, reading)
+            local value = singleByUnit[unit]
+            if value ~= nil then
+                local level = R.SINGLE_LEVELS[value + 1]
+                if reading.value == value then
+                    singleRight = singleRight + 1
+                else
+                    singleWrong = singleWrong + 1
+                end
+                tinsert(played, { level, reading.playedHigh })
+                worstSingle = math.max(worstSingle, math.abs(reading.rawHigh - level))
+                return
+            end
             local pair = pairsByUnit[unit]
             if reading.value == pair[1] * 4 + pair[2] then
                 right = right + 1
@@ -256,20 +275,27 @@ local function runCheck(voice)
         for i, pair in ipairs(CHECK_PAIRS) do
             local unit = "check" .. i
             pairsByUnit[unit] = pair
-            readback:request(unit, { plan = GroupHealth.locatePlan() })
+            readback:request(unit, { plan = GroupHealth.zoomPlan(0, 100, "pair") })
+        end
+        local single = GroupHealth.zoomPlan(0, 100, "single")
+        for value = 0, #R.SINGLE_LEVELS - 1 do
+            local unit = "single" .. value
+            singleByUnit[unit] = value
+            readback:request(unit, { plan = single })
         end
         C_Timer.After(CHECK_WAIT, function()
             active[readback] = nil
             busy = nil
             local lines = { string.format("Check, voice %d, %s", voice, framerate()) }
-            tinsert(lines, string.format("%d of %d read as called, %d read wrong, thrown away: %s",
-                right, #CHECK_PAIRS, wrong, #discards > 0 and table.concat(discards, ", ") or "none"))
+            tinsert(lines, string.format("Pairs: %d of %d read as called, %d read wrong; one utterance: %d of %d levels read as called, %d read wrong; thrown away: %s",
+                right, #CHECK_PAIRS, wrong, singleRight, #R.SINGLE_LEVELS, singleWrong, #discards > 0 and table.concat(discards, ", ") or "none"))
             local a, b = fitLine(played)
             if a ~= nil then
-                tinsert(lines, string.format("Played = %d ms + %.1f ms per level (fixed values: %d + %.1f); worst %.2f of a level off (allowed %.2f)",
-                    round(a), b, R.BASE_MS, R.LEVEL_MS, worst, R.MAX_OFF_LEVEL))
+                tinsert(lines, string.format("Played = %d ms + %.1f ms per level over levels 0 to 16 (fixed values: %d + %.1f); worst %.2f of a level off in pairs, %.2f in one utterance (allowed %.2f)",
+                    round(a), b, R.BASE_MS, R.LEVEL_MS, worst, worstSingle, R.MAX_OFF_LEVEL))
             end
-            local fits = wrong == 0 and right > 0 and worst <= R.MAX_OFF_LEVEL
+            local fits = wrong == 0 and right > 0 and singleWrong == 0 and singleRight > 0
+                and worst <= R.MAX_OFF_LEVEL and worstSingle <= R.MAX_OFF_LEVEL
             tinsert(lines, fits and "The readback fits this machine and voice" or "The readback does NOT fit this machine and voice")
             report("check", lines)
             say(lines[#lines])
@@ -322,8 +348,10 @@ local function toggleWatch(voice, unit)
             w.step = reading.value
             w.changes = w.changes + 1
             local text = u .. " " .. stepText(reading.value)
-            tinsert(w.lines, string.format("%.1f %s, digits %.2f and %.2f, %.2f s after the call",
-                GetTime(), text, reading.rawHigh, reading.rawLow, (debugprofilestop() - reading.calledMs) / 1000))
+            local raws = reading.rawLow ~= nil and string.format("digits %.2f and %.2f", reading.rawHigh, reading.rawLow)
+                or string.format("level %.2f", reading.rawHigh)
+            tinsert(w.lines, string.format("%.1f %s, %s, %.2f s after the call",
+                GetTime(), text, raws, (debugprofilestop() - reading.calledMs) / 1000))
             chat(text)
             -- The truth, which only the engine can say; in a slot of the
             -- line, so its start is known as ours.
