@@ -369,15 +369,43 @@ function logic.regionAt(zone, x, y)
     if ix.regionOf[r0 * cols + c0] then
         return ix.regionOf[r0 * cols + c0]
     end
+    -- the same region from whichever cell it is first worked out (static rule 1; bug 28: from the
+    -- Ruins courtyard's north bank the bridge was guided to in the middle of its deck, from the
+    -- courtyard at its north end): the floors it spreads over grow during the flood, so a cell
+    -- turned away before its floor joined counted only from some starts; flooded again with the
+    -- floors found until they grow no more. Its cells are taken in grid order (the order of the
+    -- flood gave each mouth's points another order, and the guidance another point).
     local cells, list = {}, {}
     local floors = { [ix.floor or 0] = true }
-    logic.flood(zone, { { r0, c0 } }, function(r, c, key)
-        return regionJoins(zone, r, c, key, floors, value)
-    end, function(r, c)
-        list[#list + 1] = r
-        list[#list + 1] = c
-        return #list >= logic.REGION_MAX * 2
-    end, cells)
+    local nFloors = 0
+    while true do
+        local n = 0
+        for _ in pairs(floors) do
+            n = n + 1
+        end
+        if n == nFloors then
+            break
+        end
+        nFloors = n
+        cells, list = {}, {}
+        logic.flood(zone, { { r0, c0 } }, function(r, c, key)
+            return regionJoins(zone, r, c, key, floors, value)
+        end, function(r, c)
+            list[#list + 1] = r
+            list[#list + 1] = c
+            return #list >= logic.REGION_MAX * 2
+        end, cells)
+    end
+    local keys = {}
+    for i = 1, #list - 1, 2 do
+        keys[#keys + 1] = list[i] * cols + list[i + 1]
+    end
+    table.sort(keys)
+    list = {}
+    for _, key in ipairs(keys) do
+        list[#list + 1] = math.floor(key / cols)
+        list[#list + 1] = key % cols
+    end
     local region = {
         value = value, label = logic.place(zone, logic.placeOf(value)).label, cells = cells,
         mouths = findMouths(zone, cells, list, floors, logic.placeOf(value)),
