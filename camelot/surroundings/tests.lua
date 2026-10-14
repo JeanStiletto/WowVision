@@ -620,6 +620,23 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -45))
     end,
 
+    ["the turn key without a beacon faces along a ramp or stairs: the direction it is said with"] = function(t)
+        local function near(a, bearing)
+            return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 1
+        end
+        -- a ramp rising to the northeast (52) with a line running south on it (another flight's,
+        -- or a scrap across it): the direction said, either way
+        local z = newLaneZone()
+        table.insert(z.places, { "ramp", "ramp" }) -- place 4
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 83, 48, 81, 48, 40052, 20, 40 }
+        logic.unpack(z)
+        t:assertEqual(logic.riseOf(z, 40052), 52)
+        local facings = logic.lineFacings(z, 82, 48, 40052, 0)
+        t:assertEqual(#facings, 2)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-40), false), 52))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(170), false), 232))
+    end,
+
     ["the turn key without a beacon reads the heading of the way ahead stored with the stretch"] = function(t)
         local function near(a, bearing)
             return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 0.5
