@@ -166,6 +166,9 @@ local function newReadback(voice, env)
         return monitor():nextCount()
     end
     env.through = env.through or through
+    env.startOwner = function(id)
+        return WowVision.base.speech:startOwner(id)
+    end
     local readback = GroupHealth.Readback:new(env)
     active[readback] = true
     return readback
