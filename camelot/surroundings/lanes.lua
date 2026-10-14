@@ -188,14 +188,16 @@ end
 -- player, one each way (lane_headings: every 2 yd the line's heading 5 yd on, by the bend rule;
 -- near a line's end the other one turned round; until 2026-10-14 the key took a 12 yd stretch
 -- centred on the player, which in bends turned it half way, walk 2026-10-13 23:07); without them
--- the stretch's own direction, without a stretch the direction the way is said with; on a bridge
--- the direction it is said with; on a fork or crossing its arms (the label's angles, as the fork
--- is said). Returns the list and whether it is a fork's, or nil (no way here, a square).
+-- the stretch's own direction, without a stretch the direction the way is said with; on a bridge,
+-- a ramp or stairs the direction it is said with (a flight's line can be another flight's or a
+-- scrap across it: in the Crusader's Outpost tower 60 to 80 degrees off, walk 2026-10-14 12:22);
+-- on a fork or crossing its arms (the label's angles, as the fork is said). Returns the list and
+-- whether it is a fork's, or nil (no way here, a square).
 function logic.lineFacings(zone, x, y, value, _facing)
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
         local d, lane, px, py = nil, nil, nil, nil
-        if kind ~= "bridge" then
+        if kind ~= "bridge" and not logic.CLIMBS[kind] then
             d, lane, px, py = directedLane(zone, x, y)
         end
         if d ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
