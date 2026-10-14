@@ -57,6 +57,7 @@ local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-wal
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
 local GUIDE_AWAY = 2 -- beyond "at" a target before it is guided to again
+local WATER_KEEP = 6 -- yd from where the player stood up out of the water: its way out stays the target (leftWater)
 -- yd: a new direction only when the last said one would also pass the target more than this beside
 -- it (near a door a step sideways turns the bearing a lot, the way to it hardly: 10 lines in 35 s
 -- at a shop door, walk 2026-10-08 16:06)
@@ -688,10 +689,27 @@ end
 -- `down`: the moat's place value, naming it), when there is one.
 local function guideExit(z, x, y, down)
     local t = module.settings.guidance and logic.exitTarget(z, x, y, z._index.floor, down)
+    waterGuide.out = nil
     if t then
         guideTo(z, waterGuide, t, x, y)
     else
         waterGuide.key = nil
+    end
+end
+
+-- Out of the water: the way out guided to stays the target while the player is within WATER_KEEP
+-- of where they stood up, so swimming on from there is no new target (where the water is about as
+-- deep as one stands, the game's swimming flag flips from step to step: the way out was said
+-- again at every flip, the Trade Quarter's canal); farther away it is forgotten.
+local function leftWater(x, y)
+    if waterGuide.key == nil then
+        return
+    end
+    local o = waterGuide.out
+    if o == nil then
+        waterGuide.out = { x = x, y = y }
+    elseif logic.dist2(x, y, o.x, o.y) > WATER_KEEP ^ 2 then
+        waterGuide.key, waterGuide.out = nil, nil
     end
 end
 
@@ -1045,7 +1063,7 @@ local function updateLayer(z, layer, x, y, px, py, here)
         guide.key = nil
         guideExit(layer, x, y, down)
     else
-        waterGuide.key = nil
+        leftWater(x, y)
         checkGuide(layer, x, y)
     end
     checkPlace(layer, x, y, down)
@@ -1250,7 +1268,7 @@ local function updateOutdoors(z, x, y, px, py)
         guide.key = nil
         guideExit(z, x, y)
     else
-        waterGuide.key = nil
+        leftWater(x, y)
         checkGuide(z, x, y)
     end
     checkPlace(z, x, y)

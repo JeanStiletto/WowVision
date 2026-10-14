@@ -226,6 +226,20 @@ function logic.swimFloor(zone, key, floor, swimming, x, y)
             return p
         end
     end
+    -- standing up in a liquid split into pieces at one height (walls over the water cut it): a
+    -- floor joined here to a piece of it joined to this one (the Ruins of Lordaeron's sewer, walk
+    -- 2026-10-14 10:32: the water stood up in met the floor beside it only behind its walls)
+    if not swimming and ix.liquids[floor] ~= nil then
+        for _, p in ipairs(list) do
+            if p ~= 0 then
+                for q in pairs(ix.liquids) do
+                    if q ~= floor and logic.joinedHere(zone, floor, q, x, y) and logic.joinedHere(zone, q, p, x, y) then
+                        return p
+                    end
+                end
+            end
+        end
+    end
     if swimming and #list == 1 then
         return list[1]
     end

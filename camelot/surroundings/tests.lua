@@ -920,6 +920,27 @@ testRunner:addSuite("Surroundings", {
         logic.pack(z)
     end,
 
+    ["standing up in a liquid split into pieces: a floor joined to a piece of it joined to this one"] = function(t)
+        local z = newZone()
+        -- the lake's cell (row 0, column 5) holds a second piece of the same water (4, joined to
+        -- 3 at 95, 8) and a ledge (5) joined to piece 4 only, as the Ruins of Lordaeron's sewer
+        z.liquids = { 3, 1, 4, 1 }
+        z.floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090, 0, 5, 3, 50000, 0, 5, 4, 50000, 0, 5, 5, 21090 }
+        z.joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1, 3, 4, 95, 8, -1, 4, 5, 95, 2, -1 }
+        logic.unpack(z)
+        logic.setFloor(z, 3)
+        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
+        t:assertEqual(z._index.floor, 5)
+        -- without the seam the ledge is no way out of piece 3: the ground
+        z.joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1, 4, 5, 95, 2, -1 }
+        logic.pack(z)
+        logic.unpack(z)
+        logic.setFloor(z, 3)
+        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
+        t:assertEqual(z._index.floor, 0)
+        logic.pack(z)
+    end,
+
     ["bearings for world offsets (x north, y west), and their words"] = function(t)
         t:assertEqual(logic.bearingOf(10, 0), 0)       -- north
         t:assertEqual(logic.bearingOf(0, -10), 90)     -- east
