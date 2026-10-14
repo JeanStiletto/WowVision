@@ -1654,6 +1654,36 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(items[3].class, "entrance")
     end,
 
+    ["a square's region is the same from whichever of its cells it is first worked out"] = function(t)
+        local z = newSquareZone()
+        logic.unpack(z)
+        local function signature(region)
+            local n = 0
+            for _ in pairs(region.cells) do
+                n = n + 1
+            end
+            local parts = { tostring(n) }
+            for _, m in ipairs(region.mouths) do
+                parts[#parts + 1] = m.label .. "@" .. table.concat(m.points, ",")
+            end
+            return table.concat(parts, "|")
+        end
+        local value = logic.valueAt(z, 78, 35)
+        local first = signature(logic.regionAt(z, 78, 35))
+        local tried = 0
+        for r = 0, z.rows - 1 do
+            for c = 0, z.cols - 1 do
+                local x, y = logic.cellCentre(z, r, c)
+                if logic.valueAt(z, x, y) == value then
+                    logic.forgetRegions(z)
+                    t:assertEqual(signature(logic.regionAt(z, x, y)), first)
+                    tried = tried + 1
+                end
+            end
+        end
+        t:assertTrue(tried > 1)
+    end,
+
     ["a square says at most the count; the way the player came goes first"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)
