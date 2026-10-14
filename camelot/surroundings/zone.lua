@@ -551,10 +551,14 @@ local function prepareWords(zone, locale)
             room.entrance = true
         end
     end
-    -- dead ends (decided offline with the heights), known by their English name
+    -- dead ends (decided offline with the heights), known by their English name; a ramp or
+    -- stairs named by its kind alone (no "to <where>")
     for _, place in ipairs(zone.places or {}) do
         if place[2] == "dead end" then
             place.deadEnd = true
+        end
+        if logic.CLIMBS[place[1]] and place[2] == place[1] then
+            place.plain = true
         end
     end
     local t = zone.locales and zone.locales[locale]
@@ -695,7 +699,7 @@ function logic.unpack(zone, locale)
 
     ix.places = {}
     for id, p in pairs(zone.places) do
-        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of }
+        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of, plain = p.plain }
     end
 
     -- structures with drop edges: the structure on each of their floor cells
@@ -1277,9 +1281,25 @@ end
 -- (user 2026-10-02: the name once, then only the direction, until one leaves the way or steps onto
 -- one with another name). After the next piece ahead was named as another way (a ramp beside the
 -- street), a bare direction would sound like that one's.
-function logic.sameWay(value, previous, named)
+-- With `zone`: a plain ramp or stairs (named by its kind alone) straight after a ramp or stairs,
+-- while a climb was the last named, is the same way too: a winding climb's flights are said
+-- "stairs" and "ramp" by turns as their slopes come out (the Crusader's Outpost tower, four names
+-- in 8 yd, walk 2026-10-14 12:23); the direction tells the turn.
+function logic.sameWay(value, previous, named, zone)
     local place = logic.placeOf(value)
-    return type(previous) == "string" and value ~= 0 and logic.keyPlace(previous) == place and named == place
+    if type(previous) ~= "string" or value == 0 then
+        return false
+    end
+    if logic.keyPlace(previous) == place and named == place then
+        return true
+    end
+    if zone == nil or named == nil then
+        return false
+    end
+    local p = logic.place(zone, place)
+    local before, last = logic.place(zone, logic.keyPlace(previous)), logic.place(zone, named)
+    return p ~= nil and p.plain and before ~= nil and logic.CLIMBS[before.kind]
+        and last ~= nil and logic.CLIMBS[last.kind] or false
 end
 
 -- The place id of an outdoor key (nil for nil).

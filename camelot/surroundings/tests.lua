@@ -2352,7 +2352,7 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         -- the walk's columns (y 52 to 40) are a ramp rising to the northeast
         z.dirs = { "running %s", "up to the %s" }
-        z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
+        z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" }, { "stairs", "stairs" }, { "ramp", "ramp" } }
         z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
         z.lanes = { 100, 46, 84, 46, 22045, 20, 40 }
         logic.unpack(z)
@@ -2364,6 +2364,14 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.outdoorKey(z, 22225), "r2:u6")
         t:assertEqual(logic.directionText(z, 22225), logic.directionText(z, 22045))
         t:assertEqual(logic.sameWay(22225, "r2:u2", 2), true)
+        -- a winding climb's flights called stairs and ramp by turns: a plain one straight after a
+        -- climb says only its direction; one named after where it leads says its name (places 3
+        -- and 4: plain stairs and ramp)
+        t:assertEqual(logic.sameWay(30032, "r4:u1", 4, z), true)
+        t:assertEqual(logic.sameWay(40127, "r3:u1", 4, z), true)
+        t:assertEqual(logic.sameWay(22045, "r4:u1", 4, z), false)
+        t:assertEqual(logic.sameWay(30032, "r4:u1", 4), false)
+        t:assertEqual(logic.sameWay(30032, 1, 1, z), false)
         -- on the square beside it, pushing east against its side
         local owner, what = logic.wallOwner(z, 94, 53, 0, -1, 2.5)
         t:assertEqual(owner, "ramp to the bank")
