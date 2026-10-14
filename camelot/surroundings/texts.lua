@@ -628,10 +628,17 @@ local function radiusParts(zone, x, y, kind, previous, opts)
     -- (nor on a platform: what lies around it is its edge; the street 9 yd under the griffon
     -- ramp's walkway came as "street at 9" there)
     if not logic.LANE_KINDS[kind] and kind ~= "bridge" and kind ~= "platform" and (wasWay or not opts.cut) then
-        local d, dir, street
+        local d, dir, street, name
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
             d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
+            if logic.CLIMBS[lane.kind] then
+                -- a ramp's or stairs' line is said by its own name: it was "street" (bug 7:
+                -- "Library Wing, street to the northwest" beside the Abbey library's ramp; "tower,
+                -- street to the north", "hut, street to the east"); quays and walks stay "street"
+                local p = logic.place(zone, logic.placeOf(lane.value))
+                name = p and logic.expandDirs(zone, p.label) or nil
+            end
         else
             d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
             local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
@@ -639,7 +646,10 @@ local function radiusParts(zone, x, y, kind, previous, opts)
                 d, dir, street = sd, sdir, true
             end
         end
-        if d then
+        if d and name then
+            parts[#parts + 1] = string.format(T("%s to the %s"), name, logic.dirWord(zone, dir))
+            beside = true
+        elseif d then
             local format = street and T("street to the %s") or T("road to the %s")
             parts[#parts + 1] = string.format(format, logic.dirWord(zone, dir))
             beside = true
