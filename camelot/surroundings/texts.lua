@@ -576,11 +576,17 @@ end
 -- From the edge: the place's ways on (streets, roads, squares that lead on; nearest first) and the
 -- water, canals and cliff edges within APPROACH yards, which are marked in `said`; the building
 -- entrances on it only without `cut` (the announcements leave them to the entrance guidance).
-local function edgeItems(zone, x, y, region, cut, previous, said)
+local function edgeItems(zone, x, y, region, cut, previous, said, from)
     local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = zone }
     if cut then
         opts.max = ITEMS_MAX
         opts.cameFrom = logic.keyLabel(zone, previous)
+        -- off a ramp or stairs onto a floor: not the flight just left (`from`: where the player
+        -- stepped off it), only the ways on (the zeppelin tower's floors said the stairs up and
+        -- the stairs down on each, trial 2026-10-14)
+        if from and logic.CLIMBS[logic.kind(zone, logic.keyPlace(previous))] then
+            opts.leaveOut = { place = logic.keyPlace(previous), x = from[1], y = from[2] }
+        end
     end
     local items = logic.aroundItems(region, x, y, opts)
     -- the ways the entry names count as said before the approaching ones are looked for (a
@@ -683,7 +689,7 @@ local function spotBody(zone, x, y, value, previous, opts)
     end
     local said = {}
     if region and not opts.sideways then
-        local items = edgeItems(zone, x, y, region, opts.cut, previous, said)
+        local items = edgeItems(zone, x, y, region, opts.cut, previous, said, opts.from)
         if #items > 0 then
             text = text .. ", " .. logic.itemsText(zone, items, logic.floorOfValue(zone, value))
         end
