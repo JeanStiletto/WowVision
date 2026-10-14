@@ -576,11 +576,17 @@ end
 -- From the edge: the place's ways on (streets, roads, squares that lead on; nearest first) and the
 -- water, canals and cliff edges within APPROACH yards, which are marked in `said`; the building
 -- entrances on it only without `cut` (the announcements leave them to the entrance guidance).
-local function edgeItems(zone, x, y, region, cut, previous, said)
+local function edgeItems(zone, x, y, region, cut, previous, said, from)
     local opts = { dirs = logic.ITEM_DIRS, classes = { way = true }, leading = true, zone = zone }
     if cut then
         opts.max = ITEMS_MAX
         opts.cameFrom = logic.keyLabel(zone, previous)
+        -- off a ramp or stairs onto a floor: not the flight just left (`from`: where the player
+        -- stepped off it), only the ways on (the zeppelin tower's floors said the stairs up and
+        -- the stairs down on each, trial 2026-10-14)
+        if from and logic.CLIMBS[logic.kind(zone, logic.keyPlace(previous))] then
+            opts.leaveOut = { place = logic.keyPlace(previous), x = from[1], y = from[2] }
+        end
     end
     local items = logic.aroundItems(region, x, y, opts)
     -- the ways the entry names count as said before the approaching ones are looked for (a
@@ -622,10 +628,17 @@ local function radiusParts(zone, x, y, kind, previous, opts)
     -- (nor on a platform: what lies around it is its edge; the street 9 yd under the griffon
     -- ramp's walkway came as "street at 9" there)
     if not logic.LANE_KINDS[kind] and kind ~= "bridge" and kind ~= "platform" and (wasWay or not opts.cut) then
-        local d, dir, street
+        local d, dir, street, name
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
             d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
+            if logic.CLIMBS[lane.kind] then
+                -- a ramp's or stairs' line is said by its own name: it was "street" (bug 7:
+                -- "Library Wing, street to the northwest" beside the Abbey library's ramp; "tower,
+                -- street to the north", "hut, street to the east"); quays and walks stay "street"
+                local p = logic.place(zone, logic.placeOf(lane.value))
+                name = p and logic.expandDirs(zone, p.label) or nil
+            end
         else
             d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
             local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
@@ -633,7 +646,10 @@ local function radiusParts(zone, x, y, kind, previous, opts)
                 d, dir, street = sd, sdir, true
             end
         end
-        if d then
+        if d and name then
+            parts[#parts + 1] = string.format(T("%s to the %s"), name, logic.dirWord(zone, dir))
+            beside = true
+        elseif d then
             local format = street and T("street to the %s") or T("road to the %s")
             parts[#parts + 1] = string.format(format, logic.dirWord(zone, dir))
             beside = true
@@ -683,7 +699,7 @@ local function spotBody(zone, x, y, value, previous, opts)
     end
     local said = {}
     if region and not opts.sideways then
-        local items = edgeItems(zone, x, y, region, opts.cut, previous, said)
+        local items = edgeItems(zone, x, y, region, opts.cut, previous, said, opts.from)
         if #items > 0 then
             text = text .. ", " .. logic.itemsText(zone, items, logic.floorOfValue(zone, value))
         end

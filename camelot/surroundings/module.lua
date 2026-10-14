@@ -1024,7 +1024,8 @@ local function checkPlace(z, x, y, forced)
             sideways = sq ~= nil and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
         end
         local text, square, said = logic.spotText(z, x, y, value, previous,
-            { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways })
+            { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways,
+                from = { outdoor.fromX or x, outdoor.fromY or y } })
         if not logic.sameWay(value, previous, wayNamed, z) then
             wayNamed = logic.placeOf(value)
         end

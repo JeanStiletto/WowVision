@@ -703,6 +703,20 @@ function logic.leftAtEnd(zone, region, wayKey, fx, fy)
             return true
         end
     end
+    -- ... or at an opening of a ramp or stairs onto the square that leads nowhere on the ground's
+    -- paint (it goes on over pieces of its own: Northshire Abbey's library ramp, whose foot's paint
+    -- ends at its landing; stepping off at its foot counted as stepping off its side once the
+    -- ground under its upper part no longer carried its name, trial 2026-10-14)
+    if logic.CLIMBS[logic.kind(zone, logic.keyPlace(wayKey))] then
+        for _, m in ipairs(region.mouths) do
+            if m.label == label and m.class == "way" and mouthSpan(m) <= logic.BEGIN_MAX then
+                local d = logic.nearestOfPoints(m.points, fx, fy)
+                if d <= logic.beginningReach(logic.GUIDE_REACH, { span = mouthSpan(m) }) then
+                    return true
+                end
+            end
+        end
+    end
     return false
 end
 
@@ -773,8 +787,12 @@ local function mouthFound(m, x, y)
     return { label = m.spoken or m.label, class = m.class, rise = m.rise, d = d, dir = dir, mouth = m }
 end
 
+-- yd; the opening of the flight just left lies at most this far from where the player stepped off
+logic.LEAVE_NEAR = 12
+
 -- What lies around the player on the region: items {label, class, dirs, mouths}, nearest first.
 -- opts (all optional): max (items), cameFrom (the label that goes first when there are more),
+-- leaveOut ({place, x, y}: the climb just left and where; its opening nearest there left out),
 -- dirs (directions per item at most), classes (a set: only these classes), leading (with zone:
 -- only ways that lead on, see leadsOn; squares always, and climbs: a ramp or stairs leads to
 -- another floor, which is somewhere, though no way begins there (the Brill tavern's stairs fell
@@ -782,8 +800,21 @@ end
 function logic.aroundItems(region, x, y, opts)
     opts = opts or {}
     local found = {}
+    -- the opening of the flight just left: of that flight's place, the one nearest to where the
+    -- player stepped off it (a landing's two flights open 4 to 6 yd from the step, both)
+    local left, leftD = nil, logic.LEAVE_NEAR
+    if opts.leaveOut then
+        for _, m in ipairs(region.mouths) do
+            if m.value and logic.placeOf(m.value) == opts.leaveOut.place then
+                local d = logic.nearestOfPoints(m.points, opts.leaveOut.x, opts.leaveOut.y)
+                if d and d <= leftD then
+                    left, leftD = m, d
+                end
+            end
+        end
+    end
     for _, m in ipairs(region.mouths) do
-        if (opts.classes == nil or opts.classes[m.class])
+        if (opts.classes == nil or opts.classes[m.class]) and m ~= left
             and not (opts.leading and m.class == "way" and not isSquareMouth(opts.zone, m)
                 and not logic.CLIMBS[mouthKind(opts.zone, m)] and not logic.leadsOn(opts.zone, m, region)) then
             found[#found + 1] = mouthFound(m, x, y)
