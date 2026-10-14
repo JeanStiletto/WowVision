@@ -703,6 +703,20 @@ function logic.leftAtEnd(zone, region, wayKey, fx, fy)
             return true
         end
     end
+    -- ... or at an opening of a ramp or stairs onto the square that leads nowhere on the ground's
+    -- paint (it goes on over pieces of its own: Northshire Abbey's library ramp, whose foot's paint
+    -- ends at its landing; stepping off at its foot counted as stepping off its side once the
+    -- ground under its upper part no longer carried its name, trial 2026-10-14)
+    if logic.CLIMBS[logic.kind(zone, logic.keyPlace(wayKey))] then
+        for _, m in ipairs(region.mouths) do
+            if m.label == label and m.class == "way" and mouthSpan(m) <= logic.BEGIN_MAX then
+                local d = logic.nearestOfPoints(m.points, fx, fy)
+                if d <= logic.beginningReach(logic.GUIDE_REACH, { span = mouthSpan(m) }) then
+                    return true
+                end
+            end
+        end
+    end
     return false
 end
 
