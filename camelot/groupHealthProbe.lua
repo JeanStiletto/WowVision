@@ -19,6 +19,12 @@
 --                              frame each: how many the engine starts and
 --                              finishes, and whether they still play their
 --                              length
+-- /wv ghprobe jitter [voice] [count]
+--                              count (default 192) single utterances over
+--                              the sixteen levels, as the monitor uses them:
+--                              how far off a level each lands, discarded ones
+--                              included; how many would be thrown away
+--                              (beyond 0.42) or misread (beyond 0.5)
 -- /wv ghprobe events [seconds] counts health and power events per unit
 --
 -- Results go to chat, a results window and WowVisionDump.groupHealthProbe
@@ -523,11 +529,109 @@ local function countEvents(seconds)
     end)
 end
 
+-- Jitter ------------------------------------------------------------------------
+
+-- Many single utterances of known levels: the spread of the played times
+-- around the fixed line, which decides how short a level can be and how
+-- often a sample is thrown away or misread. Every sample counts once (no
+-- retries); its offset is measured even when the readback discards it.
+local JITTER_COUNT = 192
+local JITTER_LIMIT = 60
+
+local function runJitter(voice, count)
+    if not start("jitter") then
+        return
+    end
+    count = math.max(16, math.min(1000, count or JITTER_COUNT))
+    local valueByUnit = {}
+    local offsets, outcomes = {}, {}
+    local finished = 0
+    local readback
+    local function note(unit, raw, why)
+        local level = R.SINGLE_LEVELS[valueByUnit[unit] + 1]
+        if raw ~= nil then
+            tinsert(offsets, raw - level)
+        end
+        outcomes[why] = (outcomes[why] or 0) + 1
+        finished = finished + 1
+    end
+    readback = newReadback(voice, {
+        through = function(unit)
+            return R.SILENCE_OFFSET + R.SINGLE_LEVELS[valueByUnit[unit] + 1] * R.LEVEL_SILENCE
+        end,
+        onReading = function(unit, reading)
+            note(unit, reading.rawHigh, reading.value == valueByUnit[unit] and "read right" or "read WRONG")
+        end,
+        onDiscard = function(unit, why, sample)
+            note(unit, sample.rawHigh, why)
+        end,
+        rerequest = function() end,
+    })
+    local startedAt = GetTime()
+    say(string.format("Probe jitter, silent, %d samples, about %d seconds", count, math.floor(count / 12) + 4))
+    local function done()
+        active[readback] = nil
+        busy = nil
+        local lines = { string.format("Jitter, voice %d, %s, %d samples in %d seconds", voice, framerate(), count, round(GetTime() - startedAt)) }
+        local parts = {}
+        for why, n in pairs(outcomes) do
+            tinsert(parts, why .. " " .. n)
+        end
+        table.sort(parts)
+        tinsert(lines, "Outcomes: " .. (#parts > 0 and table.concat(parts, ", ") or "none") .. (finished < count and string.format(", %d never ended", count - finished) or ""))
+        local n = #offsets
+        if n > 0 then
+            local abs, sum = {}, 0
+            for i, x in ipairs(offsets) do
+                abs[i] = math.abs(x)
+                sum = sum + x
+            end
+            table.sort(abs)
+            local function at(p)
+                return abs[math.max(1, math.ceil(n * p))]
+            end
+            local function beyond(limit)
+                local k = 0
+                for _, x in ipairs(abs) do
+                    if x > limit then
+                        k = k + 1
+                    end
+                end
+                return k
+            end
+            tinsert(lines, string.format("Off a level (%d measured; a level is %.0f ms): median %.2f, 90 percent within %.2f, 99 percent within %.2f, worst %.2f; on average %.2f %s",
+                n, R.LEVEL_MS, at(0.5), at(0.9), at(0.99), abs[n], math.abs(sum / n), sum >= 0 and "late" or "early"))
+            tinsert(lines, string.format("Beyond 0.25: %d, beyond 0.35: %d, thrown away (beyond %.2f): %d, misread (beyond 0.5): %d",
+                beyond(0.25), beyond(0.35), R.MAX_OFF_LEVEL, beyond(R.MAX_OFF_LEVEL), beyond(0.5)))
+        end
+        report("jitter", lines)
+        say("Jitter done")
+    end
+    C_Timer.After(START_DELAY, function()
+        local single = GroupHealth.zoomPlan(0, 100, "single")
+        for i = 1, count do
+            local unit = "jitter" .. i
+            valueByUnit[unit] = (i - 1) % #R.SINGLE_LEVELS
+            readback:request(unit, { plan = single })
+        end
+        local waited = 0
+        local ticker
+        ticker = C_Timer.NewTicker(0.5, function()
+            waited = waited + 0.5
+            if finished >= count or waited >= JITTER_LIMIT then
+                ticker:Cancel()
+                -- The last discards come a frame late.
+                C_Timer.After(0.2, done)
+            end
+        end)
+    end)
+end
+
 -- Command -----------------------------------------------------------------------
 
 WowVision.base:registerCommand({
     name = "ghprobe",
-    description = "Group health probe: 'check [voice]' tests the readback's fixed timing on this machine, 'watch [voice] [unit]' toggles ten percent step readings on a unit, 'flood [voice]' counts how many silent utterances at once the engine plays, 'events [seconds]' counts health and power events",
+    description = "Group health probe: 'check [voice]' tests the readback's fixed timing on this machine, 'watch [voice] [unit]' toggles ten percent step readings on a unit, 'flood [voice]' counts how many silent utterances at once the engine plays, 'jitter [voice] [count]' measures the spread of many silent utterances, 'events [seconds]' counts health and power events",
     func = function(args)
         local words = {}
         for word in tostring(args or ""):lower():gmatch("%S+") do
@@ -542,10 +646,12 @@ WowVision.base:registerCommand({
             toggleWatch(voice, unit)
         elseif command == "flood" then
             runFlood(voice)
+        elseif command == "jitter" then
+            runJitter(voice, tonumber(words[3]))
         elseif command == "events" then
             countEvents(tonumber(words[2]) or 30)
         else
-            say("Usage: slash w v g h probe check, watch, flood, or events")
+            say("Usage: slash w v g h probe check, watch, flood, jitter, or events")
         end
     end,
 })
