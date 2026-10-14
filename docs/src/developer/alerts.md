@@ -57,6 +57,12 @@ alert:addOutput({
 })
 ```
 
+Every such output has three settings: on/off, Priority Message (interrupts) and Voice. Voice
+lists the game's TTS voices and shows the one the output speaks with. Until the player picks
+one it follows the Speech Voice setting (stored as `classes.SPEECH_VOICE`); a picked voice
+speaks that output's text in the speech queue like all other speech. Picking the Speech Voice
+itself makes the output follow it again.
+
 With `voice = <index>` the text is spoken by the game with that TTS voice (at the speech
 module's rate and volume) instead of through the speech module, and the interrupt setting is
 not offered. Meant for announcements made while walking: a screen reader cuts its own speech
