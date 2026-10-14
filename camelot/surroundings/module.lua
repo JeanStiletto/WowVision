@@ -954,7 +954,7 @@ local function checkAhead(z, x, y, px, py)
         aheadSaid[nextKey] = { x = tx or x, y = ty or y, d = yards }
         -- the next piece of this way: its direction only ("north to south"), as on stepping onto it
         local text
-        if logic.sameWay(value, key, wayNamed) then
+        if logic.sameWay(value, key, wayNamed, z) then
             text = logic.directionText(z, value)
         else
             text = logic.describe(z, value, true, nil, nil, logic.ownerOfPlace(z, logic.keyPlace(key)))
@@ -1025,7 +1025,7 @@ local function checkPlace(z, x, y, forced)
         end
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways })
-        if not logic.sameWay(value, previous, wayNamed) then
+        if not logic.sameWay(value, previous, wayNamed, z) then
             wayNamed = logic.placeOf(value)
         end
         -- on a square: what was said now (its exits, what is close) is not said again on coming close

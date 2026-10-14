@@ -663,7 +663,7 @@ end
 -- set of its mouths said now (all of them after a step onto it off a way: nothing of it comes
 -- close then).
 local function spotBody(zone, x, y, value, previous, opts)
-    if opts.cut and logic.sameWay(value, previous, opts.named) then
+    if opts.cut and logic.sameWay(value, previous, opts.named, zone) then
         return logic.directionText(zone, value)
     end
     -- a named floor said once: not again coming from a place on it (logic.floorOf)
