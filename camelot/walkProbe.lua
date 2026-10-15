@@ -1,7 +1,9 @@
 -- Walk probe (developer tool, local only): records what happens while the
--- game walks the player with no key held (the interact key, autorun), to
--- check wall detection against it. Recording is automatic and quiet: one
--- line per walk goes to chat when it ends, the samples to
+-- player moves, to check wall detection against it. Walks the game makes
+-- with no key held (the interact key, autorun) are always kept; walks with a
+-- key held only when they got stuck (3 checks or more graded blocked) or had
+-- no position (instances). Recording is automatic and quiet: one line per
+-- kept walk goes to chat when it ends, the samples to
 -- WowVisionDump.walkProbe (saved at the next /reload). Separate from every
 -- module; it can be left out without anything noticing.
 
@@ -10,7 +12,7 @@ local CHECK = 0.15
 local AFTER = 2
 -- A walk is cut off after this long.
 local LONGEST = 60
-local KEEP = 8
+local KEEP = 12
 
 local movement = WowVision.movement
 local walk = nil
@@ -24,12 +26,17 @@ local function line(text)
     tinsert(walk.lines, string.format("%.2f %s", GetTime() - walk.startTime, text))
 end
 
-local function begin(reason)
+local function begin(reason, keyed)
     if walk ~= nil then
         line(reason)
         return
     end
+    local _, instanceType = IsInInstance()
     walk = {
+        keyed = keyed,
+        instance = instanceType,
+        blocked = 0,
+        noPosition = false,
         at = date("%Y-%m-%d %H:%M:%S"),
         startTime = GetTime(),
         lines = {},
@@ -43,6 +50,10 @@ local function begin(reason)
 end
 
 local function finish()
+    if walk.keyed and walk.blocked < 3 and not walk.noPosition then
+        walk = nil
+        return
+    end
     WowVisionDump = WowVisionDump or {}
     local runs = WowVisionDump.walkProbe or {}
     tinsert(runs, walk)
@@ -58,11 +69,14 @@ local function finish()
     local stopped = walk.stoppedAt and string.format("the game stopped it at %.1f s", walk.stoppedAt - walk.startTime)
         or "not stopped by the game"
     chat(string.format(
-        "walk %.1f s, %s, last moves %s yd per check, %d slowed checks",
+        "%s walk%s %.1f s, %s, last moves %s yd per check, %d slowed, %d blocked checks",
+        walk.keyed and "key" or "game",
+        walk.instance ~= "none" and (" in " .. tostring(walk.instance)) or "",
         GetTime() - walk.startTime,
         stopped,
         #last > 0 and table.concat(last, " ") or "none",
-        walk.graded
+        walk.graded,
+        walk.blocked
     ))
     walk = nil
 end
@@ -85,6 +99,12 @@ local function sample()
     local severity = walls and walls.severity
     if severity ~= nil then
         walk.graded = walk.graded + 1
+        if severity <= 2 then
+            walk.blocked = walk.blocked + 1
+        end
+    end
+    if x == nil then
+        walk.noPosition = true
     end
     local movedText = moved and string.format("%.2f", moved) or "-"
     tinsert(walk.moves, movedText)
@@ -109,8 +129,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if walk ~= nil then
             walk.stoppedAt = nil
             line("game started moving")
-        elseif not movement:isTranslating() then
-            begin("game started moving, no key held")
+        elseif movement:isTranslating() then
+            begin("game started moving, key held", true)
+        else
+            begin("game started moving, no key held", false)
         end
     elseif walk == nil then
         return
@@ -135,6 +157,6 @@ end)
 
 if C_PlayerInteractionManager ~= nil and C_PlayerInteractionManager.InteractUnit ~= nil then
     hooksecurefunc(C_PlayerInteractionManager, "InteractUnit", function(unit)
-        begin("interact " .. tostring(unit))
+        begin("interact " .. tostring(unit), false)
     end)
 end
