@@ -62,6 +62,11 @@ local WATER_KEEP = 6 -- yd from where the player stood up out of the water: its 
 -- it (near a door a step sideways turns the bearing a lot, the way to it hardly: 10 lines in 35 s
 -- at a shop door, walk 2026-10-08 16:06)
 local GUIDE_MISS = 2
+-- yd beyond a target's reach before it counts as left: said once and not left, it is not said again
+-- when it drops out of reach and comes back, or another target came between (over all walks
+-- replayed at running speed 2026-10-15, a third of the guidance lines were a target said again
+-- that way, a door in Deathknell six times in 20 s at the edge of its reach)
+local GUIDE_FORGET = 6
 local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
 local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (it stops while disabled)
 local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
@@ -110,8 +115,15 @@ local aheadSaid = {}
 local wayNamed = nil -- the place last said by name (on entering it or ahead): its next pieces say only their direction
 -- Guidance: the target last said (key and position), the direction said, whether it was "at"
 -- it, when, the target last said by name, and whether it was said briefly (a beacon led)
-local guide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, brief = nil } -- on foot
-local waterGuide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil } -- ways out of the water
+local guide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, brief = nil, said = {} } -- on foot
+local waterGuide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, said = {} } -- ways out of the water
+-- `said` of each: the targets said and not left since, key -> {x, y, reach}; `target`: the target
+-- guided to last (kept when the guidance lets it go: the turn key's), `atSaid` its key when the
+-- last line about it was that the player is at it. The guide whose line was the last said, until
+-- a place, room, bend or the next piece ahead is said: the turn key turns to its target
+-- (spokenGuide).
+local spokenGuide = nil
+local LINE_KINDS_SAID = { place = true, room = true, ahead = true, bend = true }
 local bump = { ticks = 0, key = nil, free = 0, time = nil }
 local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
 -- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
@@ -503,6 +515,9 @@ local function say(text, kind, x, y, walked, extra)
     extra = extra or {}
     extra.walked = walked and round1(walked) or nil
     logEntry(kind, text, x, y, extra)
+    if LINE_KINDS_SAID[kind] then
+        spokenGuide = nil
+    end
 end
 
 -- A beacon (a route or a straight line) leads the way: the guidance to entrances and street
@@ -524,6 +539,21 @@ end
 -- one would pass it more than GUIDE_MISS beside it or lie behind), and once at it. The
 -- name and the way through only until another target is named: then "entrance, 6 to the north".
 -- `brief` (a beacon leads): only that the target is there and its name, once.
+-- A target said: remembered until the player is GUIDE_FORGET beyond its reach (forgetLeft), and
+-- the turn key's target.
+local function noteSaid(g, t)
+    g.said[t.key] = { x = t.x, y = t.y, reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH }
+    spokenGuide = g
+end
+
+local function forgetLeft(g, x, y)
+    for key, s in pairs(g.said) do
+        if logic.dist2(x, y, s.x, s.y) > (s.reach + GUIDE_FORGET) ^ 2 then
+            g.said[key] = nil
+        end
+    end
+end
+
 local function guideTo(z, g, t, x, y, brief)
     local now = GetTime()
     -- where the target is and from how far it is guided to (checkGuide keeps it while within reach)
@@ -536,11 +566,20 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local named = g.named ~= t.key
+    g.target, g.zone = t, z
     if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
             say(logic.guideText(z, t, named, true), t.kind, x, y)
             g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, true, now, t.key
+            noteSaid(g, t)
+            g.atSaid = t.key
         end
+        return
+    end
+    -- said before and not left since: back in reach, or nearest again, it goes on quietly
+    local s = g.key ~= t.key and g.said[t.key]
+    if s and logic.dist2(s.x, s.y, t.x, t.y) <= 1 then
+        g.key, g.dir, g.at, g.time, g.atSaid = t.key, t.dir, false, now, nil
         return
     end
     local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > GUIDE_TURN
@@ -552,6 +591,8 @@ local function guideTo(z, g, t, x, y, brief)
     if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
         say(logic.guideText(z, t, named, false), t.kind, x, y)
         g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
+        noteSaid(g, t)
+        g.atSaid = nil
     end
 end
 
@@ -560,10 +601,11 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         guide.key = nil
         return
     end
+    forgetLeft(guide, x, y)
     -- a beacon starting or ending: the nearest target is said anew in the other manner, by name
     local brief = beaconGuides()
     if brief ~= guide.brief then
-        guide.brief, guide.key, guide.named = brief, nil, nil
+        guide.brief, guide.key, guide.named, guide.said = brief, nil, nil, {}
     end
     logic.wallSide = module.settings.wallSide == true
     -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
@@ -714,6 +756,7 @@ end
 -- `down`: the moat's place value, naming it), when there is one.
 local function guideExit(z, x, y, down)
     local t = module.settings.guidance and logic.exitTarget(z, x, y, z._index.floor, down)
+    forgetLeft(waterGuide, x, y)
     waterGuide.out = nil
     if t then
         guideTo(z, waterGuide, t, x, y)
@@ -1518,11 +1561,41 @@ function module:describeAround()
     say(text, "around", x, y)
 end
 
--- The turn key with no beacon (maps' turn to waypoint): along the centre line where the player
--- stands (a way or a bridge; without a line, the direction it is said with), the way nearer the
+-- The turn key toward the target the last guidance line spoke of (spokenGuide), while it is still
+-- guided to: before it toward its point; at it, or on the climb whose foot it is, along its way
+-- through, the direction said after it ("on to the 6", "in to the 3", "out to the 11"). Exact,
+-- from the data's angles, not the hour said (user 2026-10-15: the beacon's turn key aims exactly,
+-- this one should too). nil: no such target, or at one with no way through.
+local function guideFacing(x, y)
+    local g = spokenGuide
+    local t = g and g.target
+    if t == nil then
+        return nil
+    end
+    -- the guidance lets a target go as soon as the player steps onto its climb or past its doorway;
+    -- the key keeps it until the player is as far from it as the guidance forgets it (forgetLeft)
+    local reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
+    local d2 = logic.dist2(x, y, t.x, t.y)
+    if d2 > (reach + GUIDE_FORGET) ^ 2 then
+        return nil
+    end
+    local through = t.through and math.rad(-t.through)
+    if g.atSaid == t.key or d2 <= 1 then
+        return through
+    end
+    if t.kind == "climb" and through
+        and (logic.pastTarget(g.zone, t, x, y) or logic.onClimb(g.zone, t, x, y, outdoor.current)) then
+        return through
+    end
+    return math.rad(-logic.bearingOf(t.x - x, t.y - y))
+end
+
+-- The turn key with no beacon (maps' turn to waypoint): toward the target the last guidance line
+-- spoke of (guideFacing); else along the centre line where the player stands (a way or a bridge;
+-- without a line, the direction it is said with: a ramp, stairs, a canal), the way nearer the
 -- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
--- further press. Outdoors and in a city's big halls; nil elsewhere (a room, a square, no way
--- here), and the key says there is no waypoint.
+-- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
+-- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
 local function lineFacing()
     if not module:getEnabled() then
         return nil
@@ -1533,9 +1606,19 @@ local function lineFacing()
     if z == nil then
         return nil
     end
+    local toTarget = guideFacing(x, y)
+    if toTarget then
+        return toTarget
+    end
     if isInside() then
         local layer = logic.layer(z, IsIndoors())
         if not (layerMode and layer) then
+            -- a room said with the way it runs ("passage, north to south"): along it
+            local r = room and z._index.rooms and z._index.rooms[room]
+            if r and r.axis and not r.winding then
+                local along = math.rad(-r.axis)
+                return logic.lineTurnFacing({ along, along + math.pi }, facing, false)
+            end
             return nil
         end
         z = layer

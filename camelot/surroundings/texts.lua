@@ -55,6 +55,7 @@ local GUIDE_REACH = 8
 logic.GUIDE_REACH = GUIDE_REACH
 logic.GUIDE_AT = 3 -- yd from a target that count as being at it
 local EXIT_REACH = 25 -- yd; a liquid's ways out guided to while swimming (a moat's from anywhere down in it)
+logic.EXIT_REACH = EXIT_REACH
 
 -- The names of the item classes that are their own word; the others (ways, rooms) carry a name.
 local NAMED_CLASSES = { way = true, room = true, entrance = true }

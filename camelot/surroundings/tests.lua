@@ -620,6 +620,24 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -45))
     end,
 
+    ["the turn key without a beacon faces along a canal: the direction it is said with"] = function(t)
+        local function near(a, bearing)
+            return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 1
+        end
+        -- a canal running east to west (axis 90), no centre line: along it, the way nearer the facing
+        local z = newLaneZone()
+        table.insert(z.places, { "canal", "canal" }) -- place 4
+        logic.unpack(z)
+        t:assertEqual(logic.axisOf(z, 41090), 90)
+        local facings, fork = logic.lineFacings(z, 82, 48, 41090, 0)
+        t:assertEqual(#facings, 2)
+        t:assertEqual(fork, false)
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-60), false), 90))
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(80), false), 270))
+        -- a canal said without a direction: nothing to face along
+        t:assertNil((logic.lineFacings(z, 82, 48, 40000, 0)))
+    end,
+
     ["the turn key without a beacon faces along a ramp or stairs: the direction it is said with"] = function(t)
         local function near(a, bearing)
             return math.abs(logic.degreesBetween(a, math.rad(-bearing))) < 1
