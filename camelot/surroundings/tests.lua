@@ -801,6 +801,32 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.nearestLane(z, 94, 46, 12, { road = true }), nil)
     end,
 
+    ["a bridge next to a drop counts near its centre line; off it the place beside, away from drops the cell"] = function(t)
+        -- 4 rows x 7 columns of 4 yd cells: columns 0 and 1 (y 60 to 52) square, 2 to 4 (y 52 to
+        -- 40) bridge, 5 and 6 canal; the bridge's line runs north-south at y = 46, enter 2, leave 4;
+        -- a drop edge to the west along y = 53 from x 92 to 96 (structure 1 on the bridge's cell
+        -- in row 1)
+        local z = newWalkZone()
+        z.places = { { "square", "square of Test" }, { "bridge", "bridge" }, { "canal", "canal of Test" } }
+        z.grid = { "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2" }
+        z.lanes = { 100, 46, 84, 46, 20000, 20, 40 }
+        z.structCells = { 1, 2, 1 }
+        z.edges = { { 1, 270, 5, 0, 0, 92, 53, 94, 53, 96, 53, l = 0 } }
+        logic.unpack(z)
+        t:assertEqual(logic.laneValue(z, 94, 46, 20000, false), 20000)
+        t:assertEqual(logic.laneValue(z, 94, 47.5, 20000, false), 20000)
+        -- 4.5 yd off toward the square, 2.5 yd from the drop: the square beside the bridge (the
+        -- courtyard bridge's north head, walk 2026-10-15 15:36:25)
+        t:assertEqual(logic.laneValue(z, 94, 50.5, 20000, false), 10000)
+        -- on the bridge 3 yd off: within its leave distance it stays
+        t:assertEqual(logic.laneValue(z, 94, 49, 20000, true), 20000)
+        -- coming from the square 3 yd off: beyond the enter distance, but the drop is 4 yd away
+        t:assertEqual(logic.laneValue(z, 94, 49, 20000, false), 20000)
+        t:assertEqual(logic.laneValue(z, 94, 50, 20000, false), 10000)
+        -- as far off the line with no drop near: the cell decides, the bridge (a wide deck)
+        t:assertEqual(logic.laneValue(z, 86, 50.5, 20000, false), 20000)
+    end,
+
     ["a stretch's width per side: a wall on one side no longer narrows the other"] = function(t)
         local z = newWalkZone()
         -- the walk's line runs south along y = 46; left of that direction is east (y below 46):
