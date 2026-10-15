@@ -34,8 +34,9 @@
        (/wv plates). -->
   <Script file="nameplateProbe.lua" />
   <!-- Developer tool: records game walks with no key held for wall
-       detection (WowVisionDump.walkProbe). -->
-  <Script file="walkProbe.lua" />
+       detection (WowVisionDump.walkProbe). Off since 2026-10-15 (its
+       questions are answered); the file stays, add back
+       <Script file="walkProbe.lua" /> here to record again. -->
   <!-- The group finder is the TBC tool on a newer build of the same
        Blizzard addon; lfg.lua adds what that build changed. -->
   <Script file="..\tbc\lfg.lua" />
