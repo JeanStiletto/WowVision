@@ -1838,6 +1838,23 @@ testRunner:addSuite("Surroundings", {
         items = logic.roomDoorways(z, 6, { section = true, cameFrom = 5 })
         t:assertEqual(#items, 1)
         t:assertEqual(items[1].label, "niche")
+        -- numbered rooms said alike are one thing too: "hall 2" in the middle
+        z.rooms[6][2] = "hall 2"
+        z._index = nil
+        logic.unpack(z)
+        items = logic.roomDoorways(z, 6)
+        t:assertEqual(#items, 2)
+        t:assertEqual(items[1].label, "lift")
+        t:assertEqual(items[2].label, "niche")
+        -- walking on through it: its only way on leads through the same thing, no choice, unsaid
+        t:assertEqual(logic.sectionText(z, 6, 5, nil, 37, 22), nil)
+        -- a doorway into a room said alike with no doorway out beyond it: that room, as before
+        z.doorVia[11] = 0
+        z._index = nil
+        logic.unpack(z)
+        items = logic.roomDoorways(z, 6)
+        t:assertEqual(items[2].label, "hall")
+        z.rooms[6][2] = "hall"
         -- data without doorVia: the middle piece says nothing, as before
         z.doorVia, z._index = nil, nil
         logic.unpack(z)
