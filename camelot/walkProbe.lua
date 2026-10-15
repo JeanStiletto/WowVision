@@ -140,7 +140,53 @@ frame:SetScript("OnEvent", function(_, event, ...)
         line("error message: " .. (WowVision.isSecret(message) and "secret" or tostring(message)))
     end
 end)
+-- A movement flag set while the game says the player stands, for longer
+-- than STALE: a key release that never reached its Stop function. Kept in
+-- WowVisionDump.walkProbeStale with the flags that were on.
+local STALE = 1
+local staleSince, staleReported, lastStaleCheck = nil, false, 0
+
+local function checkStale()
+    local now = GetTime()
+    if now - lastStaleCheck < CHECK then
+        return
+    end
+    lastStaleCheck = now
+    if not movement:isTranslating() or IsPlayerMoving() then
+        staleSince, staleReported = nil, false
+        return
+    end
+    staleSince = staleSince or now
+    if staleReported or now - staleSince < STALE then
+        return
+    end
+    staleReported = true
+    local on = {}
+    for key, value in pairs(movement.flags) do
+        if value then
+            tinsert(on, key)
+        end
+    end
+    table.sort(on)
+    local text = string.format(
+        "%s flags %s while standing, combat %s, loss of control %s",
+        date("%H:%M:%S"),
+        table.concat(on, " "),
+        tostring(InCombatLockdown()),
+        tostring(C_LossOfControl.GetActiveLossOfControlDataCount())
+    )
+    WowVisionDump = WowVisionDump or {}
+    local list = WowVisionDump.walkProbeStale or {}
+    tinsert(list, text)
+    while #list > 20 do
+        tremove(list, 1)
+    end
+    WowVisionDump.walkProbeStale = list
+    chat(text)
+end
+
 frame:SetScript("OnUpdate", function()
+    checkStale()
     if walk == nil or GetTime() - lastCheck < CHECK then
         return
     end
