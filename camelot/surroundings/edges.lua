@@ -176,6 +176,12 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     if swimming ~= nil and (swimming == true) ~= (ix.liquids[floor] ~= nil) then
         floor = logic.swimFloor(zone, key, floor, swimming, x, y) or floor
     end
+    -- the liquid the game had the player swim in (swimFloor: standing up in it)
+    if swimming == true and ix.liquids[floor] ~= nil then
+        ix.swumIn = floor
+    elseif ix.liquids[floor] == nil then
+        ix.swumIn = nil
+    end
     ix.floor = floor
     -- a crossing pending leads off the floor it began on only
     ix.pendingJoins = floor == was and pendingNow or {}
@@ -191,10 +197,11 @@ end
 -- The floor piece the swimming state puts the player on in the cell `key` (else the 8 around),
 -- coming from `floor` at (x, y): swimming, a liquid's piece there that `floor` joins or drops onto
 -- here, else the only one there (swimming tells the height: one liquid here is the one swum in;
--- nil where several); not swimming, a floor there that the liquid `floor` joins here, else the
--- ground where it is there; nil where none. Standing tells no height: the only floor in the cell
--- is no way out of a liquid (out of the Ruins of Lordaeron's courtyard canal it was the
--- Undercity's canal walk 116 yd under it, walk 2026-10-07 23:44).
+-- nil where several); not swimming, a floor there that the liquid `floor` joins here, else, in a
+-- liquid the player swam in, nil (still in it), in another the ground where it is there; nil where
+-- none. Standing tells no height: the only floor in the cell is no way out of a liquid (out of
+-- the Ruins of Lordaeron's courtyard canal it was the Undercity's canal walk 116 yd under it, walk
+-- 2026-10-07 23:44).
 function logic.swimFloor(zone, key, floor, swimming, x, y)
     local ix = zone._index
     local cols = zone.cols
@@ -242,6 +249,23 @@ function logic.swimFloor(zone, key, floor, swimming, x, y)
     end
     if swimming and #list == 1 then
         return list[1]
+    end
+    -- standing up where no floor joins the liquid the player swam in (a ledge at the foot of a
+    -- wall, at the water's level): still in it, not on the ground's floor up on the walk over it
+    -- (the slime canal walk 5 to 9 yd up and its drops into the canal, walk 2026-10-15 07:15);
+    -- on foot on a liquid never swum in (a fall the game did not make), where the liquid has no
+    -- place of its own (a cell kept for its record only), or in the halls (zone.parent: the
+    -- Undercity's canals, about as deep as one stands, where the halls took turns with the
+    -- ground and said the canal again and again, replay of the 2026-10-12 16:50 walk), the ground
+    if not swimming and ix.swumIn == floor and zone.parent == nil then
+        -- (its place as on it: the cell's, around it, or a piece joined to it here, valueAtCell)
+        local was = ix.floor
+        ix.floor = floor
+        local v = logic.valueAtCell(zone, r, c)
+        ix.floor = was
+        if v ~= 0 then
+            return nil
+        end
     end
     return not swimming and found[0] and 0 or nil
 end

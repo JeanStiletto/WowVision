@@ -885,11 +885,13 @@ testRunner:addSuite("Surroundings", {
         logic.updateFloor(z, 95, 5, false, 95, 6, false, true)
         t:assertEqual(z._index.floor, 3)
         t:assertEqual(logic.valueAt(z, 95, 5), 50000)
-        -- in the air (jumping out of the water): no change; on foot again: off the liquid, onto
-        -- the ground here (no floor here joins the lake)
+        -- in the air (jumping out of the water): no change; on foot again: no floor here joins the
+        -- lake, the ground neither, so still in the lake; walking out of its cell, the ground
         logic.updateFloor(z, 95, 4, false, 95, 5, false, nil)
         t:assertEqual(z._index.floor, 3)
         logic.updateFloor(z, 95, 4, false, 95, 4, false, false)
+        t:assertEqual(z._index.floor, 3)
+        logic.updateFloor(z, 75, 4, false, 95, 4, false, false)
         t:assertEqual(z._index.floor, 0)
         -- falling off the dock's north edge into the lake: on the lake's piece
         logic.updateFloor(z, 89, 30, false, 89, 30)
@@ -931,13 +933,19 @@ testRunner:addSuite("Surroundings", {
         logic.setFloor(z, 3)
         logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
         t:assertEqual(z._index.floor, 5)
-        -- without the seam the ledge is no way out of piece 3: the ground
+        -- without the seam the ledge is no way out of piece 3: on foot on it never swum in (a fall
+        -- the game did not make), the ground; standing up after swimming in it, still in it
         z.joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1, 4, 5, 95, 2, -1 }
         logic.pack(z)
         logic.unpack(z)
         logic.setFloor(z, 3)
         logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
         t:assertEqual(z._index.floor, 0)
+        logic.setFloor(z, 3)
+        logic.updateFloor(z, 95, 5, false, 95, 5, false, true)
+        t:assertEqual(z._index.floor, 3)
+        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
+        t:assertEqual(z._index.floor, 3)
         logic.pack(z)
     end,
 
