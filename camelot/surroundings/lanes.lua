@@ -83,6 +83,9 @@ end
 -- and whether a lane decided it (false: no centre line near, or a way's cell off the line).
 function logic.laneValue(zone, x, y, value, onWay)
     local kind = logic.kindOf(zone, value)
+    if kind == "bridge" then
+        return logic.bridgeValue(zone, x, y, value, onWay), false
+    end
     if LANE_KEEP[kind] then
         return value, false
     end
@@ -104,6 +107,45 @@ function logic.laneValue(zone, x, y, value, onWay)
         end
     end
     return value, not logic.LANE_KINDS[kind]
+end
+
+-- A bridge's cell next to a drop counts as the bridge only where its own centre line says the
+-- player is on it, as a street's (from the enter distance, kept to the leave distance); off the
+-- line there it is the floor beside the bridge: the place most of the 8 cells around have on this
+-- floor that is no bridge, no water and no fork or crossing (an end's junction, not floor beside
+-- the deck), else still the bridge (on the deck over the water nothing else lies near). Away
+-- from drops the cell decides, as before (statues and walls on Stormwind's 30 yd wide decks
+-- narrow the line's widths, and the players crossed them 8 to 12 yd off it).
+-- The cells are 4 yd and the bridge's paint reaches past its deck where it begins on dry floor:
+-- 5.7 yd beside the courtyard bridge's line on its north head's wing "bridge, north to south",
+-- with the canal 2 yd to the west, and the player walked south into it (walk 2026-10-15 15:36:25).
+logic.BRIDGE_DROP = 3 -- yd; a drop edge this close (the warnings' reach) makes the line decide
+function logic.bridgeValue(zone, x, y, value, onWay)
+    local d, lane = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, logic.placeOf(value))
+    if d == nil then
+        return value
+    end
+    local enter, leave = logic.laneWidths(lane, x, y)
+    if d <= (onWay and leave or enter) or logic.nearestEdge(zone, x, y, logic.BRIDGE_DROP) == nil then
+        return value
+    end
+    local r, c = logic.cellOf(zone, x, y)
+    local count, best = {}, nil
+    for dr = -1, 1 do
+        for dc = -1, 1 do
+            if (dr ~= 0 or dc ~= 0) and logic.inGrid(zone, r + dr, c + dc) then
+                local v = logic.valueAtCell(zone, r + dr, c + dc)
+                local k = v ~= 0 and logic.kindOf(zone, v)
+                if k and k ~= "bridge" and k ~= "canal" and k ~= "moat" and not logic.WATER[k] and not logic.ROADS[k] then
+                    count[v] = (count[v] or 0) + 1
+                    if best == nil or count[v] > count[best] or (count[v] == count[best] and v < best) then
+                        best = v
+                    end
+                end
+            end
+        end
+    end
+    return best or value
 end
 
 logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
