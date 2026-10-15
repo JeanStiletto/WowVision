@@ -232,7 +232,8 @@ Each zone file calls `addon.addZone{...}` with:
   exports have no ninth value).
 - `doorVia` (optional): 2 values per door, door numbers (0 none): through the door from room a
   into room b, and from b into a, the nearest doorway out of the room both are pieces of. Set only
-  for a door between two rooms of one name (the export cut that room into pieces); a room under
+  for a door between two rooms said alike (`logic.sameRoomName`: one name, or one word numbered,
+  "mine 2"); a room under
   800 sq yd says that doorway, in the inner door's direction, where it would say nothing
   (`logic.roomDoorways`).
 - `indoor` (optional): the indoor layer, the big halls of a city (Ironforge, the Undercity
