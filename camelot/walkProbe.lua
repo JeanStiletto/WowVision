@@ -1,8 +1,8 @@
 -- Walk probe (developer tool, local only): records what happens while the
 -- player moves, to check wall detection against it. Walks the game makes
 -- with no key held (the interact key, autorun) are always kept; walks with a
--- key held only when they got stuck (3 checks or more graded blocked) or had
--- no position (instances). Recording is automatic and quiet: one line per
+-- key held only when they got stuck (3 checks or more graded blocked).
+-- Recording is automatic and quiet: one line per
 -- kept walk goes to chat when it ends, the samples to
 -- WowVisionDump.walkProbe (saved at the next /reload). Separate from every
 -- module; it can be left out without anything noticing.
@@ -36,7 +36,6 @@ local function begin(reason, keyed)
         keyed = keyed,
         instance = instanceType,
         blocked = 0,
-        noPosition = false,
         at = date("%Y-%m-%d %H:%M:%S"),
         startTime = GetTime(),
         lines = {},
@@ -50,7 +49,7 @@ local function begin(reason, keyed)
 end
 
 local function finish()
-    if walk.keyed and walk.blocked < 3 and not walk.noPosition then
+    if walk.keyed and walk.blocked < 3 then
         walk = nil
         return
     end
@@ -102,9 +101,6 @@ local function sample()
         if severity <= 2 then
             walk.blocked = walk.blocked + 1
         end
-    end
-    if x == nil then
-        walk.noPosition = true
     end
     local movedText = moved and string.format("%.2f", moved) or "-"
     tinsert(walk.moves, movedText)
