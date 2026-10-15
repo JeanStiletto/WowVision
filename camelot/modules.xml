@@ -33,6 +33,9 @@
   <!-- Developer tool: checks what an enemy count from nameplates rests on
        (/wv plates). -->
   <Script file="nameplateProbe.lua" />
+  <!-- Developer tool: records game walks with no key held for wall
+       detection (WowVisionDump.walkProbe). -->
+  <Script file="walkProbe.lua" />
   <!-- The group finder is the TBC tool on a newer build of the same
        Blizzard addon; lfg.lua adds what that build changed. -->
   <Script file="..\tbc\lfg.lua" />
