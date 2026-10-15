@@ -467,13 +467,38 @@ local function findZone(x, y, map)
     return zone
 end
 
+-- What may cut what (user 2026-10-15): a new place or room (and the around key) throws away the
+-- lines of ours still waiting and cuts ours playing, except a drop warning, which is let finish
+-- (the place then waits for it); everything else, drop warnings too, waits its turn and cuts
+-- nothing; a drop warning still waiting goes with the rest. Lines are tagged in WowVision's speech
+-- queue (retail/speech.lua): other speech there is neither dropped nor cut.
+local CUTS = { place = true, room = true, around = true }
+
+local function speakLine(text, kind)
+    local speech = WowVision.base.speech
+    if not (speech and speech.withTag) then
+        module:fireAlert("place", { text = text })
+        return
+    end
+    if CUTS[kind] then
+        speech:dropQueued(module)
+        local current = speech.current
+        if current and current.tag and current.tag.owner == module and current.tag.kind ~= "edge" then
+            C_VoiceChat.StopSpeakingText()
+        end
+    end
+    speech:withTag({ owner = module, kind = kind }, function()
+        module:fireAlert("place", { text = text })
+    end)
+end
+
 local function say(text, kind, x, y, walked, extra)
     text = logic.finishText(text)
     if zone then
         text = logic.spokenText(zone, text)
     end
     if text and text ~= "" then
-        module:fireAlert("place", { text = text })
+        speakLine(text, kind)
     end
     extra = extra or {}
     extra.walked = walked and round1(walked) or nil

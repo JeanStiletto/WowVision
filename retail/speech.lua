@@ -15,6 +15,10 @@ local settings = module:hasSettings()
 local oldSpeak = C_VoiceChat.SpeakText
 module.queue = {}
 module.speaking = false
+-- The queue's line in flight with the client (sent, not ended), nil when none.
+module.current = nil
+-- The tag the next queued lines get (module:withTag).
+local queueTag = nil
 
 -- Speech beside the queue (module:speakAside) plays at once and may overlap
 -- anything; its playback events must not end the queue's turn. WoW: Forever
@@ -151,13 +155,38 @@ local function pollQueue()
     -- Mark busy immediately so a poll triggered before PLAYBACK_STARTED arrives
     -- does not dispatch a second utterance on top of this one.
     module.speaking = true
+    module.current = item
     expectStart("queue")
     oldSpeak(item.voice, item.text, item.rate, item.volume, true)
 end
 
 local function enqueue(voice, text, rate, volume)
-    tinsert(module.queue, { voice = voice, text = text, rate = rate, volume = volume })
+    tinsert(module.queue, { voice = voice, text = text, rate = rate, volume = volume, tag = queueTag })
     pollQueue()
+end
+
+-- Speech queued while `fn` runs carries `tag` (a table with an `owner`), so its caller finds its
+-- lines again: drops those still waiting (module:dropQueued) or learns which one is playing
+-- (module.current.tag). For speech that goes through C_VoiceChat.SpeakText from an alert's output
+-- (the surroundings: a new place clears its old lines). With the queue off it changes nothing.
+function module:withTag(tag, fn)
+    local old = queueTag
+    queueTag = tag
+    local ok, err = pcall(fn)
+    queueTag = old
+    if not ok then
+        error(err, 0)
+    end
+end
+
+-- Drops the waiting lines tagged by `owner` (not the one playing).
+function module:dropQueued(owner)
+    for i = #self.queue, 1, -1 do
+        local tag = self.queue[i].tag
+        if tag ~= nil and tag.owner == owner then
+            tremove(self.queue, i)
+        end
+    end
 end
 
 -- Replacement for C_VoiceChat.SpeakText that routes all TTS through our queue.
@@ -178,6 +207,7 @@ local function applyQueueSetting(enabled)
         C_VoiceChat.SpeakText = oldSpeak
         module.queue = {}
         module.speaking = false
+        module.current = nil
     end
 end
 
@@ -240,6 +270,7 @@ local function frame_OnEvent(frame, event, utteranceID)
         -- FAILED fires instead of FINISHED for rejected utterances (too short,
         -- too long, internal error). Without handling it the queue stalls forever.
         module.speaking = false
+        module.current = nil
         pollQueue()
     end
 end
@@ -324,6 +355,7 @@ function module:stop()
         C_VoiceChat.StopSpeakingText()
     end
     self.speaking = false
+    self.current = nil
 end
 
 -- Whoever stops all speech: a stopped utterance never reports its end
@@ -335,6 +367,7 @@ hooksecurefunc(C_VoiceChat, "StopSpeakingText", function()
     wipe(pendingStarts)
     wipe(asideUtterances)
     module.speaking = false
+    module.current = nil
     pollQueue()
 end)
 
