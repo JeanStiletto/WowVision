@@ -679,6 +679,28 @@ function logic.roomDoorways(zone, roomId, opts)
             -- not into another piece of the same thing (one staircase, one of Ironforge's hall ways:
             -- the data names its pieces alike), nor back on a section's announcement (sectionText)
             label = nil
+            -- ... but a small room says through such a doorway, in its direction, the room's own
+            -- doorway it leads to (doorVia): the export cut the room into pieces whose doorways
+            -- the player does not see (a lift hall in three: "Halle" with no way out, 45 s at its
+            -- end wall, walk 2026-10-15 11:20); big rooms say their doorways from the player
+            local viaId = nil
+            if not fromPlayer and ix.rooms[other].name == name and not (opts.section and other == opts.cameFrom) then
+                if door.a == roomId then
+                    viaId = door.viaA
+                else
+                    viaId = door.viaB
+                end
+            end
+            local via = viaId and ix.doors[viaId]
+            if via then
+                local piece = (ix.rooms[via.a] and ix.rooms[via.a].name == name) and via.a or via.b
+                local beyond = via.a == piece and via.b or via.a
+                if beyond == 0 then
+                    label, class = "way out", "way out"
+                elseif ix.rooms[beyond] and ix.rooms[beyond].name ~= name then
+                    label, class = logic.describeRoom(zone, beyond, piece), "room"
+                end
+            end
         elseif other ~= 0 then
             label, class = logic.describeRoom(zone, other, roomId), "room"
         end

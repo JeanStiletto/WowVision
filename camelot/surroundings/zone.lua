@@ -946,6 +946,11 @@ function logic.unpack(zone, locale)
         -- to only from it (rooms.lua nearestEntrance)
         local fl = zone.doorFloors and zone.doorFloors[i]
         door.floor = fl and fl >= 0 and fl or nil
+        -- a door between two pieces of one room (doorVia): the room's own doorway reached through
+        -- it from a into b (viaA) and from b into a (viaB), door numbers; nil none or older data
+        local va, vb = zone.doorVia and zone.doorVia[2 * i - 1], zone.doorVia and zone.doorVia[2 * i]
+        door.viaA = va and va > 0 and va or nil
+        door.viaB = vb and vb > 0 and vb or nil
         ix.doors[i] = door
         for _, pair in ipairs({ { door.a, door.b }, { door.b, door.a } }) do
             local room, other = pair[1], pair[2]
@@ -1014,7 +1019,7 @@ function logic.unpackLayer(zone, src, suffix)
         climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
-        doors = zone.doors, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
+        doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
     }
     logic.unpack(layer)
     local covered = {}

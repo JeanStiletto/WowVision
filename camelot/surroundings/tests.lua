@@ -1805,6 +1805,45 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.roomDoorways(z, 1, { max = 1, cameFrom = 2 })[1].class, "way out")
     end,
 
+    ["a small room cut into pieces of one name says through each its own doorway beyond"] = function(t)
+        local z = newZone()
+        -- a hall in three pieces along +x (north) in the barn: the lift south of the first, a
+        -- niche north of the last (walk 2026-10-15: the Undercity's lift halls)
+        z.rooms[5] = { 2, "hall", "room", { 30, 20, 35, 25 } }
+        z.rooms[6] = { 2, "hall", "room", { 35, 20, 40, 25 } }
+        z.rooms[7] = { 2, "hall", "room", { 40, 20, 45, 25 } }
+        z.rooms[8] = { 2, "lift", "lift shaft", { 25, 20, 30, 25 } }
+        z.rooms[9] = { 2, "niche", "room", { 45, 20, 50, 25 } }
+        z.doors[4] = { 8, 5, 2, 30, 22.5, 1, 0, -1 }
+        z.doors[5] = { 5, 6, 2, 35, 22.5, 1, 0, -1 }
+        z.doors[6] = { 6, 7, 2, 40, 22.5, 1, 0, -1 }
+        z.doors[7] = { 7, 9, 2, 45, 22.5, 1, 0, -1 }
+        -- through door 5 from the first piece into the middle the niche's doorway (7), back the lift's (4)
+        z.doorVia = { 0, 0, 0, 0, 0, 0, 0, 0, 7, 4, 7, 4, 0, 0 }
+        logic.unpack(z)
+        -- the middle piece: the lift through the doorway south, the niche through the one north
+        local items = logic.roomDoorways(z, 6)
+        t:assertEqual(#items, 2)
+        t:assertEqual(items[1].label, "lift")
+        t:assertEqual(items[1].dirs[1], 180)
+        t:assertEqual(items[2].label, "niche")
+        t:assertEqual(items[2].dirs[1], 0)
+        -- the piece at the lift: the lift, and the niche through the next piece
+        items = logic.roomDoorways(z, 5)
+        t:assertEqual(#items, 2)
+        t:assertEqual(items[1].label, "lift")
+        t:assertEqual(items[2].label, "niche")
+        t:assertEqual(items[2].dirs[1], 0)
+        -- stepping on from the first piece: not the way back
+        items = logic.roomDoorways(z, 6, { section = true, cameFrom = 5 })
+        t:assertEqual(#items, 1)
+        t:assertEqual(items[1].label, "niche")
+        -- data without doorVia: the middle piece says nothing, as before
+        z.doorVia, z._index = nil, nil
+        logic.unpack(z)
+        t:assertEqual(#logic.roomDoorways(z, 6), 0)
+    end,
+
     ["the client's language replaces the data's words, the logic keeps working"] = function(t)
         local z = newZone()
         z.rooms[3][2] = "entrance"
