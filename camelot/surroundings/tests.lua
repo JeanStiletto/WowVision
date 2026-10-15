@@ -2095,6 +2095,26 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.onClimb(z, target, 92, 48, nil), false)
     end,
 
+    ["in a fork that names a climb among its ways the climb's foot is not guided to"] = function(t)
+        local function zoneWithFork(label)
+            local z = newWalkZone()
+            z.dirs = { "running %s", "up to the %s" }
+            z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" }, { "fork", label } }
+            -- the fork in row 2, column 1 (x 88 to 92, y 52 to 56); the ramp's foot at (92, 48)
+            z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000,30000,22045*3,0*2", "10000*2,22045*3,0*2" }
+            z.lanes = {}
+            z.climbFeet = { 92, 48, 22045 }
+            logic.unpack(z)
+            return z
+        end
+        -- the fork lists the ramp with its direction tag, as the data keeps it: the fork said it
+        local z = zoneWithFork("fork, square of Test <d270,0>, ramp to the bank <d45>")
+        t:assertNil(logic.footTarget(z, 90, 53))
+        -- a fork that does not list the ramp: its foot is guided to there too
+        z = zoneWithFork("fork, square of Test <d270,0,180>")
+        t:assertEqual(logic.footTarget(z, 90, 53).kind, "climb")
+    end,
+
     ["fallen off a climb with a floor piece of its own its foot is still guided to"] = function(t)
         local z = newWalkZone()
         z.dirs = { "running %s", "up to the %s" }
