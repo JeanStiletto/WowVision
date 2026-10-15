@@ -1,8 +1,8 @@
 -- Surroundings (WoW: Forever): describes where the player walks, from the WowVision_Surroundings
 -- data addon (without it the module is silent). Outdoors the place entered ("forest", "shore of
 -- Crystal Lake, water to the north", "road, north to south"), on a square its ways on, indoors
--- the room and its doorways, and in a city's big halls (the indoor layer: Ironforge) the same as
--- on its streets; drop edges, guidance to entrances, street beginnings and ways out of the water,
+-- the room and its doorways, and in a city's big halls (the indoor layers: Ironforge, the
+-- Undercity) the same as on its streets; drop edges, guidance to entrances, street beginnings and ways out of the water,
 -- turn hints on roads, what the player bumps into, and where to wait for a ship, zeppelin, lift or
 -- the Deeprun Tram. The logic and the texts are
 -- in the other files of this folder (docs/src/developer/surroundings.md).
@@ -424,9 +424,8 @@ local function zones()
     return WowVisionSurroundingsData and WowVisionSurroundingsData.zones or {}
 end
 
--- The data format this module reads (zone.format): 2 carries directions as angles. Data of
--- another format is left alone, and said once (the data addon and WowVision are switched
--- together: branch clock-directions on both).
+-- The data format this module reads (zone.format). Data of another format is left alone, and
+-- said once: the data addon and WowVision are updated together.
 local FORMAT = 3
 local formatWarned = false
 local function formatFits(z)
@@ -436,7 +435,7 @@ local function formatFits(z)
     if not formatWarned then
         formatWarned = true
         WowVision:speak(string.format("Surroundings data %s has format %d, this WowVision reads format %d; "
-            .. "switch the data addon and WowVision to the same branch", z.key or "?", z.format or 1, FORMAT))
+            .. "update the data addon and WowVision together", z.key or "?", z.format or 1, FORMAT))
     end
     return false
 end
@@ -781,12 +780,6 @@ local function leftWater(x, y)
     end
 end
 
--- Drop edges: the one within reach ahead in the view first, else one in the path with its
--- distance. An edge warns again after the player is out of its reach and it is no longer in the
--- path; an edge warns only on the floor piece its floor belongs to (a wall-walk's or a deck's
--- only while the player is up there, a landing's only on the landing). Indoors (the indoor
--- layer's edges) `rooms` is the set of rooms the player may be in: an edge inside warns only in
--- the room its floor belongs to (its piece).
 -- Is the player pushing against something (the wall detection's "blocked", fresh)? Then a step
 -- past an edge's rim is a push against its railing, no fall (logic.updateFloor).
 local function pushing()
@@ -794,6 +787,12 @@ local function pushing()
     return walls ~= nil and walls.severity == 1 and GetTime() - (walls.severityAt or 0) <= BUMP_FRESH
 end
 
+-- Drop edges: the one within reach ahead in the view first, else one in the path with its
+-- distance. An edge warns again after the player is out of its reach and it is no longer in the
+-- path; an edge warns only on the floor piece its floor belongs to (a wall-walk's or a deck's
+-- only while the player is up there, a landing's only on the landing). Indoors (the indoor
+-- layer's edges) `rooms` is the set of rooms the player may be in: an edge inside warns only in
+-- the room its floor belongs to (its piece).
 local function checkEdges(z, x, y, px, py, rooms)
     if rooms == nil then
         local before = z._index.floor or 0

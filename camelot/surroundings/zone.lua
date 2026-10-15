@@ -41,7 +41,7 @@ logic.WATER = set("deep water", "shore")
 logic.DROPS = set("cliff edge")
 
 -- Directions -------------------------------------------------------------------------------------
--- The data carries angles (format 2, 2026-10-01); the player's words are chosen here: the 8
+-- The data carries angles (since format 2, 2026-10-01); the player's words are chosen here: the 8
 -- compass words, or with logic.clock (the compass module's Directions setting) the 12 hours.
 
 logic.CODE = 10000 -- a cell value is place id * CODE + direction code (template * 1000 + angle)
@@ -792,8 +792,8 @@ function logic.unpack(zone, locale)
         ix.edges[i] = {
             struct = e[1], facing = e[2], drop = e[3], into = e[4], piece = e[5], points = points,
             drops = e.d, -- the depth per point (a ramp's side edge: 2 yd at the foot, 9 at the top), or nil
-            -- in a hall (the indoor layers): the other level its floor belongs to (0 = the main
-            -- floor) and the level its drop falls onto (walking over it puts the player there)
+            -- the floor piece it lies on (0 the ground) and the piece its drop lands on (walking
+            -- over it puts the player there)
             floor = e.l, under = e.u,
             box = { x0, x1, y0, y1 },
         }
