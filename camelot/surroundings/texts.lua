@@ -763,6 +763,8 @@ end
 -- numbered passages are the ways to choose from. A section whose only way on is the next section
 -- of the same thing leaves it unsaid: no choice there (the tram tunnel's ten sections said one
 -- each on a ride, replay of 2026-09-29 18:14; user that day: only when the name really changes).
+-- So does one whose only way on is a doorway beyond the next sections (roomDoorways' `through`:
+-- a mine's way out said at every passage, 2026-10-15).
 -- Passages said by one name (logic.spokenName) are one item with each of their directions: two
 -- directions are still a choice ("mine to the east and northeast").
 -- Returns the text (nil when nothing is left) and the way it runs (nil when it has none).
@@ -775,8 +777,8 @@ function logic.sectionText(zone, id, previous, lastWay, x, y)
     local items = logic.roomDoorways(zone, id, { dirs = logic.ITEM_DIRS, x = x, y = y, max = ITEMS_MAX,
         cameFrom = previous, section = true })
     local base = logic.spokenName(zone, zone._index.rooms[id].name):gsub("%s+%d+$", "")
-    if #items == 1 and items[1].class == "room" and #items[1].dirs < 2
-            and items[1].label:gsub("%s+%d+$", "") == base then
+    if #items == 1 and #items[1].dirs < 2 and (items[1].through
+            or (items[1].class == "room" and items[1].label:gsub("%s+%d+$", "") == base)) then
         items = {}
     end
     if #items > 0 then
