@@ -191,8 +191,9 @@ end
 -- the stretch's own direction, without a stretch the direction the way is said with; on a bridge,
 -- a ramp or stairs the direction it is said with (a flight's line can be another flight's or a
 -- scrap across it: in the Crusader's Outpost tower 60 to 80 degrees off, walk 2026-10-14 12:22);
--- on a fork or crossing its arms (the label's angles, as the fork is said). Returns the list and
--- whether it is a fork's, or nil (no way here, a square).
+-- on a fork or crossing its arms (the label's angles, as the fork is said); on any other place
+-- said with the way it runs (a canal) along that. Returns the list and whether it is a fork's, or
+-- nil (no way here, a square).
 function logic.lineFacings(zone, x, y, value, _facing)
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
@@ -218,7 +219,13 @@ function logic.lineFacings(zone, x, y, value, _facing)
         return { along, along + math.pi }, false
     end
     if kind ~= "fork" and kind ~= "crossing" then
-        return nil
+        -- any other place said with the way it runs (a canal, swum in or beside): along it
+        local axis = logic.axisOf(zone, value)
+        if axis == nil then
+            return nil
+        end
+        local along = math.rad(-axis)
+        return { along, along + math.pi }, false
     end
     local place = logic.place(zone, logic.placeOf(value))
     local facings = {}
