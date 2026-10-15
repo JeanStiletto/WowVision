@@ -804,7 +804,13 @@ function WowVision:registerCommands()
         scope = "Global",
         conflictingAddons = { "Sku" },
         func = function(args)
-            LeaveParty()
+            -- WoW: Forever and Retail dropped the global; their own Leave
+            -- Party menu entry calls C_PartyInfo.LeaveParty.
+            if C_PartyInfo ~= nil and C_PartyInfo.LeaveParty ~= nil then
+                C_PartyInfo.LeaveParty()
+            else
+                LeaveParty()
+            end
         end,
     })
 
