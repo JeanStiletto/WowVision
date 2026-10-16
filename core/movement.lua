@@ -19,6 +19,9 @@ local movement = {
         descend = false,
         autorun = false,
         following = false,
+        pitchUp = false,
+        pitchDown = false,
+        moveAndSteer = false,
     },
     -- GetTime() of the last translation command (a movement key going down,
     -- autorun). The game reports PLAYER_STARTED_MOVING before the key's Start
@@ -36,6 +39,7 @@ function movement:isTranslating()
         or flags.moveBackward
         or flags.strafeLeft
         or flags.strafeRight
+        or flags.moveAndSteer
         or flags.autorun
         or flags.following
 end
@@ -93,6 +97,21 @@ for _, name in ipairs({
     hooksecurefunc(name, noteCommand)
 end
 hooksecurefunc("FollowUnit", flagSetter("following", true))
+
+-- Pitch and move-and-steer are held commands too (the key takeover guard in
+-- core/ui/input/heldKeys.lua asks for them); their functions are not on
+-- every client.
+local function hookIfPresent(name, func)
+    if type(_G[name]) == "function" then
+        hooksecurefunc(name, func)
+    end
+end
+hookIfPresent("PitchUpStart", flagSetter("pitchUp", true))
+hookIfPresent("PitchUpStop", flagSetter("pitchUp", false))
+hookIfPresent("PitchDownStart", flagSetter("pitchDown", true))
+hookIfPresent("PitchDownStop", flagSetter("pitchDown", false))
+hookIfPresent("MoveAndSteerStart", flagSetter("moveAndSteer", true))
+hookIfPresent("MoveAndSteerStop", flagSetter("moveAndSteer", false))
 -- Any manual movement command ends follow.
 hooksecurefunc("MoveForwardStart", flagSetter("following", false))
 hooksecurefunc("MoveBackwardStart", flagSetter("following", false))
