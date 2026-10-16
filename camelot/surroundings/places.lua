@@ -1,6 +1,6 @@
 -- The places list (Alt-F10): the zones, their subzones, the things in them (named buildings,
 -- buildings with a use, squares, landmarks, a city's shops) and the named rooms of a building,
--- sorted by distance, from the data addon's places files (wv-surroundings tools/destinations.py).
+-- sorted by distance, from the data's places files (wv-surroundings tools/destinations.py).
 -- Where each entry leads was worked out offline; this file only picks the nearest of an entry's
 -- points and sorts. No WoW API here: the module (placesUi.lua) passes in the position, the
 -- subzone the game says, and whether the character explored a subzone (discovery mode).

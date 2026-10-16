@@ -1,15 +1,22 @@
 # Surroundings (WoW: Forever)
 
 The surroundings module (`camelot/surroundings/`) describes where the player walks from map
-data prepared offline. The data comes from the separate **WowVision_Surroundings** addon
-(its own repository, [JeanStiletto/WowVision_Surroundings](https://github.com/JeanStiletto/WowVision_Surroundings)), generated from the client's map files by the wv-surroundings tools (`tools/export.py`), one
-Lua file per zone. The module reads `WowVisionSurroundingsData.zones` and unpacks a zone only
-while the player is in it.
+data prepared offline. The data is the repository
+[JeanStiletto/WowVision_Surroundings](https://github.com/JeanStiletto/WowVision_Surroundings), a
+git submodule at `mapdata/WowVision_Surroundings` (as `locale/` is): it is loaded as part of
+WowVision, `camelot/modules.xml` includes its `data.xml` after the module. It is generated from
+the client's map files by the wv-surroundings tools (`tools/export.py`, stored by
+`tools/store.py`), one Lua file per zone. Each zone file registers its frame and its data as
+JSON text (`addZone`, on WowVision's own addon table); the module decodes and unpacks a zone only
+while the player is in it, and drops it again on leaving ("Stored data" below).
 
 ## Files
 
 Pure logic, no WoW API calls, loaded by the headless suite (`tools/headless-tests.lua`) and
-tested in `tests.lua`:
+tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testdata`):
+
+- `store.lua`: the stored data (format 4) expanded into the model (`logic.expand`); the fields a
+  zone keeps while the player is elsewhere (`logic.ZONE_HEADER`).
 
 - `zone.lua`: the `WowVision.surroundingsLogic` table; directions; the grid; unpacking a
   zone into named records (all derived data under `zone._index`; `logic.pack` drops it);
@@ -70,15 +77,58 @@ since every export numbers the pieces anew.
   carrying the floor piece they stand on; `wallOwner` names their side when bumped into from
   beside them.
 
+## Stored data (format 4)
+
+A zone file calls `addon.addZone(header, json)`: the header is the zone's `key`, `label`, `map`,
+its grid frame (`top`, `left`, `cell`, `rows`, `cols`) and `format = 4`; `json` is the data as
+JSON text, one row or record to a line so git diffs stay readable. The module keeps only these
+(`logic.ZONE_HEADER`) for the zones the player is not in. On entry `logic.unpack` decodes the text
+(`logic.decodeJson`: the game's `C_EncodingUtil.DeserializeJSON`; offline `tools/json.lua`) and
+`logic.expand` (`store.lua`) turns it into the model below, exactly: every list in its order, every
+value as the export wrote it (wv-surroundings `tools/store.py` refuses to write a zone whose stored
+form does not give the model back value by value). `logic.pack` drops it again on leaving.
+
+The JSON object:
+
+- `format`: 4. `palette`: the grid's cell values; a row of a grid is palette index, count pairs.
+- `places`: the kind of every place id (its names are in `names`).
+- `words`: per client language (`enUS`, `deDE`, `frFR`) the model's `dirs`, `dirsClock`,
+  `compass`, `axes`, `floors`, `ofTemplate`. They stay in the data: a grid value's direction code
+  is the index of its template here.
+- `names`: per language every name: `places` as `[label, road or "", of or ""]`, `interiors`,
+  `interiorWalls`, `rooms`, `roomsShort`, `roomsArea`, `roomsAtA`, `roomsAtB` (these five as
+  `{"index": name}` for the ones that have one), `spoken`, `structs`, `objectNames`, `stops` (the
+  destinations).
+- `buildings`: `interiors` (`ox, oy, scale, m00, m01, m10, m11, c` with c 0 or 1), `rooms` (`i`
+  interior, `k` kind, `b` floor boxes, `o` outline, and the model's named fields but the names),
+  `doors` (the model's 9 values, then the door's two `doorVia` values where `doorVia` is true).
+- `objects`: `shapes` (half length, half width, name: 3 values each) and `list` (x, y, angle,
+  shape, room: 5 values each).
+- `stops`: `[kind, room, cells, segments, floor pieces]` (the destination is in `names`).
+- `layers`: `ground` (the zone's own), `halls` (the model's `indoor`), `inside` (`indoorIn`),
+  one schema: `frame` (a layer's own grid), `grid`, `cells` with runs along a row (row, column,
+  count, then the values; count < 0: the columns go down) for `floor` (floorCells), `noGround`,
+  `struct` (structCells), `rooms` (floorRooms), `hallGround`; `joins` as groups of one pair (a, b,
+  then x, y, angle per join); `lines`: the centre line stretches as polylines (their 6 values, the
+  number of points, the points, then the stretches' headings), `lineHeadings` whether the model
+  has headings; `exits` with 6 values each (x, y, width, way out, floor, group); `edges` as
+  `{h = the first 5 values, p = points, l, u, d}`; `climbFeet`, `climbAims`; and as the model has
+  them `deadExits`, `noContact`, `liquids`, `lineFloors`, `doorFloors`, `waterStructs`, `structs`,
+  `rooms` (a layer's covered rooms).
+- Coordinates (points, ways out, climbs, objects, joins) are whole tenths of a yard; a path (a
+  polyline's or an edge's points) is its first point, then each the step from the one before.
+- `extra` (in the zone or a layer): model fields the store does not know yet, kept as they are.
+
 ## Zone data
 
-Each zone file calls `addon.addZone{...}` with:
+The model: what `logic.expand` makes of a zone file, and what the logic and the tests read. A zone
+of the model has:
 
 - `key`, `label`, `map`: the map id `UnitPosition` returns.
 - `top`, `left`, `cell`, `rows`, `cols`: the grid. Row 0 lies at world x = `top` (north),
   column 0 at world y = `left` (west); cells are `cell` yards wide.
-- `format`: 3: the floor pieces (`floorCells`, `noGround`, `joins`, `liquids`) on top of
-  format 2's angles. Directions are angles in degrees clockwise from north (an axis, both ways of a
+- `format`: the stored data's (4; the model itself is format 3's shape: the floor pieces
+  (`floorCells`, `noGround`, `joins`, `liquids`) on top of format 2's angles). Directions are angles in degrees clockwise from north (an axis, both ways of a
   street, 0..179); the module turns them into the player's words: the 8 compass words, or with
   the compass module's Directions setting the 12 hours of a north-up clock (`logic.clock`,
   `logic.dirWord`, `logic.axisWords`, `logic.finishText` for the "o'clock"). Data of another
@@ -284,9 +334,9 @@ Each zone file calls `addon.addZone{...}` with:
 ## Places list
 
 `places.lua` (pure logic, tested in `placesTests.lua`) and `placesUi.lua` (the window, Alt-F10)
-make the places list from the data addon's `places/<zone>.lua` files (wv-surroundings
+make the places list from the data's `places/<zone>.lua` files (wv-surroundings
 `tools/destinations.py`, written by every export beside the zone file; they call
-`addon.addPlaces{...}` and land in `WowVisionSurroundingsData.places`). They are small and read
+`addon.addPlaces{...}` and land in `WowVision.surroundingsData.places`). They are small and read
 whole; nothing is unpacked per zone. `logic.placesUnpack` puts the client's names in place,
 `logic.placesTree` builds the scanner's kind of nodes sorted by distance (`placesUi.lua` renders
 them as the scanner does) and `module:placesNavigate` is the one place where Enter hands a

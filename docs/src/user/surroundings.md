@@ -1,19 +1,14 @@
 # Surroundings (WoW: Forever)
 
 On WoW: Forever, WowVision describes where you walk, from map data: the land you are on,
-the roads and streets, the rooms of buildings, drop edges, and what you bump into. It needs the
-**WowVision_Surroundings** data addon, installed next to WowVision. Without it the
-surroundings are silent, and `/wv surr` tells you the data addon is missing. The data currently
-covers Elwynn Forest with Stormwind, Dun Morogh with Ironforge, Tirisfal Glades with Undercity,
-and the Deeprun Tram. If the data addon and WowVision do not fit together (another data
-format), WowVision says so once and stays silent; update both.
-
-To install the data, download
-[WowVision_Surroundings.zip](https://github.com/JeanStiletto/WowVision_Surroundings/releases/latest/download/WowVision_Surroundings.zip),
-the latest release of the
-[WowVision_Surroundings repository](https://github.com/JeanStiletto/WowVision_Surroundings),
-and extract it into the WoW: Forever client's addons folder, so the files sit in
-`World of Warcraft/_classic_beta_/Interface/AddOns/WowVision_Surroundings`.
+the roads and streets, the rooms of buildings, drop edges, and what you bump into. The map data
+comes with WowVision, in its folder `mapdata/WowVision_Surroundings` (the
+[WowVision_Surroundings repository](https://github.com/JeanStiletto/WowVision_Surroundings));
+there is nothing extra to install. Without it the surroundings are silent, and `/wv surr` tells
+you the data is missing. The data currently covers Elwynn Forest with Stormwind, Dun Morogh with
+Ironforge, Tirisfal Glades with Undercity, and the Deeprun Tram. A zone's data is read only
+while you are in it. An older separate `WowVision_Surroundings` addon in the addons folder is
+no longer used: remove it.
 
 Announcements made while walking are spoken by a game voice, not by your screen reader: a
 screen reader cuts its own speech off at every key press. The voice is the Voice setting of the

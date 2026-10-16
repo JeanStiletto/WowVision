@@ -55,6 +55,9 @@ loadAddonFile("core/navigation/atlas/datasetTests.lua")
 loadAddonFile("core/navigation/stuckMath.lua")
 loadAddonFile("core/navigation/stuckTests.lua")
 loadAddonFile("camelot/surroundings/zone.lua")
+loadAddonFile("camelot/surroundings/store.lua")
+-- the game decodes a zone's JSON text (C_EncodingUtil.DeserializeJSON); here the plain Lua reader
+WowVision.surroundingsLogic.decodeJson = dofile("tools/json.lua")
 loadAddonFile("camelot/surroundings/edges.lua")
 loadAddonFile("camelot/surroundings/lanes.lua")
 loadAddonFile("camelot/surroundings/rooms.lua")
@@ -65,6 +68,7 @@ loadAddonFile("camelot/surroundings/stops.lua")
 loadAddonFile("camelot/surroundings/places.lua")
 loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
+loadAddonFile("camelot/surroundings/storeTests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
 -- suite can play the game's side.

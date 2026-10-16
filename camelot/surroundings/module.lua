@@ -1,5 +1,6 @@
--- Surroundings (WoW: Forever): describes where the player walks, from the WowVision_Surroundings
--- data addon (without it the module is silent). Outdoors the place entered ("forest", "shore of
+-- Surroundings (WoW: Forever): describes where the player walks, from the surroundings data (the
+-- WowVision_Surroundings repository, a submodule at mapdata/WowVision_Surroundings; without it the
+-- module is silent). Outdoors the place entered ("forest", "shore of
 -- Crystal Lake, water to the north", "road, north to south"), on a square its ways on, indoors
 -- the room and its doorways, and in a city's big halls (the indoor layers: Ironforge, the
 -- Undercity) the same as on its streets; drop edges, guidance to entrances, street beginnings and ways out of the water,
@@ -430,22 +431,42 @@ local function logTrail(x, y)
     log.trail = trim(log.trail, TRAIL_MAX)
 end
 
-local function zones()
-    return WowVisionSurroundingsData and WowVisionSurroundingsData.zones or {}
+-- The data registers here as it loads (its data.xml comes after this folder in camelot/modules.xml):
+-- a zone file its frame and its JSON text (decoded only while the player is in the zone: store.lua),
+-- a places list file its table (placesUi.lua). The files call addZone and addPlaces on the addon's
+-- own table, the second value every file of WowVision gets.
+local _, namespace = ...
+local data = WowVision.surroundingsData or { zones = {}, places = {} }
+WowVision.surroundingsData = data
+if namespace then
+    function namespace.addZone(header, json)
+        header.json = json
+        table.insert(data.zones, header)
+    end
+    function namespace.addPlaces(places)
+        table.insert(data.places, places)
+    end
+end
+-- the game decodes a zone's JSON text (offline the tools put a stand-in in its place)
+logic.decodeJson = function(text)
+    return C_EncodingUtil.DeserializeJSON(text)
 end
 
--- The data format this module reads (zone.format). Data of another format is left alone, and
--- said once: the data addon and WowVision are updated together.
-local FORMAT = 3
+local function zones()
+    return data.zones
+end
+
+-- The data format this module reads (zone.format, logic.FORMAT). Data of another format is left
+-- alone, and said once: the data and WowVision are updated together.
 local formatWarned = false
 local function formatFits(z)
-    if (z.format or 1) == FORMAT then
+    if (z.format or 1) == logic.FORMAT then
         return true
     end
     if not formatWarned then
         formatWarned = true
         WowVision:speak(string.format("Surroundings data %s has format %d, this WowVision reads format %d; "
-            .. "update the data addon and WowVision together", z.key or "?", z.format or 1, FORMAT))
+            .. "update the data and WowVision together", z.key or "?", z.format or 1, logic.FORMAT))
     end
     return false
 end
@@ -1486,7 +1507,7 @@ end
 -- /wv surr: what the module knows here, spoken and printed.
 module:registerCommand({
     name = "surr",
-    description = "Surroundings: speak the current place or room and the data state; log on|off|clear|[count]; around; probe [zone key]",
+    description = "Surroundings: speak the current place or room and the data state; log on|off|clear|[count]; around",
     func = function(args)
         local sub, rest = (args or ""):match("^(%S*)%s*(.*)$")
         if sub == "log" then
@@ -1495,16 +1516,12 @@ module:registerCommand({
         elseif sub == "around" then
             module:describeAround()
             return
-        elseif sub == "probe" then
-            -- the data probe (dataProbe.lua): JSON decoding and memory, for the planned data format
-            module:dataProbe(rest)
-            return
         end
         local x, y, _z, map = UnitPosition("player")
         local parts = {}
         if #zones() == 0 then
-            parts[#parts + 1] = "No surroundings data loaded; is the WowVision_Surroundings addon installed and enabled? "
-                .. "It is at github.com/JeanStiletto/WowVision_Surroundings"
+            parts[#parts + 1] = "No surroundings data loaded; the data folder mapdata/WowVision_Surroundings is missing "
+                .. "(github.com/JeanStiletto/WowVision_Surroundings)"
         elseif x == nil then
             parts[#parts + 1] = "No position here"
         else
