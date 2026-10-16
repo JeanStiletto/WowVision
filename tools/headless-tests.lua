@@ -62,7 +62,9 @@ loadAddonFile("camelot/surroundings/squares.lua")
 loadAddonFile("camelot/surroundings/objects.lua")
 loadAddonFile("camelot/surroundings/texts.lua")
 loadAddonFile("camelot/surroundings/stops.lua")
+loadAddonFile("camelot/surroundings/places.lua")
 loadAddonFile("camelot/surroundings/tests.lua")
+loadAddonFile("camelot/surroundings/placesTests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
 -- suite can play the game's side.

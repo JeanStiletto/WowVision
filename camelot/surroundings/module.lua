@@ -25,6 +25,9 @@ settings:add({ key = "wallSide", type = "Bool", label = L["Guide Up Stairs on Th
 -- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
 settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
+-- the places list (Alt-F10, placesUi.lua) names only the subzones the character has explored,
+-- as the game's map does; off by default (user 2026-10-16: experienced players and tests)
+settings:add({ key = "discovery", type = "Bool", label = L["Discovery Mode: Places List Names Only Explored Subzones"], default = false })
 
 -- Announcements made while walking speak with game voice 0, not the player's speech voice: with
 -- an NVDA SAPI voice there, the screen reader cuts its speech off at every key press.
