@@ -888,6 +888,12 @@ function logic.unpack(zone, locale)
             logic.LANE_REACH, lane)
         order[#order + 1] = lane
     end)
+    -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
+    -- onOwnLines); nil in data before 2026-10-16
+    ix.lineFloors = {}
+    for _, piece in ipairs(zone.lineFloors or {}) do
+        ix.lineFloors[piece] = true
+    end
     -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
     -- lane_headings, for the turn key): per stretch in order the number of samples, then per
     -- sample (the stretch cut in that many equal parts, one at each part's middle) the bearing
@@ -1005,7 +1011,7 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
-        lanes = src.lanes, laneHeadings = src.laneHeadings, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
@@ -1341,43 +1347,14 @@ local function climbPieceHere(zone, r, c, value, around)
     return false
 end
 
--- In the halls layer, on the ground, a cell named by a ramp or stairs with a floor piece of its own
--- there is the ground beside it (the cells are 4 yd; at a ramp's foot its points lie at the
--- ground's height): it takes the name most of the ground's cells around have that is no climb's,
--- else keeps its own. The player is on the climb when the floor model has them on its piece. The
--- data keeps the climb's name there: the squares find a climb as an opening and the forks as an
--- arm by it. (The Trade Quarter's island said "ramp" 3 to 5 yd beside the ramps; following the
--- ramp's direction ran the player past it, walk 2026-10-13 17:05.) Only the halls: outdoors and in
--- buildings that name is how a square's guidance meets the climb (everywhere, Stormwind's Trade
--- District stairs went to a guidance between their feet, 15 lines in 30 s instead of 7).
-function logic.groundBesideClimb(zone, r, c, value)
-    if not climbPieceHere(zone, r, c, value, false) then
-        return value
-    end
-    local count, best = {}, nil
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            if (dr ~= 0 or dc ~= 0) and logic.inGrid(zone, r + dr, c + dc) then
-                local v = logic.paintedAtCell(zone, r + dr, c + dc)
-                if v ~= 0 and not logic.CLIMBS[logic.kindOf(zone, v)] then
-                    count[v] = (count[v] or 0) + 1
-                    if best == nil or count[v] > count[best] or (count[v] == count[best] and v < best) then
-                        best = v
-                    end
-                end
-            end
-        end
-    end
-    return best or value
-end
-
 -- The outdoor cell value at a position, on the floor piece the player is on: near a centre line
 -- what the line decides (`onWay`: the player is on a way now, see laneValue); on a liquid's piece
 -- the liquid's own (a centre line is a way's, on its floor: the street beside the canal is no
 -- place of the swimmer's). Returns the value (0 = no data) and whether a lane decided it.
 function logic.outdoorValue(zone, x, y, onWay)
+    -- (the ground beside a ramp in the halls, painted with its name, took the name of the ground
+    -- around until 2026-10-16: the climb's own lines and floor piece say it now, bug 41)
     local value, r, c = logic.valueAt(zone, x, y)
-    value = logic.groundBesideClimb(zone, r, c, value)
     if value == 0 or logic.liquidKind(zone, zone._index.floor) then
         return value, false
     end

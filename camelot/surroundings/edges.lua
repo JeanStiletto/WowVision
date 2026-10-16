@@ -96,6 +96,54 @@ local function crossed(j, px, py, x, y, pending)
     return nil
 end
 
+-- Is the player on `floor` by its own lines (a ramp's or stairs' piece, zone.lineFloors): within
+-- the leave distance of one of the stretches tied to it, as a way counts (user 2026-10-16: a climb
+-- is a way like any other)? nil for a piece without lines of its own.
+function logic.onOwnLines(zone, x, y, floor)
+    local ix = zone._index
+    if not (ix.lineFloors and ix.lineFloors[floor]) then
+        return nil
+    end
+    local r, c = logic.cellOf(zone, x, y)
+    for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+        if lane.piece == floor then
+            local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+            local _enter, leave = logic.laneWidths(lane, x, y)
+            if d <= leave then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- The piece with lines of its own the player steps onto from `floor` at (x, y): within the enter
+-- distance of one of its stretches, where it is joined to `floor` (within JOINED_HERE of a join of
+-- the two: the bay under the griffon ramp's upper half is no step onto it), the nearest; nil when
+-- none. A climb counts from its enter distance as a way does (user 2026-10-16): coming down the
+-- griffon ramp from its platform crossed none of their joins in their direction, and the module
+-- kept the player on the platform, its rim warned 9 yd down beside the ramp (replay 2026-10-01).
+function logic.ontoOwnLines(zone, x, y, floor)
+    local ix = zone._index
+    local joined = ix.joined[floor]
+    if not (joined and ix.lineFloors) then
+        return nil
+    end
+    local r, c = logic.cellOf(zone, x, y)
+    local best, bd = nil, nil
+    for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+        local p = lane.piece
+        if p ~= floor and ix.lineFloors[p] and joined[p] then
+            local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+            local enter = logic.laneWidths(lane, x, y)
+            if d <= enter and (bd == nil or d < bd) and logic.joinedHere(zone, floor, p, x, y) then
+                best, bd = p, d
+            end
+        end
+    end
+    return best
+end
+
 -- Updates the floor piece the player is on (zone._index.floor; 0 the ground: the one rule for
 -- every floor over or under another, user 2026-10-05). It changes only (1) at a drop edge of the
 -- floor crossed, onto the piece the drop lands on; (2) at a join crossed in its direction, from
@@ -118,6 +166,17 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     local was = ix.floor or 0
     local floor = was
     local fell = px and not blocked and logic.fellOnto(zone, floor, px, py, x, y)
+    -- on a piece with lines of its own its lines decide whether the player is still on it (as a
+    -- bridge's next to a drop): a drop edge crossed within them says only where the player lands
+    -- once beyond them (the griffon ramp's rim, its points 2 yd inside the ramp on the 2 yd raster,
+    -- dropped the player off it walking down 1.5 yd beside its line, replay 2026-10-01 00:27)
+    if fell and logic.onOwnLines(zone, x, y, floor) then
+        ix.fallBeside = { piece = fell, x = x, y = y }
+        fell = nil
+    end
+    if ix.fallBeside and (logic.dist(x, y, ix.fallBeside.x, ix.fallBeside.y) > logic.JOINED_HERE) then
+        ix.fallBeside = nil
+    end
     -- the crossings pending from the last look (crossed), and this look's
     local pendingBefore, pendingNow = ix.pendingJoins or {}, {}
     if fell then
@@ -145,6 +204,13 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
                         if way and ((way == 0 and j.a == floor) or (way ~= 0 and (way > 0) == (j.a == floor))) then
                             other = j.a == floor and j.b or j.a
                             d = logic.dist(j.x, j.y, x, y)
+                            -- onto a piece with lines of its own only within them, as a way
+                            -- counts (a join counts 2.5 yd beside its point: passing a ramp's
+                            -- foot 3.7 yd off its line put the player on it and the line took
+                            -- them off at the next look, tour of the Undercity's island)
+                            if logic.onOwnLines(zone, x, y, other) == false then
+                                other, d = nil, nil
+                            end
                         end
                     end
                     if other and (bd == nil or d < bd) then
@@ -158,18 +224,37 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         end
     end
     -- a floor just entered is trusted for this look (a join point may lie a step outside the
-    -- cells its piece has); otherwise the floor must be under the player
-    if floor == was and not logic.floorHere(zone, key, floor) then
+    -- cells its piece has); otherwise the floor must be under the player, and a piece with lines
+    -- of its own is left beyond them, as a way is (a step off a ramp's side where its floor meets
+    -- the floor beside: nothing to cross there, and its cells are 4 yd with the 8 around counted,
+    -- so the griffon ramp kept the player 7 yd along its side, bug 41); that counts as falling off
+    -- it (logic.belowClimb: its foot is guided to again)
+    -- (and, as a way, a piece with lines of its own is entered from a floor joined to it within
+    -- their enter distance)
+    if floor == was and px and not fell then
+        floor = logic.ontoOwnLines(zone, x, y, floor) or floor
+    end
+    local offLines = floor == was and logic.onOwnLines(zone, x, y, floor) == false
+    if floor == was and (offLines or not logic.floorHere(zone, key, floor)) then
         local here = ix.floorCells[key]
         local pick, only, count = nil, nil, 0
         for p in pairs(here or {}) do
-            only, count = p, count + 1
-            if logic.joinedHere(zone, floor, p, x, y) and (pick == nil or p < pick) then
-                pick = p
+            if p ~= floor or not offLines then
+                only, count = p, count + 1
+                if logic.joinedHere(zone, floor, p, x, y) and (pick == nil or p < pick) then
+                    pick = p
+                end
             end
         end
         if pick == nil and count == 1 and ix.noGround[key] then
             pick = only
+        end
+        if offLines and ix.fallBeside then
+            -- beyond its lines past a drop edge crossed: where that drop lands
+            pick = ix.fallBeside.piece
+        elseif offLines and pick == nil and ix.noGround[key] then
+            -- beside its lines with no floor there but its own: still on it
+            pick = was
         end
         floor = pick or 0
     end
@@ -187,9 +272,10 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     ix.pendingJoins = floor == was and pendingNow or {}
     -- the floor the player came onto this one from (the guidance on a flight: logic.footTarget)
     if floor ~= was then
+        ix.fallBeside = nil
         ix.cameFrom = was
-        -- and the floor fallen from, while on the one fallen onto (logic.belowClimb)
-        ix.fellFrom = fell and was or nil
+        -- and the floor fallen or stepped off from, while on the one fallen onto (logic.belowClimb)
+        ix.fellFrom = (fell or offLines) and was or nil
     end
     return floor, floor ~= was
 end
@@ -286,6 +372,7 @@ end
 -- Sets the floor piece the player is on (0 the ground); every lookup follows it.
 function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
+    zone._index.fallBeside = nil
     zone._index.pendingJoins = {}
     zone._index.cameFrom = nil
     zone._index.fellFrom = nil

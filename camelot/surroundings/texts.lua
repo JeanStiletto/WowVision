@@ -336,21 +336,22 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     local on = ix.floor or 0
     local here = logic.valueAt(zone, x, y)
     local also = on ~= 0 and logic.CLIMBS[logic.kindOf(zone, here)] and ix.joined[on] or nil
-    -- in a fork that names the climb among its ways ("ramp to the griffon roost to the
-    -- southeast") its foot is not guided to: the fork said it (user 2026-10-11, forks at the
-    -- climbs' feet); the data keeps each way with its direction tag ("fork, street of Old Town
-    -- <d76>, ramp to Thane's Boots <d225>"), so a way is its name between ", " and " <d"
-    local hereKind = logic.kindOf(zone, here)
-    local forkLabel = (hereKind == "fork" or hereKind == "crossing") and (logic.place(zone, logic.placeOf(here)) or {}).label or nil
+    -- (in a fork that names the climb among its ways its foot is guided to as any target a
+    -- place's line named: without the name, only when the player heads elsewhere, and at it the
+    -- way on; dropping it there took the griffon ramp's foot away, bug 40)
     local feet = {}
     for _, f in ipairs(ix.climbFeet) do
         local fl = f.floor or 0
-        local named = false
-        if forkLabel then
-            local cp = logic.place(zone, logic.placeOf(f.value))
-            named = cp ~= nil and cp.label ~= nil and forkLabel:find(", " .. cp.label .. " <d", 1, true) ~= nil
+        -- (and on a climb with lines of its own, its foot where its "at" line counts, within
+        -- GUIDE_AT and GUIDE_SIDE_CLIMB beside its line: stepped onto it by its lines at the foot,
+        -- the way on is still said; at the griffon ramp it never came)
+        local atFoot = false
+        if ix.lineFloors and ix.lineFloors[on] and ix.joined[on] and ix.joined[on][fl] and f.bearing
+            and logic.dist(f.x, f.y, x, y) <= logic.GUIDE_AT then
+            local b = math.rad(f.bearing)
+            atFoot = math.abs((f.x - x) * -math.sin(b) - (f.y - y) * math.cos(b)) <= logic.GUIDE_SIDE_CLIMB
         end
-        if not named and (fl == on or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y))) then
+        if fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
             feet[#feet + 1] = f
         end
     end
@@ -543,18 +544,21 @@ end
 -- At an entrance or doorway only the way through ("in to the southwest"); while the guidance
 -- stays on one, a repeat is the yards and the direction alone ("7 southwest"): the first
 -- announcement named it (user 2026-10-01).
-function logic.guideText(zone, t, named, at)
+-- `bare`: the line of the place the player is in named the target already (logic.linesName): no
+-- name, the yards and direction only, and at it only the way on (user 2026-10-16: "am Rampe" is
+-- clear at that moment, the turn toward it was made on purpose; the shortest).
+function logic.guideText(zone, t, named, at, bare)
     if t.kind == "aim" then
         return string.format(T("on to the %s"), logic.dirWord(zone, t.dir))
     end
     local door = t.kind == "entrance" or t.kind == "doorway" or t.kind == "climb"
     local parts = {}
     if at then
-        if door and t.through then
+        if (door or bare) and t.through then
             return string.format(t.throughFormat, logic.dirWord(zone, t.through))
         end
-        parts[1] = named and t.atName or t.at
-    elseif door and not named then
+        parts[1] = named and not bare and t.atName or t.at
+    elseif bare or (door and not named) then
         return string.format(T("%d %s"), math.max(1, math.floor(t.d + 0.5)), logic.dirWord(zone, t.dir, true))
     else
         parts[1] = named and t.name or t.short
@@ -564,6 +568,62 @@ function logic.guideText(zone, t, named, at)
         parts[#parts + 1] = string.format(t.throughFormat, logic.dirWord(zone, t.through))
     end
     return table.concat(parts, ", ")
+end
+
+-- Does one of the spoken lines `lines` (the place's or room's line, the look-ahead, what came
+-- near: their texts as said) name `name` as an item: alone, "here", or with its directions
+-- ("street of Old Town to the northwest and south", a fork's "ramp to the griffon roost to the
+-- southeast")? Then its guidance says no name (user 2026-10-16: a square's openings, a fork's
+-- arms, a room's doorways are said already).
+function logic.linesName(zone, lines, name)
+    if name == nil or name == "" then
+        return false
+    end
+    local heads = { [name] = true, [string.format(L["%s here"], name)] = true }
+    -- (an item's directions as itemsText says them; a fork's arm as the data tags it, logic.expandDirs)
+    local prefixes, toward = {}, logic.dirTemplate(zone, zone._toward) or "%s"
+    for a = 0, 345, 15 do
+        local word = logic.dirWord(zone, a)
+        prefixes[string.format(T("%s to the %s"), name, word)] = true
+        prefixes[name .. " " .. string.format(toward, word)] = true
+    end
+    for _, text in ipairs(lines) do
+        local start = 1
+        while start <= #text + 1 do
+            local stop = text:find(", ", start, true)
+            local item = text:sub(start, (stop or #text + 1) - 1)
+            if heads[item] then
+                return true
+            end
+            for p in pairs(prefixes) do
+                if item:sub(1, #p) == p then
+                    return true
+                end
+            end
+            if stop == nil then
+                break
+            end
+            start = stop + 2
+        end
+    end
+    return false
+end
+
+-- Does the player, facing `facing` (degrees), head for the target `t`: it lies ahead and the
+-- line faced passes it no farther beside than its "at" line counts (GUIDE_SIDE_CLIMB at a
+-- climb's foot, GUIDE_SIDE at a doorway or entrance, GUIDE_AT at a way's beginning)? Then its
+-- guidance waits (user 2026-10-16: said only when on the wrong way).
+function logic.headsFor(t, x, y, facing)
+    if facing == nil or t.kind == "aim" then
+        return false
+    end
+    local fx, fy = logic.compassVector(facing)
+    local along = (t.x - x) * fx + (t.y - y) * fy
+    if along <= 0 then
+        return false
+    end
+    local side = t.kind == "climb" and logic.GUIDE_SIDE_CLIMB or t.through and logic.GUIDE_SIDE or logic.GUIDE_AT
+    return math.abs((t.x - x) * fy - (t.y - y) * fx) <= side
 end
 
 -- Spots -------------------------------------------------------------------------------------------

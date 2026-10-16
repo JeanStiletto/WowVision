@@ -202,26 +202,41 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
-    ["in the halls the ground beside a ramp with a piece of its own keeps the hall's name"] = function(t)
-        local z = newHallZone()
-        table.insert(z.places, { "ramp", "ramp" }) -- place 9
-        -- a ramp (piece 1) in row 0, column 2; the ground's cell there carries its name
-        z.indoor.grid = { "70000*2,90000,70000*3", "70000*6", "0*6" }
-        z.indoor.floorCells = { 0, 2, 1, 90000 }
-        z.indoor.noGround = {}
-        logic.unpack(z)
-        local layer = logic.layer(z)
-        local x, y = logic.cellCentre(layer, 0, 2)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "great hall of Test")
-        -- on the ramp's piece the ramp
-        logic.setFloor(layer, 1)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
-        -- without a piece of its own there the cell stays the ramp
-        logic.pack(z)
-        z.indoor.floorCells = {}
-        logic.unpack(z)
-        layer = logic.layer(z)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+    ["a ramp's piece with lines of its own is left beyond them and entered within them"] = function(t)
+        local function rampZone()
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "ramp", "ramp" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            -- a ramp (piece 1) from its foot at x 97 south up to x 87 along y 50, its own line
+            -- tied to it (laneFields 10: enter and leave per side, the piece), 1 yd in, 1.5 out
+            z.laneFields = 10
+            z.lanes = { 97, 50, 87, 50, 20000, 10, 15, 10, 15, 1 }
+            z.lineFloors = { 1 }
+            z.floorCells = { 0, 2, 1, 20000, 0, 3, 1, 20000, 1, 2, 1, 20000, 1, 3, 1, 20000,
+                2, 2, 1, 20000, 2, 3, 1, 20000, 3, 2, 1, 20000, 3, 3, 1, 20000 }
+            z.noGround = {}
+            -- the ground joins it at its foot, its way up south
+            z.joins = { 0, 1, 97, 50, 180 }
+            logic.unpack(z)
+            return z
+        end
+        local z = rampZone()
+        t:assertTrue(logic.onOwnLines(z, 93, 50.5, 1))
+        t:assertFalse(logic.onOwnLines(z, 93, 52, 1))
+        t:assertNil(logic.onOwnLines(z, 93, 50.5, 0))
+        -- on it within its lines; a step 2 yd beside them is off it, onto the ground beside
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.updateFloor(z, 93, 50.5, false, 94, 50.5), 1)
+        t:assertEqual(logic.updateFloor(z, 93, 52, false, 93, 50.5), 0)
+        t:assertEqual(z._index.fellFrom, 1)
+        -- past its foot 2 yd beside the line: the join counts 2.5 yd beside its point, the line not
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 96, 52, false, 99, 52), 0)
+        -- on the line: onto it
+        t:assertEqual(logic.updateFloor(z, 96, 50.5, false, 99, 50.5), 1)
+        -- from the ground near the foot within the enter distance of its line, no join crossed
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 94, 50.5, false, 95, 50.5), 1)
     end,
 
     ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
@@ -2095,7 +2110,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.onClimb(z, target, 92, 48, nil), false)
     end,
 
-    ["in a fork that names a climb among its ways the climb's foot is not guided to"] = function(t)
+    ["in a fork that names a climb among its ways its foot is guided to without its name"] = function(t)
         local function zoneWithFork(label)
             local z = newWalkZone()
             z.dirs = { "running %s", "up to the %s" }
@@ -2107,12 +2122,47 @@ testRunner:addSuite("Surroundings", {
             logic.unpack(z)
             return z
         end
-        -- the fork lists the ramp with its direction tag, as the data keeps it: the fork said it
+        -- the fork lists the ramp with its direction tag, as the data keeps it: its foot is still a
+        -- target (bug 40: dropping it took the griffon ramp's foot away), and the fork's line names it
         local z = zoneWithFork("fork, square of Test <d270,0>, ramp to the bank <d45>")
-        t:assertNil(logic.footTarget(z, 90, 53))
-        -- a fork that does not list the ramp: its foot is guided to there too
+        local foot = logic.footTarget(z, 90, 53)
+        t:assertEqual(foot.kind, "climb")
+        local line = logic.describe(z, logic.valueAt(z, 90, 53), true)
+        t:assertTrue(logic.linesName(z, { line }, foot.name))
+        -- said without its name, at it only the way on
+        t:assertNil(logic.guideText(z, foot, true, false, true):find(foot.name, 1, true))
+        t:assertEqual(logic.guideText(z, foot, true, true, true), logic.guideText(z, foot, true, true, false))
+        -- a fork that does not list the ramp: its name is said
         z = zoneWithFork("fork, square of Test <d270,0,180>")
-        t:assertEqual(logic.footTarget(z, 90, 53).kind, "climb")
+        foot = logic.footTarget(z, 90, 53)
+        t:assertEqual(foot.kind, "climb")
+        t:assertFalse(logic.linesName(z, { logic.describe(z, logic.valueAt(z, 90, 53), true) }, foot.name))
+    end,
+
+    ["a target named by the place's line: alone, here, or with its directions, not another way's"] = function(t)
+        local z = newWalkZone()
+        local north, west = logic.dirWord(z, 0), logic.dirWord(z, 270)
+        local lines = { "square of Test, street of Old Town to the " .. north .. " and " .. west .. ", well here" }
+        t:assertTrue(logic.linesName(z, lines, "street of Old Town"))
+        t:assertTrue(logic.linesName(z, lines, "well"))
+        t:assertFalse(logic.linesName(z, lines, "street"))
+        t:assertFalse(logic.linesName(z, lines, "street of Old"))
+        t:assertTrue(logic.linesName(z, { "fork", "square of Test" }, "square of Test"))
+        t:assertFalse(logic.linesName(z, {}, "square of Test"))
+    end,
+
+    ["the guidance waits while the player heads for the target within its at line's width"] = function(t)
+        -- a doorway 8 yd north (+x) with a way through: GUIDE_SIDE beside the line faced
+        local door = { kind = "doorway", x = 108, y = 50, through = 0 }
+        t:assertTrue(logic.headsFor(door, 100, 50, 0))
+        t:assertTrue(logic.headsFor(door, 100, 51.4, 0))
+        t:assertFalse(logic.headsFor(door, 100, 51.6, 0))
+        t:assertFalse(logic.headsFor(door, 100, 50, 180))
+        -- a climb's foot: GUIDE_SIDE_CLIMB; a way's beginning: GUIDE_AT
+        t:assertFalse(logic.headsFor({ kind = "climb", x = 108, y = 50, through = 0 }, 100, 51.4, 0))
+        t:assertTrue(logic.headsFor({ kind = "way", x = 108, y = 50 }, 100, 52.5, 0))
+        t:assertFalse(logic.headsFor({ kind = "aim", x = 108, y = 50 }, 100, 50, 0))
+        t:assertFalse(logic.headsFor(door, 100, 50, nil))
     end,
 
     ["fallen off a climb with a floor piece of its own its foot is still guided to"] = function(t)
