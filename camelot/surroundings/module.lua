@@ -832,10 +832,11 @@ local function checkEdges(z, x, y, px, py, rooms)
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
-    -- the way the player moves (not the facing: strafing and walking back count too)
+    -- the way the player moves (not the facing: strafing and walking back count too); none while
+    -- pushing against something (the position only jitters there)
     local vx, vy = nil, nil
     local moved = px and logic.dist(x, y, px, py) or 0
-    if moved >= MOVE_MIN then
+    if moved >= MOVE_MIN and not pushing() then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
     local warned = warnedEdges[z] or {}
@@ -843,10 +844,14 @@ local function checkEdges(z, x, y, px, py, rooms)
     local inPath = {}
     if vx then
         logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, nil, inPath)
-    end
-    for i in pairs(warned) do
-        if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
-            warned[i] = nil
+        -- out of its path only while moving: standing still (or pushing against a wall) has no
+        -- path, and an edge warned 10 yd ahead warned again at every step after a stop (pressed
+        -- against a wall of the Trade Quarter's ring, "10 auf 3 Uhr, 12 tief" three times in 6 s,
+        -- walk 2026-10-15 20:49)
+        for i in pairs(warned) do
+            if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
+                warned[i] = nil
+            end
         end
     end
     if not module.settings.dropEdges then
