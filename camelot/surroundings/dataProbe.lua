@@ -3,8 +3,8 @@
 -- costs in memory now, and whether the game's own C_EncodingUtil.DeserializeJSON gives a zone's
 -- tables back exactly from JSON text (every number, string and list), how fast, and what the
 -- decoded tables cost. The zone is the one the player is in (else the largest), or the one named.
--- Every result line is printed to chat and kept in WowVisionDump.surroundingsProbe (written to
--- SavedVariables on /reload or logout). The game stalls for a few seconds while it runs: the JSON
+-- Every result line is printed to chat and kept in WowVisionDump.surroundingsProbe.runs (the last
+-- 10 runs; written to SavedVariables on /reload or logout). The game stalls for a few seconds while it runs: the JSON
 -- text is written in Lua.
 
 local logic = WowVision.surroundingsLogic
@@ -281,8 +281,17 @@ function module:dataProbe(args)
         end
     end
 
+    -- every run kept (the last 10), so a second run does not overwrite the first
     WowVisionDump = WowVisionDump or {}
-    WowVisionDump.surroundingsProbe = result
-    line("kept in WowVisionDump.surroundingsProbe; /reload writes it to SavedVariables")
+    local store = WowVisionDump.surroundingsProbe
+    if type(store) ~= "table" or type(store.runs) ~= "table" then
+        store = { runs = {} }
+        WowVisionDump.surroundingsProbe = store
+    end
+    table.insert(store.runs, result)
+    while #store.runs > 10 do
+        table.remove(store.runs, 1)
+    end
+    line("kept in WowVisionDump.surroundingsProbe, run " .. #store.runs .. "; /reload writes it to SavedVariables")
     WowVision:speak("Data probe done, " .. #lines .. " lines in chat")
 end
