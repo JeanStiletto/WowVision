@@ -139,6 +139,20 @@ clock with north at 12 ("water at 3"), whichever way you face.
   next arm clockwise. It is the same turn as to a waypoint: within 3 degrees a press does
   nothing, farther off it corrects. Nothing is spoken; elsewhere (a square, a room) it says
   there is no active waypoint, as before.
+- **Alt-F10** (Places): a list of the places to go to, like looking at the map. The zone you
+  are in comes first and open; the other zones with surroundings data on your continent follow,
+  closed. Under a zone are its subzones (in a city its districts and quarters: Trade District,
+  The Great Forge, Trade Quarter), the subzone you stand in first and open, and the things that
+  lie in no subzone; under a subzone its named buildings and buildings with a use (inn,
+  smithy, bank, auction house, griffon roost, tower, mine, cave), squares, landmarks (well,
+  forge, statue, signpost) and a city's shops; under a building its named rooms. Every level is
+  sorted by distance, and each entry says how far and in which direction. Things of one name
+  are one entry, which leads to the nearest of them. Streets, roads, ramps, stairs, forks and
+  plain houses, farmhouses, barns and huts are not listed. Enter leads you there through the
+  navigation's routes, as Enter in the scanner (F9): a building to its doorway, then a few yards
+  inside; a square to its most open spot; a subzone to its own building (a mine, a tower), its
+  main square or hall, the middle of its village, or where a road comes into it. Right and Left
+  open and close an entry; Refresh rebuilds the list.
 - `/wv surr`: position, data cell, place, nearest entrance, the stop you stand on, whether the
   game says indoors or outdoors with its map and area, and, indoors, the room candidates, the
   current room and the indoor layer; spoken and printed.
@@ -149,7 +163,7 @@ clock with north at 12 ("water at 3"), whichever way you face.
 
 ## Settings
 
-Under Navigation, Surroundings (all six are on by default):
+Under Navigation, Surroundings (the first six are on by default):
 
 - Warn at Drop Edges
 - Guide to Entrances, Streets and Ways Out
@@ -160,6 +174,12 @@ Under Navigation, Surroundings (all six are on by default):
   street beginnings are said once by name only, and there are no turn hints, no look-ahead to
   the next piece of a way, and no wall-side guidance on stairs.
 - Name What I Bump Into
+- Discovery Mode: Places List Names Only Explored Subzones (off by default): the places list
+  (Alt-F10) names only the subzones your character has explored, as the game's map does, and
+  lists nothing in the others. A subzone you have not explored that borders one you have, or
+  the one you stand in, is listed as "unexplored area", leading to where you cross into it. A
+  city's map has nothing to explore, so a city is listed whole. Things that lie in no subzone are
+  listed when they are within 150 yards.
 
 The announcements themselves are an alert ("Surroundings Announcements") that can be switched
 off like any other.

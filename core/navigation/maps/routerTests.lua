@@ -211,6 +211,24 @@ testRunner:addSuite("MapRouter", {
         t:assertEqual(route.lastLeg, 5)
     end,
 
+    ["last-leg exits are only waypoints the start reaches"] = function(t)
+        -- Ten waypoints linked only among themselves lie nearer the spot
+        -- than the network; they would take every exit and leave no route.
+        local list = {
+            { id = "a", x = 0, y = 0, links = { "b" } },
+            { id = "b", x = 100, y = 0, links = { "a" } },
+            { id = "spot", x = 140, y = 0 },
+        }
+        for i = 1, 10 do
+            local nextId = "w" .. (i % 10 + 1)
+            tinsert(list, { id = "w" .. i, x = 140, y = i, links = { nextId } })
+        end
+        local route = Router.route(graph(list), 0, 0, "spot", { entryCount = 1 })
+        t:assertNotNil(route)
+        t:assertEqual(ids(route), "a,b,spot")
+        t:assertEqual(route.lastLeg, 40)
+    end,
+
     ["a linked destination has no last leg"] = function(t)
         local waypoints = graph({
             { id = "a", x = 0, y = 0, links = { "b" } },

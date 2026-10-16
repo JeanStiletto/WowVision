@@ -32,6 +32,7 @@ tested in `tests.lua`:
   only by a trailing number are sections of one thing (`logic.sameRoomName`): walking from one
   into the next says `logic.sectionText` (texts.lua) instead of the full room line. A doorway
   into a room of the very same name (the pieces of one staircase) is never listed.
+- `places.lua`: the places list (Alt-F10, "Places list" below; the window is `placesUi.lua`).
 - `squares.lua`: the region of a square (flood fill), what borders it (mouths), where ways
   begin on it, items around a place, cliffs and water near an outdoor place.
 - `objects.lua`: objects one bumps into, whose wall it is.
@@ -279,6 +280,38 @@ Each zone file calls `addon.addZone{...}` with:
   for none), `rooms`, `roomsShort`, `roomsArea`, `roomsAtA`, `roomsAtB`, `structs`,
   `objectNames`, `stops` as the destinations). Unpacking puts them in place once and drops the
   other languages.
+
+## Places list
+
+`places.lua` (pure logic, tested in `placesTests.lua`) and `placesUi.lua` (the window, Alt-F10)
+make the places list from the data addon's `places/<zone>.lua` files (wv-surroundings
+`tools/destinations.py`, written by every export beside the zone file; they call
+`addon.addPlaces{...}` and land in `WowVisionSurroundingsData.places`). They are small and read
+whole; nothing is unpacked per zone. `logic.placesUnpack` puts the client's names in place,
+`logic.placesTree` builds the scanner's kind of nodes sorted by distance (`placesUi.lua` renders
+them as the scanner does) and `module:placesNavigate` is the one place where Enter hands a
+target to the navigation (`maps:openNavigationTo`, the scanner's Enter).
+
+A places file, `format = 1`:
+
+- `key`, `map` (the continent, `UnitPosition`'s instance id).
+- `zones`: `{area id, name, UI map id, open, items = {...}}`. `open = 1`: the zone's map has no
+  exploration overlays (a city's): shown whole in discovery mode. `items`: the things in no subzone.
+- `areas`: `{zone index, area id (the area table's; 0 a city district), name, overlay (1: the
+  map names it once explored), heart stride, heart {x, y[, ox, oy], ...}, border crossings {x, y,
+  from, road, ...}, check points {x, y, ...}, items = {...}}`. The heart is where the subzone
+  leads (its building of the same name, as a doorway: 4 values; its main square; a quarter's
+  open hall floor nearest its middle; the middle of its village on a way); with no heart, its
+  nearest border crossing. A crossing lies 5 yd inside the subzone, `from` is the subzone it
+  comes from (an index into `areas`, 0 the zone's own land), `road` 1 where a road crosses. The
+  check points are what discovery mode asks the game about
+  (`C_MapExplorationInfo.GetExploredAreaIDsAtPosition`, the map's own hover names): a subzone with
+  an overlay is known where the game lists its id there, one without where it lists any.
+- An item: `{kind, name, stride, targets {...}, rooms = {...}}`; kinds `building`, `shop`,
+  `room`, `square`, `landmark`. Stride 4: a doorway's point 3 yd inside and the point 3 yd
+  outside it, routed to first; stride 2: a point. A building's `rooms` are its named rooms,
+  reached through the building's doorway first.
+- `names_enUS`, `names_deDE`, `names_frFR`: the names, indexed by the records.
 
 ## Walk log
 

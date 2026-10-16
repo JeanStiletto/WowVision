@@ -141,19 +141,6 @@ function Router.route(waypoints, startX, startY, destId, opts)
         return nil, "unknown destination"
     end
 
-    -- id -> straight yards to the destination, for the linked waypoints
-    -- that may end the graph part when the destination has no links.
-    local exits = {}
-    if not hasLinks(destination) then
-        local maxExit = opts.maxExitDistance or MAX_EXIT_DISTANCE
-        local candidates = Router.nearest(waypoints, destination.x, destination.y, opts.exitCount or EXIT_COUNT, hasLinks)
-        for _, candidate in ipairs(candidates) do
-            if candidate.distance <= maxExit then
-                exits[candidate.waypoint.id] = candidate.distance
-            end
-        end
-    end
-
     local entries
     if opts.entryId ~= nil then
         local entry = waypoints[opts.entryId]
@@ -166,6 +153,44 @@ function Router.route(waypoints, startX, startY, destId, opts)
     end
     if #entries == 0 then
         return nil, "no entry"
+    end
+
+    -- id -> straight yards to the destination, for the linked waypoints
+    -- that may end the graph part when the destination has no links. Only
+    -- waypoints the entries reach count: a small group of waypoints linked
+    -- only among themselves (water rescue points beside the Stormwind
+    -- harbour) would otherwise take every candidate and leave no route.
+    local exits = {}
+    if not hasLinks(destination) then
+        local reached = {}
+        local stack = {}
+        for _, entry in ipairs(entries) do
+            local id = entry.waypoint.id
+            if not reached[id] then
+                reached[id] = true
+                stack[#stack + 1] = id
+            end
+        end
+        while #stack > 0 do
+            local wp = waypoints[stack[#stack]]
+            stack[#stack] = nil
+            for linkId in pairs(wp and wp.links or {}) do
+                if not reached[linkId] and waypoints[linkId] ~= nil then
+                    reached[linkId] = true
+                    stack[#stack + 1] = linkId
+                end
+            end
+        end
+        local maxExit = opts.maxExitDistance or MAX_EXIT_DISTANCE
+        local candidates = Router.nearest(waypoints, destination.x, destination.y, opts.exitCount or EXIT_COUNT,
+            function(wp)
+                return reached[wp.id] and hasLinks(wp)
+            end)
+        for _, candidate in ipairs(candidates) do
+            if candidate.distance <= maxExit then
+                exits[candidate.waypoint.id] = candidate.distance
+            end
+        end
     end
 
     -- Standard A* with lazy deletion: stale heap entries are skipped when

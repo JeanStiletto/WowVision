@@ -12,6 +12,8 @@
   <Script file="objects.lua" />
   <Script file="texts.lua" />
   <Script file="stops.lua" />
+  <Script file="places.lua" />
   <Script file="module.lua" />
+  <Script file="placesUi.lua" />
 
 </Ui>
