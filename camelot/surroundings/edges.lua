@@ -96,6 +96,27 @@ local function crossed(j, px, py, x, y, pending)
     return nil
 end
 
+-- How far (x, y) lies beyond a free end of a line floor's stretch, along it (0 alongside it, or
+-- beyond an end another stretch of its piece goes on from): a climb's line is drawn out to its
+-- floor's ends, so one steps onto it only alongside its line (standing 1.4 yd past the end of a
+-- small bridge by the mausoleum's lift shaft put the player back on the bridge, the shaft's rim
+-- counted as a fall beside it, and stepping away put them on the canal floor 110 yd below,
+-- replay 2026-10-10)
+local function pastEnd(lane, x, y)
+    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len == 0 then
+        return 0
+    end
+    local t = ((x - lane.x1) * dx + (y - lane.y1) * dy) / len
+    if t < 0 and lane.free1 then
+        return -t
+    elseif t > len and lane.free2 then
+        return t - len
+    end
+    return 0
+end
+
 -- Is the player on `floor` by its own lines (a ramp's or stairs' piece, zone.lineFloors): within
 -- the leave distance of one of the stretches tied to it, as a way counts (user 2026-10-16: a climb
 -- is a way like any other)? nil for a piece without lines of its own.
@@ -118,7 +139,8 @@ function logic.onOwnLines(zone, x, y, floor)
 end
 
 -- The piece with lines of its own the player steps onto from `floor` at (x, y): within the enter
--- distance of one of its stretches, where it is joined to `floor` (within JOINED_HERE of a join of
+-- distance of one of its stretches, alongside it (not past its line's ends: pastEnd), where it is
+-- joined to `floor` (within JOINED_HERE of a join of
 -- the two: the bay under the griffon ramp's upper half is no step onto it), the nearest; nil when
 -- none. A climb counts from its enter distance as a way does (user 2026-10-16): coming down the
 -- griffon ramp from its platform crossed none of their joins in their direction, and the module
@@ -136,7 +158,8 @@ function logic.ontoOwnLines(zone, x, y, floor)
         if p ~= floor and ix.lineFloors[p] and joined[p] then
             local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             local enter = logic.laneWidths(lane, x, y)
-            if d <= enter and (bd == nil or d < bd) and logic.joinedHere(zone, floor, p, x, y) then
+            if d <= enter and (bd == nil or d < bd) and pastEnd(lane, x, y) == 0
+                    and logic.joinedHere(zone, floor, p, x, y) then
                 best, bd = p, d
             end
         end

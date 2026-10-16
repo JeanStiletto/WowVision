@@ -894,6 +894,25 @@ function logic.unpack(zone, locale)
     for _, piece in ipairs(zone.lineFloors or {}) do
         ix.lineFloors[piece] = true
     end
+    -- the free ends of those pieces' lines (a stretch end no other stretch of its piece goes on
+    -- from): the piece is not stepped onto beyond them (edges.lua pastEnd)
+    local ends = {}
+    local function endKey(lane, x, y)
+        return string.format("%d %.1f %.1f", lane.piece, x, y)
+    end
+    for _, lane in ipairs(order) do
+        if ix.lineFloors[lane.piece] then
+            for _, k in ipairs({ endKey(lane, lane.x1, lane.y1), endKey(lane, lane.x2, lane.y2) }) do
+                ends[k] = (ends[k] or 0) + 1
+            end
+        end
+    end
+    for _, lane in ipairs(order) do
+        if ix.lineFloors[lane.piece] then
+            lane.free1 = ends[endKey(lane, lane.x1, lane.y1)] == 1
+            lane.free2 = ends[endKey(lane, lane.x2, lane.y2)] == 1
+        end
+    end
     -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
     -- lane_headings, for the turn key): per stretch in order the number of samples, then per
     -- sample (the stretch cut in that many equal parts, one at each part's middle) the bearing
