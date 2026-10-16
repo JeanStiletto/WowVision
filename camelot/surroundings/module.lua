@@ -1187,7 +1187,9 @@ end
 -- zeppelin tower's deck said the street under it, walk 2026-10-06 14:21). Taken back only on the
 -- same spot.
 local function keepHere(z, x, y)
-    if WowVisionDB == nil then
+    -- (not before the kept spot was taken back: the first looks after a login in the halls,
+    -- before the game's map was theirs, kept "not in the halls" over it)
+    if WowVisionDB == nil or not hereRestored then
         return
     end
     local layer = logic.layer(z, IsIndoors())
@@ -1366,8 +1368,14 @@ end
 -- Outdoors: the drop edges and the floor piece (swimming, a liquid's), the guidance (on a
 -- liquid's piece its ways out); the place, the next piece ahead on a way and its bends, the stops.
 local function updateOutdoors(z, x, y, px, py)
-    -- (only right after loading: not when walking past the kept spot later)
-    if not hereRestored then
+    -- (only right after loading: not when walking past the kept spot later; a spot kept in the
+    -- halls is left to updateHall, which takes it back once the game's map is the halls': after
+    -- a login in the Trade Quarter's canal the first looks were outdoors, the restore was used up
+    -- there and the halls never came back, "Ort unbekannt", walk 2026-10-16 12:44)
+    local kept = WowVisionDB and WowVisionDB.surroundingsHere
+    local keptHalls = type(kept) == "table" and kept.halls and kept.zone == z.key
+        and logic.dist(kept.x, kept.y, x, y) <= HERE_SAME
+    if not hereRestored and not keptHalls then
         restoreHere(z, x, y, true)
     end
     lastRoom = nil
