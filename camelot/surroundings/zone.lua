@@ -1040,8 +1040,8 @@ function logic.unpackLayer(zone, src, suffix)
         floorRooms = src.floorRooms,
         -- per door the layer's floor piece its sill lies on
         doorFloors = src.doorFloors,
-        -- the feet of a building's staircases, guided to as the city's climbs' feet
-        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields,
+        -- the feet of its climbs and their wall sides, as the zone's (one rule for every grid)
+        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbAims = src.climbAims,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
