@@ -1,10 +1,13 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
 ..\FrameXML\UI.xsd">
 
-  <!-- Describes where the player walks, from the WowVision_Surroundings data
-       addon (docs/src/developer/surroundings.md). The logic files come first:
-       no WoW API in them, the headless suite loads them too. -->
+  <!-- Describes where the player walks, from the surroundings data
+       (mapdata/WowVision_Surroundings, included after this folder by
+       camelot/modules.xml; docs/src/developer/surroundings.md). The logic
+       files come first: no WoW API in them, the headless suite loads them
+       too. -->
   <Script file="zone.lua" />
+  <Script file="store.lua" />
   <Script file="edges.lua" />
   <Script file="lanes.lua" />
   <Script file="rooms.lua" />
@@ -15,6 +18,5 @@
   <Script file="places.lua" />
   <Script file="module.lua" />
   <Script file="placesUi.lua" />
-  <Script file="dataProbe.lua" />
 
 </Ui>

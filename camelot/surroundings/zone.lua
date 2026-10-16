@@ -663,11 +663,17 @@ end
 logic.LANE_REACH = 12 -- yd; farther from every centre line the grid alone decides
 logic.FEET_APART = 8 -- yd; two feet of one climb closer than this are one guidance target
 
--- Unpacks a zone on entry (once; `locale`: the client's language): the grid rows as runs, and the
--- flat lists of the data as named records with lookups per grid cell, all in zone._index.
+-- Unpacks a zone on entry (once; `locale`: the client's language): a registered zone's JSON text
+-- decoded and expanded into the model (store.lua), then the grid rows as runs, and the flat lists
+-- of the data as named records with lookups per grid cell, all in zone._index.
 function logic.unpack(zone, locale)
     if zone._index then
         return
+    end
+    if zone.json then
+        local data = logic.decodeJson(zone.json)
+        assert(type(data) == "table", "the surroundings data of " .. tostring(zone.key) .. " could not be read")
+        logic.expand(zone, data, locale)
     end
     prepareWords(zone, locale)
     local ix = {}
@@ -1074,9 +1080,17 @@ function logic.layer(zone, indoors)
     return ix.layer or (indoors == nil and ix.layerIn) or nil
 end
 
--- Frees the unpacked data when the player leaves the zone.
+-- Frees the unpacked data when the player leaves the zone; a registered zone keeps only its frame
+-- and its JSON text (logic.ZONE_HEADER).
 function logic.pack(zone)
     zone._index = nil
+    if zone.json then
+        for key in pairs(zone) do
+            if not logic.ZONE_HEADER[key] then
+                zone[key] = nil
+            end
+        end
+    end
 end
 
 -- Place texts ------------------------------------------------------------------------------------

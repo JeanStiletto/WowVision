@@ -21,10 +21,10 @@ local function maps()
     return WowVision.base.navigation and WowVision.base.navigation.maps or nil
 end
 
--- every places file of the data addon, unpacked in the client's language
+-- every places file of the data, unpacked in the client's language
 local function placeLists()
     local out = {}
-    local data = WowVisionSurroundingsData and WowVisionSurroundingsData.places or {}
+    local data = WowVision.surroundingsData and WowVision.surroundingsData.places or {}
     for _, raw in ipairs(data) do
         if raw.format == logic.PLACES_FORMAT then
             out[#out + 1] = logic.placesUnpack(raw, GetLocale())
