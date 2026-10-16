@@ -124,6 +124,12 @@ local waterGuide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 
 -- (spokenGuide).
 local spokenGuide = nil
 local LINE_KINDS_SAID = { place = true, room = true, ahead = true, bend = true }
+-- The lines that named what lies around since the player came into the place or room: its own
+-- line (or the around key's), then the look-ahead and what came near; a target one of them named
+-- is guided to without its name (logic.linesName)
+local heardLines = {}
+local HEARD_STARTS = { place = true, room = true, around = true }
+local HEARD_ADDS = { ahead = true, near = true }
 local bump = { ticks = 0, key = nil, free = 0, time = nil }
 local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
 -- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
@@ -246,6 +252,7 @@ end
 -- The place or room there is then said at once.
 local function forgetPlace()
     forgetWays()
+    heardLines = {}
     room, lastRoom, roomByDoor = nil, nil, false
     if zone then
         logic.setFloor(zone, 0)
@@ -504,12 +511,18 @@ local function speakLine(text, kind)
 end
 
 local function say(text, kind, x, y, walked, extra)
+    local raw = text
     text = logic.finishText(text)
     if zone then
         text = logic.spokenText(zone, text)
     end
     if text and text ~= "" then
         speakLine(text, kind)
+    end
+    if HEARD_STARTS[kind] then
+        heardLines = { raw }
+    elseif HEARD_ADDS[kind] then
+        heardLines[#heardLines + 1] = raw
     end
     extra = extra or {}
     extra.walked = walked and round1(walked) or nil
@@ -565,11 +578,15 @@ local function guideTo(z, g, t, x, y, brief)
         return
     end
     local named = g.named ~= t.key
+    -- named by the line of the place the player is in (a square's opening, a fork's arm, a room's
+    -- doorway): said without its name
+    local bare = logic.linesName(z, heardLines, t.name)
+        or (t.label ~= nil and t.label ~= t.name and logic.linesName(z, heardLines, t.label))
     g.target, g.zone = t, z
     if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
-            say(logic.guideText(z, t, named, true), t.kind, x, y)
-            g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, true, now, t.key
+            say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+            g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, true, now, t.key, false
             noteSaid(g, t)
             g.atSaid = t.key
         end
@@ -578,7 +595,16 @@ local function guideTo(z, g, t, x, y, brief)
     -- said before and not left since: back in reach, or nearest again, it goes on quietly
     local s = g.key ~= t.key and g.said[t.key]
     if s and logic.dist2(s.x, s.y, t.x, t.y) <= 1 then
-        g.key, g.dir, g.at, g.time, g.atSaid = t.key, t.dir, false, now, nil
+        g.key, g.dir, g.at, g.time, g.atSaid, g.quiet = t.key, t.dir, false, now, nil, false
+        return
+    end
+    -- heading for it: nothing until the player heads elsewhere, or is at it (user 2026-10-16:
+    -- said only when on the wrong way)
+    local facing = GetPlayerFacing()
+    if facing and logic.headsFor(t, x, y, logic.bearingOf(math.cos(facing), math.sin(facing))) then
+        if g.key ~= t.key then
+            g.key, g.dir, g.at, g.time, g.atSaid, g.quiet = t.key, t.dir, false, now, nil, true
+        end
         return
     end
     local turned = g.dir ~= t.dir and logic.angleOff(t.x - x, t.y - y, g.dir or t.dir) > GUIDE_TURN
@@ -587,9 +613,9 @@ local function guideTo(z, g, t, x, y, brief)
         local along = (t.x - x) * vx + (t.y - y) * vy
         turned = along < 0 or math.abs((t.x - x) * vy - (t.y - y) * vx) > GUIDE_MISS
     end
-    if g.key ~= t.key or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
-        say(logic.guideText(z, t, named, false), t.kind, x, y)
-        g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
+    if g.key ~= t.key or g.quiet or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
+        say(logic.guideText(z, t, named, false, bare), t.kind, x, y)
+        g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, false, now, t.key, false
         noteSaid(g, t)
         g.atSaid = nil
     end
@@ -1107,6 +1133,7 @@ local function checkPlace(z, x, y, forced)
             -- said before reaching it (checkAhead): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), early = true })
             aheadSaid[outdoor.current] = nil
+            heardLines = { text }
         else
             say(text, "place", x, y, outdoor.walked)
         end
