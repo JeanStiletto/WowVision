@@ -15,5 +15,6 @@
   <Script file="places.lua" />
   <Script file="module.lua" />
   <Script file="placesUi.lua" />
+  <Script file="dataProbe.lua" />
 
 </Ui>
