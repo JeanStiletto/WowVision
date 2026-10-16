@@ -342,7 +342,16 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     local feet = {}
     for _, f in ipairs(ix.climbFeet) do
         local fl = f.floor or 0
-        if fl == on or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
+        -- (and on a climb with lines of its own, its foot where its "at" line counts, within
+        -- GUIDE_AT and GUIDE_SIDE_CLIMB beside its line: stepped onto it by its lines at the foot,
+        -- the way on is still said; at the griffon ramp it never came)
+        local atFoot = false
+        if ix.lineFloors and ix.lineFloors[on] and ix.joined[on] and ix.joined[on][fl] and f.bearing
+            and logic.dist(f.x, f.y, x, y) <= logic.GUIDE_AT then
+            local b = math.rad(f.bearing)
+            atFoot = math.abs((f.x - x) * -math.sin(b) - (f.y - y) * math.cos(b)) <= logic.GUIDE_SIDE_CLIMB
+        end
+        if fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
             feet[#feet + 1] = f
         end
     end

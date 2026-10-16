@@ -202,26 +202,41 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
-    ["in the halls the ground beside a ramp with a piece of its own keeps the hall's name"] = function(t)
-        local z = newHallZone()
-        table.insert(z.places, { "ramp", "ramp" }) -- place 9
-        -- a ramp (piece 1) in row 0, column 2; the ground's cell there carries its name
-        z.indoor.grid = { "70000*2,90000,70000*3", "70000*6", "0*6" }
-        z.indoor.floorCells = { 0, 2, 1, 90000 }
-        z.indoor.noGround = {}
-        logic.unpack(z)
-        local layer = logic.layer(z)
-        local x, y = logic.cellCentre(layer, 0, 2)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "great hall of Test")
-        -- on the ramp's piece the ramp
-        logic.setFloor(layer, 1)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
-        -- without a piece of its own there the cell stays the ramp
-        logic.pack(z)
-        z.indoor.floorCells = {}
-        logic.unpack(z)
-        layer = logic.layer(z)
-        t:assertEqual(logic.describe(layer, logic.outdoorValue(layer, x, y), true), "ramp")
+    ["a ramp's piece with lines of its own is left beyond them and entered within them"] = function(t)
+        local function rampZone()
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "ramp", "ramp" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            -- a ramp (piece 1) from its foot at x 97 south up to x 87 along y 50, its own line
+            -- tied to it (laneFields 10: enter and leave per side, the piece), 1 yd in, 1.5 out
+            z.laneFields = 10
+            z.lanes = { 97, 50, 87, 50, 20000, 10, 15, 10, 15, 1 }
+            z.lineFloors = { 1 }
+            z.floorCells = { 0, 2, 1, 20000, 0, 3, 1, 20000, 1, 2, 1, 20000, 1, 3, 1, 20000,
+                2, 2, 1, 20000, 2, 3, 1, 20000, 3, 2, 1, 20000, 3, 3, 1, 20000 }
+            z.noGround = {}
+            -- the ground joins it at its foot, its way up south
+            z.joins = { 0, 1, 97, 50, 180 }
+            logic.unpack(z)
+            return z
+        end
+        local z = rampZone()
+        t:assertTrue(logic.onOwnLines(z, 93, 50.5, 1))
+        t:assertFalse(logic.onOwnLines(z, 93, 52, 1))
+        t:assertNil(logic.onOwnLines(z, 93, 50.5, 0))
+        -- on it within its lines; a step 2 yd beside them is off it, onto the ground beside
+        logic.setFloor(z, 1)
+        t:assertEqual(logic.updateFloor(z, 93, 50.5, false, 94, 50.5), 1)
+        t:assertEqual(logic.updateFloor(z, 93, 52, false, 93, 50.5), 0)
+        t:assertEqual(z._index.fellFrom, 1)
+        -- past its foot 2 yd beside the line: the join counts 2.5 yd beside its point, the line not
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 96, 52, false, 99, 52), 0)
+        -- on the line: onto it
+        t:assertEqual(logic.updateFloor(z, 96, 50.5, false, 99, 50.5), 1)
+        -- from the ground near the foot within the enter distance of its line, no join crossed
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 94, 50.5, false, 95, 50.5), 1)
     end,
 
     ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
