@@ -1486,7 +1486,7 @@ end
 -- /wv surr: what the module knows here, spoken and printed.
 module:registerCommand({
     name = "surr",
-    description = "Surroundings: speak the current place or room and the data state; log on|off|clear|[count]; around",
+    description = "Surroundings: speak the current place or room and the data state; log on|off|clear|[count]; around; probe [zone key]",
     func = function(args)
         local sub, rest = (args or ""):match("^(%S*)%s*(.*)$")
         if sub == "log" then
@@ -1494,6 +1494,10 @@ module:registerCommand({
             return
         elseif sub == "around" then
             module:describeAround()
+            return
+        elseif sub == "probe" then
+            -- the data probe (dataProbe.lua): JSON decoding and memory, for the planned data format
+            module:dataProbe(rest)
             return
         end
         local x, y, _z, map = UnitPosition("player")
