@@ -1044,16 +1044,21 @@ local function checkAhead(z, x, y, px, py)
     end
     local nextKey = logic.outdoorKey(z, value, key)
     if not aheadSaid[nextKey] then
-        aheadSaid[nextKey] = { x = tx or x, y = ty or y, d = yards }
-        -- the next piece of this way: its direction only ("north to south"), as on stepping onto it
-        local text
+        -- the next piece of this way: its direction only ("north to south"), as on stepping onto it;
+        -- one with nothing to say is no piece said ahead (its own line then says it on stepping
+        -- onto it: a stairs' line in a tower beside the canal walk had no direction to say)
+        local text, named
         if logic.sameWay(value, key, wayNamed, z) then
             text = logic.directionText(z, value)
         else
             text = logic.describe(z, value, true, nil, nil, logic.ownerOfPlace(z, logic.keyPlace(key)))
-            wayNamed = logic.placeOf(value)
+            named = logic.placeOf(value)
         end
-        say(text, "ahead", x, y)
+        if text and text ~= "" then
+            aheadSaid[nextKey] = { x = tx or x, y = ty or y, d = yards }
+            wayNamed = named or wayNamed
+            say(text, "ahead", x, y)
+        end
     end
 end
 
