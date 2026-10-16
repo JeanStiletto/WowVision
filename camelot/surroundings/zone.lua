@@ -888,6 +888,12 @@ function logic.unpack(zone, locale)
             logic.LANE_REACH, lane)
         order[#order + 1] = lane
     end)
+    -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
+    -- onOwnLines); nil in data before 2026-10-16
+    ix.lineFloors = {}
+    for _, piece in ipairs(zone.lineFloors or {}) do
+        ix.lineFloors[piece] = true
+    end
     -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
     -- lane_headings, for the turn key): per stretch in order the number of samples, then per
     -- sample (the stretch cut in that many equal parts, one at each part's middle) the bearing
@@ -1005,7 +1011,7 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
-        lanes = src.lanes, laneHeadings = src.laneHeadings, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
