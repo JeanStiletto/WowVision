@@ -237,6 +237,9 @@ testRunner:addSuite("Surroundings", {
         -- from the ground near the foot within the enter distance of its line, no join crossed
         logic.setFloor(z, 0)
         t:assertEqual(logic.updateFloor(z, 94, 50.5, false, 95, 50.5), 1)
+        -- within the enter distance of its line's end but past it: not onto it
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 97.6, 50.3, false, 99, 50.3), 0)
     end,
 
     ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)

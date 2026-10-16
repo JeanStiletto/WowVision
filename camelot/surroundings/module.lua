@@ -832,10 +832,11 @@ local function checkEdges(z, x, y, px, py, rooms)
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
-    -- the way the player moves (not the facing: strafing and walking back count too)
+    -- the way the player moves (not the facing: strafing and walking back count too); none while
+    -- pushing against something (the position only jitters there)
     local vx, vy = nil, nil
     local moved = px and logic.dist(x, y, px, py) or 0
-    if moved >= MOVE_MIN then
+    if moved >= MOVE_MIN and not pushing() then
         vx, vy = (x - px) / moved, (y - py) / moved
     end
     local warned = warnedEdges[z] or {}
@@ -843,10 +844,14 @@ local function checkEdges(z, x, y, px, py, rooms)
     local inPath = {}
     if vx then
         logic.edgeAhead(z, x, y, vx, vy, EDGE_LOOK, rooms, nil, inPath)
-    end
-    for i in pairs(warned) do
-        if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
-            warned[i] = nil
+        -- out of its path only while moving: standing still (or pushing against a wall) has no
+        -- path, and an edge warned 10 yd ahead warned again at every step after a stop (pressed
+        -- against a wall of the Trade Quarter's ring, "10 auf 3 Uhr, 12 tief" three times in 6 s,
+        -- walk 2026-10-15 20:49)
+        for i in pairs(warned) do
+            if not inPath[i] and logic.edgeDistance(z, i, x, y) > EDGE_REACH + EDGE_REARM then
+                warned[i] = nil
+            end
         end
     end
     if not module.settings.dropEdges then
@@ -1182,7 +1187,9 @@ end
 -- zeppelin tower's deck said the street under it, walk 2026-10-06 14:21). Taken back only on the
 -- same spot.
 local function keepHere(z, x, y)
-    if WowVisionDB == nil then
+    -- (not before the kept spot was taken back: the first looks after a login in the halls,
+    -- before the game's map was theirs, kept "not in the halls" over it)
+    if WowVisionDB == nil or not hereRestored then
         return
     end
     local layer = logic.layer(z, IsIndoors())
@@ -1361,8 +1368,14 @@ end
 -- Outdoors: the drop edges and the floor piece (swimming, a liquid's), the guidance (on a
 -- liquid's piece its ways out); the place, the next piece ahead on a way and its bends, the stops.
 local function updateOutdoors(z, x, y, px, py)
-    -- (only right after loading: not when walking past the kept spot later)
-    if not hereRestored then
+    -- (only right after loading: not when walking past the kept spot later; a spot kept in the
+    -- halls is left to updateHall, which takes it back once the game's map is the halls': after
+    -- a login in the Trade Quarter's canal the first looks were outdoors, the restore was used up
+    -- there and the halls never came back, "Ort unbekannt", walk 2026-10-16 12:44)
+    local kept = WowVisionDB and WowVisionDB.surroundingsHere
+    local keptHalls = type(kept) == "table" and kept.halls and kept.zone == z.key
+        and logic.dist(kept.x, kept.y, x, y) <= HERE_SAME
+    if not hereRestored and not keptHalls then
         restoreHere(z, x, y, true)
     end
     lastRoom = nil
