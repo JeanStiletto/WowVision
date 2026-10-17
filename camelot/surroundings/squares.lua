@@ -332,7 +332,10 @@ local function joinedClimbMouths(zone, region, cells, floors)
                 for k = 1, #pts - 1, 2 do
                     local jx, jy = pts[k], pts[k + 1]
                     local r, c = logic.cellOf(zone, jx, jy)
-                    if cells[r * cols + c] then
+                    -- (on the region or right beside it: the Abbey ramp's foot joins the hall floor
+                    -- in a cell with no paint of its own, one cell off the hall, and the hall named
+                    -- no ramp; walk 2026-10-17 11:18)
+                    if cells[r * cols + c] or logic.nearCell(zone, cells, r, c, true) then
                         -- the climb's value at the join: in its cell, else one of the 8 around
                         local v, vr, vc = 0, r, c
                         for dr = -1, 1 do
