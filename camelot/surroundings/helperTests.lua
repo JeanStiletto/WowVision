@@ -36,7 +36,7 @@ local function near(t, p, x, y, what)
 end
 
 testRunner:addSuite("Surroundings building helper", {
-    ["from a climb's foot along its whole line, onto the landing joined at its end"] = function(t)
+    ["from a climb's foot along its whole line, to the landing's join at its end"] = function(t)
         local z = stairsZone()
         local route = logic.climbRoute(z, 97, 50, 0)
         t:assertNotNil(route)
@@ -49,7 +49,7 @@ testRunner:addSuite("Surroundings building helper", {
         near(t, p[3], 93, 54, "the second turn")
         near(t, p[4], 89, 54, "the line's end")
         near(t, p[5], 88, 54, "the landing's join")
-        near(t, p[6], 86, 54, "2 yd onto the landing")
+        t:assertEqual(#p, 5, "no point of its own beyond the join")
     end,
 
     ["a line that ends before any landing ends the route there, said as short"] = function(t)
@@ -73,12 +73,35 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertEqual(down.landing, 0)
     end,
 
-    ["a doorway is led through: to it, then 3 yd on along its way through"] = function(t)
+    ["a doorway or a way out is led to its own point, nothing beyond"] = function(t)
         local route = logic.helperRoute(nil, { kind = "doorway", x = 90, y = 40, through = 90 })
-        t:assertEqual(#route.points, 2)
+        t:assertEqual(#route.points, 1)
         near(t, route.points[1], 90, 40, "the doorway")
-        near(t, route.points[2], 90, 37, "3 yd east beyond it")
+        local out = logic.helperRoute(nil, { kind = "exit", x = 70, y = 20, through = 248 })
+        t:assertEqual(#out.points, 1)
         t:assertNil(logic.helperRoute(nil, { kind = "aim", x = 1, y = 1 }))
+    end,
+
+    ["the route ends where the surroundings' own rules put the player"] = function(t)
+        local swim = { floor = 66, liquid = true, room = 5, inside = true }
+        local exit = { kind = "exit" }
+        t:assertFalse(logic.helperArrived(exit, swim, swim), "still in the water")
+        t:assertFalse(logic.helperArrived(exit, swim, { floor = 70, liquid = true, room = 5, inside = true }),
+            "another liquid's piece")
+        t:assertTrue(logic.helperArrived(exit, swim, { floor = 0, liquid = false, room = 5, inside = true }),
+            "on the floor beyond")
+        local hall = { floor = 0, liquid = false, room = 3, inside = true }
+        local door = { kind = "doorway" }
+        t:assertFalse(logic.helperArrived(door, hall, hall), "the same room")
+        t:assertTrue(logic.helperArrived(door, hall, { floor = 0, liquid = false, room = 4, inside = true }), "the room beyond")
+        t:assertTrue(logic.helperArrived({ kind = "entrance" }, { floor = 0, inside = false },
+            { floor = 0, inside = true, room = 9 }), "in the building")
+        local climb = { kind = "climb", landing = 2 }
+        local foot = { floor = 0, liquid = false }
+        t:assertFalse(logic.helperArrived(climb, foot, { floor = 1, liquid = false }), "on the stairs")
+        t:assertTrue(logic.helperArrived(climb, foot, { floor = 2, liquid = false }), "on the landing")
+        t:assertNil(logic.helperArrived({ kind = "climb" }, foot, foot), "a line ending short: its last point")
+        t:assertNil(logic.helperArrived({ kind = "way" }, foot, foot), "a way's beginning: its point")
     end,
 
     ["a point counts when reached, or when the way in's line across it is crossed close beside it"] = function(t)

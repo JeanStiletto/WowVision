@@ -534,6 +534,8 @@ local function speakLine(text, kind)
     end)
 end
 
+local helperArrival -- (below: ends the helper's route on a place or room line)
+
 local function say(text, kind, x, y, walked, extra)
     local raw = text
     text = logic.finishText(text)
@@ -553,6 +555,9 @@ local function say(text, kind, x, y, walked, extra)
     logEntry(kind, text, x, y, extra)
     if LINE_KINDS_SAID[kind] then
         spokenGuide = nil
+    end
+    if (kind == "place" or kind == "room") and helperArrival then
+        helperArrival()
     end
 end
 
@@ -1738,10 +1743,13 @@ local function helperUpdate(self)
         return nil
     end
     if self.currentIndex > #self.waypoints then
-        self.events.complete:emit(self)
-        self.active = false
-        self.complete = true
         self.beacon = nil
+        -- (a route with an arrival rule ends on the surroundings' line for being there: helperArrival)
+        if not self.waitsForLine then
+            self.events.complete:emit(self)
+            self.active = false
+            self.complete = true
+        end
         return
     end
     local x, y = UnitPosition("player")
@@ -1760,6 +1768,29 @@ local function helperUpdate(self)
     self.px, self.py = x, y
     if self.beacon then
         self.beacon:update()
+    end
+end
+
+-- The route led now (nil: none), and where the player was at its start, in its grid (logic.helperArrived).
+local helperLed = nil
+local function helperNow(grid)
+    local f = grid._index.floor or 0
+    return { floor = f, liquid = logic.liquidKind(grid, f) ~= nil, room = room, inside = isInside() }
+end
+
+-- On a place or room line (say): the route led ends here when the player is where it leads by the same rules.
+helperArrival = function()
+    local led = helperLed
+    if led == nil or not led.path.active or led.path.complete then
+        helperLed = nil
+        return
+    end
+    if logic.helperArrived(led.route, led.start, helperNow(led.grid)) then
+        helperLed = nil
+        led.path.events.complete:emit(led.path)
+        led.path.active = false
+        led.path.complete = true
+        led.path.beacon = nil
     end
 end
 
@@ -1832,12 +1863,17 @@ function module:leadOn()
     for _, p in ipairs(route.points) do
         path:add({ x = p.x, y = p.y, n = name })
     end
-    local last = route.points[#route.points]
-    local landing = route.landing
+    route.kind = route.kind or "climb"
+    local start = helperNow(grid)
+    -- a route the surroundings' rules end (out of the water, through a doorway, onto a landing) ends on their place
+    -- or room line, with nothing more said; any other at its last point, with "Arrived"
+    path.waitsForLine = logic.helperArrived(route, start, start) ~= nil
+    helperLed = path.waitsForLine and { path = path, route = route, start = start, grid = grid } or nil
     path.events.complete:subscribe(self, function()
         maps.path = nil
-        local where = landing and logic.pieceLabel(grid, last.x, last.y, landing) or nil
-        WowVision:speak(L["Arrived"] .. (where and (", " .. where) or ""))
+        if not path.waitsForLine then
+            WowVision:speak(L["Arrived"])
+        end
     end)
     maps:pathfind(path)
     local text = name and string.format(L["Leading to %s"], name) or L["Leading along the climb"]
