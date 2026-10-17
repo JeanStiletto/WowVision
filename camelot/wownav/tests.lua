@@ -65,6 +65,19 @@ local suite = {
         t:assertFalse(logic.offRoute(state, 2.5, 0.3, 0, 100, 0, true), "the same episode")
     end,
 
+    ["WowVision's arrival radius only makes a waypoint's radius smaller"] = function(t)
+        t:assertEqual(logic.radiusOf(4, 3), 3)
+        t:assertEqual(logic.radiusOf(1, 5), 1, "never larger than the data's")
+        t:assertEqual(logic.radiusOf(4, nil), 4)
+        t:assertNil(logic.radiusOf(nil, 3))
+        -- a waypoint of a dropped zone: its copied radius, capped the same way
+        local dropped = { Exists = function() return false end }
+        local copy = { { x = 0, y = 0, radius = 4, id = 10 ^ 13 } }
+        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 3, y = 0, radiusCap = 1 }))
+        t:assertTrue(logic.reached(dropped, nil, copy, 1, { x = 3, y = 0, radiusCap = 5 }))
+        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 4.5, y = 0, radiusCap = 5 }))
+    end,
+
     ["the final point of a route counts within the arrival distance"] = function(t)
         local waypoints = { { x = 0, y = 0, final = true } }
         t:assertTrue(logic.reached(nil, nil, waypoints, 1, { x = 1, y = 0, finalRadius = 1.5 }))
@@ -144,6 +157,28 @@ if haveNetwork then
         -- a dropped zone: the copied radius still holds
         local copy = { { x = wp.x, y = wp.y, radius = 4, id = 10 ^ 13 } }
         t:assertTrue(logic.reached(N, G, copy, 1, { x = wp.x + 3, y = wp.y }))
+    end
+
+    suite["on the network the arrival radius caps the data radius, the larger one changes nothing"] = function(t)
+        setup()
+        local result = N.Route(firstBinding(WESTFALL), firstBinding(STORMWIND))
+        local waypoints = logic.buildWaypoints(N, result)
+        -- a waypoint with a wide radius, alone: without a previous one only the radius rule can count it
+        local wp
+        for _, candidate in ipairs(waypoints) do
+            wp = wp or ((N.Radius(candidate.id) or 0) >= 2 and candidate or nil)
+        end
+        t:assertNotNil(wp, "the route has a waypoint with a radius of 2 yd or more")
+        local alone = { wp }
+        local r = N.Radius(wp.id)
+        local p = { x = wp.x + r * 0.9, y = wp.y, z = wp.z }
+        t:assertTrue(logic.reached(N, G, alone, 1, p))
+        p.radiusCap = r * 0.5
+        t:assertFalse(logic.reached(N, G, alone, 1, p))
+        p.radiusCap = r + 10
+        t:assertTrue(logic.reached(N, G, alone, 1, p))
+        p.x = wp.x + r + 1
+        t:assertFalse(logic.reached(N, G, alone, 1, p), "outside the data radius")
     end
 
     suite["off the route, a later waypoint whose cell holds the player is where it goes on"] = function(t)

@@ -27,9 +27,11 @@ local START_TRIES = 4        -- start attachments tried when the first finds no 
 local SLOW_NOTICE = 1.0      -- seconds before "calculating route" is said
 local CONTINUE_REACH = 25    -- yd around a transit's far end that count as having come out there
 local CONTINUE_TIME = 600    -- seconds a route waits for the player to use the transit
+local RECALC_DELAY = 1.0     -- seconds after the last change of the road preference before the route is searched again
 
 local job = nil              -- the pending search: { target, starts, index, jobs, startedAt, noticed }
 local continuation = nil     -- after a transit: { target, x, y, map, until }
+local recalcAt = nil         -- when the running route is searched again with a changed road preference
 
 function module:network()
     return _G.WowVisionNavigationNavNetwork, _G.WowVisionNavigationGuidance
@@ -286,6 +288,7 @@ function module:routeTo(target)
         say(L["No WowNav network at the target"])
         return false
     end
+    self.target = target
     job = { target = target, goal = goal, starts = starts, index = 1, startedAt = GetTime() }
     job.current = N.RouteJob(starts[1], goal)
     return true
@@ -318,12 +321,45 @@ local function stepJob(self)
     finishRoute(self, j.target, result, j.starts[j.index])
 end
 
+-- The target of the route being searched or walked, nil without one (arrived, ended at a transit, stopped).
+function module:runningTarget()
+    if job ~= nil then
+        return job.target
+    end
+    local path = self.path
+    if path ~= nil and maps.path == path and path.active and not path.complete then
+        return self.target
+    end
+    return nil
+end
+
+-- A changed road preference applies to the running route as well (WowNav's /vn komfort does the same): once the
+-- slider has rested for RECALC_DELAY, the same target is searched again from where the player is.
+local function checkRecalculation(self)
+    if recalcAt == nil or GetTime() < recalcAt then
+        return
+    end
+    recalcAt = nil
+    local target = self:runningTarget()
+    if target ~= nil then
+        say(L["Searching the route again with the new road preference"])
+        self:routeTo(target)
+    end
+end
+
 function module:onEnable()
     self:hasUpdate(function(self)
         stepJob(self)
         checkContinuation(self)
+        checkRecalculation(self)
     end)
 end
+
+module.settings.class:getField("comfort").events.valueChange:subscribe(module, function()
+    if module:runningTarget() ~= nil then
+        recalcAt = GetTime() + RECALC_DELAY
+    end
+end)
 
 -- With the setting turned on while the standalone addon runs, say why nothing changes.
 module.settings.class:getField("enabled").events.valueChange:subscribe(module, function(_, _, _, _, value)
