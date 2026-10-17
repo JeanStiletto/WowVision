@@ -315,6 +315,11 @@ end
 -- 2026-10-08)
 local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 2
 local trailX, trailY = nil, nil
+-- the game's area (its subzone) at the last trail point that gave it, and the points since: a trail
+-- point gives it ("|<area>" at its end, "|" for none) when it changes and every TRAIL_AREA_EVERY points
+-- (a reduced walk set keeps it), so the replays hand the module what the game said (user 2026-10-17)
+local TRAIL_AREA_EVERY = 20
+local trailArea, trailSince = nil, 0
 local sessionLogged = false
 
 local function logStore()
@@ -409,7 +414,8 @@ end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
 -- outdoors), s (swimming), g (ghost), f with the facing in degrees and p with the floor piece
--- when it is not the ground, as one token ("isf270p33").
+-- when it is not the ground, as one token ("isf270p33"); then "|<area>", the game's area, where it
+-- changed or every TRAIL_AREA_EVERY points (after a space: tools read the flags before it).
 local function logTrail(x, y)
     if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
@@ -427,7 +433,13 @@ local function logTrail(x, y)
         .. (UnitIsGhost("player") and "g" or "")
         .. (facing and ("f" .. facing) or "")
         .. (piece ~= 0 and ("p" .. piece) or "")
-    table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
+    local area = gameSubzone()
+    trailSince = trailSince + 1
+    local tail = ""
+    if area ~= trailArea or trailSince >= TRAIL_AREA_EVERY then
+        tail, trailArea, trailSince = " |" .. area, area, 0
+    end
+    table.insert(log.trail, string.format("%d %.1f %.1f%s%s", time(), x, y, flags ~= "" and " " .. flags or "", tail))
     log.trail = trim(log.trail, TRAIL_MAX)
 end
 
