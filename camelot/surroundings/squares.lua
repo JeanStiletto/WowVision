@@ -43,7 +43,9 @@ local function borderThing(zone, value, key, here)
         local p = logic.place(zone, logic.placeOf(value))
         local kind = p and p.kind
         if logic.WAYS[kind] then
-            local said = logic.spokenName(zone, p.label)
+            -- (a ramp or stairs as named from the player's floor: logic.downPlace)
+            local down = logic.downPlace(zone, logic.placeOf(value))
+            local said = logic.spokenName(zone, (down or p).label)
             local spoken = said ~= p.label and said or nil
             if p.of and p.of ~= here then
                 spoken = string.format(zone.ofTemplate or "%s of %s", said, p.of)
