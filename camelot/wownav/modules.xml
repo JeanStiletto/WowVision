@@ -1,0 +1,10 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+  <!-- WowNav routes in WowVision: logic.lua is pure (headless tests), path.lua walks a route, module.lua takes the
+       route requests, floorsUi.lua asks a floor when there is a choice. The network itself is the WowNav submodule,
+       included after this file from camelot/modules.xml. -->
+  <Script file="logic.lua" />
+  <Script file="path.lua" />
+  <Script file="module.lua" />
+  <Script file="floorsUi.lua" />
+</Ui>

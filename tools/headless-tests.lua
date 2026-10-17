@@ -69,6 +69,21 @@ loadAddonFile("camelot/surroundings/places.lua")
 loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
 loadAddonFile("camelot/surroundings/storeTests.lua")
+-- WowNav routes: the logic on the real network of the WowNav submodule (mapdata/WowNav, its engine.xml); without the
+-- submodule only the parts that need no network run.
+do
+    local base = "mapdata/WowNav/addon/WowVisionNavigation/"
+    local xml = io.open(base .. "engine.xml", "r")
+    if xml ~= nil then
+        local text = xml:read("*a")
+        xml:close()
+        for name in text:gmatch('<Script file="([^"]+)"') do
+            dofile(base .. name:gsub("\\", "/"))
+        end
+    end
+end
+loadAddonFile("camelot/wownav/logic.lua")
+loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
 -- suite can play the game's side.

@@ -48,8 +48,13 @@ local function ensureData(screen)
         return false
     end
     screen._px, screen._py = px, py
-    screen._waypoints = module:currentWaypoints()
-    screen._entries = WowVision.Router.nearest(screen._waypoints, px, py, ENTRY_COUNT, WowVision.Router.hasLinks)
+    -- With a route engine on (WowNav), its targets join the list and it finds the entry point itself: no entry choice.
+    screen._waypoints, screen._engine = module:destinationWaypoints()
+    if screen._engine ~= nil then
+        screen._entries = {}
+    else
+        screen._entries = WowVision.Router.nearest(screen._waypoints, px, py, ENTRY_COUNT, WowVision.Router.hasLinks)
+    end
     if screen._entries[1] ~= nil then
         screen._entryId = screen._entries[1].waypoint.id
     end
@@ -176,6 +181,9 @@ local function destinationCursor(screen)
             end
             WowVision.UIHost:closeWindow("atlas")
             local wp = entry.waypoint
+            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z) then
+                return
+            end
             local routed = module:navigateTo(wp.id, screen._waypoints, { entryId = screen._entryId, onArrive = wp.onArrive })
             -- A target too far from the network for a last leg still gets a
             -- straight beacon, as the scanner gave before.
@@ -221,12 +229,8 @@ local function destinationCursor(screen)
     }
 end
 
-local function render(builder, screen)
-    if not ensureData(screen) then
-        return
-    end
-    builder:pushContext("navigation", L["Navigation"])
-
+-- The entry point stop: the closest waypoints, Enter selects one (only without a route engine).
+local function renderEntries(builder, screen)
     builder:beginStop("entries")
     builder:pushContext("entries", L["Entry Points"])
     if #screen._entries == 0 then
@@ -259,6 +263,17 @@ local function render(builder, screen)
         })
     end
     builder:popContext()
+end
+
+local function render(builder, screen)
+    if not ensureData(screen) then
+        return
+    end
+    builder:pushContext("navigation", L["Navigation"])
+
+    if screen._engine == nil then
+        renderEntries(builder, screen)
+    end
 
     builder:beginStop("search")
     builder:addItem(
