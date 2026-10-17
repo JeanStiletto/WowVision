@@ -360,7 +360,7 @@ local function roomCandidateNames(z, x, y)
 end
 
 -- One log entry: {date, kind ("place", "room", "edge", "bump", "session", "zone", "surr", "floor"
--- for a change of the floor piece, ...),
+-- for a change of the floor piece, "turn" for a press of the turn key, ...),
 -- text}, where the player was (the data's cell and its text, the room candidates indoors, the
 -- floor piece the player was on) and the facing in degrees (0 = north, counter-clockwise).
 local function logEntry(kind, text, x, y, extra)
@@ -1664,6 +1664,7 @@ end
 -- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
 -- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
 -- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
+-- (also what it turned toward, for the walk log: "target", "room", "line", or nil)
 local function lineFacing()
     if not module:getEnabled() then
         return nil
@@ -1676,7 +1677,7 @@ local function lineFacing()
     end
     local toTarget = guideFacing(x, y)
     if toTarget then
-        return toTarget
+        return toTarget, "target"
     end
     if isInside() then
         local layer = logic.layer(z, IsIndoors())
@@ -1685,7 +1686,7 @@ local function lineFacing()
             local r = room and z._index.rooms and z._index.rooms[room]
             if r and r.axis and not r.winding then
                 local along = math.rad(-r.axis)
-                return logic.lineTurnFacing({ along, along + math.pi }, facing, false)
+                return logic.lineTurnFacing({ along, along + math.pi }, facing, false), "room"
             end
             return nil
         end
@@ -1693,9 +1694,36 @@ local function lineFacing()
     end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)
-    return facings and logic.lineTurnFacing(facings, facing, fork) or nil
+    if facings then
+        return logic.lineTurnFacing(facings, facing, fork), fork and "fork" or "line"
+    end
+    return nil
 end
-WowVision.base.navigation.maps.facingWithoutWaypoint = lineFacing
+
+-- Every press of the turn key (I) in the walk log, silent (user 2026-10-17: to see in the log when
+-- the player went by ear and when by the key): kind "turn", what it turned toward (the route's
+-- beacon, the guidance target said last with its name, a fork's arm, a way's line, a room's way,
+-- or nothing) and `to`, the facing it turned to (degrees, as the entry's own facing).
+local function turnLog(what, toFacing, name)
+    local x, y = UnitPosition("player")
+    if x == nil then
+        return
+    end
+    local text = what .. (name and (": " .. name) or "")
+    logEntry("turn", text, x, y, { to = toFacing and math.floor(math.deg(toFacing) % 360 + 0.5) or nil })
+end
+
+WowVision.base.navigation.maps.facingWithoutWaypoint = function()
+    local facing, what = lineFacing()
+    local t = what == "target" and spokenGuide and spokenGuide.target
+    turnLog(what or "nothing", facing, t and logic.finishText(t.name or t.short or "") or nil)
+    return facing
+end
+-- (the route's beacon: maps' turnToWaypoint calls this with the waypoint before it turns)
+WowVision.base.navigation.maps.onTurnToWaypoint = function(wx, wy)
+    local x, y = UnitPosition("player")
+    turnLog("beacon", x and math.atan2(wy - y, wx - x) or nil)
+end
 
 -- The building helper (Alt plus the turn key, helper.lua): a beacon route from here through the next exit.
 -- On a ramp or stairs with its own line: along it toward the end the player faces, onto the floor there. Else the

@@ -371,6 +371,32 @@ function logic.place(zone, placeId)
     return zone._index.places[placeId]
 end
 
+-- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
+-- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
+-- (the export's climbDown) where the player's floor piece is neither one of its feet's floors nor
+-- the climb itself; else nil (its own name). From the floor alone, the same from every spot on it.
+function logic.downPlace(zone, placeId)
+    local ix = zone._index
+    local p = ix.places[placeId]
+    if p == nil or p.down == nil then
+        return nil
+    end
+    local feet = ix.footFloors and ix.footFloors[placeId]
+    local floor = ix.floor or 0
+    local own = ix.placePieces[placeId] or {}
+    if feet == nil or feet[floor] or own[floor] then
+        return nil
+    end
+    -- (only from a floor the climb is joined to: its top; a floor held a moment by mistake beside
+    -- it named the Brill tavern's stairs up "Treppe Richtung Schankraum" in the common room)
+    for q in pairs(ix.joined[floor] or {}) do
+        if own[q] then
+            return ix.places[p.down]
+        end
+    end
+    return nil
+end
+
 function logic.kind(zone, placeId)
     local p = zone._index.places[placeId]
     return p and p.kind
@@ -707,6 +733,14 @@ function logic.unpack(zone, locale)
     for id, p in pairs(zone.places) do
         ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of, plain = p.plain }
     end
+    -- a climb's name said from its top (zone.climbDown: its place, the place of that name; the
+    -- export's climb_names): "stairs to the cellar" from the kitchen the stairs lead up to
+    local down = zone.climbDown or (zone.parent and zone.parent.climbDown)
+    for k = 1, #(down or {}) - 1, 2 do
+        if ix.places[down[k]] then
+            ix.places[down[k]].down = down[k + 1]
+        end
+    end
 
     -- structures with drop edges: the structure on each of their floor cells
     ix.struct = {}
@@ -724,11 +758,31 @@ function logic.unpack(zone, locale)
     -- piece a meets piece b, the direction from a into b; a 0 the ground, -1 a building's door;
     -- angle -1 none, -2 no point): per cell the joins with a point, per piece the pieces it joins
     ix.floorCells = {}
+    ix.placePieces = {}
+    local placeCounts = {}
     eachRecord(zone.floorCells, 4, function(r, c, piece, value)
         local key = r * zone.cols + c
         ix.floorCells[key] = ix.floorCells[key] or {}
         ix.floorCells[key][piece] = value
+        -- (per piece the count of each place on it: below, the piece's own place)
+        local place = logic.placeOf(value)
+        local counts = placeCounts[piece] or {}
+        placeCounts[piece] = counts
+        counts[place] = (counts[place] or 0) + 1
     end)
+    -- per place the floor pieces whose own place it is (most of their cells): on a climb's own
+    -- piece it is said by its name (logic.downPlace; the Abbey's gallery carries the ramp's place
+    -- on three cells at the ramp's top, and is no part of the ramp)
+    for piece, counts in pairs(placeCounts) do
+        local best, most = nil, 0
+        for place, n in pairs(counts) do
+            if n > most or (n == most and place < best) then
+                best, most = place, n
+            end
+        end
+        ix.placePieces[best] = ix.placePieces[best] or {}
+        ix.placePieces[best][piece] = true
+    end
     ix.noGround = {}
     eachRecord(zone.noGround, 2, function(r, c)
         ix.noGround[r * zone.cols + c] = true
@@ -814,6 +868,7 @@ function logic.unpack(zone, locale)
     ix.climbFeet = {}
     -- (climbFeetFields 5) the floor piece at the foot (0 the ground): guided to only from that floor
     local feetStride = zone.climbFeetFields or 3
+    ix.footFloors = {}
     eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing, floor)
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
@@ -822,6 +877,10 @@ function logic.unpack(zone, locale)
         end
         ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil,
             floor = feetStride >= 5 and floor or 0 }
+        -- (per place the floors its feet stand on: from there it is said by its name)
+        local place = logic.placeOf(value)
+        ix.footFloors[place] = ix.footFloors[place] or {}
+        ix.footFloors[place][feetStride >= 5 and floor or 0] = true
     end)
     -- the flights with a wall along one side and a drop along the other (export.climb_sides): per
     -- floor piece the point at its top on the wall side its way up is said toward (setting
@@ -977,6 +1036,10 @@ function logic.unpack(zone, locale)
         -- to only from it (rooms.lua nearestEntrance)
         local fl = zone.doorFloors and zone.doorFloors[i]
         door.floor = fl and fl >= 0 and fl or nil
+        -- -2: no floor of this grid at its sill or within jump height under it (an opening high in a
+        -- wall: the Abbey's belfry, said as a way out on every floor, walk 2026-10-17 11:20): never
+        -- said from it; it stays a doorway the player passes (falling or jumping out)
+        door.unsaid = fl == -2 or nil
         -- a door between two pieces of one room (doorVia): the room's own doorway reached through
         -- it from a into b (viaA) and from b into a (viaB), door numbers; nil none or older data
         local va, vb = zone.doorVia and zone.doorVia[2 * i - 1], zone.doorVia and zone.doorVia[2 * i]
@@ -1247,7 +1310,8 @@ function logic.describe(zone, value, withDirection, noNearRoad, floor, here)
     if p == nil then
         return nil
     end
-    local text = logic.expandDirs(zone, logic.floorLabel(zone, logic.spokenName(zone, p.label), floor))
+    local down = logic.downPlace(zone, logic.placeOf(value))
+    local text = logic.expandDirs(zone, logic.floorLabel(zone, logic.spokenName(zone, (down or p).label), floor))
     -- a place of a structure (a tower's platform, its stairs) says the structure's name where the
     -- player is not on it yet: `here`, the structure of the place the player is on or comes from
     -- (nil: none, or the name is always said, as Alt-L says a room's building); inside the

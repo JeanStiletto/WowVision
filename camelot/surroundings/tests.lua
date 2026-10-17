@@ -494,6 +494,15 @@ testRunner:addSuite("Surroundings", {
         local old = newHallZone()
         logic.unpack(old)
         t:assertEqual(select(4, logic.nearestEntrance(logic.layer(old), 90, 36, 8, nil, true)).text, "shop")
+        -- -2: no floor at the sill on this grid (an opening high in a wall): never said, from any floor
+        local high = newHallZone()
+        high.indoor.doorFloors = { -2, 0, 0 }
+        logic.unpack(high)
+        local hl = logic.layer(high)
+        t:assertNil(logic.nearestEntrance(hl, 90, 36, 8, nil, false))
+        logic.setFloor(hl, 2)
+        t:assertNil(logic.nearestEntrance(hl, 90, 36, 8, nil, true))
+        t:assertNotNil(hl._index.doors[1])   -- still a doorway one passes
     end,
 
     ["a stairs' edge beside the player warns only while they face its drop"] = function(t)

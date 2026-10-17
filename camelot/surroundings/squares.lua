@@ -43,7 +43,9 @@ local function borderThing(zone, value, key, here)
         local p = logic.place(zone, logic.placeOf(value))
         local kind = p and p.kind
         if logic.WAYS[kind] then
-            local said = logic.spokenName(zone, p.label)
+            -- (a ramp or stairs as named from the player's floor: logic.downPlace)
+            local down = logic.downPlace(zone, logic.placeOf(value))
+            local said = logic.spokenName(zone, (down or p).label)
             local spoken = said ~= p.label and said or nil
             if p.of and p.of ~= here then
                 spoken = string.format(zone.ofTemplate or "%s of %s", said, p.of)
@@ -330,7 +332,10 @@ local function joinedClimbMouths(zone, region, cells, floors)
                 for k = 1, #pts - 1, 2 do
                     local jx, jy = pts[k], pts[k + 1]
                     local r, c = logic.cellOf(zone, jx, jy)
-                    if cells[r * cols + c] then
+                    -- (on the region or right beside it: the Abbey ramp's foot joins the hall floor
+                    -- in a cell with no paint of its own, one cell off the hall, and the hall named
+                    -- no ramp; walk 2026-10-17 11:18)
+                    if cells[r * cols + c] or logic.nearCell(zone, cells, r, c, true) then
                         -- the climb's value at the join: in its cell, else one of the 8 around
                         local v, vr, vc = 0, r, c
                         for dr = -1, 1 do

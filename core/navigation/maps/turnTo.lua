@@ -270,6 +270,10 @@ function module:turnToWaypoint()
         WowVision:speak(L["No active waypoint"])
         return false
     end
+    -- (a listener for every press, the surroundings' walk log)
+    if self.onTurnToWaypoint then
+        self.onTurnToWaypoint(waypoint.x, waypoint.y)
+    end
     return turnToPoint(waypoint.x, waypoint.y)
 end
 

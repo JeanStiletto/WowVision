@@ -460,7 +460,7 @@ local function layerEntrances(layer)
     for _, door in ipairs(ix.doors) do
         local aIn, bIn = covered[door.a] or false, covered[door.b] or false
         local interior = ix.interiors[door.interior]
-        if aIn ~= bIn and interior then
+        if aIn ~= bIn and interior and not door.unsaid then
             local hall = aIn and door.a or door.b
             local beyond = aIn and door.b or door.a
             local room = ix.rooms[beyond]
@@ -501,7 +501,7 @@ function logic.entrances(zone)
         local inside = door.a == 0 and door.b or door.b == 0 and door.a or nil
         local room = inside and ix.rooms[inside]
         local interior = ix.interiors[door.interior]
-        if room and interior then
+        if room and interior and not door.unsaid then
             local x, y = logic.toWorld(interior, door.x, door.y)
             local text = interior.name
             if not room.entrance and room.name ~= interior.name then
