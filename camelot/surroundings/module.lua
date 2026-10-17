@@ -1697,6 +1697,136 @@ local function lineFacing()
 end
 WowVision.base.navigation.maps.facingWithoutWaypoint = lineFacing
 
+-- The building helper (Alt plus the turn key, helper.lua): a beacon route from here through the next exit.
+-- On a ramp or stairs with its own line: along it toward the end the player faces, onto the floor there. Else the
+-- target the guidance spoke of last (while still guided to), else the one here, as the describe key finds it: a
+-- doorway, an entrance or a way out is led through, a climb's foot up the whole climb to its landing. The beacon,
+-- its keys (Shift-F12 ends it) and the quieter surroundings are those of every beacon (maps).
+-- (made on first use: the walk replays load this file without the navigation's Path)
+local HelperPath = nil
+
+local function helperUpdate(self)
+    if not self.active or self.complete then
+        return nil
+    end
+    if self.currentIndex > #self.waypoints then
+        self.events.complete:emit(self)
+        self.active = false
+        self.complete = true
+        self.beacon = nil
+        return
+    end
+    local x, y = UnitPosition("player")
+    if x == nil then
+        return
+    end
+    local w = self.currentWaypoint
+    local before = self.waypoints[self.currentIndex - 1] or self.origin
+    if logic.helperPassed(self.px, self.py, x, y, before, w) then
+        self.events.arriveAtWaypoint:emit(self, w)
+        self.currentIndex = self.currentIndex + 1
+        self.currentWaypoint = self.waypoints[self.currentIndex]
+        local maps = WowVision.base.navigation.maps
+        self.beacon = self.currentWaypoint and maps.Beacon:new(self.currentWaypoint) or nil
+    end
+    self.px, self.py = x, y
+    if self.beacon then
+        self.beacon:update()
+    end
+end
+
+local function helperPathClass()
+    if HelperPath == nil then
+        HelperPath = WowVision.Class("SurroundingsHelperPath", WowVision.base.navigation.maps.Path)
+        HelperPath.update = helperUpdate
+    end
+    return HelperPath
+end
+
+-- The target the helper leads through, in the grid it belongs to: the last guided one while it is still guided to.
+local function helperTarget(z, grid, x, y)
+    local g = spokenGuide
+    local t = g and g.target
+    if t ~= nil then
+        local reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
+        if logic.dist2(x, y, t.x, t.y) <= (reach + GUIDE_FORGET) ^ 2 then
+            return t, g.zone or grid
+        end
+    end
+    if isInside() and not (layerMode and grid ~= z) then
+        return room and logic.roomDoorTarget(z, room, x, y) or nil, z
+    end
+    local down = downHere(grid, x, y)
+    if down or logic.liquidKind(grid, grid._index.floor) then
+        return logic.exitTarget(grid, x, y, grid._index.floor, down), grid
+    end
+    return logic.footTarget(grid, x, y, region), grid
+end
+
+function module:leadOn()
+    local maps = WowVision.base.navigation.maps
+    local x, y, _z, map = UnitPosition("player")
+    local z = x and findZone(x, y, map)
+    if z == nil then
+        WowVision:speak(L["No exit nearby"])
+        return
+    end
+    updateWords()
+    local grid = z
+    local layer = logic.layer(z, IsIndoors())
+    if isInside() and layerMode and layer then
+        grid = layer
+    end
+    local route, name = nil, nil
+    local on = grid._index.floor
+    if on and on ~= 0 and grid._index.lineFloors and grid._index.lineFloors[on] then
+        route = logic.climbRouteFrom(grid, on, x, y, GetPlayerFacing())
+    end
+    if route == nil then
+        -- a climb's line beginning right here (a spiral's foot often has no foot record)
+        route = logic.climbNear(grid, x, y, on, logic.HELPER_NEAR)
+        if route then
+            route.kind = "climb"
+        end
+    end
+    if route == nil then
+        local t
+        t, grid = helperTarget(z, grid, x, y)
+        route = t and logic.helperRoute(grid, t) or nil
+        name = t and t.name or nil
+    end
+    if route == nil or #route.points == 0 then
+        WowVision:speak(L["No exit nearby"])
+        return
+    end
+    local path = helperPathClass():new()
+    path.origin = { x = x, y = y }
+    for _, p in ipairs(route.points) do
+        path:add({ x = p.x, y = p.y, n = name })
+    end
+    local last = route.points[#route.points]
+    local landing = route.landing
+    path.events.complete:subscribe(self, function()
+        maps.path = nil
+        local where = landing and logic.pieceLabel(grid, last.x, last.y, landing) or nil
+        WowVision:speak(L["Arrived"] .. (where and (", " .. where) or ""))
+    end)
+    maps:pathfind(path)
+    local text = name and string.format(L["Leading to %s"], name) or L["Leading along the climb"]
+    if route.short then
+        text = text .. ", " .. L["the line ends before the top"]
+    end
+    WowVision:speak(text)
+end
+
+module:registerBinding({
+    type = "Script",
+    key = "surroundings/leadOn",
+    label = L["Lead Through the Next Exit"],
+    inputs = { "ALT-I" },
+    script = "/run WowVision.base.navigation.surroundings:leadOn()",
+})
+
 module:registerBinding({
     type = "Script",
     key = "surroundings/describe",

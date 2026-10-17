@@ -16,6 +16,7 @@
   <Script file="texts.lua" />
   <Script file="stops.lua" />
   <Script file="places.lua" />
+  <Script file="helper.lua" />
   <Script file="module.lua" />
   <Script file="placesUi.lua" />
 

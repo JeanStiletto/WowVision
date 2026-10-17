@@ -66,9 +66,11 @@ loadAddonFile("camelot/surroundings/objects.lua")
 loadAddonFile("camelot/surroundings/texts.lua")
 loadAddonFile("camelot/surroundings/stops.lua")
 loadAddonFile("camelot/surroundings/places.lua")
+loadAddonFile("camelot/surroundings/helper.lua")
 loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
 loadAddonFile("camelot/surroundings/storeTests.lua")
+loadAddonFile("camelot/surroundings/helperTests.lua")
 -- WowNav routes: the logic on the real network of the WowNav submodule (mapdata/WowNav, its engine.xml); without the
 -- submodule only the parts that need no network run.
 do
