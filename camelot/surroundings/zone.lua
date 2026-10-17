@@ -977,6 +977,10 @@ function logic.unpack(zone, locale)
         -- to only from it (rooms.lua nearestEntrance)
         local fl = zone.doorFloors and zone.doorFloors[i]
         door.floor = fl and fl >= 0 and fl or nil
+        -- -2: no floor of this grid at its sill or within jump height under it (an opening high in a
+        -- wall: the Abbey's belfry, said as a way out on every floor, walk 2026-10-17 11:20): never
+        -- said from it; it stays a doorway the player passes (falling or jumping out)
+        door.unsaid = fl == -2 or nil
         -- a door between two pieces of one room (doorVia): the room's own doorway reached through
         -- it from a into b (viaA) and from b into a (viaB), door numbers; nil none or older data
         local va, vb = zone.doorVia and zone.doorVia[2 * i - 1], zone.doorVia and zone.doorVia[2 * i]
