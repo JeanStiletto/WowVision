@@ -1,6 +1,7 @@
 -- A route from WowNav, walked by WowVision: the normal Path (beacon, arrival cue, Ctrl-W/S, Shift-F12, the turn key
 -- all read it as before), with WowNav's rules for moving on to the next waypoint instead of one radius for all:
--- each waypoint's own radius from the data, the gate line at narrow spots, the turning point in the open; and back
+-- each waypoint's own radius from the data (WowVision's arrival radius, Alt-P, only makes it smaller), the gate line
+-- at narrow spots, the turning point in the open; and back
 -- onto the route when the player is off it (a later waypoint whose cell holds the player, no new route).
 
 local maps = WowVision.base.navigation.maps
@@ -79,7 +80,7 @@ function WowNavPath:update()
     end
     local reached = N ~= nil and logic.reached(N, G, self.waypoints, self.currentIndex, {
         x = x, y = y, px = self.px, py = self.py, z = z, swimming = swimming,
-        finalRadius = maps:arrivalDistance(),
+        finalRadius = maps:arrivalDistance(), radiusCap = maps:arrivalDistance(),
     })
     if reached then
         advance(self)

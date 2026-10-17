@@ -152,9 +152,21 @@ function logic.heightAlong(previous, current, x, y, swimming)
     return previous.z + (current.z - previous.z) * (before / total)
 end
 
+-- The radius a waypoint counts within: its own from the data (certified: from anywhere on that circle the way to the
+-- next waypoint is free), made smaller by WowVision's arrival radius where that is smaller, never larger.
+function logic.radiusOf(dataRadius, cap)
+    if dataRadius == nil then
+        return nil
+    end
+    if cap ~= nil and cap < dataRadius then
+        return cap
+    end
+    return dataRadius
+end
+
 -- Whether the player has reached waypoint index of the path (WowNav G.Reached: radius, gate line, turning point in
--- the open). p: x, y, px, py (previous position), z, swimming, finalRadius (the last waypoint at the target).
--- Returns reached, rule.
+-- the open; the radius capped by radiusCap). p: x, y, px, py (previous position), z, swimming, finalRadius (the last
+-- waypoint at the target), radiusCap (WowVision's arrival radius). Returns reached, rule.
 function logic.reached(N, G, waypoints, index, p)
     local wp = waypoints[index]
     if wp == nil then
@@ -168,13 +180,23 @@ function logic.reached(N, G, waypoints, index, p)
         local nextWp = waypoints[index + 1]
         local previousId = previous ~= nil and previous.id ~= nil and N.Exists(previous.id) and previous.id or nil
         local nextId = nextWp ~= nil and not nextWp.final and nextWp.id ~= nil and N.Exists(nextWp.id) and nextWp.id or nil
-        return G.Reached({
-            x = p.x, y = p.y, px = p.px, py = p.py, z = p.z, swimming = p.swimming,
-            waypointId = wp.id, previousId = previousId, nextId = nextId,
-        })
+        -- G.Reached's three rules in its order, the first with the capped radius
+        local radius = logic.radiusOf(N.Radius(wp.id), p.radiusCap)
+        if radius ~= nil and distance(p.x, p.y, wp.x, wp.y) <= radius then
+            return true, "radius"
+        end
+        if previousId ~= nil and p.px ~= nil and G.GatePassed(p.px, p.py, p.x, p.y, wp.id, previousId) then
+            return true, "gate"
+        end
+        if previousId ~= nil and nextId ~= nil and N.Area(wp.id) == "OPEN"
+            and G.BisectorCrossed(p.x, p.y, wp.id, previousId, nextId)
+            and N.AttachmentAtPosition(p.x, p.y, p.z, nextId, { swimming = p.swimming }) then
+            return true, "bisector"
+        end
+        return false
     end
     -- the zone of this point was dropped: its copied radius still holds
-    return distance(p.x, p.y, wp.x, wp.y) <= (wp.radius or 3), "radius"
+    return distance(p.x, p.y, wp.x, wp.y) <= logic.radiusOf(wp.radius or 3, p.radiusCap), "radius"
 end
 
 -- A later stretch of the route the player stands on: within the radius of waypoint k (from the data) of the line
