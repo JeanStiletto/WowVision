@@ -980,6 +980,10 @@ function logic.unpack(zone, locale)
             lane.free1 = ends[endKey(lane, lane.x1, lane.y1)] == 1
             lane.free2 = ends[endKey(lane, lane.x2, lane.y2)] == 1
         end
+        -- a path-line data's line across a landing or platform between flights (gated to a piece that is no
+        -- lineFloor) is a way through for the turn key and the guidance only, never a way the place is said by
+        -- (the Abbey gallery became "Die Haupthalle, erster Stock" bare, its ramps unsaid, walk 2026-10-18 07:52)
+        lane.guideOnly = ix.pathLines and lane.piece > 0 and not ix.lineFloors[lane.piece] or nil
     end
     -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
     -- lane_headings, for the turn key): per stretch in order the number of samples, then per
@@ -1102,7 +1106,7 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
-        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, pathLines = src.pathLines, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the

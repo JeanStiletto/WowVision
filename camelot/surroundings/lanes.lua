@@ -35,7 +35,7 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     local ownPiece = own == true and floor or own
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (own or not lane.guideOnly)
             and (own and (lane.piece == ownPiece and ownPiece ~= 0) or not own and (lane.piece == -1 or lane.piece == floor))
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
