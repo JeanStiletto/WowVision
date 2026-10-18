@@ -374,9 +374,15 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     local fl0 = f.floor or 0
     local linePiece = (fl0 == on and on) or (fl0 ~= 0 and ix.joined[on] and ix.joined[on][fl0] and fl0) or nil
     if ix.pathLines and on ~= 0 and linePiece and d > logic.GUIDE_AT then
-        local ld, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, linePiece)
-        if ld ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
-            local toEnd = logic.dist(f.x, f.y, lane.x2, lane.y2) <= logic.dist(f.x, f.y, lane.x1, lane.y1)
+        -- the line that leads to this foot (laneToward), not the nearest line of the piece
+        local lane, px, py, toEnd = logic.laneToward(zone, linePiece, x, y, f.x, f.y)
+        local ld = lane and logic.dist(x, y, px, py)
+        local ex, ey = lane and (toEnd and lane.x2 or lane.x1), lane and (toEnd and lane.y2 or lane.y1)
+        -- near the line's end the foot itself: straight at it
+        if lane and logic.dist(x, y, ex, ey) <= logic.LANE_AHEAD then
+            lane = nil
+        end
+        if lane ~= nil then
             local h
             if ld > 1.0 then
                 -- beside the line: toward the point LANE_AHEAD on along it, back onto the middle

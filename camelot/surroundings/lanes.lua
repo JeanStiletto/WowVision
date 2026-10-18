@@ -238,6 +238,40 @@ function logic.laneAhead(lane, px, py, toEnd, ahead)
     return px + ux * a, py + uy * a
 end
 
+-- yd: a line's end this near a climb's foot leads to that foot (laneToward)
+logic.LANE_FOOT_END = 5.0
+
+-- The line of `piece` that leads from where the player stands toward the foot (fx, fy): among the piece's own
+-- stretches within reach the one with an end within LANE_FOOT_END of the foot, nearest by the way there (the
+-- player's distance to the stretch plus that end's distance to the foot). Returns the stretch, the player's
+-- point on it, whether the foot lies at its end (true) or its start, and that end's distance from the foot;
+-- nil when no such line. (The zeppelin tower's platform ring: the stretch nearest the player was the long one
+-- between the other two flights, and "toward its end nearer the foot" sent the player west past the foot,
+-- 7 Meter auf 12, then 6, every second, walk 2026-10-18 08:37.)
+function logic.laneToward(zone, piece, x, y, fx, fy)
+    local r, c = logic.cellOf(zone, x, y)
+    local list = zone._index.lanes[r * zone.cols + c]
+    if list == nil or piece == nil or piece == 0 then
+        return nil
+    end
+    local best, bestLane, bx, by, bEnd, bDe = nil, nil, nil, nil, nil, nil
+    for _, lane in ipairs(list) do
+        if lane.piece == piece and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+            local d1, d2 = logic.dist(fx, fy, lane.x1, lane.y1), logic.dist(fx, fy, lane.x2, lane.y2)
+            local toEnd = d2 <= d1
+            local de = toEnd and d2 or d1
+            if de <= logic.LANE_FOOT_END and d <= logic.LANE_REACH and (best == nil or d + de < best) then
+                best, bestLane, bx, by, bEnd, bDe = d + de, lane, px, py, toEnd, de
+            end
+        end
+    end
+    if bestLane == nil then
+        return nil
+    end
+    return bestLane, bx, by, bEnd, bDe
+end
+
 function logic.storedHeadings(lane, px, py)
     local h = lane.headings
     if h == nil then
