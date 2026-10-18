@@ -1667,6 +1667,10 @@ local function guideFacing(x, y)
         and (logic.pastTarget(g.zone, t, x, y) or logic.onClimb(g.zone, t, x, y, outdoor.current)) then
         return through
     end
+    -- a foot guided to along the piece's own line (path lines, texts.lua climbTarget): the key turns along it
+    if t.along then
+        return math.rad(-t.along)
+    end
     return math.rad(-logic.bearingOf(t.x - x, t.y - y))
 end
 

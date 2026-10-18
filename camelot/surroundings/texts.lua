@@ -366,12 +366,30 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     if aim then
         up = logic.bearingOf(aim.x - f.x, aim.y - f.y)
     end
+    -- with path lines (zone.pathLines): a foot on the player's own piece is guided to along the piece's line
+    -- toward the end nearer the foot (a tower's platform ring to its next flight, the Abbey gallery's strip), not
+    -- by the straight bearing, which ran through the tower's body (walks 2026-10-15 15:24, 2026-10-18 03:27)
+    local along = nil
+    if ix.pathLines and on ~= 0 and (f.floor or 0) == on and d > logic.GUIDE_AT then
+        local ld, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, true)
+        if ld ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            local toEnd = logic.dist(f.x, f.y, lane.x2, lane.y2) <= logic.dist(f.x, f.y, lane.x1, lane.y1)
+            local h1, h2 = logic.storedHeadings(lane, px, py)
+            local h = toEnd and h1 or h2
+            if h == nil then
+                local sx, sy = lane.x2 - lane.x1, lane.y2 - lane.y1
+                h = logic.bearingOf(toEnd and sx or -sx, toEnd and sy or -sy)
+            end
+            along = h
+            dir = h
+        end
+    end
     local name = logic.describe(zone, f.value, false, true, floor, logic.ownerOf(zone, logic.valueAt(zone, x, y)))
     return {
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and T("on to the %s") or nil,
-        bearing = f.bearing, floor = f.floor or 0,
+        bearing = f.bearing, floor = f.floor or 0, along = along,
     }
 end
 

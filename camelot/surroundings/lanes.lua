@@ -14,7 +14,8 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
 -- and the point; nil when there is none. `skip`: a lane left out; `place`: only lanes of that place.
-function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
+-- `own` (optional): only a stretch gated to the player's own piece (a flight's path, a landing's line).
+function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     local r, c = logic.cellOf(zone, x, y)
     local ix = zone._index
     local list = ix.lanes[r * zone.cols + c]
@@ -32,7 +33,8 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
     local aloft = floor ~= 0 and not (joined and joined[0])
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (lane.piece == -1 or lane.piece == floor)
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip
+            and (own and (lane.piece == floor and floor ~= 0) or not own and (lane.piece == -1 or lane.piece == floor))
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             local here = true
@@ -211,7 +213,7 @@ end
 
 -- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
 -- each way: toward the stretch's end and back (bearings, or nil where it stored none).
-local function storedHeadings(lane, px, py)
+function logic.storedHeadings(lane, px, py)
     local h = lane.headings
     if h == nil then
         return nil, nil
@@ -237,6 +239,20 @@ end
 -- said with the way it runs (a canal) along that. Returns the list and whether it is a fork's, or
 -- nil (no way here, a square).
 function logic.lineFacings(zone, x, y, value, _facing)
+    -- on a piece with a line of its own (data with WV_LINES=path, 2026-10-18: a flight's cheapest way through
+    -- its own floor, a landing's or platform's line between flights): along it, whatever the place is called;
+    -- the said direction of a flight is a straight bearing, the line winds with the flight
+    local ixp = zone._index
+    if ixp.pathLines and (ixp.floor or 0) ~= 0 then
+        local d, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, true)
+        if d ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
+            local h1, h2 = logic.storedHeadings(lane, px, py)
+            local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along
+            local f2 = (h2 and math.rad(-h2)) or (h1 and math.rad(-h1) + math.pi) or along + math.pi
+            return { f1, f2 }, false
+        end
+    end
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
         local d, lane, px, py = nil, nil, nil, nil
@@ -247,7 +263,7 @@ function logic.lineFacings(zone, x, y, value, _facing)
             local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
             -- a stored heading (clockwise from north) as a facing; near the line's end (none ahead)
             -- the heading the other way turned round, the way the line came; else the stretch's own
-            local h1, h2 = storedHeadings(lane, px, py)
+            local h1, h2 = logic.storedHeadings(lane, px, py)
             local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along
             local f2 = (h2 and math.rad(-h2)) or (h1 and math.rad(-h1) + math.pi) or along + math.pi
             return { f1, f2 }, false

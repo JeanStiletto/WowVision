@@ -955,6 +955,9 @@ function logic.unpack(zone, locale)
     end)
     -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
     -- onOwnLines); nil in data before 2026-10-16
+    -- data whose lines of flights, landings and platforms are the cheapest way through the piece (the export's
+    -- WV_LINES=path, 2026-10-18): the turn key and the guidance to a foot follow them (lanes.lua, texts.lua)
+    ix.pathLines = zone.pathLines == true
     ix.lineFloors = {}
     for _, piece in ipairs(zone.lineFloors or {}) do
         ix.lineFloors[piece] = true
