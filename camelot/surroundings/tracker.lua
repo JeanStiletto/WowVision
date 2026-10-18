@@ -6,8 +6,9 @@
 -- without hindsight): every look the surfaces under the position are the new candidates, each costed from the
 -- cheapest old candidate it can be reached from (a walk of steps costs nothing, a fall 2, a missing step at one
 -- height 1.5, a jump 8; a liquid surface on foot or a dry one swimming 1 more); candidates far costlier than the
--- best are dropped. The floor is the best candidate's piece; it is SURE when every candidate within the margin
--- lies on that piece, else unsure (several floors are possible: the speech should wait). Measured offline before
+-- best are dropped. The floor is the best candidate's piece (of equal costs the nearest column's); it is SURE when
+-- every candidate within the margin lies at that height, else unsure (floors at several heights are possible:
+-- the speech should wait). Measured offline before
 -- it was built (STATE task 0 "THE TRACKER MEASUREMENT"): with about a second of evidence wrong on 4 / 4 / 0
 -- points where the piece module was wrong on 2.1 / 10.3 / 4.0 %.
 -- No WoW API here: the headless suite and the walk replays load this file.
@@ -29,6 +30,11 @@ tracker.MARGIN = 1.5       -- the floor is sure when every candidate within this
 tracker.LEVEL = 1.5        -- yd: heights this close are one level (a fall must go lower than this)
 tracker.NEAR = 6.0         -- yd: a fall or a missing step reaches this far; farther is a jump
 tracker.RESET = 20.0       -- yd: a move this long since the last look starts afresh (a login, a hearthstone)
+
+-- (offline only: WV_TRACKER_DEBUG=1 says when the tracker first runs, 2 prints every look with its candidates)
+local DEBUG = os and os.getenv and os.getenv("WV_TRACKER_DEBUG") or nil
+tracker.debug = DEBUG == "2"
+tracker.KEEP = 1.5         -- yd: of two pieces meeting at one height the one held stays while its surface lies this near
 
 local ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"
 local VALUE = {}
@@ -176,7 +182,7 @@ function tracker.update(zone, x, y, swimming)
     local S = zone.surf
     local was = ix.floor or 0
     tracker.looks = (tracker.looks or 0) + 1
-    if tracker.looks == 1 and os and os.getenv and os.getenv("WV_TRACKER_DEBUG") then
+    if tracker.looks == 1 and DEBUG then
         io.stderr:write("tracker: first look on " .. tostring(zone.key) .. "\n")
     end
     local cache = {}
@@ -186,8 +192,39 @@ function tracker.update(zone, x, y, swimming)
         prev = nil
     end
     if #now == 0 then
-        -- no surface under the point (a gap of the walk graph): the candidates stay where they were
-        return was, false
+        -- no surface under the point (a gap of the walk graph: a beach, a ledge the export did not reach): the
+        -- candidates stay where they were, and the floor piece is checked against the cell's records as the
+        -- piece tracker did it: out of a liquid on foot the floor it stands up onto (swimFloor: the shore
+        -- gap at Crystal Lake kept the lake, 2026-10-19), else, where the cell has not the piece held, its
+        -- only piece or the ground
+        local r, c = logic.cellOf(zone, x, y)
+        local key = r * zone.cols + c
+        local floor_ = was
+        if swimming ~= nil and (swimming == true) ~= (ix.liquids[was] ~= nil) then
+            floor_ = logic.swimFloor(zone, key, was, swimming, x, y) or was
+        elseif not logic.floorHere(zone, key, was) then
+            local only, count = nil, 0
+            for p in pairs(ix.floorCells[key] or {}) do
+                if swimming == nil or (ix.liquids[p] ~= nil) == swimming then
+                    only, count = p, count + 1
+                end
+            end
+            if count == 1 then
+                floor_ = only
+            elseif swimming ~= true and not ix.noGround[key] then
+                floor_ = 0
+            end
+        end
+        if floor_ ~= was then
+            ix.floor = floor_
+            ix.cameFrom = was
+            ix.fellFrom = nil
+            ix.cands = nil
+        end
+        if ix.liquids[floor_] == nil then
+            ix.swumIn = nil
+        end
+        return floor_, floor_ ~= was
     end
     -- the reach of every old candidate, once
     local sets = {}
@@ -199,14 +236,18 @@ function tracker.update(zone, x, y, swimming)
             sets[i] = reached(S, prev[i].s, hops, cache)
         end
     end
+    -- the game says whether the player swims: on foot no liquid surface is a candidate (the piece tracker's
+    -- rule too: a shore's shallow water held the player on the lake, Crystal Lake and Goldshire, 2026-10-19),
+    -- swimming no dry one; unknown, both at a cost
     local new = {}
     local best = nil
     for i = 1, #now do
         local b = now[i]
         local local_ = 0
         if swimming ~= nil and b.liquid ~= swimming then
-            local_ = tracker.WRONG_WET
+            local_ = nil
         end
+        if local_ then
         local cost, fell = 0, false
         if prev then
             cost = nil
@@ -228,17 +269,35 @@ function tracker.update(zone, x, y, swimming)
                     end
                 end
                 local v = a.cost + t
-                if cost == nil or v < cost then
+                -- (of two ways equally cheap, a fall from the floor held explains more than a walk on a
+                -- floor long left: the guidance back onto a climb needs the floor fallen from)
+                if cost == nil or v < cost or (v == cost and t == tracker.FALL and not fell and a.s.piece == was) then
                     cost, fell = v, t == tracker.FALL
                 end
             end
         end
         cost = cost + local_
-        local cand = { s = b, cost = cost, x = x, y = y, fell = fell }
+        -- how far the position lies from the surface's column centre: among candidates of one cost the
+        -- nearest column's surface is the floor (two pieces meeting at one height, a street and its square,
+        -- a stair's foot and the ground: no question of height, the nearer one), but the piece held stays
+        -- while its surface lies within KEEP (no flapping along a seam the player walks beside; the piece
+        -- tracker needed a join crossing to switch)
+        local dx, dy = S.x0 + b.r + 0.5 - x, S.y0 + b.c + 0.5 - y
+        local off = dx * dx + dy * dy
+        if b.piece == was and off <= tracker.KEEP * tracker.KEEP then
+            off = 0
+        end
+        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, off = off }
         new[#new + 1] = cand
-        if best == nil or cost < best.cost or (cost == best.cost and b.piece == was and best.s.piece ~= was) then
+        if best == nil or cost < best.cost or (cost == best.cost and (cand.off < best.off - 0.01
+            or (cand.off <= best.off + 0.01 and b.piece == was and best.s.piece ~= was))) then
             best = cand
         end
+        end
+    end
+    if best == nil then
+        -- every surface here is of the wrong kind (dry while swimming, wet on foot): nothing to decide
+        return was, false
     end
     -- normalised and pruned
     local kept = {}
@@ -251,15 +310,30 @@ function tracker.update(zone, x, y, swimming)
         end
     end
     ix.cands = kept
+    -- sure: every candidate within the margin lies at the best one's height (one level; another piece at the
+    -- same height is a question of names, not of floors, and the nearest column's piece answers it)
     local floor_ = best.s.piece
     local sure = true
+    local bz = best.s.z
     for i = 1, #kept do
-        if kept[i].cost <= tracker.MARGIN and kept[i].s.piece ~= floor_ then
+        local kz = kept[i].s.z
+        -- (within the margin: costlier than the best by less than it; a floor reached only by a missing
+        -- step or a fall, 1.5 or 2, is a weaker hypothesis than one walked onto)
+        if kept[i].cost < tracker.MARGIN and (kz > bz + tracker.LEVEL or kz < bz - tracker.LEVEL) then
             sure = false
             break
         end
     end
     ix.floorSure = sure
+    if tracker.debug then
+        -- (offline, WV_TRACKER_DEBUG=2: every look with its candidates, to trace a wrong stretch)
+        local parts = {}
+        for i = 1, #kept do
+            parts[#parts + 1] = string.format("%.1f/%d/%.1f%s", kept[i].s.z, kept[i].s.piece, kept[i].cost, kept[i].fell and "F" or "")
+        end
+        io.stderr:write(string.format("look %s %.1f %.1f floor %d %s hops %d: %s\n", tostring(zone.key), x, y, floor_,
+            sure and "sure" or "UNSURE", hops, table.concat(parts, " ")))
+    end
     -- the liquid the game had the player swim in (standing up in it), as the piece tracker kept it
     if swimming == true and ix.liquids[floor_] ~= nil then
         ix.swumIn = floor_

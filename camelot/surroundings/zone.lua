@@ -696,16 +696,18 @@ function logic.unpack(zone, locale)
     if zone._index then
         return
     end
+    -- the walk graph's surfaces per layer (format 5, the walk-graph tracker; tracker.lua), before the layers are
+    -- built from the data (unpackLayer takes its layer's): the piece tracker of before runs where the data has none
+    if zone.parent == nil then   -- (a layer, unpacked through here too, keeps the surf unpackLayer gave it)
+        local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
+        zone.surfaces = S and S[zone.key] or nil
+        zone.surf = zone.surfaces and zone.surfaces.zone or nil
+    end
     if zone.json then
         local data = logic.decodeJson(zone.json)
         assert(type(data) == "table", "the surroundings data of " .. tostring(zone.key) .. " could not be read")
         logic.expand(zone, data, locale)
     end
-    -- the walk graph's surfaces of the zone's own layer (format 5, the walk-graph tracker; tracker.lua): the
-    -- piece tracker of before runs where the data has none
-    local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
-    zone.surfaces = S and S[zone.key] or nil
-    zone.surf = zone.surfaces and zone.surfaces.zone or nil
     prepareWords(zone, locale)
     local ix = {}
     zone._index = ix

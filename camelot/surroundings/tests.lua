@@ -189,6 +189,106 @@ local function newTowerZone()
 end
 
 testRunner:addSuite("Surroundings", {
+    ["the walk-graph tracker follows stairs onto a floor over the ground, is sure there, and falls off it"] = function(t)
+        -- format 5 surfaces (wv-surroundings tools/surfaces.py) made here: records of col, height, piece, flags
+        local A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"
+        local function digits(v, n)
+            local s = ""
+            for _ = 1, n do
+                s = A:sub(v % 64 + 1, v % 64 + 1) .. s
+                v = math.floor(v / 64)
+            end
+            return s
+        end
+        local recs = {}   -- {r, c, z, piece}
+        local function add(r, c, z, piece)
+            recs[#recs + 1] = { r = r, c = c, z = z, piece = piece }
+        end
+        -- rows = x - 60, cols = y - 40. The ground (piece 0) at height 0 on x 70 to 100, y 44 to 56; stairs
+        -- (piece 1) from x 90 (height 0) up to x 84 (height 3) along y 50, walled (no ground within a yard
+        -- beside them: a staircase, not a ramp on open ground); an upper floor (piece 2) at height 3 on x 70
+        -- to 84, y 48 to 52, a building's floor over solid ground (no walkable ground under it: the street
+        -- runs beside the building at y 44 to 46 and 54 to 56)
+        for x = 70, 100 do
+            for y = 44, 56 do
+                local stairsCut = y >= 49 and y <= 51 and x > 84 and x < 90
+                local underFloor = x <= 84 and y >= 47 and y <= 53
+                if not stairsCut and not underFloor then
+                    add(x - 60, y - 40, 0, 0)
+                end
+            end
+        end
+        for x = 84, 90 do
+            add(x - 60, 10, (90 - x) * 0.5, 1)
+        end
+        for x = 70, 84 do
+            for y = 48, 52 do
+                add(x - 60, y - 40, 3, 2)
+            end
+        end
+        -- the steps: to each neighbouring column's surface within 1 yd of height
+        local byCol = {}
+        for _, s in ipairs(recs) do
+            byCol[s.r * 1000 + s.c] = byCol[s.r * 1000 + s.c] or {}
+            table.insert(byCol[s.r * 1000 + s.c], s)
+        end
+        local function stepTo(s, r, c)
+            for _, u in ipairs(byCol[r * 1000 + c] or {}) do
+                if math.abs(u.z - s.z) <= 1.0 then
+                    return true
+                end
+            end
+            return false
+        end
+        local rows = {}
+        table.sort(recs, function(a, b) return a.r < b.r or (a.r == b.r and (a.c < b.c or (a.c == b.c and a.z < b.z))) end)
+        for _, s in ipairs(recs) do
+            local flags = (stepTo(s, s.r - 1, s.c) and 1 or 0) + (stepTo(s, s.r + 1, s.c) and 2 or 0)
+                + (stepTo(s, s.r, s.c - 1) and 4 or 0) + (stepTo(s, s.r, s.c + 1) and 8 or 0)
+            rows[s.r] = (rows[s.r] or "") .. digits(s.c, 3) .. digits(math.floor(s.z * 10 + 0.5) + 200000, 3) .. digits(s.piece, 2) .. digits(flags, 1)
+        end
+        local z = newWalkZone()
+        z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+        z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+        z.floorCells = {}
+        z.noGround = {}
+        z.joins = {}
+        logic.unpack(z)
+        z.surf = { x0 = 60, y0 = 40, rows = rows }
+        local col = logic.tracker.column(z.surf, 80 - 60, 10, {})
+        t:assertEqual(#col, 1)   -- the upper floor at x 80, y 50 (solid ground under it)
+        t:assertEqual(col[1].z, 3)
+        t:assertEqual(col[1].piece, 2)
+        col = logic.tracker.column(z.surf, 84 - 60, 10, {})
+        t:assertEqual(#col, 2)   -- the stairs' top and the upper floor meet at x 84 at height 3
+        t:assertEqual(col[1].z, 3)
+        t:assertEqual(col[2].z, 3)
+        -- from the ground up the stairs onto the upper floor: sure at every step
+        logic.setFloor(z, 0)
+        local floor = logic.updateFloor(z, 95, 50.5, false, nil, nil, false, false)
+        t:assertEqual(floor, 0)
+        t:assertTrue(z._index.floorSure)
+        local seen = {}
+        for x = 93, 71, -2 do
+            floor = logic.updateFloor(z, x, 50.5, false, x + 2, 50.5, false, false)
+            seen[#seen + 1] = floor
+            t:assertTrue(z._index.floorSure, "sure at x " .. x)
+        end
+        t:assertEqual(seen[#seen], 2)
+        t:assertEqual(z._index.cameFrom, 1)
+        local sawStairs = false
+        for _, f in ipairs(seen) do
+            if f == 1 then
+                sawStairs = true
+            end
+        end
+        t:assertTrue(sawStairs)
+        -- a step off the upper floor's side onto the ground 4 yd below counts as a fall from it
+        floor = logic.updateFloor(z, 72, 55, false, 71, 50.5, false, false)
+        t:assertEqual(floor, 0)
+        t:assertEqual(z._index.fellFrom, 2)
+    end,
+
     ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
         local z = newHallZone()
         logic.unpack(z)
