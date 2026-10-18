@@ -11,6 +11,13 @@
 -- the speech should wait). Measured offline before
 -- it was built (STATE task 0 "THE TRACKER MEASUREMENT"): with about a second of evidence wrong on 4 / 4 / 0
 -- points where the piece module was wrong on 2.1 / 10.3 / 4.0 %.
+-- Holes of the walk graph (2026-10-19, after the walk of 10-18 21:55, bug 63: the zeppelin tower's base has no
+-- ground under its flights in the data, and the tracker took the player walking there up the flights): where
+-- every surface under the player costs a jump from every candidate and the floor held lies in this cell or one
+-- next to it, the floor and the candidates are kept and carried along with the player (HOLES, HOLE_ANCHOR,
+-- HOLE_MAX; the candidates' `far` is the way walked since their surface was adopted, so the reach grows with it;
+-- a walk-graph gap with no surface at all carries them the same way). The offline truth tool has the same hole
+-- state (truth.py HOLES), so a hole is unscored there, or scored as the carried floor with WV_SCORE_HOLES=1.
 -- No WoW API here: the headless suite and the walk replays load this file.
 local logic = WowVision.surroundingsLogic
 
@@ -29,6 +36,15 @@ tracker.MARGIN = 1.5       -- the floor is sure when every candidate within this
 tracker.LEVEL = 1.5        -- yd: heights this close are one level (a fall must go lower than this)
 tracker.NEAR = 6.0         -- yd: a fall or a missing step reaches this far; farther is a jump
 tracker.RESET = 20.0       -- yd: a move this long since the last look starts afresh (a login, a hearthstone)
+tracker.HOLES = 1          -- the hole rule (0 = off): where every surface under the player costs a jump from every
+                           -- candidate held and the floor held lies in this cell or one next to it, the walk graph
+                           -- has a hole there (the zeppelin tower's base: no ground under the flights, bug 63); the
+                           -- floor and the candidates stay, carried along with the player
+tracker.HOLE_ANCHOR = 5.0  -- yd the floor must have been followed since the last cold start before a hole is believed
+                           -- (a hall entry sets the floor by the area, the canal ring 124 yd under the Ruins' courtyard,
+                           -- and the courtyard above was taken for a hole, 10-18 22:07)
+tracker.HOLE_MAX = 60.0    -- yd of walking in a hole after which the floor held is given up (a hole is local; the
+                           -- truth tool caps its holes at 60 yd too; swept 15 to 100 on 2026-10-19: 60 the knee)
 
 -- (offline only: WV_TRACKER_DEBUG=1 says when the tracker first runs, 2 prints every look with its candidates)
 local DEBUG = os and os.getenv and os.getenv("WV_TRACKER_DEBUG") or nil
@@ -40,7 +56,7 @@ tracker.STEEP = 0          -- yd: a move up along ONE piece no steps explain cos
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
-    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP" }) do
+    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -201,14 +217,14 @@ tracker.reached = reached   -- (offline probes)
 -- minute, kind "time": the Lua time per look in the game was unmeasured, STATE 2026-10-19): looks, their
 -- milliseconds in all, the slowest look, the most candidates kept after one, the most surfaces under one
 -- position, and the looks that ended unsure.
-tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0 }
+tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0, holes = 0 }
 -- (debugprofilestop is the game's millisecond clock; os.clock serves the headless suite and the replays)
 local clock = debugprofilestop or (os and os.clock and function() return os.clock() * 1000 end) or function() return 0 end
 
 -- Returns the stats since the last call and starts afresh.
 function tracker.takeStats()
     local s = tracker.stats
-    tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0 }
+    tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0, holes = 0 }
     return s
 end
 
@@ -230,6 +246,7 @@ function tracker.update(zone, x, y, swimming)
     if n > s.maxCands then s.maxCands = n end
     if (ix.under or 0) > s.maxUnder then s.maxUnder = ix.under end
     if ix.floorSure == false then s.unsure = s.unsure + 1 end
+    if ix.inHole then s.holes = s.holes + 1 end
     return floor_, changed
 end
 
@@ -245,8 +262,29 @@ function look(zone, x, y, swimming)
     local now = under(S, x, y, cache)
     ix.under = #now
     local prev = ix.cands
-    if prev and (#prev == 0 or logic.dist(prev[1].x, prev[1].y, x, y) > tracker.RESET) then
+    -- (the reset is measured from the last look, not from the candidates: carried through a hole or a gap
+    -- they keep the player's position, and their `far` counts the way walked since their surface was adopted)
+    local lx, ly = ix.lastX or x, ix.lastY or y
+    local moved = logic.dist(lx, ly, x, y)
+    ix.lastX, ix.lastY = x, y
+    ix.inHole = false
+    if prev and (#prev == 0 or moved > tracker.RESET) then
         prev = nil
+    end
+    -- the way followed since the last cold start (none: a reset, a layer's setFloor): a hole is believed only
+    -- on a floor followed for HOLE_ANCHOR
+    ix.sinceCold = prev and ((ix.sinceCold or 0) + moved) or 0
+    -- the candidates carried along with the player (a hole, a gap): their surfaces as they were, at the
+    -- player's position, the way walked since added to their reach
+    local function carry()
+        if prev then
+            for i = 1, #prev do
+                local cand = prev[i]
+                cand.far = (cand.far or 0) + moved
+                cand.x, cand.y = x, y
+            end
+            ix.cands = prev
+        end
     end
     if #now == 0 then
         -- no surface under the point (a gap of the walk graph: a beach, a ledge the export did not reach): the
@@ -277,6 +315,8 @@ function look(zone, x, y, swimming)
             ix.cameFrom = was
             ix.fellFrom = nil
             ix.cands = nil
+        else
+            carry()
         end
         if ix.liquids[floor_] == nil then
             ix.swumIn = nil
@@ -287,10 +327,11 @@ function look(zone, x, y, swimming)
     local sets = {}
     local hops = 0
     if prev then
-        local d = logic.dist(prev[1].x, prev[1].y, x, y) + tracker.REACH
-        hops = math.min(tracker.MAX_HOPS, math.ceil(d) + tracker.EXTRA_HOPS)
         for i = 1, #prev do
-            sets[i] = reached(S, prev[i].s, hops, cache)
+            local d = logic.dist(prev[i].x, prev[i].y, x, y) + (prev[i].far or 0) + tracker.REACH
+            local h = math.min(tracker.MAX_HOPS, math.ceil(d) + tracker.EXTRA_HOPS)
+            if h > hops then hops = h end
+            sets[i] = reached(S, prev[i].s, h, cache)
         end
     end
     -- the game says whether the player swims: on foot no liquid surface is a candidate (the piece tracker's
@@ -298,6 +339,10 @@ function look(zone, x, y, swimming)
     -- swimming no dry one; unknown, both at a cost
     local new = {}
     local best = nil
+    -- no surface here that any candidate walks, steps or falls onto (the hole rule below; only on a floor followed
+    -- for HOLE_ANCHOR, and not beyond HOLE_MAX of walking in the hole)
+    local allJump = prev ~= nil and tracker.HOLES ~= 0 and ix.sinceCold >= tracker.HOLE_ANCHOR
+        and (prev[1].far or 0) + moved <= tracker.HOLE_MAX
     for i = 1, #now do
         local b = now[i]
         local local_ = 0
@@ -326,6 +371,11 @@ function look(zone, x, y, swimming)
                     else
                         t = tracker.JUMP
                     end
+                end
+                -- (against the best chain: a candidate that survived an earlier jump, at JUMP within PRUNE,
+                -- walks the surfaces it jumped onto at 0, but the chain still costs a jump)
+                if a.cost + t < tracker.JUMP then
+                    allJump = false
                 end
                 local v = a.cost + t
                 -- (of two ways equally cheap, a fall from the floor held explains more than a walk on a
@@ -360,7 +410,33 @@ function look(zone, x, y, swimming)
     end
     if best == nil then
         -- every surface here is of the wrong kind (dry while swimming, wet on foot): nothing to decide
+        carry()
         return was, false
+    end
+    if allJump and ix.liquids[was] == nil and swimming ~= true then
+        -- a hole of the walk graph: nothing under the player that any candidate reaches, and the floor held
+        -- lies in this cell or one next to it (the piece tracker's rule for a lost floor, edges.lua: the
+        -- zeppelin tower's base has no ground under the flights, the player walks it, bug 63); the floor and
+        -- the candidates stay, carried along (a real jump up onto something else far from the floor held
+        -- is still a jump: the cell test fails there)
+        local r, c = logic.cellOf(zone, x, y)
+        local near = false
+        for dr = -1, 1 do
+            for dc = -1, 1 do
+                if logic.floorHere(zone, (r + dr) * zone.cols + c + dc, was) then
+                    near = true
+                end
+            end
+        end
+        if near then
+            carry()
+            ix.inHole = true
+            if tracker.debug then
+                io.stderr:write(string.format("look %s %.1f %.1f floor %d HOLE (%d surfaces under, %d candidates carried)\n",
+                    tostring(zone.key), x, y, was, #now, #prev))
+            end
+            return was, false
+        end
     end
     -- normalised and pruned
     local kept = {}

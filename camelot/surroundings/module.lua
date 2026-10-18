@@ -469,8 +469,8 @@ local function logTiming(x, y)
     if s.looks == 0 then
         return
     end
-    logEntry("time", string.format("%d looks, %.1f ms in all, %.2f ms the slowest, %d candidates and %d surfaces at most, %d unsure",
-        s.looks, s.ms, s.maxMs, s.maxCands, s.maxUnder, s.unsure), x, y)
+    logEntry("time", string.format("%d looks, %.1f ms in all, %.2f ms the slowest, %d candidates and %d surfaces at most, %d unsure, %d in holes",
+        s.looks, s.ms, s.maxMs, s.maxCands, s.maxUnder, s.unsure, s.holes or 0), x, y)
 end
 
 -- The data registers here as it loads (its data.xml comes after this folder in camelot/modules.xml):

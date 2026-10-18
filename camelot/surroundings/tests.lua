@@ -188,18 +188,44 @@ local function newTowerZone()
     return z
 end
 
+-- Format 5 surfaces (wv-surroundings tools/surfaces.py) made here for the tracker's tests: `recs` = {r, c, z, piece}
+-- records; the steps to each neighbouring column's surface within 1 yd of height; returns the layer's rows (records
+-- of col, height, piece, flags).
+local function surfaceRows(recs)
+    local A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"
+    local function digits(v, n)
+        local s = ""
+        for _ = 1, n do
+            s = A:sub(v % 64 + 1, v % 64 + 1) .. s
+            v = math.floor(v / 64)
+        end
+        return s
+    end
+    local byCol = {}
+    for _, s in ipairs(recs) do
+        byCol[s.r * 1000 + s.c] = byCol[s.r * 1000 + s.c] or {}
+        table.insert(byCol[s.r * 1000 + s.c], s)
+    end
+    local function stepTo(s, r, c)
+        for _, u in ipairs(byCol[r * 1000 + c] or {}) do
+            if math.abs(u.z - s.z) <= 1.0 then
+                return true
+            end
+        end
+        return false
+    end
+    local rows = {}
+    table.sort(recs, function(a, b) return a.r < b.r or (a.r == b.r and (a.c < b.c or (a.c == b.c and a.z < b.z))) end)
+    for _, s in ipairs(recs) do
+        local flags = (stepTo(s, s.r - 1, s.c) and 1 or 0) + (stepTo(s, s.r + 1, s.c) and 2 or 0)
+            + (stepTo(s, s.r, s.c - 1) and 4 or 0) + (stepTo(s, s.r, s.c + 1) and 8 or 0)
+        rows[s.r] = (rows[s.r] or "") .. digits(s.c, 3) .. digits(math.floor(s.z * 10 + 0.5) + 200000, 3) .. digits(s.piece, 2) .. digits(flags, 1)
+    end
+    return rows
+end
+
 testRunner:addSuite("Surroundings", {
     ["the walk-graph tracker follows stairs onto a floor over the ground, is sure there, and falls off it"] = function(t)
-        -- format 5 surfaces (wv-surroundings tools/surfaces.py) made here: records of col, height, piece, flags
-        local A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"
-        local function digits(v, n)
-            local s = ""
-            for _ = 1, n do
-                s = A:sub(v % 64 + 1, v % 64 + 1) .. s
-                v = math.floor(v / 64)
-            end
-            return s
-        end
         local recs = {}   -- {r, c, z, piece}
         local function add(r, c, z, piece)
             recs[#recs + 1] = { r = r, c = c, z = z, piece = piece }
@@ -226,27 +252,7 @@ testRunner:addSuite("Surroundings", {
                 add(x - 60, y - 40, 3, 2)
             end
         end
-        -- the steps: to each neighbouring column's surface within 1 yd of height
-        local byCol = {}
-        for _, s in ipairs(recs) do
-            byCol[s.r * 1000 + s.c] = byCol[s.r * 1000 + s.c] or {}
-            table.insert(byCol[s.r * 1000 + s.c], s)
-        end
-        local function stepTo(s, r, c)
-            for _, u in ipairs(byCol[r * 1000 + c] or {}) do
-                if math.abs(u.z - s.z) <= 1.0 then
-                    return true
-                end
-            end
-            return false
-        end
-        local rows = {}
-        table.sort(recs, function(a, b) return a.r < b.r or (a.r == b.r and (a.c < b.c or (a.c == b.c and a.z < b.z))) end)
-        for _, s in ipairs(recs) do
-            local flags = (stepTo(s, s.r - 1, s.c) and 1 or 0) + (stepTo(s, s.r + 1, s.c) and 2 or 0)
-                + (stepTo(s, s.r, s.c - 1) and 4 or 0) + (stepTo(s, s.r, s.c + 1) and 8 or 0)
-            rows[s.r] = (rows[s.r] or "") .. digits(s.c, 3) .. digits(math.floor(s.z * 10 + 0.5) + 200000, 3) .. digits(s.piece, 2) .. digits(flags, 1)
-        end
+        local rows = surfaceRows(recs)
         local z = newWalkZone()
         z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
         z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
@@ -287,6 +293,68 @@ testRunner:addSuite("Surroundings", {
         floor = logic.updateFloor(z, 72, 55, false, 71, 50.5, false, false)
         t:assertEqual(floor, 0)
         t:assertEqual(z._index.fellFrom, 2)
+    end,
+
+    ["the walk-graph tracker keeps the ground through a hole of the walk graph, not after a cold start, not for ever"] = function(t)
+        -- the ground (piece 0, height 0) on x 40 to 100, y 54 to 56, except a hole under a deck (piece 3 at 12, a
+        -- platform 12 yd up, no ground under it in the data) on x 76 to 80, and a long one on x 40 to 70; the
+        -- cell records say nothing (no noGround: the ground is "here" everywhere, as the module's cells do under
+        -- the zeppelin tower)
+        local function zoneWith(holeFrom, holeTo)
+            local recs = {}
+            for x = 40, 100 do
+                for y = 54, 56 do
+                    if x >= holeFrom and x <= holeTo then
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 12, piece = 3 }
+                    else
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 0, piece = 0 }
+                    end
+                end
+            end
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" }, { "platform", "platform" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            return z
+        end
+        -- a short hole (5 yd): the ground is kept through it, the looks in it are holes, sure again beyond
+        local z = zoneWith(76, 80)
+        logic.setFloor(z, 0)
+        local px = 95
+        for x = 93, 71, -2 do
+            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            t:assertEqual(floor, 0, "ground at x " .. x)
+            t:assertEqual(z._index.inHole, x >= 76 and x <= 80, "hole at x " .. x)
+            px = x
+        end
+        t:assertTrue(z._index.floorSure)
+        -- a cold start right before the hole (a layer's setFloor): nothing followed yet, the deck is taken
+        z = zoneWith(76, 80)
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 81, 55, false, 83, 55, false, false), 0)
+        t:assertEqual(logic.updateFloor(z, 79, 55, false, 81, 55, false, false), 3)
+        -- a hole longer than HOLE_MAX: the ground is given up after that much walking in it (the bound set to
+        -- 10 yd here: the test zone's grid ends at x 40)
+        z = zoneWith(40, 70)
+        logic.setFloor(z, 0)
+        local bound = logic.tracker.HOLE_MAX
+        logic.tracker.HOLE_MAX = 10
+        px = 95
+        local gaveUp = nil
+        for x = 93, 41, -2 do
+            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            if floor == 3 and not gaveUp then
+                gaveUp = x
+            end
+            px = x
+        end
+        logic.tracker.HOLE_MAX = bound
+        -- (the looks 2 yd apart: given up after 10 yd of hole, at x 59)
+        t:assertEqual(gaveUp, 59)
     end,
 
     ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
