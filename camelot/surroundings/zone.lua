@@ -701,6 +701,11 @@ function logic.unpack(zone, locale)
         assert(type(data) == "table", "the surroundings data of " .. tostring(zone.key) .. " could not be read")
         logic.expand(zone, data, locale)
     end
+    -- the walk graph's surfaces of the zone's own layer (format 5, the walk-graph tracker; tracker.lua): the
+    -- piece tracker of before runs where the data has none
+    local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
+    zone.surfaces = S and S[zone.key] or nil
+    zone.surf = zone.surfaces and zone.surfaces.zone or nil
     prepareWords(zone, locale)
     local ix = {}
     zone._index = ix
@@ -1121,6 +1126,8 @@ function logic.unpackLayer(zone, src, suffix)
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
+        -- its walk-graph surfaces (format 5), where the data has them
+        surf = zone.surfaces and zone.surfaces[suffix == "/indoor" and "indoor" or "indoorIn"] or nil,
     }
     logic.unpack(layer)
     local covered = {}
