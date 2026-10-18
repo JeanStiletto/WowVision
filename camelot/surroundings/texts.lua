@@ -369,9 +369,12 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     -- with path lines (zone.pathLines): a foot on the player's own piece is guided to along the piece's line
     -- toward the end nearer the foot (a tower's platform ring to its next flight, the Abbey gallery's strip), not
     -- by the straight bearing, which ran through the tower's body (walks 2026-10-15 15:24, 2026-10-18 03:27)
+    -- (on a flight, the next flight's foot lies on the landing or platform the flight leads to: that piece's line)
     local along = nil
-    if ix.pathLines and on ~= 0 and (f.floor or 0) == on and d > logic.GUIDE_AT then
-        local ld, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, true)
+    local fl0 = f.floor or 0
+    local linePiece = (fl0 == on and on) or (fl0 ~= 0 and ix.joined[on] and ix.joined[on][fl0] and fl0) or nil
+    if ix.pathLines and on ~= 0 and linePiece and d > logic.GUIDE_AT then
+        local ld, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, linePiece)
         if ld ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
             local toEnd = logic.dist(f.x, f.y, lane.x2, lane.y2) <= logic.dist(f.x, f.y, lane.x1, lane.y1)
             local h1, h2 = logic.storedHeadings(lane, px, py)

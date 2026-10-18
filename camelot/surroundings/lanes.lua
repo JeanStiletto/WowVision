@@ -14,7 +14,8 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
 -- and the point; nil when there is none. `skip`: a lane left out; `place`: only lanes of that place.
--- `own` (optional): only a stretch gated to the player's own piece (a flight's path, a landing's line).
+-- `own` (optional): only a stretch gated to the player's own piece (true), or to the piece given (a flight's
+-- path, a landing's or platform's line between flights).
 function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     local r, c = logic.cellOf(zone, x, y)
     local ix = zone._index
@@ -31,10 +32,11 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     -- the landing's 12 yd over it
     local joined = floor ~= 0 and ix.joined[floor] or nil
     local aloft = floor ~= 0 and not (joined and joined[0])
+    local ownPiece = own == true and floor or own
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
         if (kinds == nil or kinds[lane.kind]) and lane ~= skip
-            and (own and (lane.piece == floor and floor ~= 0) or not own and (lane.piece == -1 or lane.piece == floor))
+            and (own and (lane.piece == ownPiece and ownPiece ~= 0) or not own and (lane.piece == -1 or lane.piece == floor))
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             local here = true
