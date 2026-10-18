@@ -174,10 +174,43 @@ local function under(S, x, y, cache)
 end
 tracker.under = under
 
+-- The cost of the looks since the stats were last taken (module.lua writes them into the walk log once a
+-- minute, kind "time": the Lua time per look in the game was unmeasured, STATE 2026-10-19): looks, their
+-- milliseconds in all, the slowest look, the most candidates kept after one, the most surfaces under one
+-- position, and the looks that ended unsure.
+tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0 }
+-- (debugprofilestop is the game's millisecond clock; os.clock serves the headless suite and the replays)
+local clock = debugprofilestop or (os and os.clock and function() return os.clock() * 1000 end) or function() return 0 end
+
+-- Returns the stats since the last call and starts afresh.
+function tracker.takeStats()
+    local s = tracker.stats
+    tracker.stats = { looks = 0, ms = 0, maxMs = 0, maxCands = 0, maxUnder = 0, unsure = 0 }
+    return s
+end
+
+local look
+
 -- One look: the floor piece at (x, y) on the layer `zone` (its surfaces in zone.surf), `swimming` true, false
 -- or nil (unknown). Returns floor, changed. Keeps zone._index.cands (the candidates: {s, cost, x, y, fell}),
 -- .floor, .floorSure, .cameFrom, .fellFrom, .swumIn; clears the join bookkeeping of the piece tracker.
 function tracker.update(zone, x, y, swimming)
+    local t0 = clock()
+    local floor_, changed = look(zone, x, y, swimming)
+    local ms = clock() - t0
+    local s = tracker.stats
+    local ix = zone._index
+    s.looks = s.looks + 1
+    s.ms = s.ms + ms
+    if ms > s.maxMs then s.maxMs = ms end
+    local n = ix.cands and #ix.cands or 0
+    if n > s.maxCands then s.maxCands = n end
+    if (ix.under or 0) > s.maxUnder then s.maxUnder = ix.under end
+    if ix.floorSure == false then s.unsure = s.unsure + 1 end
+    return floor_, changed
+end
+
+function look(zone, x, y, swimming)
     local ix = zone._index
     local S = zone.surf
     local was = ix.floor or 0
@@ -187,6 +220,7 @@ function tracker.update(zone, x, y, swimming)
     end
     local cache = {}
     local now = under(S, x, y, cache)
+    ix.under = #now
     local prev = ix.cands
     if prev and (#prev == 0 or logic.dist(prev[1].x, prev[1].y, x, y) > tracker.RESET) then
         prev = nil

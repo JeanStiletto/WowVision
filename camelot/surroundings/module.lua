@@ -443,6 +443,36 @@ local function logTrail(x, y)
     log.trail = trim(log.trail, TRAIL_MAX)
 end
 
+-- The walk-graph tracker's cost, one silent log entry (kind "time") a minute while the log is on: the looks
+-- of the minute, their milliseconds in all and the slowest one, the most candidates kept and surfaces under
+-- the position after one look, the looks that ended unsure (the Lua time per look in the game was
+-- unmeasured, 2026-10-19; the user's next walk brings the numbers, no sighted check).
+local TIMING_EVERY = 60
+local timingAt = nil
+
+local function logTiming(x, y)
+    local tracker = logic.tracker
+    if tracker == nil or activeLog() == nil then
+        return
+    end
+    local now = GetTime()
+    if timingAt == nil then
+        timingAt = now
+        tracker.takeStats()
+        return
+    end
+    if now - timingAt < TIMING_EVERY then
+        return
+    end
+    timingAt = now
+    local s = tracker.takeStats()
+    if s.looks == 0 then
+        return
+    end
+    logEntry("time", string.format("%d looks, %.1f ms in all, %.2f ms the slowest, %d candidates and %d surfaces at most, %d unsure",
+        s.looks, s.ms, s.maxMs, s.maxCands, s.maxUnder, s.unsure), x, y)
+end
+
 -- The data registers here as it loads (its data.xml comes after this folder in camelot/modules.xml):
 -- a zone file its frame and its JSON text (decoded only while the player is in the zone: store.lua),
 -- a places list file its table (placesUi.lua). The files call addZone and addPlaces on the addon's
@@ -1473,6 +1503,7 @@ module:hasUpdate(function(self)
         logEntry("floor", inHall and "into the halls" or "out of the halls", x, y, { subzone = gameSubzone() })
     end
     logTrail(x, y)
+    logTiming(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
     -- a jump inside (a hearthstone, a portal) starts afresh as a step in or out does: from the
