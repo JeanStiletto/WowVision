@@ -183,6 +183,11 @@ end
 -- the floor joins or drops onto here, else the only one here); not swimming, on none (the floor
 -- the liquid joins here, else the ground). Returns the floor and whether it changed.
 function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
+    -- the walk-graph tracker where the data has the layer's surfaces (format 5; tracker.lua): the joins, the
+    -- drop edges and the lines decide nothing about the floor then, the surfaces do
+    if zone.surf and logic.tracker and logic.useTracker ~= false then
+        return logic.tracker.update(zone, x, y, swimming)
+    end
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local key = r * zone.cols + c
@@ -410,6 +415,9 @@ end
 -- Sets the floor piece the player is on (0 the ground); every lookup follows it.
 function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
+    if logic.tracker then
+        logic.tracker.reset(zone)
+    end
     zone._index.fallBeside = nil
     zone._index.pendingJoins = {}
     zone._index.cameFrom = nil

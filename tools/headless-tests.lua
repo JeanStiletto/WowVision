@@ -59,6 +59,7 @@ loadAddonFile("camelot/surroundings/store.lua")
 -- the game decodes a zone's JSON text (C_EncodingUtil.DeserializeJSON); here the plain Lua reader
 WowVision.surroundingsLogic.decodeJson = dofile("tools/json.lua")
 loadAddonFile("camelot/surroundings/edges.lua")
+loadAddonFile("camelot/surroundings/tracker.lua")
 loadAddonFile("camelot/surroundings/lanes.lua")
 loadAddonFile("camelot/surroundings/rooms.lua")
 loadAddonFile("camelot/surroundings/squares.lua")

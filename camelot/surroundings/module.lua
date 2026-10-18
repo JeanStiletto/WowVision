@@ -458,6 +458,11 @@ if namespace then
     function namespace.addPlaces(places)
         table.insert(data.places, places)
     end
+    -- the walk graph's surfaces per layer (format 5, zones/<zone>-surfaces.lua): the walk-graph tracker's data
+    function namespace.addSurfaces(key, layers)
+        data.surfaces = data.surfaces or {}
+        data.surfaces[key] = layers
+    end
 end
 -- the game decodes a zone's JSON text (offline the tools put a stand-in in its place)
 logic.decodeJson = function(text)

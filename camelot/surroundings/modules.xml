@@ -9,6 +9,7 @@
   <Script file="zone.lua" />
   <Script file="store.lua" />
   <Script file="edges.lua" />
+  <Script file="tracker.lua" />
   <Script file="lanes.lua" />
   <Script file="rooms.lua" />
   <Script file="squares.lua" />
