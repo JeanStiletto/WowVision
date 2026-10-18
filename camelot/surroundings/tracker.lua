@@ -43,6 +43,10 @@ tracker.HOLES = 1          -- the hole rule (0 = off): where every surface under
 tracker.HOLE_ANCHOR = 5.0  -- yd the floor must have been followed since the last cold start before a hole is believed
                            -- (a hall entry sets the floor by the area, the canal ring 124 yd under the Ruins' courtyard,
                            -- and the courtyard above was taken for a hole, 10-18 22:07)
+tracker.HOLE_DZ = 4.0      -- yd: a surface this little above a candidate (within NEAR) is a missing step or a stair's
+                           -- foot the walk graph lacks, no hole (the zeppelin tower's first flight starts 2.8 yd over
+                           -- the terrain in the data: with the terrain back under the tower the rule held the ground
+                           -- while the player climbed, trial H1 2026-10-19)
 tracker.HOLE_MAX = 60.0    -- yd of walking in a hole after which the floor held is given up (a hole is local; the
                            -- truth tool caps its holes at 60 yd too; swept 15 to 100 on 2026-10-19: 60 the knee)
 
@@ -56,7 +60,7 @@ tracker.STEEP = 0          -- yd: a move up along ONE piece no steps explain cos
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
-    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX" }) do
+    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -357,11 +361,11 @@ function look(zone, x, y, swimming)
             for j = 1, #prev do
                 local a = prev[j]
                 local t
+                local d = logic.dist(a.x, a.y, x, y)
+                local dz = b.z - a.s.z
                 if sets[j][kb] then
                     t = 0
                 else
-                    local d = logic.dist(a.x, a.y, x, y)
-                    local dz = b.z - a.s.z
                     if d <= tracker.NEAR and dz < -tracker.LEVEL then
                         t = tracker.FALL
                     elseif d <= tracker.NEAR and dz <= tracker.LEVEL and dz >= -tracker.LEVEL then
@@ -374,7 +378,9 @@ function look(zone, x, y, swimming)
                 end
                 -- (against the best chain: a candidate that survived an earlier jump, at JUMP within PRUNE,
                 -- walks the surfaces it jumped onto at 0, but the chain still costs a jump)
-                if a.cost + t < tracker.JUMP then
+                -- (HOLE_DZ against the chain's own floor, the candidates at 0: a surface a little above it is a
+                -- missing step or a stair's foot, no hole; a candidate that jumped there earlier does not count)
+                if a.cost + t < tracker.JUMP or (a.cost == 0 and d <= tracker.NEAR and dz <= tracker.HOLE_DZ) then
                     allJump = false
                 end
                 local v = a.cost + t
