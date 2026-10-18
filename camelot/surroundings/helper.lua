@@ -47,18 +47,20 @@ end
 -- the line runs from it the way the climb rises, riseOf) comes before one that goes down, whatever is nearer:
 -- on Northshire Abbey's gallery the main ramp's top lay 2 yd off and the bell tower ramp's foot 3 yd, and Alt-I
 -- always led down to the hall (user 2026-10-18).
-function logic.climbAtFoot(zone, x, y, reach)
+-- `floor` (optional): only climbs joined to that floor piece; `upOnly`: only ends that are feet (or unknown).
+function logic.climbAtFoot(zone, x, y, reach, floor, upOnly)
     local ix = zone._index
     if ix.lineFloors == nil then
         return nil
     end
+    local joined = floor ~= nil and ix.joined[floor] or nil
     local r0, c0 = logic.cellOf(zone, x, y)
     local best, bx, by, bd, bRank
     local span = math.ceil((reach + logic.LANE_REACH) / zone.cell)
     for r = r0 - span, r0 + span do
         for c = c0 - span, c0 + span do
             for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if ix.lineFloors[lane.piece] then
+                if ix.lineFloors[lane.piece] and (floor == nil or lane.piece ~= floor and joined and joined[lane.piece]) then
                     for _, e in ipairs({ { lane.free1, lane.x1, lane.y1, lane.x2, lane.y2 }, { lane.free2, lane.x2, lane.y2, lane.x1, lane.y1 } }) do
                         if e[1] then
                             local d = dist(x, y, e[2], e[3])
@@ -70,7 +72,7 @@ function logic.climbAtFoot(zone, x, y, reach)
                                 local off = math.abs((away - up + 180) % 360 - 180)
                                 rank = off < 90 and 0 or 1
                             end
-                            if d <= reach and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
+                            if d <= reach and not (upOnly and rank == 1) and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
                                 best, bx, by, bd, bRank = lane.piece, e[2], e[3], d, rank
                             end
                         end
@@ -84,8 +86,11 @@ end
 
 -- The climb's line from the point (sx, sy) on it: the stretches followed end to end (at a fork the one that turns
 -- least). Returns the points, the first one (sx, sy).
-local function followLine(lanes, sx, sy)
+local function followLine(lanes, sx, sy, skip)
     local points, used = { { x = sx, y = sy } }, {}
+    if skip then
+        used[skip] = true
+    end
     local px, py = sx, sy
     local ax, ay = nil, nil   -- the direction walked so far
     while true do
@@ -176,7 +181,12 @@ end
 
 -- A climb route from its foot (fx, fy) on the floor `footFloor`: { points, piece, landing, short }, or nil.
 function logic.climbRoute(zone, fx, fy, footFloor)
-    local piece, ex, ey = logic.climbAtFoot(zone, fx, fy, logic.HELPER_FOOT)
+    -- a climb joined to the foot's floor that goes up from it (two feet share the Abbey gallery's west end: the bell
+    -- tower ramp's on the gallery and, 16 yd below, the main ramp's on the hall floor)
+    local piece, ex, ey = logic.climbAtFoot(zone, fx, fy, logic.HELPER_FOOT, footFloor, true)
+    if piece == nil and footFloor ~= nil then
+        piece, ex, ey = logic.climbAtFoot(zone, fx, fy, logic.HELPER_FOOT)
+    end
     if piece == nil then
         return nil
     end
@@ -195,12 +205,101 @@ end
 -- A climb whose line begins within `reach` of the player at (x, y) on a piece joined to the player's floor `floor`
 -- (a foot the data has no foot record for: many a spiral's): the climb route from that line's end, or nil.
 function logic.climbNear(zone, x, y, floor, reach)
-    local piece, ex, ey = logic.climbAtFoot(zone, x, y, reach)
-    local joined = zone._index.joined[floor or 0]
-    if piece == nil or piece == floor or not (joined and joined[piece]) then
+    -- a climb that goes up from this floor (the Abbey gallery: the main ramp's top lay nearest and Alt-I led down)
+    local piece, ex, ey = logic.climbAtFoot(zone, x, y, reach, floor or 0, true)
+    if piece == nil then
         return nil
     end
     return logic.climbRoute(zone, ex, ey, floor or 0)
+end
+
+logic.HELPER_FLOOR_REACH = 40   -- yd: a climb's foot on the player's own floor piece that Alt-I leads to along its line
+
+-- The way along a piece's own line (a landing's or platform's, path-line data) from where the player stands to
+-- near the point (fx, fy): the stretch nearest the player, then its chain followed the way that comes within
+-- HELPER_FOOT of the point, cut there. Points, or nil (no line of the piece within reach, or none reaching the point).
+function logic.lineRouteTo(zone, piece, x, y, fx, fy)
+    local lanes = climbLanes(zone, piece, x, y)
+    local best, bx, by, bd
+    for _, lane in ipairs(lanes) do
+        if lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2 then
+            local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+            if d <= logic.LANE_REACH and (bd == nil or d < bd) then
+                best, bx, by, bd = lane, px, py, d
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    local choice
+    for _, e in ipairs({ { best.x2, best.y2 }, { best.x1, best.y1 } }) do
+        local chain = followLine(lanes, e[1], e[2], best)
+        local k, kd
+        for i, p in ipairs(chain) do
+            local d = dist(p.x, p.y, fx, fy)
+            if kd == nil or d < kd then
+                k, kd = i, d
+            end
+        end
+        if kd ~= nil and kd <= logic.HELPER_FOOT and (choice == nil or kd < choice.kd) then
+            choice = { chain = chain, k = k, kd = kd }
+        end
+    end
+    if choice == nil then
+        return nil
+    end
+    local points = { { x = bx, y = by } }
+    for i = 1, choice.k do
+        -- the stretch's end is left out where the chain turns back past the player's point at once (two paths'
+        -- stretches overlap on a platform ring: no 3 yd east to come back west)
+        local p, nxt = choice.chain[i], choice.chain[i + 1]
+        if not (i == 1 and nxt and i < choice.k and dist(bx, by, nxt.x, nxt.y) < dist(p.x, p.y, nxt.x, nxt.y)) then
+            points[#points + 1] = p
+        end
+    end
+    return points
+end
+
+-- A route up from the player's own floor piece when no climb begins within HELPER_NEAR: to the nearest foot on
+-- this piece within HELPER_FLOOR_REACH along the piece's own line (the safe way round: Northshire Abbey's gallery
+-- to the bell tower ramp's foot at its west end, not along the 2 yd strip over the hall, user 2026-10-18), then up
+-- the climb as climbRoute. { points, piece, landing, short, name }, or nil.
+function logic.floorClimbRoute(zone, floor, x, y)
+    local ix = zone._index
+    if floor == nil or floor == 0 then
+        return nil
+    end
+    local best, bd
+    for _, f in ipairs(ix.climbFeet or {}) do
+        if (f.floor or 0) == floor then
+            local d = dist(x, y, f.x, f.y)
+            if d <= logic.HELPER_FLOOR_REACH and (bd == nil or d < bd) then
+                best, bd = f, d
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    local climb = logic.climbRoute(zone, best.x, best.y, floor)
+    if climb == nil then
+        return nil
+    end
+    local lead = logic.lineRouteTo(zone, floor, x, y, best.x, best.y)
+    if lead then
+        local points = {}
+        for _, p in ipairs(lead) do
+            points[#points + 1] = p
+        end
+        for _, p in ipairs(climb.points) do
+            points[#points + 1] = p
+        end
+        climb.points = points
+    end
+    climb.kind = "climb"
+    climb.foot = best
+    return climb
 end
 
 -- A climb route for a player standing on the climb `piece` at (x, y), facing `facing` (radians as GetPlayerFacing,

@@ -1840,6 +1840,13 @@ function module:leadOn()
             route.kind = "climb"
         end
     end
+    if route == nil and on and on ~= 0 and grid._index.pathLines then
+        -- a climb up from this floor piece farther off, along the piece's own line (path-line data)
+        route = logic.floorClimbRoute(grid, on, x, y)
+        if route and route.foot then
+            name = logic.finishText(logic.describe(grid, route.foot.value, false, true, nil, nil))
+        end
+    end
     if route == nil then
         local t
         t, grid = helperTarget(z, grid, x, y)
