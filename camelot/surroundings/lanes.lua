@@ -215,6 +215,29 @@ end
 
 -- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
 -- each way: toward the stretch's end and back (bearings, or nil where it stored none).
+-- yd on along a line that the turn key and the guidance aim at from beside the line: off the middle, the
+-- player is pulled back onto it instead of walking parallel to it (user 2026-10-18: lines that keep one in the
+-- real middle by default; the zeppelin tower's first flight, left 4 yd to the open side)
+logic.LANE_AHEAD = 3.5
+
+-- The point `ahead` yd (LANE_AHEAD) on along a stretch from its point (px, py) toward its end (`toEnd`) or
+-- back toward its start, no farther than that end.
+function logic.laneAhead(lane, px, py, toEnd, ahead)
+    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 1e-6 then
+        return px, py
+    end
+    local ux, uy = dx / len, dy / len
+    if not toEnd then
+        ux, uy = -ux, -uy
+    end
+    local ex, ey = toEnd and lane.x2 or lane.x1, toEnd and lane.y2 or lane.y1
+    local room = math.sqrt((ex - px) ^ 2 + (ey - py) ^ 2)
+    local a = math.min(ahead or logic.LANE_AHEAD, room)
+    return px + ux * a, py + uy * a
+end
+
 function logic.storedHeadings(lane, px, py)
     local h = lane.headings
     if h == nil then
@@ -248,6 +271,12 @@ function logic.lineFacings(zone, x, y, value, _facing)
     if ixp.pathLines and (ixp.floor or 0) ~= 0 then
         local d, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, true)
         if d ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            if d > 1.0 then
+                -- beside the line: toward the point LANE_AHEAD on along it, each way
+                local ax, ay = logic.laneAhead(lane, px, py, true)
+                local bx2, by2 = logic.laneAhead(lane, px, py, false)
+                return { math.rad(-logic.bearingOf(ax - x, ay - y)), math.rad(-logic.bearingOf(bx2 - x, by2 - y)) }, false
+            end
             local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
             local h1, h2 = logic.storedHeadings(lane, px, py)
             local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along

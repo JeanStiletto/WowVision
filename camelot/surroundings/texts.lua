@@ -377,11 +377,18 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         local ld, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, linePiece)
         if ld ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
             local toEnd = logic.dist(f.x, f.y, lane.x2, lane.y2) <= logic.dist(f.x, f.y, lane.x1, lane.y1)
-            local h1, h2 = logic.storedHeadings(lane, px, py)
-            local h = toEnd and h1 or h2
-            if h == nil then
-                local sx, sy = lane.x2 - lane.x1, lane.y2 - lane.y1
-                h = logic.bearingOf(toEnd and sx or -sx, toEnd and sy or -sy)
+            local h
+            if ld > 1.0 then
+                -- beside the line: toward the point LANE_AHEAD on along it, back onto the middle
+                local ax, ay = logic.laneAhead(lane, px, py, toEnd)
+                h = logic.bearingOf(ax - x, ay - y)
+            else
+                local h1, h2 = logic.storedHeadings(lane, px, py)
+                h = toEnd and h1 or h2
+                if h == nil then
+                    local sx, sy = lane.x2 - lane.x1, lane.y2 - lane.y1
+                    h = logic.bearingOf(toEnd and sx or -sx, toEnd and sy or -sy)
+                end
             end
             along = h
             dir = h
