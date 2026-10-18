@@ -621,7 +621,14 @@ local function guideTo(z, g, t, x, y, brief)
     g.target, g.zone = t, z
     if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
-            say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+            -- already on the climb's own piece (stepped onto it by its line at the foot): its place line says the
+            -- way on a moment later, and "weiter auf 3" right before it was noise (user 2026-10-18 08:37)
+            local ixz = z._index
+            local onIt = t.kind == "climb" and ixz.lineFloors ~= nil and ixz.lineFloors[ixz.floor or 0]
+                and logic.placeOf(logic.valueAt(z, x, y)) == logic.placeOf(t.value)
+            if not onIt then
+                say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+            end
             g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, true, now, t.key, false
             noteSaid(g, t)
             g.atSaid = t.key

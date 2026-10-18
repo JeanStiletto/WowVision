@@ -43,24 +43,35 @@ local function climbLanes(zone, piece, x, y)
 end
 
 -- The climb piece whose line has a free end nearest (x, y) within `reach` (on the floor `fromFloor`'s side),
--- with that end. nil when no climb line ends there.
+-- with that end. nil when no climb line ends there. A climb that goes UP from here (the free end is its foot:
+-- the line runs from it the way the climb rises, riseOf) comes before one that goes down, whatever is nearer:
+-- on Northshire Abbey's gallery the main ramp's top lay 2 yd off and the bell tower ramp's foot 3 yd, and Alt-I
+-- always led down to the hall (user 2026-10-18).
 function logic.climbAtFoot(zone, x, y, reach)
     local ix = zone._index
     if ix.lineFloors == nil then
         return nil
     end
     local r0, c0 = logic.cellOf(zone, x, y)
-    local best, bx, by, bd
+    local best, bx, by, bd, bRank
     local span = math.ceil((reach + logic.LANE_REACH) / zone.cell)
     for r = r0 - span, r0 + span do
         for c = c0 - span, c0 + span do
             for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
                 if ix.lineFloors[lane.piece] then
-                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
+                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1, lane.x2, lane.y2 }, { lane.free2, lane.x2, lane.y2, lane.x1, lane.y1 } }) do
                         if e[1] then
                             local d = dist(x, y, e[2], e[3])
-                            if d <= reach and (bd == nil or d < bd) then
-                                best, bx, by, bd = lane.piece, e[2], e[3], d
+                            -- 0 up from here, 1 down, 0.5 unknown (no rise in the value)
+                            local rank = 0.5
+                            local up = logic.riseOf(zone, lane.value)
+                            if up ~= nil and (e[4] ~= e[2] or e[5] ~= e[3]) then
+                                local away = logic.bearingOf(e[4] - e[2], e[5] - e[3])
+                                local off = math.abs((away - up + 180) % 360 - 180)
+                                rank = off < 90 and 0 or 1
+                            end
+                            if d <= reach and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
+                                best, bx, by, bd, bRank = lane.piece, e[2], e[3], d, rank
                             end
                         end
                     end
