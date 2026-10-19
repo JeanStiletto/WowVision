@@ -26,8 +26,12 @@ logic.tracker = tracker
 
 tracker.REACH = 1.25       -- yd: surfaces this near the position are its candidates
 tracker.STEP_DZ = 1.5      -- yd: a step leads to the neighbouring column's surface nearest in height within this
-tracker.EXTRA_HOPS = 3     -- steps allowed beyond the distance moved (corners on the 1 yd grid)
-tracker.MAX_HOPS = 9       -- steps looked for at most (a longer move is a missing step, a fall or a jump)
+tracker.EXTRA_HOPS = 5     -- steps allowed beyond the distance moved (corners on the 1 yd grid; a U-ramp or a zigzag
+                           -- ramp climbs 14 steps inside a 5 by 6 yd box: the Lion's Pride Inn, the Abbey bell tower
+                           -- ramp; 3 until 2026-10-19, swept 3 / 5 against the truth: 5 with MAX_HOPS 15 Elwynn
+                           -- 189 -> 144 wrong points, the Undercity 389 -> 387, Dun Morogh 36 -> 38)
+tracker.MAX_HOPS = 15      -- steps looked for at most (a longer move is a missing step, a fall or a jump; 9 until
+                           -- 2026-10-19, the sweep above)
 tracker.FALL = 2.0         -- the cost of a fall onto a lower surface not reached by steps
 tracker.MISSING = 1.5      -- the cost of a move at one height no steps explain (a step the data misses)
 tracker.JUMP = 8.0         -- the cost of a move nothing explains
