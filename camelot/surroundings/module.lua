@@ -904,6 +904,7 @@ local function checkEdges(z, x, y, px, py, rooms)
         if changed then
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
+            z._index.floorBefore = before
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
@@ -1373,6 +1374,8 @@ local function updateIndoors(z, x, y, px, py)
             -- logged as an entry of its own (the walk log tools show where the floor switched;
             -- user 2026-10-06: a ground floor line at the top of the tavern's stairs)
             logEntry("floor", before .. " -> " .. floor, x, y)
+            -- (the floor held before: the turn key on a landing faces the flight not come from)
+            ix.floorBefore = before
             -- the places found so far kept per floor piece, so stepping back onto a floor finds
             -- its places again with what was said there (a fresh flood at every hop said the
             -- stairs twice)
@@ -1723,7 +1726,7 @@ end
 -- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
 -- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
 -- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
--- (also what it turned toward, for the walk log: "target", "room", "line", or nil)
+-- (also what it turned toward, for the walk log: "target", "room", "landing", "line", or nil)
 local function lineFacing()
     if not module:getEnabled() then
         return nil
@@ -1750,6 +1753,12 @@ local function lineFacing()
             return nil
         end
         z = layer
+    end
+    -- on a landing between flights: toward the flight the player did not come from (lanes.lua landingFacing;
+    -- the landing's own line is a stub, the inn's turned the player back down, walk 2026-10-19 22:11)
+    local onLanding = logic.landingFacing(z, z._index.floor, x, y, facing, z._index.floorBefore)
+    if onLanding then
+        return onLanding, "landing"
     end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)

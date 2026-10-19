@@ -392,6 +392,115 @@ function logic.lineTurnFacing(facings, facing, cycle)
     return next or best
 end
 
+-- The turn key on a landing between flights (2026-10-20): a climb piece joined to two or more climbs and to no
+-- floor (Brill's tavern landing, the Lion's Pride Inn's). Its own line is a stub there (invariants rule 12), and on
+-- the inn's landing the key faced back down the lower flight from the landing's far end (walk 2026-10-19 22:11).
+-- Toward a flight the player did not come from (`from`, the floor piece held before the landing), at the end of
+-- its join farthest from the other flights' joins (the far side of the landing: Brill's join with the upper leg
+-- runs 4 yd, its near end beside the lower leg's top); not knowing where the player came from, the flight nearest
+-- the facing; standing at that point already, along the direction that flight is said with. Returns the facing (radians, as
+-- GetPlayerFacing), or nil (no landing).
+logic.LANDING_ON = 2     -- cells around a landing's exit whose flight cells the turn key aims at, standing there
+logic.LANDING_NEAR = 2   -- yd from a landing's exit within which the turn key turns along the flight, not to the point
+
+function logic.landingFacing(zone, piece, x, y, facing, from)
+    local ix = zone._index
+    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+        return nil
+    end
+    for q in pairs(ix.joined[piece] or {}) do
+        if not ix.lineFloors[q] then
+            return nil   -- joined to a floor: a flight, no landing
+        end
+    end
+    local exits = {}
+    for q, pts in pairs(ix.joinPoints[piece] or {}) do
+        exits[#exits + 1] = { q = q, pts = pts }
+    end
+    if #exits < 2 then
+        return nil
+    end
+    table.sort(exits, function(a, b)
+        return a.q < b.q
+    end)
+    -- per flight the end of its join farthest from every other flight's join
+    for _, e in ipairs(exits) do
+        local bestD
+        for i = 1, #e.pts, 2 do
+            local px, py = e.pts[i], e.pts[i + 1]
+            local near
+            for _, o in ipairs(exits) do
+                if o ~= e then
+                    for k = 1, #o.pts, 2 do
+                        local d = logic.dist(px, py, o.pts[k], o.pts[k + 1])
+                        if near == nil or d < near then
+                            near = d
+                        end
+                    end
+                end
+            end
+            if bestD == nil or near > bestD then
+                e.x, e.y, bestD = px, py, near
+            end
+        end
+        e.facing = math.rad(-logic.bearingOf(e.x - x, e.y - y))
+    end
+    local came = false
+    for _, e in ipairs(exits) do
+        came = came or e.q == from
+    end
+    local best, bestKey
+    for _, e in ipairs(exits) do
+        if not (came and e.q == from) then
+            -- came from a flight: the nearest other; else the one nearest the facing
+            local key = came and logic.dist(x, y, e.x, e.y) or math.abs(logic.degreesBetween(e.facing, facing))
+            if bestKey == nil or key < bestKey then
+                best, bestKey = e, key
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    if logic.dist(x, y, best.x, best.y) >= logic.LANDING_NEAR then
+        return best.facing
+    end
+    -- at that point already: toward the middle of that flight's own cells within LANDING_ON cells of it (the
+    -- flights' own lines are stubs in these buildings too: Brill's lower leg 1 yd, the inn's flights 2 yd)
+    local r0, c0 = logic.cellOf(zone, best.x, best.y)
+    local sx, sy, n, codes = 0, 0, 0, {}
+    for r = r0 - logic.LANDING_ON, r0 + logic.LANDING_ON do
+        for c = c0 - logic.LANDING_ON, c0 + logic.LANDING_ON do
+            local here = ix.floorCells[r * zone.cols + c]
+            if here and here[best.q] ~= nil then
+                local cx, cy = logic.cellCentre(zone, r, c)
+                sx, sy, n = sx + cx, sy + cy, n + 1
+                local v = here[best.q]
+                if v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] and v % logic.CODE ~= 0 then
+                    local k = v % logic.CODE % 1000 % 180
+                    codes[k] = (codes[k] or 0) + 1
+                end
+            end
+        end
+    end
+    if n == 0 or logic.dist(x, y, sx / n, sy / n) < 1 then
+        return nil
+    end
+    local toward = logic.bearingOf(sx / n - x, sy / n - y)
+    -- along the direction the flight is said with (the most cells' there: a few of Brill's lower leg carry the
+    -- landing's), the way toward its cells (the cells' middle alone was 25 to 35 degrees off on these small flights)
+    local axis, most
+    for k, m in pairs(codes) do
+        if most == nil or m > most or (m == most and k < axis) then
+            axis, most = k, m
+        end
+    end
+    if axis then
+        return math.rad(-(logic.angleGap(axis, toward) <= 90 and axis or axis + 180))
+    end
+    return math.rad(-toward)
+end
+
 -- Where a road or street leads ahead: from the nearest point on its centre line toward the point
 -- on the line about `look` yards further on, taking the end nearer the facing. The player's own position
 -- across the road does not change it, so walking a little aside is no bend. Returns the direction

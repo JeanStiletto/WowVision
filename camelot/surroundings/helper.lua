@@ -270,11 +270,14 @@ function logic.floorClimbRoute(zone, floor, x, y)
     if floor == nil or floor == 0 then
         return nil
     end
+    -- (only a foot a climb goes UP from, as climbNear: a foot stored at a climb's top, the Abbey main ramp's on the
+    -- gallery in trial K9, led Alt-I down the ramp, walk 2026-10-19 22:15)
     local best, bd
     for _, f in ipairs(ix.climbFeet or {}) do
         if (f.floor or 0) == floor then
             local d = dist(x, y, f.x, f.y)
-            if d <= logic.HELPER_FLOOR_REACH and (bd == nil or d < bd) then
+            if d <= logic.HELPER_FLOOR_REACH and (bd == nil or d < bd)
+                and logic.climbAtFoot(zone, f.x, f.y, logic.HELPER_FOOT, floor, true) ~= nil then
                 best, bd = f, d
             end
         end
