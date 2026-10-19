@@ -19,6 +19,11 @@
   <!-- The chat channels window: the same Blizzard_Channels on Retail and
        WoW: Forever. -->
   <Script file="channels.lua" />
+  <!-- The guild and communities window and guild control: the same
+       Blizzard_Communities and Blizzard_GuildControlUI on Retail and WoW:
+       Forever. -->
+  <Script file="communities.lua" />
+  <Script file="guildControl.lua" />
   <Include file="containers/modules.xml" />
 
 </Ui>
