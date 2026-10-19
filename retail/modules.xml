@@ -24,6 +24,8 @@
   <!-- The chat channels window: the same Blizzard_Channels on Retail and
        WoW: Forever. -->
   <Script file="channels.lua" />
+  <!-- Developer tool (local only): /wv chanprobe. -->
+  <Script file="channelsProbe.lua" />
   <Include file="containers/modules.xml" />
   <Include file="groupHealth/modules.xml" />
 
