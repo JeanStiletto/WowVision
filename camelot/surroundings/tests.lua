@@ -357,6 +357,73 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(gaveUp, 59)
     end,
 
+    ["the walk-graph tracker takes the module's floor as the prior at a cold start under a floor over the ground"] = function(t)
+        -- a two-storey room: the ground (piece 0, height 0) on x 70 to 100, y 44 to 56, with a bench across the
+        -- way (surfaces at 1.2 on the ground piece instead of the floor, x 80 to 84, y 47 to 50: not a step from
+        -- the floor, the way round it longer than the hop budget), and an upper floor (piece 2, height 4) over all
+        -- of x 70 to 90, y 46 to 54, reached by nothing here (Brill's tavern after a /reload, 2026-10-19 16:30:
+        -- the furnished ground lost to the empty upper floor)
+        local function zone()
+            local recs = {}
+            for x = 70, 100 do
+                for y = 44, 56 do
+                    local bench = x >= 80 and x <= 84 and y >= 47 and y <= 50
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = bench and 1.2 or 0, piece = 0 }
+                    if x <= 90 and y >= 46 and y <= 54 then
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 4, piece = 2 }
+                    end
+                end
+            end
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            return z
+        end
+        -- the module set the ground: the ground stays, sure, across the benches
+        local z = zone()
+        logic.setFloor(z, 0)
+        local px = 89
+        for x = 87, 71, -2 do
+            local floor = logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false)
+            t:assertEqual(floor, 0, "ground at x " .. x)
+            t:assertTrue(z._index.floorSure, "sure at x " .. x)
+            px = x
+        end
+        -- the module set the upper floor: the upper floor stays
+        z = zone()
+        logic.setFloor(z, 2)
+        px = 89
+        for x = 87, 71, -2 do
+            t:assertEqual(logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false), 2, "upper floor at x " .. x)
+            px = x
+        end
+        -- the module's floor has no surface here: no prior, every surface at 0 as before (unsure)
+        z = zone()
+        logic.setFloor(z, 1)
+        logic.updateFloor(z, 87, 48.5, false, 89, 48.5, false, false)
+        t:assertEqual(z._index.floorSure, false)
+        -- and with the prior off, the benches cost the ground the floor (the fault of 2026-10-19 16:30)
+        local bound = logic.tracker.PRIOR
+        logic.tracker.PRIOR = 0
+        z = zone()
+        logic.setFloor(z, 0)
+        px = 89
+        local lost = false
+        for x = 87, 71, -2 do
+            if logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false) == 2 then
+                lost = true
+            end
+            px = x
+        end
+        logic.tracker.PRIOR = bound
+        t:assertTrue(lost)
+    end,
+
     ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
         local z = newHallZone()
         logic.unpack(z)

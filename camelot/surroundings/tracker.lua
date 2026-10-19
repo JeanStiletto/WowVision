@@ -26,8 +26,12 @@ logic.tracker = tracker
 
 tracker.REACH = 1.25       -- yd: surfaces this near the position are its candidates
 tracker.STEP_DZ = 1.5      -- yd: a step leads to the neighbouring column's surface nearest in height within this
-tracker.EXTRA_HOPS = 3     -- steps allowed beyond the distance moved (corners on the 1 yd grid)
-tracker.MAX_HOPS = 9       -- steps looked for at most (a longer move is a missing step, a fall or a jump)
+tracker.EXTRA_HOPS = 5     -- steps allowed beyond the distance moved (corners on the 1 yd grid; a U-ramp or a zigzag
+                           -- ramp climbs 14 steps inside a 5 by 6 yd box: the Lion's Pride Inn, the Abbey bell tower
+                           -- ramp; 3 until 2026-10-19, swept 3 / 5 against the truth: 5 with MAX_HOPS 15 Elwynn
+                           -- 189 -> 144 wrong points, the Undercity 389 -> 387, Dun Morogh 36 -> 38)
+tracker.MAX_HOPS = 15      -- steps looked for at most (a longer move is a missing step, a fall or a jump; 9 until
+                           -- 2026-10-19, the sweep above)
 tracker.FALL = 2.0         -- the cost of a fall onto a lower surface not reached by steps
 tracker.MISSING = 1.5      -- the cost of a move at one height no steps explain (a step the data misses)
 tracker.JUMP = 8.0         -- the cost of a move nothing explains
@@ -49,6 +53,16 @@ tracker.HOLE_DZ = 4.0      -- yd: a surface this little above a candidate (withi
                            -- while the player climbed, trial H1 2026-10-19)
 tracker.HOLE_MAX = 60.0    -- yd of walking in a hole after which the floor held is given up (a hole is local; the
                            -- truth tool caps its holes at 60 yd too; swept 15 to 100 on 2026-10-19: 60 the knee)
+tracker.PRIOR = 8.0        -- the cost a surface at another height starts with at a cold start (a reset, a login, a
+                           -- hearthstone) when the floor the module set has a surface under the player: the module's
+                           -- floor (the game's area, the cell's default) is evidence taken where it was surer than the
+                           -- tracker can be with no way walked; 0 = every surface at 0, as before. Brill's tavern
+                           -- 2026-10-19 16:30 after a /reload in the common room: the ground and the upper floor both
+                           -- started at 0, the furnished ground paid missing steps where the empty upper floor paid
+                           -- nothing, and the upper floor won after 4 yd, "sure".
+tracker.DETOUR = 1.5       -- the cost of a move at one height on the SAME piece that no step chain explains (a table or
+                           -- a bench cuts the ground's walk graph, the way round it is longer than the hop budget);
+                           -- MISSING by default (a sweep against the truth decides, 2026-10-19 afternoon)
 
 -- (offline only: WV_TRACKER_DEBUG=1 says when the tracker first runs, 2 prints every look with its candidates)
 local DEBUG = os and os.getenv and os.getenv("WV_TRACKER_DEBUG") or nil
@@ -60,7 +74,7 @@ tracker.STEEP = 0          -- yd: a move up along ONE piece no steps explain cos
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
-    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ" }) do
+    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -347,6 +361,22 @@ function look(zone, x, y, swimming)
     -- for HOLE_ANCHOR, and not beyond HOLE_MAX of walking in the hole)
     local allJump = prev ~= nil and tracker.HOLES ~= 0 and ix.sinceCold >= tracker.HOLE_ANCHOR
         and (prev[1].far or 0) + moved <= tracker.HOLE_MAX
+    -- a cold start: the floor the module set (the game's area, the cell's default) is the prior, where it has a
+    -- surface under the player; surfaces at another height start at PRIOR instead of 0 (one level, as the
+    -- margin's rule: another piece at the prior's height is a question of names)
+    local priorZ = nil
+    if prev == nil and tracker.PRIOR ~= 0 then
+        local nearest = nil
+        for i = 1, #now do
+            if now[i].piece == was then
+                local dx, dy = now[i].x - x, now[i].y - y
+                local off = dx * dx + dy * dy
+                if nearest == nil or off < nearest then
+                    nearest, priorZ = off, now[i].z
+                end
+            end
+        end
+    end
     for i = 1, #now do
         local b = now[i]
         local local_ = 0
@@ -355,6 +385,9 @@ function look(zone, x, y, swimming)
         end
         if local_ then
         local cost, fell, from = 0, false, nil
+        if priorZ and (b.z > priorZ + tracker.LEVEL or b.z < priorZ - tracker.LEVEL) then
+            cost = tracker.PRIOR
+        end
         if prev then
             cost = nil
             local kb = keyOf(b)
@@ -369,7 +402,7 @@ function look(zone, x, y, swimming)
                     if d <= tracker.NEAR and dz < -tracker.LEVEL then
                         t = tracker.FALL
                     elseif d <= tracker.NEAR and dz <= tracker.LEVEL and dz >= -tracker.LEVEL then
-                        t = tracker.MISSING
+                        t = a.s.piece == b.piece and tracker.DETOUR or tracker.MISSING
                     elseif d <= tracker.NEAR and a.s.piece == b.piece and dz > 0 and dz <= tracker.STEEP then
                         t = tracker.MISSING
                     else
