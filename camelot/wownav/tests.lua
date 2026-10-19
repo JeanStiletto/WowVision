@@ -65,17 +65,18 @@ local suite = {
         t:assertFalse(logic.offRoute(state, 2.5, 0.3, 0, 100, 0, true), "the same episode")
     end,
 
-    ["WowVision's arrival radius only makes a waypoint's radius smaller"] = function(t)
-        t:assertEqual(logic.radiusOf(4, 3), 3)
-        t:assertEqual(logic.radiusOf(1, 5), 1, "never larger than the data's")
+    ["WowVision's arrival radius is a waypoint's minimum radius"] = function(t)
+        t:assertEqual(logic.radiusOf(4, 3), 4, "never smaller than the data's")
+        t:assertEqual(logic.radiusOf(0.3, 5), 5)
         t:assertEqual(logic.radiusOf(4, nil), 4)
         t:assertNil(logic.radiusOf(nil, 3))
-        -- a waypoint of a dropped zone: its copied radius, capped the same way
+        -- a waypoint of a dropped zone: its copied radius, widened the same way
         local dropped = { Exists = function() return false end }
         local copy = { { x = 0, y = 0, radius = 4, id = 10 ^ 13 } }
-        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 3, y = 0, radiusCap = 1 }))
-        t:assertTrue(logic.reached(dropped, nil, copy, 1, { x = 3, y = 0, radiusCap = 5 }))
-        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 4.5, y = 0, radiusCap = 5 }))
+        t:assertTrue(logic.reached(dropped, nil, copy, 1, { x = 3, y = 0, minRadius = 1 }))
+        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 4.5, y = 0, minRadius = 1 }))
+        t:assertTrue(logic.reached(dropped, nil, copy, 1, { x = 4.5, y = 0, minRadius = 5 }))
+        t:assertFalse(logic.reached(dropped, nil, copy, 1, { x = 5.5, y = 0, minRadius = 5 }))
     end,
 
     ["the final point of a route counts within the arrival distance"] = function(t)
@@ -173,12 +174,13 @@ if haveNetwork then
         local r = N.Radius(wp.id)
         local p = { x = wp.x + r * 0.9, y = wp.y, z = wp.z }
         t:assertTrue(logic.reached(N, G, alone, 1, p))
-        p.radiusCap = r * 0.5
-        t:assertFalse(logic.reached(N, G, alone, 1, p))
-        p.radiusCap = r + 10
-        t:assertTrue(logic.reached(N, G, alone, 1, p))
+        p.minRadius = r * 0.5
+        t:assertTrue(logic.reached(N, G, alone, 1, p), "a smaller arrival radius keeps the data's")
+        p.minRadius = nil
         p.x = wp.x + r + 1
         t:assertFalse(logic.reached(N, G, alone, 1, p), "outside the data radius")
+        p.minRadius = r + 2
+        t:assertTrue(logic.reached(N, G, alone, 1, p), "a larger arrival radius widens it")
     end
 
     suite["off the route, a later waypoint whose cell holds the player is where it goes on"] = function(t)

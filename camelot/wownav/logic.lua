@@ -36,6 +36,10 @@ logic.distance = distance
 -- The zones of the index whose map is the player's map and whose boxes hold the point (the index boxes are per map,
 -- so a point of the tram map must not pick an Eastern Kingdoms zone).
 function logic.zonesAt(N, x, y, map)
+    -- the engine's own point lookups (start cells, neighbour cells) skip zones of other maps the same way
+    if map ~= nil then
+        N.activeMapId = map
+    end
     local zones = {}
     for _, id in ipairs(N.ZonesForPoint(x, y)) do
         local entry = N.index[id]
@@ -48,6 +52,11 @@ function logic.zonesAt(N, x, y, map)
         end
     end
     return zones
+end
+
+-- In the water: swimming at the surface or diving. A route start there binds to water points only (WowNav 4.54).
+function logic.inWater()
+    return (IsSwimming ~= nil and IsSwimming() == true) or (IsSubmerged ~= nil and IsSubmerged() == true)
 end
 
 -- Whether the network covers this map at all.
@@ -152,21 +161,22 @@ function logic.heightAlong(previous, current, x, y, swimming)
     return previous.z + (current.z - previous.z) * (before / total)
 end
 
--- The radius a waypoint counts within: its own from the data (certified: from anywhere on that circle the way to the
--- next waypoint is free), made smaller by WowVision's arrival radius where that is smaller, never larger.
-function logic.radiusOf(dataRadius, cap)
+-- The radius a waypoint counts within: its own from the data, made larger by WowVision's arrival radius where that is
+-- larger (WowNav's rule since concept 4.54, /vn ankunft: max of the data radius and the setting; fine points of the
+-- data, about 0.3 yd, are too small to hit).
+function logic.radiusOf(dataRadius, minimum)
     if dataRadius == nil then
         return nil
     end
-    if cap ~= nil and cap < dataRadius then
-        return cap
+    if minimum ~= nil and minimum > dataRadius then
+        return minimum
     end
     return dataRadius
 end
 
 -- Whether the player has reached waypoint index of the path (WowNav G.Reached: radius, gate line, turning point in
--- the open; the radius capped by radiusCap). p: x, y, px, py (previous position), z, swimming, finalRadius (the last
--- waypoint at the target), radiusCap (WowVision's arrival radius). Returns reached, rule.
+-- the open; the radius at least minRadius). p: x, y, px, py (previous position), z, swimming, finalRadius (the last
+-- waypoint at the target), minRadius (WowVision's arrival radius). Returns reached, rule.
 function logic.reached(N, G, waypoints, index, p)
     local wp = waypoints[index]
     if wp == nil then
@@ -180,8 +190,8 @@ function logic.reached(N, G, waypoints, index, p)
         local nextWp = waypoints[index + 1]
         local previousId = previous ~= nil and previous.id ~= nil and N.Exists(previous.id) and previous.id or nil
         local nextId = nextWp ~= nil and not nextWp.final and nextWp.id ~= nil and N.Exists(nextWp.id) and nextWp.id or nil
-        -- G.Reached's three rules in its order, the first with the capped radius
-        local radius = logic.radiusOf(N.Radius(wp.id), p.radiusCap)
+        -- G.Reached's three rules in its order, the first with the widened radius
+        local radius = logic.radiusOf(N.Radius(wp.id), p.minRadius)
         if radius ~= nil and distance(p.x, p.y, wp.x, wp.y) <= radius then
             return true, "radius"
         end
@@ -196,7 +206,7 @@ function logic.reached(N, G, waypoints, index, p)
         return false
     end
     -- the zone of this point was dropped: its copied radius still holds
-    return distance(p.x, p.y, wp.x, wp.y) <= logic.radiusOf(wp.radius or 3, p.radiusCap), "radius"
+    return distance(p.x, p.y, wp.x, wp.y) <= logic.radiusOf(wp.radius or 3, p.minRadius), "radius"
 end
 
 -- A later stretch of the route the player stands on: within the radius of waypoint k (from the data) of the line

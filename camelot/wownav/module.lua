@@ -248,7 +248,7 @@ function module:routeTo(target)
     end
     job = nil
     continuation = nil
-    local swimming = IsSwimming ~= nil and IsSwimming() or false
+    local swimming = logic.inWater()
 
     -- the start: the route state and the last height decide a stacked cell, else the player
     local opts = { swimming = swimming, zones = zonesHere, lastHeight = self.lastHeight }
