@@ -71,10 +71,16 @@ tracker.KEEP = 1.5         -- yd: of two pieces meeting at one height the one he
 tracker.STEEP = 0          -- yd: a move up along ONE piece no steps explain costs MISSING up to this height (a steep ramp
                            -- zigzags on the 1 yd grid, the Abbey bell tower ramp: 9 steps for a 2 yd move, the hop budget
                            -- 7, and a fall onto the ramp below at 2 beat the jump at 8; 0 = off; swept 2026-10-19)
+tracker.CHAIN = 1          -- 1: of candidates of one cost, the one reached from the floor held wins before the nearest
+                           -- column: a U-ramp split into its flights (data trial K3) kept its upper flight over the ground
+                           -- under it while the lower flight was held (the Lion's Pride Inn, walk 2026-10-19 17:08:13); the
+                           -- piece held alone did that while the U was one piece. 0 = off; swept 2026-10-19 late on J2 and
+                           -- K3, the whole set: Elwynn 155 -> 144 on K3 (J2 144 either way), Undercity 388 -> 389 (one point
+                           -- in Brill's common room), Dun Morogh 38 either way
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
-    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR" }) do
+    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -440,9 +446,11 @@ function look(zone, x, y, swimming)
             off = 0
         end
         local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off }
+        cand.cont = tracker.CHAIN == 1 and from == was
         new[#new + 1] = cand
-        if best == nil or cost < best.cost or (cost == best.cost and (cand.off < best.off - 0.01
-            or (cand.off <= best.off + 0.01 and b.piece == was and best.s.piece ~= was))) then
+        if best == nil or cost < best.cost or (cost == best.cost and ((cand.cont and not best.cont)
+            or (cand.cont == best.cont and (cand.off < best.off - 0.01
+            or (cand.off <= best.off + 0.01 and b.piece == was and best.s.piece ~= was))))) then
             best = cand
         end
         end
