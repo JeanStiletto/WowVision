@@ -1756,6 +1756,11 @@ local function lineFacing()
     if onLanding then
         return onLanding, "landing"
     end
+    -- on a flight whose own line is a stub: along the direction it is said with (lanes.lua flightFacing)
+    local onFlight = logic.flightFacing(z, z._index.floor, x, y, facing)
+    if onFlight then
+        return onFlight, "flight"
+    end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)
     if facings then
@@ -1873,6 +1878,14 @@ function module:leadOn()
     local on = grid._index.floor
     if on and on ~= 0 and grid._index.lineFloors and grid._index.lineFloors[on] then
         route = logic.climbRouteFrom(grid, on, x, y, GetPlayerFacing())
+    end
+    -- (with end records: the climb end the guidance spoke of, or the one guided to here, before any other: Alt-I leads
+    -- where the guidance points, up a foot or down a top)
+    if route == nil and grid._index.climbTops then
+        local t, g2 = helperTarget(z, grid, x, y)
+        if t and t.kind == "climb" then
+            route, name, grid = logic.helperRoute(g2, t), t.name, g2
+        end
     end
     if route == nil then
         -- a climb's line beginning right here (a spiral's foot often has no foot record)

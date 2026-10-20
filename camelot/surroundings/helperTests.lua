@@ -144,6 +144,49 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertTrue(math.abs(logic.degreesBetween(f, math.rad(-180))) < 1, "south along the flight")
     end,
 
+    ["with end records a staircase is led through from its foot to its top, and from its top to its foot"] = function(t)
+        -- user 2026-10-20: Alt-I on the climb ends; the U-staircase's foot on the ground at 88, 50 (up north), its top
+        -- on the upstairs floor (piece 4) at 88, 42 (the way down north)
+        local z = landingZone()
+        z._index = nil
+        z.climbFeetFields = 5
+        z.climbFeet = { 88, 50, 20000, 0, 0 }
+        z.climbTops = { 88, 42, 20000, 0, 4 }
+        logic.unpack(z)
+        local up = logic.endRoute(z, z._index.climbFeet[1])
+        t:assertFalse(up.short)
+        t:assertEqual(up.landing, 4)
+        local p = up.points
+        near(t, p[1], 88, 50, "the foot")
+        near(t, p[2], 90, 50, "the lower flight's line")
+        near(t, p[#p - 1], 88, 42, "the top")
+        near(t, p[#p], 86, 42, "2 yd onto the floor upstairs, away from the flight")
+        local down = logic.endRoute(z, z._index.climbTops[1])
+        t:assertFalse(down.short)
+        t:assertEqual(down.landing, 0)
+        p = down.points
+        near(t, p[1], 88, 42, "the top")
+        near(t, p[#p - 1], 88, 50, "the foot")
+        near(t, p[#p], 86, 50, "2 yd onto the ground, away from the flight")
+        -- the guidance's target made from the top leads the same way
+        local route = logic.helperRoute(z, { kind = "climb", x = 88, y = 42, value = 20000, bearing = 0, floor = 4, through = 0 })
+        t:assertEqual(route.landing, 0)
+    end,
+
+    ["the turn key on a flight whose line is a stub turns along the flight, the way nearer the facing"] = function(t)
+        local z = landingZone()
+        z._index = nil
+        z.lanes[3], z.lanes[4] = 91, 50   -- the lower flight's line a 1 yd stub
+        logic.unpack(z)
+        local f = logic.flightFacing(z, 1, 94, 50, 0.3)
+        t:assertNotNil(f)
+        t:assertTrue(math.abs(logic.degreesBetween(f, 0)) < 1, "north, nearer the facing")
+        f = logic.flightFacing(z, 1, 94, 50, math.pi - 0.3)
+        t:assertTrue(math.abs(logic.degreesBetween(f, math.pi)) < 1, "south, nearer the facing")
+        -- a line long enough to follow: the line's rule
+        t:assertNil(logic.flightFacing(landingZone(), 1, 94, 50, 0))
+    end,
+
     ["a doorway is led through: to it, then 3 yd on along its way through"] = function(t)
         local route = logic.helperRoute(nil, { kind = "doorway", x = 90, y = 40, through = 90 })
         t:assertEqual(#route.points, 2)

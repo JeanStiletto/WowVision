@@ -444,7 +444,7 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and T("on to the %s") or nil,
-        bearing = f.bearing, floor = f.floor or 0, along = along,
+        bearing = f.bearing, floor = f.floor or 0, along = along, top = f.top,
     }
 end
 
