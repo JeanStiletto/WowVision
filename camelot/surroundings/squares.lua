@@ -98,6 +98,27 @@ local function riseFrom(zone, cells, value, nr, nc)
     return rise
 end
 
+-- Where a climb on the piece `piece` meets the region's `floors` beside the border cells `members`
+-- (the export's joins within a cell of one of them), as points {x, y, ...}, or nil for none.
+local function climbJoinPoints(zone, floors, piece, members)
+    local points = nil
+    for f in pairs(floors) do
+        local pts = f ~= piece and zone._index.joinPoints[f] and zone._index.joinPoints[f][piece]
+        for k = 1, pts and #pts - 1 or 0, 2 do
+            local r, c = logic.cellOf(zone, pts[k], pts[k + 1])
+            for _, m in ipairs(members) do
+                if math.abs(m[1] - r) <= 1 and math.abs(m[2] - c) <= 1 then
+                    points = points or {}
+                    points[#points + 1] = pts[k]
+                    points[#points + 1] = pts[k + 1]
+                    break
+                end
+            end
+        end
+    end
+    return points
+end
+
 -- The border cells of the region grouped into mouths, one per stretch of border of each thing and,
 -- for a ramp or stairs, of each way it goes from the square (up, down; a stretch running along the
 -- square's side only where the climb goes neither up nor down from it, without a word: the long
@@ -179,11 +200,18 @@ local function findMouths(zone, cells, list, floors, own)
                 -- a climb going up or down from the square counts from one border cell: a ramp
                 -- is narrow, and a raised part of the square beside its foot takes its other cells
                 if #members >= (zone.mouthMin or logic.MOUTH_MIN) or (group.rise and #members >= 1) then
-                    local points = {}
-                    for _, m in ipairs(members) do
-                        local px, py = logic.cellCentre(zone, m[1], m[2])
-                        points[#points + 1] = px
-                        points[#points + 1] = py
+                    -- a climb's opening onto a piece it is joined to: where the two meet, not the border
+                    -- cells' centres a cell or two beside its top or foot (the Abbey bell tower's ramp: its
+                    -- border cell 2 to 4 yd west of its top, "at the ramp" said there by the wall, walk
+                    -- 2026-10-20 04:57 to 05:00)
+                    local points = group.rise and group.piece and climbJoinPoints(zone, floors, group.piece, members)
+                    if points == nil then
+                        points = {}
+                        for _, m in ipairs(members) do
+                            local px, py = logic.cellCentre(zone, m[1], m[2])
+                            points[#points + 1] = px
+                            points[#points + 1] = py
+                        end
                     end
                     mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members,
                         value = group.value, piece = group.piece, spoken = group.spoken }

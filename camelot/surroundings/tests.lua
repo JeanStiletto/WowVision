@@ -622,9 +622,9 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(found, true)
     end,
 
-    ["from a climb's top its opening goes down, whatever lies round its top on the grid"] = function(t)
+    ["from a climb's top its opening goes down, at the join, whatever lies round its top on the grid"] = function(t)
         -- walk 2026-10-20: the Abbey bell tower's floor lies round its ramp's top on the grid; from it the ramp
-        -- went "up" (its way on back into the tower)
+        -- went "up" (its way on back into the tower) and its opening lay a cell beside the flight's top
         local z = newTowerZone()
         -- the flight (row 0, column 1) rises east; the landing wraps round its cell: west of it (column 0),
         -- east of it (columns 2 and 3) and along row 1 under it
@@ -642,6 +642,9 @@ testRunner:addSuite("Surroundings", {
             end
         end
         t:assertEqual(mouth.rise, "down")
+        -- its point where the flight joins the landing, not its cell's middle (95, 45)
+        t:assertEqual(mouth.points[1], 96)
+        t:assertEqual(mouth.points[2], 38)
         -- from the ground at its foot it is no top
         logic.setFloor(z, 0)
         t:assertEqual(logic.atClimbTop(z, 2), false)
