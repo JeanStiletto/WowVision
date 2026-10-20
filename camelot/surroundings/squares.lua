@@ -98,19 +98,22 @@ local function riseFrom(zone, cells, value, nr, nc)
     return rise
 end
 
--- Where a climb on the piece `piece` meets the region's `floors` beside the border cells `members`
--- (the export's joins within a cell of one of them), as points {x, y, ...}, or nil for none.
-local function climbJoinPoints(zone, floors, piece, members)
+-- The end records (zone.climbFeet going up, zone.climbTops going down: `rise`) of the climb of `value` on one of
+-- the region's `floors` within a cell of its border cells `members`, as points {x, y, ...}, or nil for none.
+logic.END_NEAR = 1 -- cells from a climb's opening within which its end record is that opening
+local function climbEndPoints(zone, floors, value, rise, members)
+    local ix = zone._index
+    local list = rise == "down" and ix.climbTops or rise == "up" and ix.climbTops and ix.climbFeet or nil
+    local place = logic.placeOf(value)
     local points = nil
-    for f in pairs(floors) do
-        local pts = f ~= piece and zone._index.joinPoints[f] and zone._index.joinPoints[f][piece]
-        for k = 1, pts and #pts - 1 or 0, 2 do
-            local r, c = logic.cellOf(zone, pts[k], pts[k + 1])
+    for _, f in ipairs(list or {}) do
+        if floors[f.floor or 0] and logic.placeOf(f.value) == place then
+            local r, c = logic.cellOf(zone, f.x, f.y)
             for _, m in ipairs(members) do
-                if math.abs(m[1] - r) <= 1 and math.abs(m[2] - c) <= 1 then
+                if math.abs(m[1] - r) <= logic.END_NEAR and math.abs(m[2] - c) <= logic.END_NEAR then
                     points = points or {}
-                    points[#points + 1] = pts[k]
-                    points[#points + 1] = pts[k + 1]
+                    points[#points + 1] = f.x
+                    points[#points + 1] = f.y
                     break
                 end
             end
@@ -200,12 +203,13 @@ local function findMouths(zone, cells, list, floors, own)
                 -- a climb going up or down from the square counts from one border cell: a ramp
                 -- is narrow, and a raised part of the square beside its foot takes its other cells
                 if #members >= (zone.mouthMin or logic.MOUTH_MIN) or (group.rise and #members >= 1) then
-                    -- a climb's opening at its top onto a piece it is joined to: where the two meet, not the
-                    -- border cells' centres a cell or two beside it (the Abbey bell tower's ramp: its border
-                    -- cell 2 to 4 yd west of its top, "at the ramp" said there by the wall, walk 2026-10-20
-                    -- 04:57 to 05:00); the way down has no foot record, the way up has (its foot is guided to)
-                    local points = group.rise == "down" and group.piece and logic.atClimbTop(zone, logic.placeOf(group.value))
-                        and climbJoinPoints(zone, floors, group.piece, members) or nil
+                    -- a climb's opening at its end record (its foot going up, its top going down; data since
+                    -- trial L4): where the flight meets the floor, not the border cells' centres a cell or two
+                    -- beside it (the Abbey bell tower's ramp: its border cell 2 to 4 yd west of its top, "at the
+                    -- ramp" said there by the wall, walk 2026-10-20 04:57 to 05:00); that record is its guidance
+                    -- target (climbTarget), the opening no way beginning (wayBeginnings)
+                    local points = group.rise and climbEndPoints(zone, floors, group.value, group.rise, members) or nil
+                    local endRecord = points ~= nil
                     if points == nil then
                         points = {}
                         for _, m in ipairs(members) do
@@ -215,7 +219,7 @@ local function findMouths(zone, cells, list, floors, own)
                         end
                     end
                     mouths[#mouths + 1] = { label = group.label, class = group.class, rise = group.rise, points = points, cells = members,
-                        value = group.value, piece = group.piece, spoken = group.spoken }
+                        value = group.value, piece = group.piece, spoken = group.spoken, endRecord = endRecord }
                 end
             end
         end
@@ -389,8 +393,17 @@ local function joinedClimbMouths(zone, region, cells, floors)
                             local label, _class, spoken = borderThing(zone, v, vr * cols + vc, logic.ownerOf(zone, region.value))
                             if label and not have[label] then
                                 have[label] = true
-                                region.mouths[#region.mouths + 1] = { label = label, class = "way", points = { jx, jy },
-                                    cells = { { vr, vc, r, c } }, value = v, piece = other, spoken = spoken }
+                                -- (at an end record of the climb, its foot or top, that record is the opening and its
+                                -- guidance target, as for the climbs the border shows: findMouths)
+                                local rise = "up"
+                                local pts = climbEndPoints(zone, floors, v, rise, { { r, c } })
+                                if pts == nil then
+                                    rise = "down"
+                                    pts = climbEndPoints(zone, floors, v, rise, { { r, c } })
+                                end
+                                region.mouths[#region.mouths + 1] = { label = label, class = "way", points = pts or { jx, jy },
+                                    cells = { { vr, vc, r, c } }, value = v, piece = other, spoken = spoken,
+                                    rise = pts and rise or nil, endRecord = pts ~= nil }
                             end
                             break
                         end
@@ -729,7 +742,8 @@ function logic.wayBeginnings(zone, region)
     local list = {}
     for _, m in ipairs(region.mouths) do
         local kind = m.class == "way" and mouthKind(zone, m)
-        if kind and not logic.EDGED[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
+        -- (a climb's opening at its end record is guided to as that record: climbTarget)
+        if kind and not m.endRecord and not logic.EDGED[kind] and mouthSpan(m) <= logic.BEGIN_MAX and logic.leadsOn(zone, m, region) then
             -- the middle of the opening: the border point nearest to the border's centre
             local mx, my, ix, iy = mouthMiddle(zone, m)
             local _d, bx, by = logic.nearestOfPoints(m.points, mx, my)

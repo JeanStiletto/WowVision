@@ -622,9 +622,9 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(found, true)
     end,
 
-    ["from a climb's top its opening goes down, at the join, whatever lies round its top on the grid"] = function(t)
+    ["from a climb's top its opening goes down, whatever lies round its top on the grid"] = function(t)
         -- walk 2026-10-20: the Abbey bell tower's floor lies round its ramp's top on the grid; from it the ramp
-        -- went "up" (its way on back into the tower) and its opening lay a cell beside the flight's top
+        -- went "up" (its way on back into the tower). Data without top records: the top worked out from the feet
         local z = newTowerZone()
         -- the flight (row 0, column 1) rises east; the landing wraps round its cell: west of it (column 0),
         -- east of it (columns 2 and 3) and along row 1 under it
@@ -642,12 +642,80 @@ testRunner:addSuite("Surroundings", {
             end
         end
         t:assertEqual(mouth.rise, "down")
-        -- its point where the flight joins the landing, not its cell's middle (95, 45)
-        t:assertEqual(mouth.points[1], 96)
-        t:assertEqual(mouth.points[2], 38)
-        -- from the ground at its foot it is no top
         logic.setFloor(z, 0)
         t:assertEqual(logic.atClimbTop(z, 2), false)
+    end,
+
+    ["a climb's top record is its opening and its guidance target from the floor at the top, as a foot from below"] = function(t)
+        -- user 2026-10-20: tops and feet alike; the data's top (export.climb_ends): where the flight meets the
+        -- landing (96, 38), the way on down it west (270), on the landing (piece 2)
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.atClimbTop(z, 2), true)
+        local region = logic.regionAt(z, 95, 25)
+        local mouth = nil
+        for _, m in ipairs(region.mouths) do
+            if m.label == "stairs to the landing" then
+                mouth = m
+            end
+        end
+        t:assertEqual(mouth.rise, "down")
+        -- its point the record's, and no way begins there: the record is guided to
+        t:assertEqual(mouth.points[1], 96)
+        t:assertEqual(mouth.points[2], 38)
+        for _, b in ipairs(logic.wayBeginnings(z, region)) do
+            t:assertEqual(b.label == "stairs to the landing", false)
+        end
+        local target = logic.footTarget(z, 95, 33)
+        t:assertEqual(target.kind, "climb")
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.through, 270)
+        -- from the ground at its foot: its foot, the way up
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.atClimbTop(z, 2), false)
+        target = logic.footTarget(z, 96, 55)
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.y, 52)
+        t:assertEqual(target.through, 90)
+    end,
+
+    ["the end of a climb just crossed is no target near where it was stepped off; a second try at a foot is"] = function(t)
+        -- replay of trial L4e 2026-10-20: up the Abbey's main ramp, its top said the way back down on arrival
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        -- onto the flight at its foot, off it at its top: crossed
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 48)
+        logic.setFloor(z, 2)
+        logic.noteClimbStep(z, 95, 37)
+        t:assertEqual(z._index.crossed ~= nil, true)
+        local target = logic.footTarget(z, 95, 33)
+        t:assertEqual(target == nil or target.x ~= 96 or target.y ~= 38, true)
+        -- 15 yd on, the top is a target again
+        target = logic.footTarget(z, 95, 22)
+        t:assertEqual(z._index.crossed, nil)
+        -- a second try: onto the flight at its foot and back off there, its foot stays a target
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 55)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 49)
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 53)
+        t:assertNil(z._index.crossed)
+        target = logic.footTarget(z, 96, 55)
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.y, 52)
     end,
 
     ["a structure's platform says what lies around it, as a square"] = function(t)

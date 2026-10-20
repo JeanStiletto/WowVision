@@ -905,6 +905,7 @@ local function checkEdges(z, x, y, px, py, rooms)
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
             z._index.floorBefore = before
+            logic.noteClimbStep(z, x, y)
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
@@ -1376,6 +1377,7 @@ local function updateIndoors(z, x, y, px, py)
             logEntry("floor", before .. " -> " .. floor, x, y)
             -- (the floor held before: the turn key on a landing faces the flight not come from)
             ix.floorBefore = before
+            logic.noteClimbStep(layer, x, y)
             -- (the places found so far are kept per floor piece: logic.regionCache)
         end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
