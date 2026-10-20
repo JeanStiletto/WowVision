@@ -202,6 +202,161 @@ function logic.climbRoute(zone, fx, fy, footFloor)
     return { points = points, piece = piece, landing = landing, short = landing == nil }
 end
 
+-- Climb ends (data since trial L4e: zone.climbTops beside the feet; user 2026-10-20: Alt-I and the turn key fully on
+-- the new system). A staircase is led through from one end record to the other: along each flight's line, across
+-- the landings between, to the far end, onto its floor. Up or down alike; the end of a climb just crossed is skipped
+-- (logic.noteClimbStep), as the guidance skips it.
+
+-- The end records (feet and tops) on the floor piece `floor` within `reach` of (x, y), nearest first: { rec, d }.
+function logic.climbEndsNear(zone, x, y, floor, reach)
+    local ix = zone._index
+    local crossed = ix.crossed
+    local out = {}
+    for _, list in ipairs({ ix.climbFeet or {}, ix.climbTops or {} }) do
+        for _, f in ipairs(list) do
+            if (f.floor or 0) == (floor or 0) and not (crossed and logic.placeOf(f.value) == crossed.place) then
+                local d = dist(x, y, f.x, f.y)
+                if d <= reach then
+                    out[#out + 1] = { rec = f, d = d }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        return a.d < b.d
+    end)
+    return out
+end
+
+-- The free end of a climb line within HELPER_FOOT of the end record `rec`, on a piece joined to its floor: of its own
+-- place first, then the nearest. Piece, x, y, or nil.
+local function lineEndAt(zone, rec)
+    local ix = zone._index
+    if ix.lineFloors == nil then
+        return nil
+    end
+    local joined = ix.joined[rec.floor or 0] or {}
+    local place = logic.placeOf(rec.value)
+    local r0, c0 = logic.cellOf(zone, rec.x, rec.y)
+    local span = math.ceil((logic.HELPER_FOOT + logic.LANE_REACH) / zone.cell)
+    local best, bx, by, bd, bOwn
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+                if ix.lineFloors[lane.piece] and joined[lane.piece] then
+                    local own = logic.placeOf(lane.value) == place
+                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
+                        local d = e[1] and dist(rec.x, rec.y, e[2], e[3])
+                        if d and d <= logic.HELPER_FOOT
+                            and (bd == nil or (own and not bOwn) or (own == bOwn and d < bd)) then
+                            best, bx, by, bd, bOwn = lane.piece, e[2], e[3], d, own
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best, bx, by
+end
+
+-- The far end record of a staircase where its line ends at (ex, ey): within HELPER_LANDING, on a floor joined to the
+-- piece `piece`, not where the route began (`from`, a point).
+local function endAt(zone, piece, ex, ey, from)
+    local ix = zone._index
+    local joined = ix.joined[piece] or {}
+    local best, bd
+    for _, list in ipairs({ ix.climbFeet or {}, ix.climbTops or {} }) do
+        for _, f in ipairs(list) do
+            if joined[f.floor or 0] and not (from and dist(f.x, f.y, from.x, from.y) < 0.5) then
+                local d = dist(ex, ey, f.x, f.y)
+                if d <= logic.HELPER_LANDING and (bd == nil or d < bd) then
+                    best, bd = f, d
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- The next flight from a line's end (ex, ey): a climb piece with a line, not `used`, joined to `piece` (a landing
+-- between flights is such a piece, with its short line), whose line has a free end within HELPER_NEXT (a landing's own
+-- line is a stub, its flights' lines begin across it). Piece, x, y.
+logic.HELPER_NEXT = 10
+local function nextFlight(zone, piece, ex, ey, used)
+    local ix = zone._index
+    local joined = ix.joined[piece] or {}
+    local r0, c0 = logic.cellOf(zone, ex, ey)
+    local span = math.ceil((logic.HELPER_NEXT + logic.LANE_REACH) / zone.cell)
+    local best, bx, by, bd
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+                if ix.lineFloors[lane.piece] and not used[lane.piece] and joined[lane.piece] then
+                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
+                        local d = e[1] and dist(ex, ey, e[2], e[3])
+                        if d and d <= logic.HELPER_NEXT and (bd == nil or d < bd) then
+                            best, bx, by, bd = lane.piece, e[2], e[3], d
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best, bx, by
+end
+
+-- On from the last of `points` on the climb `piece` through its staircase (`used`: the pieces walked): at a far end
+-- record there, to it and HELPER_ONTO on onto its floor (away from the climb, against that end's way on); else into the
+-- next flight along its line, and so on; with no end record found, onto the piece joined at the last line's end as
+-- before (landingAt). The route { points, piece, landing, short, last end }.
+local function throughStaircase(zone, points, piece, used, from)
+    for _ = 1, 12 do
+        local last = points[#points]
+        local e = endAt(zone, piece, last.x, last.y, from)
+        if e then
+            if dist(last.x, last.y, e.x, e.y) > 0.5 then
+                points[#points + 1] = { x = e.x, y = e.y }
+            end
+            local fx, fy = logic.compassVector((e.bearing + 180) % 360)
+            points[#points + 1] = { x = e.x + fx * logic.HELPER_ONTO, y = e.y + fy * logic.HELPER_ONTO }
+            return { points = points, piece = piece, landing = e.floor or 0, short = false, ending = e }
+        end
+        local q, qx, qy = nextFlight(zone, piece, last.x, last.y, used)
+        if q == nil then
+            break
+        end
+        used[q] = true
+        for _, p in ipairs(followLine(climbLanes(zone, q, qx, qy), qx, qy)) do
+            points[#points + 1] = p
+        end
+        piece = q
+    end
+    local last = points[#points]
+    local landing, jx, jy = landingAt(zone, piece, last.x, last.y, nil, nil, nil, nil)
+    if landing then
+        onto(points, jx, jy)
+    end
+    return { points = points, piece = piece, landing = landing, short = landing == nil }
+end
+
+-- The route through a staircase from its end record `rec` (a foot or a top, or a guidance target made from one): from
+-- it along the climb's line there, through the staircase to its far end and onto that floor. Without a line there: to
+-- the end and on along its way on (short).
+function logic.endRoute(zone, rec)
+    local piece, ex, ey = lineEndAt(zone, rec)
+    if piece == nil then
+        return { points = logic.throughRoute({ x = rec.x, y = rec.y, bearing = rec.bearing, through = rec.bearing }),
+            kind = "climb", short = true }
+    end
+    local points = followLine(climbLanes(zone, piece, ex, ey), ex, ey)
+    if dist(rec.x, rec.y, ex, ey) > 0.5 then
+        table.insert(points, 1, { x = rec.x, y = rec.y })
+    end
+    local route = throughStaircase(zone, points, piece, { [piece] = true }, rec)
+    route.kind = "climb"
+    return route
+end
+
 -- A climb whose line begins within `reach` of the player at (x, y) on a piece joined to the player's floor `floor`
 -- (a foot the data has no foot record for: many a spiral's): the climb route from that line's end, or nil.
 function logic.climbNear(zone, x, y, floor, reach)
@@ -268,6 +423,29 @@ end
 function logic.floorClimbRoute(zone, floor, x, y)
     local ix = zone._index
     if floor == nil or floor == 0 then
+        return nil
+    end
+    -- with end records: the nearest end on this floor of either kind (a top leads down as a foot leads up), along
+    -- the floor's own line to it
+    if ix.climbTops then
+        for _, near in ipairs(logic.climbEndsNear(zone, x, y, floor, logic.HELPER_FLOOR_REACH)) do
+            local climb = logic.endRoute(zone, near.rec)
+            if climb and not climb.short then
+                local lead = logic.lineRouteTo(zone, floor, x, y, near.rec.x, near.rec.y)
+                if lead then
+                    local points = {}
+                    for _, p in ipairs(lead) do
+                        points[#points + 1] = p
+                    end
+                    for _, p in ipairs(climb.points) do
+                        points[#points + 1] = p
+                    end
+                    climb.points = points
+                end
+                climb.foot = near.rec
+                return climb
+            end
+        end
         return nil
     end
     -- (only a foot a climb goes UP from, as climbNear: a foot stored at a climb's top, the Abbey main ramp's on the
@@ -357,6 +535,10 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
         return nil
     end
     local first = forward and line[1] or line[#line]
+    -- with end records: on through the staircase to the end faced, onto its floor
+    if zone._index.climbTops then
+        return throughStaircase(zone, points, piece, { [piece] = true }, nil)
+    end
     local top = points[#points]
     local landing, jx, jy = landingAt(zone, piece, top.x, top.y, nil, first.x, first.y, lineLength(line))
     if landing then
@@ -380,6 +562,9 @@ end
 function logic.helperRoute(zone, t)
     if t == nil then
         return nil
+    end
+    if t.kind == "climb" and zone._index.climbTops then
+        return logic.endRoute(zone, t)
     end
     if t.kind == "climb" then
         local route = logic.climbRoute(zone, t.x, t.y, t.floor)

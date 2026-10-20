@@ -501,6 +501,44 @@ function logic.landingFacing(zone, piece, x, y, facing, from)
     return math.rad(-toward)
 end
 
+-- The turn key on a flight whose own line near the player is a stub (shorter than FLIGHT_STUB yd within FLIGHT_NEAR:
+-- the U-stairs' flights, Brill's lower leg 1 yd, the inn's 2 yd, invariants rule 12): along the direction the flight
+-- is said with there (its cell's way up, the data's), up or down whichever lies nearer the facing; on the inn's upper
+-- flight the stub line turned the player east and back down (walk 2026-10-20 05:08:05). nil: no flight, or a line
+-- long enough to follow (lineFacings).
+logic.FLIGHT_STUB = 3
+logic.FLIGHT_NEAR = 6
+
+function logic.flightFacing(zone, piece, x, y, facing)
+    local ix = zone._index
+    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+        return nil
+    end
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local v = ix.floorCells[r0 * zone.cols + c0] and ix.floorCells[r0 * zone.cols + c0][piece]
+    local up = v and v ~= 0 and logic.riseOf(zone, v)
+    if not up then
+        return nil
+    end
+    local length, seen = 0, {}
+    local span = math.ceil((logic.FLIGHT_NEAR + logic.LANE_REACH) / zone.cell)
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+                if lane.piece == piece and not seen[lane] then
+                    seen[lane] = true
+                    length = length + logic.dist(lane.x1, lane.y1, lane.x2, lane.y2)
+                end
+            end
+        end
+    end
+    if length >= logic.FLIGHT_STUB then
+        return nil
+    end
+    local along = math.rad(-up)
+    return logic.lineTurnFacing({ along, along + math.pi }, facing, false)
+end
+
 -- Where a road or street leads ahead: from the nearest point on its centre line toward the point
 -- on the line about `look` yards further on, taking the end nearer the facing. The player's own position
 -- across the road does not change it, so walking a little aside is no bend. Returns the direction

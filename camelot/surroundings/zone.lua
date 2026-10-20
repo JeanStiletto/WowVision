@@ -348,7 +348,8 @@ end
 
 -- Forgets the squares found so far: their flood depends on the level the player is on.
 function logic.forgetRegions(zone)
-    zone._index.regionOf = {}
+    local ix = zone._index
+    ix.regionOf, ix.regionsByFloor, ix.regionFloor = {}, nil, ix.floor or 0
 end
 
 -- The cell value at a world position, plus row and column.
@@ -371,30 +372,40 @@ function logic.place(zone, placeId)
     return zone._index.places[placeId]
 end
 
--- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
--- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
--- (the export's climbDown) where the player's floor piece is neither one of its feet's floors nor
--- the climb itself; else nil (its own name). From the floor alone, the same from every spot on it.
-function logic.downPlace(zone, placeId)
+-- Is the player's floor piece the top of the ramp or stairs `placeId`: neither one of its feet's
+-- floors nor the climb itself, and joined to it? From the floor alone, the same from every spot on it.
+function logic.atClimbTop(zone, placeId)
     local ix = zone._index
-    local p = ix.places[placeId]
-    if p == nil or p.down == nil then
-        return nil
-    end
-    local feet = ix.footFloors and ix.footFloors[placeId]
     local floor = ix.floor or 0
     local own = ix.placePieces[placeId] or {}
+    -- the data's top records (since trial L4): a top of that climb on this floor
+    if ix.climbTops then
+        local tops = ix.topFloors[placeId]
+        return tops ~= nil and tops[floor] == true and not own[floor]
+    end
+    local feet = ix.footFloors and ix.footFloors[placeId]
     if feet == nil or feet[floor] or own[floor] then
-        return nil
+        return false
     end
     -- (only from a floor the climb is joined to: its top; a floor held a moment by mistake beside
     -- it named the Brill tavern's stairs up "Treppe Richtung Schankraum" in the common room)
     for q in pairs(ix.joined[floor] or {}) do
         if own[q] then
-            return ix.places[p.down]
+            return true
         end
     end
-    return nil
+    return false
+end
+
+-- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
+-- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
+-- (the export's climbDown) where the player's floor is its top (logic.atClimbTop); else nil (its own name).
+function logic.downPlace(zone, placeId)
+    local p = zone._index.places[placeId]
+    if p == nil or p.down == nil or not logic.atClimbTop(zone, placeId) then
+        return nil
+    end
+    return zone._index.places[p.down]
 end
 
 function logic.kind(zone, placeId)
@@ -889,6 +900,17 @@ function logic.unpack(zone, locale)
         ix.footFloors[place] = ix.footFloors[place] or {}
         ix.footFloors[place][feetStride >= 5 and floor or 0] = true
     end)
+    -- the tops of ramps and stairs (export.climb_ends, data since trial L4): x, y, the top flight's cell value, the
+    -- way on DOWN that flight (degrees), the floor piece at the top; guided to from that floor as a foot is from its
+    -- own (user 2026-10-20: tops and feet alike). Data without them: nil, the top is worked out (logic.atClimbTop)
+    ix.climbTops = zone.climbTops and {} or nil
+    ix.topFloors = {}
+    eachRecord(zone.climbTops, 5, function(x, y, value, bearing, floor)
+        ix.climbTops[#ix.climbTops + 1] = { x = x, y = y, value = value, bearing = bearing, floor = floor, top = true }
+        local place = logic.placeOf(value)
+        ix.topFloors[place] = ix.topFloors[place] or {}
+        ix.topFloors[place][floor] = true
+    end)
     -- the flights with a wall along one side and a drop along the other (export.climb_sides): per
     -- floor piece the point at its top on the wall side its way up is said toward (setting
     -- wallSide), its place value and its way up (degrees)
@@ -1124,7 +1146,7 @@ function logic.unpackLayer(zone, src, suffix)
         -- per door the layer's floor piece its sill lies on
         doorFloors = src.doorFloors,
         -- the feet of its climbs and their wall sides, as the zone's (one rule for every grid)
-        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbAims = src.climbAims,
+        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbTops = src.climbTops, climbAims = src.climbAims,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,

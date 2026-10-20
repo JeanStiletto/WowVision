@@ -905,6 +905,7 @@ local function checkEdges(z, x, y, px, py, rooms)
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
             z._index.floorBefore = before
+            logic.noteClimbStep(z, x, y)
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
@@ -1376,13 +1377,8 @@ local function updateIndoors(z, x, y, px, py)
             logEntry("floor", before .. " -> " .. floor, x, y)
             -- (the floor held before: the turn key on a landing faces the flight not come from)
             ix.floorBefore = before
-            -- the places found so far kept per floor piece, so stepping back onto a floor finds
-            -- its places again with what was said there (a fresh flood at every hop said the
-            -- stairs twice)
-            ix.regionsByFloor = ix.regionsByFloor or {}
-            ix.regionsByFloor[ix.regionFloor or 0] = ix.regionOf
-            ix.regionOf = ix.regionsByFloor[floor] or {}
-            ix.regionFloor = floor
+            logic.noteClimbStep(layer, x, y)
+            -- (the places found so far are kept per floor piece: logic.regionCache)
         end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
         -- has), each in the room its floor belongs to: this room, or while it is unknown
@@ -1760,6 +1756,11 @@ local function lineFacing()
     if onLanding then
         return onLanding, "landing"
     end
+    -- on a flight whose own line is a stub: along the direction it is said with (lanes.lua flightFacing)
+    local onFlight = logic.flightFacing(z, z._index.floor, x, y, facing)
+    if onFlight then
+        return onFlight, "flight"
+    end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)
     if facings then
@@ -1877,6 +1878,14 @@ function module:leadOn()
     local on = grid._index.floor
     if on and on ~= 0 and grid._index.lineFloors and grid._index.lineFloors[on] then
         route = logic.climbRouteFrom(grid, on, x, y, GetPlayerFacing())
+    end
+    -- (with end records: the climb end the guidance spoke of, or the one guided to here, before any other: Alt-I leads
+    -- where the guidance points, up a foot or down a top)
+    if route == nil and grid._index.climbTops then
+        local t, g2 = helperTarget(z, grid, x, y)
+        if t and t.kind == "climb" then
+            route, name, grid = logic.helperRoute(g2, t), t.name, g2
+        end
     end
     if route == nil then
         -- a climb's line beginning right here (a spiral's foot often has no foot record)
