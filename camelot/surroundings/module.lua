@@ -413,7 +413,7 @@ local function logEntry(kind, text, x, y, extra)
 end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
--- outdoors), s (swimming), g (ghost), f with the facing in degrees and p with the floor piece
+-- outdoors), s (swimming), g (ghost), a (in the air: falling or jumping), f with the facing in degrees and p with the floor piece
 -- when it is not the ground, as one token ("isf270p33"); then "|<area>", the game's area, where it
 -- changed or every TRAIL_AREA_EVERY points (after a space: tools read the flags before it).
 local function logTrail(x, y)
@@ -430,7 +430,7 @@ local function logTrail(x, y)
     local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
     local piece = held and held._index.floor or 0
     local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
-        .. (UnitIsGhost("player") and "g" or "")
+        .. (UnitIsGhost("player") and "g" or "") .. (IsFalling() and "a" or "")
         .. (facing and ("f" .. facing) or "")
         .. (piece ~= 0 and ("p" .. piece) or "")
     local area = gameSubzone()
@@ -441,6 +441,77 @@ local function logTrail(x, y)
     end
     table.insert(log.trail, string.format("%d %.1f %.1f%s%s", time(), x, y, flags ~= "" and " " .. flags or "", tail))
     log.trail = trim(log.trail, TRAIL_MAX)
+end
+
+-- Falls, for the walk log (walk review 2026-10-20c: x and y cannot tell a flight from the floor under it; how long the
+-- player was in the air can). Every stretch the game has the player in the air (IsFalling, the signal WowVision's fall
+-- sounds use) from its first frame to the landing, as one line of the log's falls: "<landing time> <seconds> <x y at
+-- the start> <x y at the landing> <flags>", flags j (the jump key started it: pressed within FALL_JUMP_GRACE before, as
+-- the fall sounds tell a hop), w (water: swimming at its start or landing, or out of the water within FALL_JUMP_GRACE),
+-- s (a slow-fall effect on the player), p with the floor piece held at its start. Looked at every frame (the looks come
+-- every CHECK_INTERVAL, too coarse for the 0.2 s of a step); only while the log is on. Nothing reads it in the game:
+-- the tools measure first how falls fit the drops (steps 0.2 to 0.4 s, 2026-10-05), before the tracker may use them.
+local FALLS_MAX, FALL_JUMP_GRACE = 5000, 0.8
+-- Slow Fall, Levitate, Noggenfogger's slow fall, the parachute cloak's: spell ids as in Classic (not checked on Forever)
+local SLOW_FALLS = { 130, 1706, 16593, 12438 }
+local fall = nil          -- the fall under way: start time, x, y, flags so far
+local lastJumpKey, lastSwimAt = -math.huge, -math.huge
+hooksecurefunc("JumpOrAscendStart", function()
+    lastJumpKey = GetTime()
+end)
+
+local function slowFalling()
+    local get = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+    if get == nil then
+        return false
+    end
+    for _, id in ipairs(SLOW_FALLS) do
+        local ok, aura = pcall(get, id)
+        if ok and aura ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function watchFall(now)
+    local swimming = IsSwimming()
+    if swimming then
+        lastSwimAt = now
+    end
+    local inAir = IsFalling()
+    if inAir and fall == nil then
+        local log = activeLog()
+        if log == nil then
+            return
+        end
+        local x, y = UnitPosition("player")
+        if x == nil then
+            return
+        end
+        local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+        fall = {
+            t = now, x = x, y = y, piece = held and held._index.floor or 0,
+            jump = now - lastJumpKey <= FALL_JUMP_GRACE,
+            water = swimming or now - lastSwimAt <= FALL_JUMP_GRACE,
+            slow = slowFalling(),
+        }
+    elseif inAir and fall then
+        fall.slow = fall.slow or slowFalling()
+    elseif not inAir and fall then
+        local f = fall
+        fall = nil
+        local log = activeLog()
+        local x, y = UnitPosition("player")
+        if log == nil or x == nil then
+            return
+        end
+        local flags = (f.jump and "j" or "") .. ((f.water or swimming) and "w" or "") .. (f.slow and "s" or "")
+            .. "p" .. f.piece
+        log.falls = log.falls or {}
+        table.insert(log.falls, string.format("%d %.2f %.1f %.1f %.1f %.1f %s", time(), now - f.t, f.x, f.y, x, y, flags))
+        log.falls = trim(log.falls, FALLS_MAX)
+    end
 end
 
 -- The walk-graph tracker's cost, one silent log entry (kind "time") a minute while the log is on: the looks
@@ -1470,6 +1541,7 @@ end
 
 module:hasUpdate(function(self)
     local now = GetTime()
+    watchFall(now)
     if now - lastCheck < CHECK_INTERVAL then
         return
     end
