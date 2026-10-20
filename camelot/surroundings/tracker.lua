@@ -334,6 +334,7 @@ function look(zone, x, y, swimming)
                 floor_ = 0
             end
         end
+        ix.lookKind, ix.lookZ = "gap", nil
         if floor_ ~= was then
             ix.floor = floor_
             ix.cameFrom = was
@@ -390,7 +391,7 @@ function look(zone, x, y, swimming)
             local_ = nil
         end
         if local_ then
-        local cost, fell, from = 0, false, nil
+        local cost, fell, from, step = 0, false, nil, 0
         if priorZ and (b.z > priorZ + tracker.LEVEL or b.z < priorZ - tracker.LEVEL) then
             cost = tracker.PRIOR
         end
@@ -426,7 +427,7 @@ function look(zone, x, y, swimming)
                 -- (of two ways equally cheap, a fall from the floor held explains more than a walk on a
                 -- floor long left: the guidance back onto a climb needs the floor fallen from)
                 if cost == nil or v < cost or (v == cost and t == tracker.FALL and not fell and a.s.piece == was) then
-                    cost, fell, from = v, t == tracker.FALL, a.s.piece
+                    cost, fell, from, step = v, t == tracker.FALL, a.s.piece, t
                     if DEBUG == "3" then
                         io.stderr:write(string.format("  cand %.1f/%d from %.1f/%d cost %.1f at %.1f %.1f: t %.1f -> %.1f\n",
                             b.z, b.piece, a.s.z, a.s.piece, a.cost, a.x, a.y, t, v))
@@ -445,7 +446,7 @@ function look(zone, x, y, swimming)
         if b.piece == was and off <= tracker.KEEP * tracker.KEEP then
             off = 0
         end
-        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off }
+        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off, step = step }
         cand.cont = tracker.CHAIN == 1 and from == was
         new[#new + 1] = cand
         if best == nil or cost < best.cost or (cost == best.cost and ((cand.cont and not best.cont)
@@ -457,6 +458,7 @@ function look(zone, x, y, swimming)
     end
     if best == nil then
         -- every surface here is of the wrong kind (dry while swimming, wet on foot): nothing to decide
+        ix.lookKind, ix.lookZ = "none", nil
         carry()
         return was, false
     end
@@ -478,6 +480,7 @@ function look(zone, x, y, swimming)
         if near then
             carry()
             ix.inHole = true
+            ix.lookKind, ix.lookZ = "hole", nil
             if tracker.debug then
                 io.stderr:write(string.format("look %s %.1f %.1f floor %d HOLE (%d surfaces under, %d candidates carried)\n",
                     tostring(zone.key), x, y, was, #now, #prev))
@@ -485,6 +488,24 @@ function look(zone, x, y, swimming)
             return was, false
         end
     end
+    -- what explained this look (offline checks, tools/walklog/module.lua WV_LOOKS=1: the looks no step explains are
+    -- where the data lacks what the player walked on, STATE bug 86): "cold" a start with nothing held, "walk" a
+    -- chain of steps from the best candidate held, "switch" a candidate that was not the best before took over,
+    -- "fall", "missing" (a move at one height no steps explain), "jump"; also "gap", "hole", "none" above
+    if prev == nil then
+        ix.lookKind = "cold"
+    elseif best.cost == 0 then
+        ix.lookKind = "walk"
+    elseif best.step >= tracker.JUMP then
+        ix.lookKind = "jump"
+    elseif best.fell then
+        ix.lookKind = "fall"
+    elseif best.step > 0 then
+        ix.lookKind = "missing"
+    else
+        ix.lookKind = "switch"
+    end
+    ix.lookZ, ix.lookCost = best.s.z, best.cost
     -- normalised and pruned
     local kept = {}
     local min = best.cost
