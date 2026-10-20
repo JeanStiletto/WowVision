@@ -341,7 +341,16 @@ function logic.noteClimbStep(zone, x, y)
     local place = v and v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] and logic.placeOf(v) or nil
     if place and ix.climbPlace == nil then
         ix.climbIn, ix.crossed = { x = x, y = y }, nil
+        -- stepped onto the flight beside its own top record: going down it (climbTarget leaves its foot out)
+        ix.climbDown = nil
+        for _, t in ipairs(ix.climbTops or {}) do
+            if t.value == v and logic.dist(t.x, t.y, x, y) < logic.CROSSED then
+                ix.climbDown = place
+                break
+            end
+        end
     elseif place == nil and ix.climbPlace ~= nil then
+        ix.climbDown = nil
         local inAt = ix.climbIn
         ix.crossed = inAt and logic.dist(inAt.x, inAt.y, x, y) >= logic.CROSSED
             and { place = ix.climbPlace, x = x, y = y } or nil
@@ -385,12 +394,11 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
             local b = math.rad(f.bearing)
             atFoot = math.abs((f.x - x) * -math.sin(b) - (f.y - y) * math.cos(b)) <= logic.GUIDE_SIDE_CLIMB
         end
-        -- (not the foot of the climb the player is on when they stepped onto it at its other end: walked down to,
+        -- (not the foot of the climb the player is on when they stepped onto it beside its own top: walked down to,
         -- it said "2 yd behind, on up" and the turn key faced back up the ramp, the Abbey's bell tower ramp
-        -- 2026-10-20 09:20:54; a second try at a foot, stepped on near it, keeps it)
-        local inAt = ix.climbIn
-        local downTo = inAt ~= nil and ix.climbPlace ~= nil and logic.placeOf(f.value) == ix.climbPlace
-            and logic.dist(inAt.x, inAt.y, f.x, f.y) >= logic.CROSSED
+        -- 2026-10-20 09:20:54; stepped on anywhere else, a spiral's next flight or a second try, it stays)
+        local downTo = ix.climbDown ~= nil and ix.climbDown == ix.climbPlace and here and here ~= 0
+            and logic.placeOf(here) == ix.climbDown and logic.placeOf(f.value) == ix.climbDown
         if (fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)))
             and not (crossed and fl == on and logic.placeOf(f.value) == crossed.place) and not downTo then
             feet[#feet + 1] = f
