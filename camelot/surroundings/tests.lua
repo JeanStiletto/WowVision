@@ -718,6 +718,31 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(target.y, 52)
     end,
 
+    ["the foot of the climb one walks down is no target; walked up from it, it is"] = function(t)
+        -- the Abbey's bell tower ramp 2026-10-20 09:20:54: going down, 2 yd before its foot, "2 Meter auf 7 Uhr,
+        -- weiter auf 12", and the turn key faced back up the ramp
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        -- onto the flight at its top, down it to 2 yd before its foot
+        logic.setFloor(z, 2)
+        logic.noteClimbStep(z, 95, 37)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 39)
+        local target = logic.footTarget(z, 95, 50)
+        t:assertEqual(target == nil or target.x ~= 96 or target.y ~= 52, true)
+        -- onto the flight at its foot (a second try, or a cold start on it): the foot stays as before
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 54)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 51)
+        t:assertEqual(logic.dist(z._index.climbIn.x, z._index.climbIn.y, 96, 52) < logic.CROSSED, true)
+    end,
+
     ["a structure's platform says what lies around it, as a square"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
