@@ -70,6 +70,10 @@ end
 -- else "along" (it runs along the square's side); nil for no climb. From the climb's own rise in
 -- the data (user's walk 2026-10-03 08:06: on a landing between two flights "stairs at 1" did not
 -- say which stairs, nor whether up or down; the user wants "up" or "down" said).
+-- From the climb's top (logic.atClimbTop: its feet are on other floors) it goes down, whatever the
+-- cells beside it: a floor lying round a flight's top on the grid has cells on its foot's side too
+-- (the Abbey bell tower round its ramp's top: "at the ramp, on to the northwest" faced back into
+-- the tower, walk 2026-10-20 04:57 to 05:00).
 local function riseFrom(zone, cells, value, nr, nc)
     local up = value ~= 0 and logic.riseOf(zone, value)
     if not up then
@@ -81,11 +85,15 @@ local function riseFrom(zone, cells, value, nr, nc)
         if cells[r * zone.cols + c] then
             local gap = logic.angleGap(up, logic.bearingOf((r - nr) * zone.cell, (c - nc) * zone.cell))
             if gap <= logic.RISE_ALONG then
-                return "up"
+                rise = "up"
+                break
             elseif gap >= 180 - logic.RISE_ALONG then
                 rise = "down"
             end
         end
+    end
+    if rise == "up" and logic.atClimbTop(zone, logic.placeOf(value)) then
+        return "down"
     end
     return rise
 end
@@ -364,6 +372,25 @@ local function joinedClimbMouths(zone, region, cells, floors)
     end
 end
 
+-- The squares found so far on the floor piece the player is on (per cell key), kept per floor piece: stepping
+-- back onto a floor finds its places again with what was said there (a fresh flood at every hop said the
+-- stairs twice). Filed by the floor itself, whatever set it: a login put the player on the bell tower's floor
+-- with the cache still filed as the ground's, and the hall under it said the bell tower's ways and guided to
+-- its ramp 5 yd overhead (walk 2026-10-20 05:02; Brill's kitchen said the cellar's at 05:06).
+function logic.regionCache(zone)
+    local ix = zone._index
+    local floor = ix.floor or 0
+    if ix.regionFloor ~= floor then
+        ix.regionsByFloor = ix.regionsByFloor or {}
+        if ix.regionFloor ~= nil then
+            ix.regionsByFloor[ix.regionFloor] = ix.regionOf
+        end
+        ix.regionOf = ix.regionsByFloor[floor] or {}
+        ix.regionFloor = floor
+    end
+    return ix.regionOf
+end
+
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
     if not logic.hasEdge(zone, value) then
@@ -371,8 +398,9 @@ function logic.regionAt(zone, x, y)
     end
     local ix = zone._index
     local cols = zone.cols
-    if ix.regionOf[r0 * cols + c0] then
-        return ix.regionOf[r0 * cols + c0]
+    local cache = logic.regionCache(zone)
+    if cache[r0 * cols + c0] then
+        return cache[r0 * cols + c0]
     end
     -- the same region from whichever cell it is first worked out (static rule 1; bug 28: from the
     -- Ruins courtyard's north bank the bridge was guided to in the middle of its deck, from the
@@ -429,7 +457,7 @@ function logic.regionAt(zone, x, y)
     -- cached before the side streets are dropped: withoutSideStreets asks for the neighbouring
     -- squares' regions, which ask for this one again (the cache ends that round trip)
     for key in pairs(cells) do
-        ix.regionOf[key] = region
+        cache[key] = region
     end
     region.mouths = logic.withoutSideStreets(zone, region)
     return region

@@ -348,7 +348,8 @@ end
 
 -- Forgets the squares found so far: their flood depends on the level the player is on.
 function logic.forgetRegions(zone)
-    zone._index.regionOf = {}
+    local ix = zone._index
+    ix.regionOf, ix.regionsByFloor, ix.regionFloor = {}, nil, ix.floor or 0
 end
 
 -- The cell value at a world position, plus row and column.
@@ -371,30 +372,35 @@ function logic.place(zone, placeId)
     return zone._index.places[placeId]
 end
 
--- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
--- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
--- (the export's climbDown) where the player's floor piece is neither one of its feet's floors nor
--- the climb itself; else nil (its own name). From the floor alone, the same from every spot on it.
-function logic.downPlace(zone, placeId)
+-- Is the player's floor piece the top of the ramp or stairs `placeId`: neither one of its feet's
+-- floors nor the climb itself, and joined to it? From the floor alone, the same from every spot on it.
+function logic.atClimbTop(zone, placeId)
     local ix = zone._index
-    local p = ix.places[placeId]
-    if p == nil or p.down == nil then
-        return nil
-    end
     local feet = ix.footFloors and ix.footFloors[placeId]
     local floor = ix.floor or 0
     local own = ix.placePieces[placeId] or {}
     if feet == nil or feet[floor] or own[floor] then
-        return nil
+        return false
     end
     -- (only from a floor the climb is joined to: its top; a floor held a moment by mistake beside
     -- it named the Brill tavern's stairs up "Treppe Richtung Schankraum" in the common room)
     for q in pairs(ix.joined[floor] or {}) do
         if own[q] then
-            return ix.places[p.down]
+            return true
         end
     end
-    return nil
+    return false
+end
+
+-- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
+-- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
+-- (the export's climbDown) where the player's floor is its top (logic.atClimbTop); else nil (its own name).
+function logic.downPlace(zone, placeId)
+    local p = zone._index.places[placeId]
+    if p == nil or p.down == nil or not logic.atClimbTop(zone, placeId) then
+        return nil
+    end
+    return zone._index.places[p.down]
 end
 
 function logic.kind(zone, placeId)

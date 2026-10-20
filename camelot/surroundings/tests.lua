@@ -622,6 +622,31 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(found, true)
     end,
 
+    ["from a climb's top its opening goes down, whatever lies round its top on the grid"] = function(t)
+        -- walk 2026-10-20: the Abbey bell tower's floor lies round its ramp's top on the grid; from it the ramp
+        -- went "up" (its way on back into the tower)
+        local z = newTowerZone()
+        -- the flight (row 0, column 1) rises east; the landing wraps round its cell: west of it (column 0),
+        -- east of it (columns 2 and 3) and along row 1 under it
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.atClimbTop(z, 2), true)
+        local mouth = nil
+        for _, m in ipairs(logic.regionAt(z, 95, 35).mouths) do
+            if m.label == "stairs to the landing" then
+                mouth = m
+            end
+        end
+        t:assertEqual(mouth.rise, "down")
+        -- from the ground at its foot it is no top
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.atClimbTop(z, 2), false)
+    end,
+
     ["a structure's platform says what lies around it, as a square"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
@@ -1405,6 +1430,31 @@ testRunner:addSuite("Surroundings", {
         exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
         t:assertEqual(#exits, 1)
         t:assertEqual(exits[1].label, "street of Test")
+    end,
+
+    ["the squares found are kept per floor piece, whatever set the floor"] = function(t)
+        -- walk 2026-10-20: a login put the player on the bell tower's floor with the cache filed as the
+        -- ground's; down in the hall under it the bell tower's square was found again, its one way said
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local key = next(region.cells)
+        t:assertEqual(logic.regionCache(z)[key], region)
+        -- a login onto another floor (setFloor, forgetRegions): that floor starts empty
+        logic.setFloor(z, 7)
+        logic.forgetRegions(z)
+        t:assertNil(next(logic.regionCache(z)))
+        local upper = { cells = {} }
+        logic.regionCache(z)[key] = upper
+        -- back on the ground: the upper floor's square is not the ground's
+        logic.setFloor(z, 0)
+        t:assertNil(logic.regionCache(z)[key])
+        t:assertEqual(logic.regionAt(z, 78, 35).label, region.label)
+        -- a floor set with no word to the cache (the tracker, a hall's entry): kept per floor all the same
+        z._index.floor = 7
+        t:assertEqual(logic.regionCache(z)[key], upper)
+        z._index.floor = 0
+        t:assertEqual(logic.regionCache(z)[key].label, region.label)
     end,
 
     ["stairs beside a square: up or down from it is kept for the way on, never said"] = function(t)

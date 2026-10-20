@@ -1376,13 +1376,7 @@ local function updateIndoors(z, x, y, px, py)
             logEntry("floor", before .. " -> " .. floor, x, y)
             -- (the floor held before: the turn key on a landing faces the flight not come from)
             ix.floorBefore = before
-            -- the places found so far kept per floor piece, so stepping back onto a floor finds
-            -- its places again with what was said there (a fresh flood at every hop said the
-            -- stairs twice)
-            ix.regionsByFloor = ix.regionsByFloor or {}
-            ix.regionsByFloor[ix.regionFloor or 0] = ix.regionOf
-            ix.regionOf = ix.regionsByFloor[floor] or {}
-            ix.regionFloor = floor
+            -- (the places found so far are kept per floor piece: logic.regionCache)
         end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
         -- has), each in the room its floor belongs to: this room, or while it is unknown
