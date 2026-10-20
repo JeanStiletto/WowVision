@@ -385,8 +385,14 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
             local b = math.rad(f.bearing)
             atFoot = math.abs((f.x - x) * -math.sin(b) - (f.y - y) * math.cos(b)) <= logic.GUIDE_SIDE_CLIMB
         end
+        -- (not the foot of the climb the player is on when they stepped onto it at its other end: walked down to,
+        -- it said "2 yd behind, on up" and the turn key faced back up the ramp, the Abbey's bell tower ramp
+        -- 2026-10-20 09:20:54; a second try at a foot, stepped on near it, keeps it)
+        local inAt = ix.climbIn
+        local downTo = inAt ~= nil and ix.climbPlace ~= nil and logic.placeOf(f.value) == ix.climbPlace
+            and logic.dist(inAt.x, inAt.y, f.x, f.y) >= logic.CROSSED
         if (fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)))
-            and not (crossed and fl == on and logic.placeOf(f.value) == crossed.place) then
+            and not (crossed and fl == on and logic.placeOf(f.value) == crossed.place) and not downTo then
             feet[#feet + 1] = f
         end
     end
