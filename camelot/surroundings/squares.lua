@@ -200,11 +200,12 @@ local function findMouths(zone, cells, list, floors, own)
                 -- a climb going up or down from the square counts from one border cell: a ramp
                 -- is narrow, and a raised part of the square beside its foot takes its other cells
                 if #members >= (zone.mouthMin or logic.MOUTH_MIN) or (group.rise and #members >= 1) then
-                    -- a climb's opening onto a piece it is joined to: where the two meet, not the border
-                    -- cells' centres a cell or two beside its top or foot (the Abbey bell tower's ramp: its
-                    -- border cell 2 to 4 yd west of its top, "at the ramp" said there by the wall, walk
-                    -- 2026-10-20 04:57 to 05:00)
-                    local points = group.rise and group.piece and climbJoinPoints(zone, floors, group.piece, members)
+                    -- a climb's opening at its top onto a piece it is joined to: where the two meet, not the
+                    -- border cells' centres a cell or two beside it (the Abbey bell tower's ramp: its border
+                    -- cell 2 to 4 yd west of its top, "at the ramp" said there by the wall, walk 2026-10-20
+                    -- 04:57 to 05:00); the way down has no foot record, the way up has (its foot is guided to)
+                    local points = group.rise == "down" and group.piece and logic.atClimbTop(zone, logic.placeOf(group.value))
+                        and climbJoinPoints(zone, floors, group.piece, members) or nil
                     if points == nil then
                         points = {}
                         for _, m in ipairs(members) do
