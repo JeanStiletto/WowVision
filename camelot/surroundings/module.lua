@@ -514,6 +514,71 @@ local function watchFall(now)
     end
 end
 
+-- Boarding, for the walk log (user 2026-10-21: what matters first is knowing that the player stands where the
+-- platform should be and is not falling, a sign to stop moving; knowing they ride a ship is a small extra). Ships,
+-- zeppelins and lifts move and are in no surroundings data, so the tracker sees water or air under a deck. Near a
+-- stop's vehicle (BOARD_NEAR yd from where it stands: a ship's or zeppelin's 24 yd along its heading, a lift's shaft
+-- axis) a point every BOARD_STEP s goes into the log's boards: "<time> <stop> <yd to the vehicle> <x y> <flags>",
+-- flags a (in the air), s (swimming), m (moving on their own: IsPlayerMoving), c (carried: the position moved since
+-- the last point while the player was not moving on their own, now or then, and not in the air). Anywhere a carried
+-- stretch (a ship at sea) goes into the log's carried as one line when it ends: "<end time> <seconds> <yards> <x y at
+-- the start> <x y at the end> <stop near its start or ->". The game gives no height: a lift's ride shows only as
+-- standing on its axis without falling. Only while the log is on; nothing reads it in the game: the tools measure
+-- first how the signals fit the stops.
+local BOARD_NEAR, BOARD_STEP, BOARDS_MAX, CARRIED_MAX = 30, 0.5, 5000, 2000
+local CARRY_MIN, CARRY_JUMP, CARRY_END = 0.3, 40, 1.5   -- yd per step at least, more is a teleport; s to end a stretch
+local boardAt, boardX, boardY, boardMoving = -math.huge, nil, nil, false
+local carry = nil          -- the carried stretch under way: start time, x, y, stop near it, yards, last carried time, x, y
+
+local function endCarry(log)
+    local c = carry
+    carry = nil
+    log.carried = log.carried or {}
+    table.insert(log.carried, string.format("%d %.1f %.1f %.1f %.1f %.1f %.1f %s", time(), c.lastT - c.t, c.yd,
+        c.x, c.y, c.lx, c.ly, c.stop or "-"))
+    log.carried = trim(log.carried, CARRIED_MAX)
+end
+
+local function watchBoard(now)
+    if now - boardAt < BOARD_STEP then
+        return
+    end
+    boardAt = now
+    local log = activeLog()
+    local x, y = UnitPosition("player")
+    if log == nil or x == nil or UnitOnTaxi("player") then
+        carry, boardX = nil, nil
+        return
+    end
+    local moving, inAir = IsPlayerMoving() == true, IsFalling() == true
+    local moved = boardX and math.sqrt(logic.dist2(x, y, boardX, boardY)) or 0
+    local carried = boardX ~= nil and not moving and not boardMoving and not inAir
+        and moved >= CARRY_MIN and moved <= CARRY_JUMP
+    local stop, d = nil, nil
+    if zone and zone._index then
+        stop, d = logic.nearestStop(zone, x, y)
+    end
+    local nearStop = stop ~= nil and d <= BOARD_NEAR
+    if carried then
+        if carry == nil then
+            carry = { t = now - BOARD_STEP, x = boardX, y = boardY, yd = 0, stop = nearStop and stop or nil }
+        end
+        carry.yd = carry.yd + moved
+        carry.lastT, carry.lx, carry.ly = now, x, y
+    elseif carry and (moved > CARRY_JUMP or now - carry.lastT >= CARRY_END) then
+        endCarry(log)
+    end
+    boardX, boardY, boardMoving = x, y, moving
+    if nearStop then
+        local flags = (inAir and "a" or "") .. (IsSwimming() and "s" or "") .. (moving and "m" or "")
+            .. (carried and "c" or "")
+        log.boards = log.boards or {}
+        table.insert(log.boards, string.format("%d %d %.1f %.1f %.1f%s", time(), stop, d, x, y,
+            flags ~= "" and " " .. flags or ""))
+        log.boards = trim(log.boards, BOARDS_MAX)
+    end
+end
+
 -- The walk-graph tracker's cost, one silent log entry (kind "time") a minute while the log is on: the looks
 -- of the minute, their milliseconds in all and the slowest one, the most candidates kept and surfaces under
 -- the position after one look, the looks that ended unsure (the Lua time per look in the game was
@@ -1542,6 +1607,7 @@ end
 module:hasUpdate(function(self)
     local now = GetTime()
     watchFall(now)
+    watchBoard(now)
     if now - lastCheck < CHECK_INTERVAL then
         return
     end

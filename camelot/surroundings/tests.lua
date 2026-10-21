@@ -2897,6 +2897,14 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopText(z, 2, 95, 9), "wait for the lift down, lift to the east")
         -- no stop off its cells
         t:assertEqual(logic.stopAt(z, 75, 35, nil), nil)
+        -- the nearest vehicle, on any floor or room (the walk log's boards): the ship 10 yd west,
+        -- the lift's shaft axis 4 yd north
+        local near, d = logic.nearestStop(z, 85, 35)
+        t:assertEqual(near, 1)
+        t:assertEqual(d, 10)
+        near, d = logic.nearestStop(z, 95, 9)
+        t:assertEqual(near, 2)
+        t:assertEqual(d, 4)
     end,
 
     ["a stop on a floor piece is found only up on it: the zeppelin tower's top, not its foot"] = function(t)
