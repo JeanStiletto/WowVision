@@ -77,9 +77,13 @@ tracker.CHAIN = 1          -- 1: of candidates of one cost, the one reached from
                            -- piece held alone did that while the U was one piece. 0 = off; swept 2026-10-19 late on J2 and
                            -- K3, the whole set: Elwynn 155 -> 144 on K3 (J2 144 either way), Undercity 388 -> 389 (one point
                            -- in Brill's common room), Dun Morogh 38 either way
+tracker.PERSIST = false    -- offline only (the replays of a million looks, tools/walklog/vtrack.lua): the decoded columns
+                           -- and each surface's steps kept per layer for the whole run, not decoded afresh per look; the
+                           -- same floors (the data does not change during a replay), 2026-10-21 night
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
+    tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") == "1"
     for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
@@ -178,30 +182,60 @@ local function keyOf(s)
     return (s.r * COLS + s.c) * 1048576 + floor(s.z * 2 + 0.5) + 400000
 end
 
--- The surfaces reached from `s` in at most `hops` steps: a set by key.
-local function reached(S, s, hops, cache)
+-- (PERSIST: a surface's four steps found once and kept on it, false where it has none; its key too)
+local function stepKept(S, u, d, r, c, cache)
+    local nb = u.nb
+    if not nb then
+        nb = { nil, nil, nil, nil }
+        u.nb = nb
+        u.key = keyOf(u)
+    end
+    local t = nb[d]
+    if t == nil then
+        t = stepTo(S, u, r, c, cache) or false
+        if t and not t.key then
+            t.key = keyOf(t)
+        end
+        nb[d] = t
+    end
+    return t or nil
+end
+
+local function stepFresh(S, u, _, r, c, cache)
+    return stepTo(S, u, r, c, cache)
+end
+
+-- The surfaces reached from `s` in at most `hops` steps: a set by key. `box` (PERSIST only; rows r1..r2, columns
+-- c1..c2: the columns the answer is asked for) leaves out what cannot reach the box in the hops left; the set
+-- still holds every surface in the box that the whole search holds (a step crosses one column).
+local function reached(S, s, hops, cache, box)
+    local step = tracker.PERSIST and stepKept or stepFresh
     local seen = { [keyOf(s)] = true }
     local frontier = { s }
-    for _ = 1, hops do
+    local r1, r2, c1, c2
+    if box then
+        r1, r2, c1, c2 = box[1], box[2], box[3], box[4]
+    end
+    for k = 1, hops do
         local nxt = {}
         for i = 1, #frontier do
             local u = frontier[i]
             local st = u.steps
             if st % 2 == 1 then
-                local t = stepTo(S, u, u.r - 1, u.c, cache)
-                if t and not seen[keyOf(t)] then seen[keyOf(t)] = true; nxt[#nxt + 1] = t end
+                local t = step(S, u, 1, u.r - 1, u.c, cache)
+                if t then local q = t.key or keyOf(t); if not seen[q] then seen[q] = true; if not r1 or k + (t.r < r1 and r1 - t.r or t.r > r2 and t.r - r2 or 0) + (t.c < c1 and c1 - t.c or t.c > c2 and t.c - c2 or 0) <= hops then nxt[#nxt + 1] = t end end end
             end
             if floor(st / 2) % 2 == 1 then
-                local t = stepTo(S, u, u.r + 1, u.c, cache)
-                if t and not seen[keyOf(t)] then seen[keyOf(t)] = true; nxt[#nxt + 1] = t end
+                local t = step(S, u, 2, u.r + 1, u.c, cache)
+                if t then local q = t.key or keyOf(t); if not seen[q] then seen[q] = true; if not r1 or k + (t.r < r1 and r1 - t.r or t.r > r2 and t.r - r2 or 0) + (t.c < c1 and c1 - t.c or t.c > c2 and t.c - c2 or 0) <= hops then nxt[#nxt + 1] = t end end end
             end
             if floor(st / 4) % 2 == 1 then
-                local t = stepTo(S, u, u.r, u.c - 1, cache)
-                if t and not seen[keyOf(t)] then seen[keyOf(t)] = true; nxt[#nxt + 1] = t end
+                local t = step(S, u, 3, u.r, u.c - 1, cache)
+                if t then local q = t.key or keyOf(t); if not seen[q] then seen[q] = true; if not r1 or k + (t.r < r1 and r1 - t.r or t.r > r2 and t.r - r2 or 0) + (t.c < c1 and c1 - t.c or t.c > c2 and t.c - c2 or 0) <= hops then nxt[#nxt + 1] = t end end end
             end
             if floor(st / 8) % 2 == 1 then
-                local t = stepTo(S, u, u.r, u.c + 1, cache)
-                if t and not seen[keyOf(t)] then seen[keyOf(t)] = true; nxt[#nxt + 1] = t end
+                local t = step(S, u, 4, u.r, u.c + 1, cache)
+                if t then local q = t.key or keyOf(t); if not seen[q] then seen[q] = true; if not r1 or k + (t.r < r1 and r1 - t.r or t.r > r2 and t.r - r2 or 0) + (t.c < c1 and c1 - t.c or t.c > c2 and t.c - c2 or 0) <= hops then nxt[#nxt + 1] = t end end end
             end
         end
         if #nxt == 0 then
@@ -282,7 +316,13 @@ function look(zone, x, y, swimming)
     if tracker.looks == 1 and DEBUG then
         io.stderr:write("tracker: first look on " .. tostring(zone.key) .. "\n")
     end
-    local cache = {}
+    local cache
+    if tracker.PERSIST then
+        cache = S._cache or {}
+        S._cache = cache
+    else
+        cache = {}
+    end
     local now = under(S, x, y, cache)
     ix.under = #now
     local prev = ix.cands
@@ -351,12 +391,17 @@ function look(zone, x, y, swimming)
     -- the reach of every old candidate, once
     local sets = {}
     local hops = 0
+    local box = nil
+    if prev and tracker.PERSIST then
+        local r0, c0 = floor(x - S.x0), floor(y - S.y0)
+        box = { r0 - 1, r0 + 1, c0 - 1, c0 + 1 }
+    end
     if prev then
         for i = 1, #prev do
             local d = logic.dist(prev[i].x, prev[i].y, x, y) + (prev[i].far or 0) + tracker.REACH
             local h = math.min(tracker.MAX_HOPS, math.ceil(d) + tracker.EXTRA_HOPS)
             if h > hops then hops = h end
-            sets[i] = reached(S, prev[i].s, h, cache)
+            sets[i] = reached(S, prev[i].s, h, cache, box)
         end
     end
     -- the game says whether the player swims: on foot no liquid surface is a candidate (the piece tracker's

@@ -295,6 +295,58 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(z._index.fellFrom, 2)
     end,
 
+    ["the walk-graph tracker gives the same floors with its offline cache (PERSIST) as without"] = function(t)
+        -- the stairs and upper floor of the test above, walked up, along the floor and off its side, once decoding
+        -- afresh per look and once keeping the columns and steps (tools/walklog/vtrack.lua)
+        local recs = {}
+        for x = 70, 100 do
+            for y = 44, 56 do
+                if not (y >= 49 and y <= 51 and x > 84 and x < 90) and not (x <= 84 and y >= 47 and y <= 53) then
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = 0, piece = 0 }
+                end
+            end
+        end
+        for x = 84, 90 do
+            recs[#recs + 1] = { r = x - 60, c = 10, z = (90 - x) * 0.5, piece = 1 }
+        end
+        for x = 70, 84 do
+            for y = 48, 52 do
+                recs[#recs + 1] = { r = x - 60, c = y - 40, z = 3, piece = 2 }
+            end
+        end
+        local rows = surfaceRows(recs)
+        local path = { { 95, 50.5 } }
+        for x = 93, 71, -2 do
+            path[#path + 1] = { x, 50.5 }
+        end
+        path[#path + 1] = { 72, 55 }
+        path[#path + 1] = { 80, 55 }
+        local function walk(persist)
+            local was = logic.tracker.PERSIST
+            logic.tracker.PERSIST = persist
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = rows }
+            logic.setFloor(z, 0)
+            local out = {}
+            for i, p in ipairs(path) do
+                local q = path[i - 1] or p
+                local floor = logic.updateFloor(z, p[1], p[2], false, q[1], q[2], false, false)
+                out[#out + 1] = tostring(floor) .. (z._index.floorSure and "s" or "u")
+            end
+            logic.tracker.PERSIST = was
+            return table.concat(out, " ")
+        end
+        local fresh, kept = walk(false), walk(true)
+        t:assertEqual(kept, fresh)
+        t:assertTrue(fresh:find("2s") ~= nil)   -- the walk reached the upper floor
+    end,
+
     ["the walk-graph tracker keeps the ground through a hole of the walk graph, not after a cold start, not for ever"] = function(t)
         -- the ground (piece 0, height 0) on x 40 to 100, y 54 to 56, except a hole under a deck (piece 3 at 12, a
         -- platform 12 yd up, no ground under it in the data) on x 76 to 80, and a long one on x 40 to 70; the
