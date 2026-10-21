@@ -1,106 +1,96 @@
--- A route from WowNav, walked by WowVision: the normal Path (beacon, arrival cue, Ctrl-W/S, Shift-F12, the turn key
--- all read it as before), with WowNav's rules for moving on to the next waypoint instead of one radius for all:
--- each waypoint's own radius from the data (WowVision's arrival radius, Alt-P, is its minimum), the gate line
--- at narrow spots, the turning point in the open; and back
--- onto the route when the player is off it (a later waypoint whose cell holds the player, no new route).
+-- A WowNav route walked with WowVision's own beacon: the normal Path (beacon, arrival cue, Ctrl-W/S, Shift-F12, the
+-- turn key all read it as before), whose waypoints are the route's (route.lua) and whose moving on is decided by
+-- route.lua with WowNav's rules. The path mirrors the route: its waypoints follow route.path (a re-entry shortens it),
+-- its current waypoint follows route.pathIndex.
 
 local maps = WowVision.base.navigation.maps
-local logic = WowVision.wownavLogic
 
 local WowNavPath = WowVision.Class("WowNavPath", maps.Path)
 WowVision.WowNavPath = WowNavPath
 
--- engine: the wownav module (it speaks and knows the network); final radius of the target point: WowVision's
--- arrival distance.
-function WowNavPath:initialize(engine)
+-- engine: the wownav module (it speaks and reacts to the route's events); route: the running wownavRoute.
+function WowNavPath:initialize(engine, route, label)
     maps.Path.initialize(self)
     self.engine = engine
-    self.watch = {}
+    self.route = route
+    self.label = label
+    self:sync()
+end
+
+-- The waypoints of the route as positions for the beacon; the last one carries the target's name.
+function WowNavPath:sync()
+    local route = self.route
+    if route.path == self.mirrored then
+        return
+    end
+    self.mirrored = route.path
+    local N = route.N
+    local waypoints = {}
+    for i, id in ipairs(route.path or {}) do
+        local x, y, z = N.Position(id)
+        waypoints[i] = { id = id, x = x, y = y, z = z }
+    end
+    if #waypoints > 0 then
+        waypoints[#waypoints].n = self.label
+    end
+    self.waypoints = waypoints
+    self.currentIndex = nil
+end
+
+-- The current waypoint follows the route; the beacon retargets when it changes.
+function WowNavPath:follow()
+    self:sync()
+    local index = self.route.pathIndex
+    if index ~= self.currentIndex then
+        self.currentIndex = index
+        self.currentWaypoint = self.waypoints[index]
+        self.beacon = self.currentWaypoint and maps.Beacon:new(self.currentWaypoint) or nil
+    end
 end
 
 function WowNavPath:start()
-    maps.Path.start(self)
-    self.px, self.py = nil, nil
-    self.watch = {}
+    self.active = true
+    self.complete = false
+    self.currentIndex = nil
+    self:follow()
 end
 
+-- Ctrl-W / Ctrl-S: the route's own step (his /vn next and /vn prev), with WowVision's arrival cue.
 function WowNavPath:moveBy(offset)
-    local waypoint = maps.Path.moveBy(self, offset)
-    if waypoint ~= nil then
-        self.px, self.py = nil, nil
-        self.watch = {}
+    if not self.active or self.complete or not self.route.active then
+        return nil
     end
-    return waypoint
-end
-
--- The waypoint IDs of the route (route state: a stacked start cell attached to one of them wins).
-function WowNavPath:nodeSet()
-    local set = {}
-    for _, wp in ipairs(self.waypoints) do
-        if wp.id ~= nil then
-            set[wp.id] = true
-        end
+    if not self.route:selectIndex(self.route.pathIndex + offset) then
+        return nil
     end
-    return set
-end
-
-local function advance(self)
     self.events.arriveAtWaypoint:emit(self, self.currentWaypoint)
-    self.currentIndex = self.currentIndex + 1
-    self.currentWaypoint = self.waypoints[self.currentIndex]
-    self.watch = {}
-    if self.currentWaypoint then
-        self.beacon = maps.Beacon:new(self.currentWaypoint)
-    else
-        self.beacon = nil
-    end
+    self:follow()
+    return self.currentWaypoint
+end
+
+function WowNavPath:finish()
+    self.active = false
+    self.complete = true
+    self.beacon = nil
 end
 
 function WowNavPath:update()
     if not self.active or self.complete then
         return nil
     end
-    if self.currentIndex > #self.waypoints then
-        self.events.complete:emit(self)
-        self.active = false
-        self.complete = true
-        self.beacon = nil
-        return
-    end
     local x, y = UnitPosition("player")
     if x == nil then
         return
     end
-    local N, G = self.engine:network()
-    local swimming = logic.inWater()
-    local wp = self.currentWaypoint
-    local z = logic.heightAlong(self.waypoints[self.currentIndex - 1], wp, x, y, swimming)
-    if z ~= nil then
-        self.engine.lastHeight = z
-    end
-    local reached = N ~= nil and logic.reached(N, G, self.waypoints, self.currentIndex, {
-        x = x, y = y, px = self.px, py = self.py, z = z, swimming = swimming,
-        finalRadius = maps:arrivalDistance(), minRadius = maps:arrivalDistance(),
-    })
-    if reached then
-        advance(self)
-    elseif N ~= nil and not wp.final then
-        local moving = (IsPlayerMoving ~= nil and IsPlayerMoving()) or false
-        if logic.offRoute(self.watch, GetTime(), x, y, wp.x, wp.y, moving) then
-            -- off the route the route's height says little: it only decides where floors are stacked here
-            local stacked = #logic.floorsAt(N, x, y, swimming) > 1
-            local index = logic.rejoinIndex(N, G, self.waypoints, self.currentIndex, x, y, stacked and z or nil, swimming)
-            if index ~= nil and index > self.currentIndex then
-                self.currentIndex = index
-                self.currentWaypoint = self.waypoints[index]
-                self.beacon = maps.Beacon:new(self.currentWaypoint)
-                self.watch = {}
-                self.engine:onRejoined()
-            end
+    local event = self.route:update(x, y)
+    if event ~= nil then
+        if event.kind == "advance" then
+            self.events.arriveAtWaypoint:emit(self, self.currentWaypoint)
         end
+        self:follow()
+        self.engine:onRouteEvent(self, event)
     end
-    self.px, self.py = x, y
-    if self.beacon then
+    if self.beacon and not self.complete then
         self.beacon:update()
     end
 end

@@ -219,7 +219,7 @@ function module:navigateToName(fragment)
     local foldCase = WowVision.utils.foldCase
     local needle = foldCase(fragment)
     local matches = WowVision.Router.nearest(waypoints, px, py, 1, function(wp)
-        return wp.n ~= nil and foldCase(wp.n):find(needle, 1, true) ~= nil
+        return wp.n ~= nil and (wp.search or foldCase(wp.n)):find(needle, 1, true) ~= nil
     end)
     if #matches == 0 then
         WowVision:speak(L["No route found"] .. " " .. fragment)
@@ -227,7 +227,7 @@ function module:navigateToName(fragment)
     end
     local target = matches[1].waypoint
     WowVision:speak(target.n)
-    if engine ~= nil and self:routeTo(target.x, target.y, target.n, nil, target.z) then
+    if engine ~= nil and self:routeTo(target.x, target.y, target.n, nil, target.z, target) then
         return true
     end
     return self:navigateTo(target.id, waypoints)
@@ -263,7 +263,9 @@ end
 -- everything after that (beacon, arrival cue, Ctrl-W/S, Shift-F12, the turn
 -- key) stays the same. engine: isActive(), routeTo(target) -> true when it
 -- took the request (false: not here, the request goes the old way),
--- destinations(px, py, map) -> { {id, n, x, y, z} }, hidesRouteDataSpawns().
+-- destinations(px, py, map) -> { {id, n, x, y, z, detail, search} } (detail:
+-- said after the distance; search: folded text the search looks in),
+-- hidesRouteDataSpawns().
 function module:setRouteEngine(engine)
     self.routeEngine = engine
 end
@@ -277,13 +279,15 @@ function module:activeRouteEngine()
 end
 
 -- The one route request: to a world position (z when the target knows
--- it). True when the active engine took it; false leaves it to the caller.
-function module:routeTo(wx, wy, label, onArrive, z)
+-- it). data: the destination row when it came from the engine's own list
+-- (its target data). True when the active engine took it; false leaves it
+-- to the caller.
+function module:routeTo(wx, wy, label, onArrive, z, data)
     local engine = self:activeRouteEngine()
     if engine == nil then
         return false
     end
-    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive }) == true
+    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive, data = data }) == true
 end
 
 -- Open the navigation window aimed at a world position: the scanner's

@@ -85,7 +85,8 @@ local function destinations(screen)
     local found = {}
     local target = screen._target
     for _, wp in pairs(screen._waypoints) do
-        if wp ~= target and wp.n ~= nil and (needle == nil or foldCase(wp.n):find(needle, 1, true) ~= nil) then
+        -- an engine's row may bring its own search text (names in both languages, categories, zone), already folded
+        if wp ~= target and wp.n ~= nil and (needle == nil or (wp.search or foldCase(wp.n)):find(needle, 1, true) ~= nil) then
             local dx = wp.x - screen._px
             local dy = wp.y - screen._py
             tinsert(found, { waypoint = wp, distance = math.sqrt(dx * dx + dy * dy) })
@@ -119,8 +120,13 @@ local function destinationCursor(screen)
         return list, index, count
     end
 
+    -- an engine's row may add a detail after the distance (WowNav: its categories and zone)
     local function labelOf(entry)
-        return string.format("%s, %d %s", entry.waypoint.n, entry.distance, L["yards"])
+        local text = string.format("%s, %d %s", entry.waypoint.n, entry.distance, L["yards"])
+        if entry.waypoint.detail ~= nil then
+            text = text .. ", " .. entry.waypoint.detail
+        end
+        return text
     end
 
     local function speak()
@@ -181,7 +187,7 @@ local function destinationCursor(screen)
             end
             WowVision.UIHost:closeWindow("atlas")
             local wp = entry.waypoint
-            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z) then
+            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z, wp) then
                 return
             end
             local routed = module:navigateTo(wp.id, screen._waypoints, { entryId = screen._entryId, onArrive = wp.onArrive })

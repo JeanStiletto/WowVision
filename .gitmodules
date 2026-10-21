@@ -10,6 +10,6 @@
 [submodule "mapdata/WowVision_Surroundings"]
 	path = mapdata/WowVision_Surroundings
 	url = https://github.com/JeanStiletto/WowVision_Surroundings
-[submodule "mapdata/WowNav"]
-	path = mapdata/WowNav
-	url = https://github.com/Broesel33/WowNav.git
+[submodule "mapdata/WoW_NavigationData"]
+	path = mapdata/WoW_NavigationData
+	url = https://github.com/Broesel33/WoW_NavigationData.git

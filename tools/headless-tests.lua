@@ -72,11 +72,15 @@ loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
 loadAddonFile("camelot/surroundings/storeTests.lua")
 loadAddonFile("camelot/surroundings/helperTests.lua")
--- WowNav routes: the logic on the real network of the WowNav submodule (mapdata/WowNav, its engine.xml); without the
--- submodule only the parts that need no network run.
+-- WowNav routes: Broesel's engine (camelot/wownav/engine) on his real data, packed into mapdata/WowNavPacked by
+-- tools/wownav-pack.lua (its data.xml); without the packed data only the parts that need no network run.
+loadAddonFile("camelot/wownav/engine/NavNetwork.lua")
+loadAddonFile("camelot/wownav/engine/Guidance.lua")
+loadAddonFile("camelot/wownav/engine/TargetCatalog.lua")
+loadAddonFile("camelot/wownav/engine/TargetResolver.lua")
 do
-    local base = "mapdata/WowNav/addon/WowVisionNavigation/"
-    local xml = io.open(base .. "engine.xml", "r")
+    local base = "mapdata/WowNavPacked/"
+    local xml = io.open(base .. "data.xml", "r")
     if xml ~= nil then
         local text = xml:read("*a")
         xml:close()
@@ -85,7 +89,9 @@ do
         end
     end
 end
-loadAddonFile("camelot/wownav/logic.lua")
+loadAddonFile("camelot/wownav/text.lua")
+loadAddonFile("camelot/wownav/catalog.lua")
+loadAddonFile("camelot/wownav/route.lua")
 loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
