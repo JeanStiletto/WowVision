@@ -320,6 +320,9 @@ local trailX, trailY = nil, nil
 -- (a reduced walk set keeps it), so the replays hand the module what the game said (user 2026-10-17)
 local TRAIL_AREA_EVERY = 20
 local trailArea, trailSince = nil, 0
+-- the game's UI map at the last trail point that gave it ("m<map>" among the flags, with the area): the replays had
+-- one map per zone, while the halls are left and entered by the map (the Undercity's lifts, Ironforge's gate), 2026-10-22
+local trailMap = nil
 local sessionLogged = false
 
 local function logStore()
@@ -414,8 +417,9 @@ end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
 -- outdoors), s (swimming), g (ghost), a (in the air: falling or jumping), f with the facing in degrees and p with the floor piece
--- when it is not the ground, as one token ("isf270p33"); then "|<area>", the game's area, where it
--- changed or every TRAIL_AREA_EVERY points (after a space: tools read the flags before it).
+-- when it is not the ground, and m with the game's UI map where it or the area is given, as one token
+-- ("isf270p33m1458"); then "|<area>", the game's area, where it changed or every TRAIL_AREA_EVERY points (after
+-- a space: tools read the flags before it).
 local function logTrail(x, y)
     if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
@@ -434,10 +438,14 @@ local function logTrail(x, y)
         .. (facing and ("f" .. facing) or "")
         .. (piece ~= 0 and ("p" .. piece) or "")
     local area = gameSubzone()
+    local uiMap = gameMap()
     trailSince = trailSince + 1
     local tail = ""
-    if area ~= trailArea or trailSince >= TRAIL_AREA_EVERY then
-        tail, trailArea, trailSince = " |" .. area, area, 0
+    if area ~= trailArea or uiMap ~= trailMap or trailSince >= TRAIL_AREA_EVERY then
+        tail, trailArea, trailMap, trailSince = " |" .. area, area, uiMap, 0
+        if uiMap then
+            flags = flags .. "m" .. uiMap
+        end
     end
     table.insert(log.trail, string.format("%d %.1f %.1f%s%s", time(), x, y, flags ~= "" and " " .. flags or "", tail))
     log.trail = trim(log.trail, TRAIL_MAX)
