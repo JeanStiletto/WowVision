@@ -603,6 +603,44 @@ function look(zone, x, y, swimming)
     return floor_, floor_ ~= was
 end
 
+-- The height of the floor held on the layer `zone`: the cheapest candidate on its floor piece, or nil where the
+-- tracker holds none (a reset, a cold start not looked at yet, a layer that has no surfaces).
+function tracker.heldZ(zone)
+    local ix = zone._index
+    local cands = ix and ix.cands
+    if not cands then
+        return nil
+    end
+    local best = nil
+    for i = 1, #cands do
+        local c = cands[i]
+        if c.s.piece == ix.floor and (best == nil or c.cost < best.cost) then
+            best = c
+        end
+    end
+    return best and best.s.z or nil
+end
+
+-- The floor piece of the layer `zone` with a dry surface under (x, y) within `dz` of the height `z` (the nearest), or
+-- false where it has none there; nil where the layer has no surfaces (an older data file: nothing to tell by). With
+-- `only`, that piece's surfaces alone.
+function tracker.pieceAt(zone, x, y, z, dz, only)
+    local S = zone.surf
+    if not S then
+        return nil
+    end
+    local found, fd = false, dz
+    local now = under(S, x, y, {})
+    for i = 1, #now do
+        local s = now[i]
+        local d = s.z > z and s.z - z or z - s.z
+        if not s.liquid and d <= fd and (only == nil or s.piece == only) then
+            found, fd = s.piece, d
+        end
+    end
+    return found
+end
+
 -- Forgets the candidates (a layer's reset, a teleport): the next look starts from every surface under it.
 function tracker.reset(zone)
     local ix = zone._index

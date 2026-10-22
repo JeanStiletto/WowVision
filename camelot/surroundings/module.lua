@@ -81,6 +81,7 @@ local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 local BEND_WALK = 10 -- walked on the way since the last announcement or hint before a bend is said
 local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
+local HALL_ENTRY_DZ = 3.0 -- yd: into the halls by a hall's floor only where their layer has a floor this near the height held
 local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
 local PASSED_SAME = 4 -- a guidance target this close to that doorway is that doorway
 
@@ -221,13 +222,26 @@ local function updateHall(z, x, y, px, py)
         logic.setFloor(z, piece)
     end
     local inFloor, entryRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
+    -- the height the zone's floor is followed at: into the halls only where their layer has a floor at it, and onto
+    -- that floor (walk 2026-10-22 11:31:37, STATE bug 68: a step before the Ruins' bell tower doorway the tower's room
+    -- box took the player in where the halls' layer has only the canal ring 124 yd below; the layer started on the
+    -- ring, the ring's room lies apart from the tower and the next look put the player out again, a place said twice)
+    local layer = logic.layer(z, IsIndoors())
+    local heldZ = inFloor and layer and logic.tracker and logic.tracker.heldZ(z)
+    local atHeight = heldZ and logic.tracker.pieceAt(layer, x, y, heldZ, HALL_ENTRY_DZ)
+    if atHeight == false then
+        inFloor = false
+    end
     if inFloor then
         -- the room whose floor let the player in is the room they are in (not one found by x and y
         -- at another height; an older room held from before is forgotten), and the halls layer's
-        -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor)
+        -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor), or the one at the height
+        -- held where that room's piece lies at another
         hallGap, room, roomByDoor = 0, entryRoom, false
-        local layer = logic.layer(z, IsIndoors())
         local piece = layer and logic.roomPieceHere(layer, entryRoom, x, y)
+        if atHeight and (piece == nil or not logic.tracker.pieceAt(layer, x, y, heldZ, HALL_ENTRY_DZ, piece)) then
+            piece = atHeight
+        end
         if piece then
             logic.setFloor(layer, piece)
         end
