@@ -14,9 +14,11 @@
 <Script file="popups.lua" />
 <Script file="colorPicker.lua" />
   <Script file="RolePoll.lua" />
+  <Script file="guildInvite.lua" />
   <Script file="questWindow.lua" />
   <Script file="range.lua" />
   <Script file="ready.lua" />
+  <Script file="questieSetup.lua" />
   <Script file="taxi.lua" />
   <Script file="trade.lua" />
   <Script file="training.lua" />

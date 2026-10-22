@@ -348,7 +348,8 @@ end
 
 -- Forgets the squares found so far: their flood depends on the level the player is on.
 function logic.forgetRegions(zone)
-    zone._index.regionOf = {}
+    local ix = zone._index
+    ix.regionOf, ix.regionsByFloor, ix.regionFloor = {}, nil, ix.floor or 0
 end
 
 -- The cell value at a world position, plus row and column.
@@ -371,30 +372,40 @@ function logic.place(zone, placeId)
     return zone._index.places[placeId]
 end
 
--- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
--- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
--- (the export's climbDown) where the player's floor piece is neither one of its feet's floors nor
--- the climb itself; else nil (its own name). From the floor alone, the same from every spot on it.
-function logic.downPlace(zone, placeId)
+-- Is the player's floor piece the top of the ramp or stairs `placeId`: neither one of its feet's
+-- floors nor the climb itself, and joined to it? From the floor alone, the same from every spot on it.
+function logic.atClimbTop(zone, placeId)
     local ix = zone._index
-    local p = ix.places[placeId]
-    if p == nil or p.down == nil then
-        return nil
-    end
-    local feet = ix.footFloors and ix.footFloors[placeId]
     local floor = ix.floor or 0
     local own = ix.placePieces[placeId] or {}
+    -- the data's top records (since trial L4): a top of that climb on this floor
+    if ix.climbTops then
+        local tops = ix.topFloors[placeId]
+        return tops ~= nil and tops[floor] == true and not own[floor]
+    end
+    local feet = ix.footFloors and ix.footFloors[placeId]
     if feet == nil or feet[floor] or own[floor] then
-        return nil
+        return false
     end
     -- (only from a floor the climb is joined to: its top; a floor held a moment by mistake beside
     -- it named the Brill tavern's stairs up "Treppe Richtung Schankraum" in the common room)
     for q in pairs(ix.joined[floor] or {}) do
         if own[q] then
-            return ix.places[p.down]
+            return true
         end
     end
-    return nil
+    return false
+end
+
+-- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
+-- from the kitchen, "Treppe Richtung Küche" from the cellar): the place of its name from its top
+-- (the export's climbDown) where the player's floor is its top (logic.atClimbTop); else nil (its own name).
+function logic.downPlace(zone, placeId)
+    local p = zone._index.places[placeId]
+    if p == nil or p.down == nil or not logic.atClimbTop(zone, placeId) then
+        return nil
+    end
+    return zone._index.places[p.down]
 end
 
 function logic.kind(zone, placeId)
@@ -696,6 +707,13 @@ function logic.unpack(zone, locale)
     if zone._index then
         return
     end
+    -- the walk graph's surfaces per layer (format 5, the walk-graph tracker; tracker.lua), before the layers are
+    -- built from the data (unpackLayer takes its layer's): the piece tracker of before runs where the data has none
+    if zone.parent == nil then   -- (a layer, unpacked through here too, keeps the surf unpackLayer gave it)
+        local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
+        zone.surfaces = S and S[zone.key] or nil
+        zone.surf = zone.surfaces and zone.surfaces.zone or nil
+    end
     if zone.json then
         local data = logic.decodeJson(zone.json)
         assert(type(data) == "table", "the surroundings data of " .. tostring(zone.key) .. " could not be read")
@@ -882,6 +900,17 @@ function logic.unpack(zone, locale)
         ix.footFloors[place] = ix.footFloors[place] or {}
         ix.footFloors[place][feetStride >= 5 and floor or 0] = true
     end)
+    -- the tops of ramps and stairs (export.climb_ends, data since trial L4): x, y, the top flight's cell value, the
+    -- way on DOWN that flight (degrees), the floor piece at the top; guided to from that floor as a foot is from its
+    -- own (user 2026-10-20: tops and feet alike). Data without them: nil, the top is worked out (logic.atClimbTop)
+    ix.climbTops = zone.climbTops and {} or nil
+    ix.topFloors = {}
+    eachRecord(zone.climbTops, 5, function(x, y, value, bearing, floor)
+        ix.climbTops[#ix.climbTops + 1] = { x = x, y = y, value = value, bearing = bearing, floor = floor, top = true }
+        local place = logic.placeOf(value)
+        ix.topFloors[place] = ix.topFloors[place] or {}
+        ix.topFloors[place][floor] = true
+    end)
     -- the flights with a wall along one side and a drop along the other (export.climb_sides): per
     -- floor piece the point at its top on the wall side its way up is said toward (setting
     -- wallSide), its place value and its way up (degrees)
@@ -955,6 +984,9 @@ function logic.unpack(zone, locale)
     end)
     -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
     -- onOwnLines); nil in data before 2026-10-16
+    -- data whose lines of flights, landings and platforms are the cheapest way through the piece (the export's
+    -- WV_LINES=path, 2026-10-18): the turn key and the guidance to a foot follow them (lanes.lua, texts.lua)
+    ix.pathLines = zone.pathLines == true
     ix.lineFloors = {}
     for _, piece in ipairs(zone.lineFloors or {}) do
         ix.lineFloors[piece] = true
@@ -977,6 +1009,10 @@ function logic.unpack(zone, locale)
             lane.free1 = ends[endKey(lane, lane.x1, lane.y1)] == 1
             lane.free2 = ends[endKey(lane, lane.x2, lane.y2)] == 1
         end
+        -- a path-line data's line across a landing or platform between flights (gated to a piece that is no
+        -- lineFloor) is a way through for the turn key and the guidance only, never a way the place is said by
+        -- (the Abbey gallery became "Die Haupthalle, erster Stock" bare, its ramps unsaid, walk 2026-10-18 07:52)
+        lane.guideOnly = ix.pathLines and lane.piece > 0 and not ix.lineFloors[lane.piece] or nil
     end
     -- since 2026-10-14 the heading of the way ahead along each stretch (the export's
     -- lane_headings, for the turn key): per stretch in order the number of samples, then per
@@ -1099,7 +1135,7 @@ function logic.unpackLayer(zone, src, suffix)
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
-        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
+        lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, pathLines = src.pathLines, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,
         -- its floor pieces (a gallery, the moat under the walkways, a building's floors), as the
@@ -1110,10 +1146,12 @@ function logic.unpackLayer(zone, src, suffix)
         -- per door the layer's floor piece its sill lies on
         doorFloors = src.doorFloors,
         -- the feet of its climbs and their wall sides, as the zone's (one rule for every grid)
-        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbAims = src.climbAims,
+        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbTops = src.climbTops, climbAims = src.climbAims,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
+        -- its walk-graph surfaces (format 5), where the data has them
+        surf = zone.surfaces and zone.surfaces[suffix == "/indoor" and "indoor" or "indoorIn"] or nil,
     }
     logic.unpack(layer)
     local covered = {}

@@ -47,9 +47,14 @@ local function ensureData(screen)
     if px == nil then
         return false
     end
-    screen._px, screen._py = px, py
+    local _, _, _, map = UnitPosition("player")
+    screen._px, screen._py, screen._map = px, py, map
     -- With a route engine on (WowNav), its targets join the list and it finds the entry point itself: no entry choice.
     screen._waypoints, screen._engine = module:destinationWaypoints()
+    -- an engine may say at once that no route can start here (WowNav: floor not clear, no network)
+    if screen._engine ~= nil and screen._engine.listOpened ~= nil then
+        screen._engine:listOpened()
+    end
     if screen._engine ~= nil then
         screen._entries = {}
     else
@@ -74,8 +79,10 @@ local function ensureData(screen)
 end
 
 -- The destination list: every continent waypoint matching the search,
--- sorted by distance from where the window opened. Cached until the search
--- changes -- the full-continent sort runs once, not per tick.
+-- sorted by distance from where the window opened, with the route engine's
+-- hits (its own search, nearest first). Cached until the search changes --
+-- the full-continent sort runs once, not per tick. An engine that cut its
+-- hits leaves a notice that the next spoken entry starts with.
 local function destinations(screen)
     if screen._destinations ~= nil then
         return screen._destinations
@@ -85,10 +92,22 @@ local function destinations(screen)
     local found = {}
     local target = screen._target
     for _, wp in pairs(screen._waypoints) do
-        if wp ~= target and wp.n ~= nil and (needle == nil or foldCase(wp.n):find(needle, 1, true) ~= nil) then
+        -- an engine's row may bring its own search text (names in both languages, categories, zone), already folded
+        if wp ~= target and wp.n ~= nil and (needle == nil or (wp.search or foldCase(wp.n)):find(needle, 1, true) ~= nil) then
             local dx = wp.x - screen._px
             local dy = wp.y - screen._py
             tinsert(found, { waypoint = wp, distance = math.sqrt(dx * dx + dy * dy) })
+        end
+    end
+    if screen._engine ~= nil then
+        local hits, info = screen._engine:search(screen._search, screen._px, screen._py, screen._map)
+        for _, wp in ipairs(hits or {}) do
+            local dx = wp.x - screen._px
+            local dy = wp.y - screen._py
+            tinsert(found, { waypoint = wp, distance = math.sqrt(dx * dx + dy * dy) })
+        end
+        if info ~= nil and info.capped then
+            screen._notice = string.format(L["The nearest %d of %d results"], info.shown, info.total)
         end
     end
     table.sort(found, function(a, b)
@@ -119,15 +138,27 @@ local function destinationCursor(screen)
         return list, index, count
     end
 
+    -- an engine's row may add a detail after the distance (WowNav: its categories and zone)
     local function labelOf(entry)
-        return string.format("%s, %d %s", entry.waypoint.n, entry.distance, L["yards"])
+        local text = string.format("%s, %d %s", entry.waypoint.n, entry.distance, L["yards"])
+        if entry.waypoint.detail ~= nil then
+            text = text .. ", " .. entry.waypoint.detail
+        end
+        return text
+    end
+
+    -- the engine's notice of a cut list goes before the first entry said after the search
+    local function withNotice(text)
+        local notice = screen._notice
+        screen._notice = nil
+        return notice ~= nil and (notice .. ", " .. text) or text
     end
 
     local function speak()
         local list, index = clampedIndex()
         local entry = list[index]
         if entry ~= nil then
-            WowVision:speak(labelOf(entry))
+            WowVision:speak(withNotice(labelOf(entry)))
         end
     end
 
@@ -156,7 +187,7 @@ local function destinationCursor(screen)
                 text = function()
                     local list, index = clampedIndex()
                     local entry = list[index]
-                    return entry ~= nil and labelOf(entry) or L["Empty"]
+                    return entry ~= nil and withNotice(labelOf(entry)) or L["Empty"]
                 end,
                 kind = kinds.label,
                 live = false,
@@ -181,7 +212,7 @@ local function destinationCursor(screen)
             end
             WowVision.UIHost:closeWindow("atlas")
             local wp = entry.waypoint
-            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z) then
+            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z, wp) then
                 return
             end
             local routed = module:navigateTo(wp.id, screen._waypoints, { entryId = screen._entryId, onArrive = wp.onArrive })

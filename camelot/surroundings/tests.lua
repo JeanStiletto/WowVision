@@ -188,7 +188,294 @@ local function newTowerZone()
     return z
 end
 
+-- Format 5 surfaces (wv-surroundings tools/surfaces.py) made here for the tracker's tests: `recs` = {r, c, z, piece}
+-- records; the steps to each neighbouring column's surface within 1 yd of height; returns the layer's rows (records
+-- of col, height, piece, flags).
+local function surfaceRows(recs)
+    local A = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"
+    local function digits(v, n)
+        local s = ""
+        for _ = 1, n do
+            s = A:sub(v % 64 + 1, v % 64 + 1) .. s
+            v = math.floor(v / 64)
+        end
+        return s
+    end
+    local byCol = {}
+    for _, s in ipairs(recs) do
+        byCol[s.r * 1000 + s.c] = byCol[s.r * 1000 + s.c] or {}
+        table.insert(byCol[s.r * 1000 + s.c], s)
+    end
+    local function stepTo(s, r, c)
+        for _, u in ipairs(byCol[r * 1000 + c] or {}) do
+            if math.abs(u.z - s.z) <= 1.0 then
+                return true
+            end
+        end
+        return false
+    end
+    local rows = {}
+    table.sort(recs, function(a, b) return a.r < b.r or (a.r == b.r and (a.c < b.c or (a.c == b.c and a.z < b.z))) end)
+    for _, s in ipairs(recs) do
+        local flags = (stepTo(s, s.r - 1, s.c) and 1 or 0) + (stepTo(s, s.r + 1, s.c) and 2 or 0)
+            + (stepTo(s, s.r, s.c - 1) and 4 or 0) + (stepTo(s, s.r, s.c + 1) and 8 or 0)
+        rows[s.r] = (rows[s.r] or "") .. digits(s.c, 3) .. digits(math.floor(s.z * 10 + 0.5) + 200000, 3) .. digits(s.piece, 2) .. digits(flags, 1)
+    end
+    return rows
+end
+
 testRunner:addSuite("Surroundings", {
+    ["the walk-graph tracker follows stairs onto a floor over the ground, is sure there, and falls off it"] = function(t)
+        local recs = {}   -- {r, c, z, piece}
+        local function add(r, c, z, piece)
+            recs[#recs + 1] = { r = r, c = c, z = z, piece = piece }
+        end
+        -- rows = x - 60, cols = y - 40. The ground (piece 0) at height 0 on x 70 to 100, y 44 to 56; stairs
+        -- (piece 1) from x 90 (height 0) up to x 84 (height 3) along y 50, walled (no ground within a yard
+        -- beside them: a staircase, not a ramp on open ground); an upper floor (piece 2) at height 3 on x 70
+        -- to 84, y 48 to 52, a building's floor over solid ground (no walkable ground under it: the street
+        -- runs beside the building at y 44 to 46 and 54 to 56)
+        for x = 70, 100 do
+            for y = 44, 56 do
+                local stairsCut = y >= 49 and y <= 51 and x > 84 and x < 90
+                local underFloor = x <= 84 and y >= 47 and y <= 53
+                if not stairsCut and not underFloor then
+                    add(x - 60, y - 40, 0, 0)
+                end
+            end
+        end
+        for x = 84, 90 do
+            add(x - 60, 10, (90 - x) * 0.5, 1)
+        end
+        for x = 70, 84 do
+            for y = 48, 52 do
+                add(x - 60, y - 40, 3, 2)
+            end
+        end
+        local rows = surfaceRows(recs)
+        local z = newWalkZone()
+        z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+        z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+        z.floorCells = {}
+        z.noGround = {}
+        z.joins = {}
+        logic.unpack(z)
+        z.surf = { x0 = 60, y0 = 40, rows = rows }
+        local col = logic.tracker.column(z.surf, 80 - 60, 10, {})
+        t:assertEqual(#col, 1)   -- the upper floor at x 80, y 50 (solid ground under it)
+        t:assertEqual(col[1].z, 3)
+        t:assertEqual(col[1].piece, 2)
+        col = logic.tracker.column(z.surf, 84 - 60, 10, {})
+        t:assertEqual(#col, 2)   -- the stairs' top and the upper floor meet at x 84 at height 3
+        t:assertEqual(col[1].z, 3)
+        t:assertEqual(col[2].z, 3)
+        -- from the ground up the stairs onto the upper floor: sure at every step
+        logic.setFloor(z, 0)
+        local floor = logic.updateFloor(z, 95, 50.5, false, nil, nil, false, false)
+        t:assertEqual(floor, 0)
+        t:assertTrue(z._index.floorSure)
+        local seen = {}
+        for x = 93, 71, -2 do
+            floor = logic.updateFloor(z, x, 50.5, false, x + 2, 50.5, false, false)
+            seen[#seen + 1] = floor
+            t:assertTrue(z._index.floorSure, "sure at x " .. x)
+        end
+        t:assertEqual(seen[#seen], 2)
+        t:assertEqual(z._index.cameFrom, 1)
+        local sawStairs = false
+        for _, f in ipairs(seen) do
+            if f == 1 then
+                sawStairs = true
+            end
+        end
+        t:assertTrue(sawStairs)
+        -- a step off the upper floor's side onto the ground 4 yd below counts as a fall from it
+        floor = logic.updateFloor(z, 72, 55, false, 71, 50.5, false, false)
+        t:assertEqual(floor, 0)
+        t:assertEqual(z._index.fellFrom, 2)
+    end,
+
+    ["the walk-graph tracker gives the same floors with its offline cache (PERSIST) as without"] = function(t)
+        -- the stairs and upper floor of the test above, walked up, along the floor and off its side, once decoding
+        -- afresh per look and once keeping the columns and steps (tools/walklog/vtrack.lua)
+        local recs = {}
+        for x = 70, 100 do
+            for y = 44, 56 do
+                if not (y >= 49 and y <= 51 and x > 84 and x < 90) and not (x <= 84 and y >= 47 and y <= 53) then
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = 0, piece = 0 }
+                end
+            end
+        end
+        for x = 84, 90 do
+            recs[#recs + 1] = { r = x - 60, c = 10, z = (90 - x) * 0.5, piece = 1 }
+        end
+        for x = 70, 84 do
+            for y = 48, 52 do
+                recs[#recs + 1] = { r = x - 60, c = y - 40, z = 3, piece = 2 }
+            end
+        end
+        local rows = surfaceRows(recs)
+        local path = { { 95, 50.5 } }
+        for x = 93, 71, -2 do
+            path[#path + 1] = { x, 50.5 }
+        end
+        path[#path + 1] = { 72, 55 }
+        path[#path + 1] = { 80, 55 }
+        local function walk(persist)
+            local was = logic.tracker.PERSIST
+            logic.tracker.PERSIST = persist
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = rows }
+            logic.setFloor(z, 0)
+            local out = {}
+            for i, p in ipairs(path) do
+                local q = path[i - 1] or p
+                local floor = logic.updateFloor(z, p[1], p[2], false, q[1], q[2], false, false)
+                out[#out + 1] = tostring(floor) .. (z._index.floorSure and "s" or "u")
+            end
+            logic.tracker.PERSIST = was
+            return table.concat(out, " ")
+        end
+        local fresh, kept = walk(false), walk(true)
+        t:assertEqual(kept, fresh)
+        t:assertTrue(fresh:find("2s") ~= nil)   -- the walk reached the upper floor
+    end,
+
+    ["the walk-graph tracker keeps the ground through a hole of the walk graph, not after a cold start, not for ever"] = function(t)
+        -- the ground (piece 0, height 0) on x 40 to 100, y 54 to 56, except a hole under a deck (piece 3 at 12, a
+        -- platform 12 yd up, no ground under it in the data) on x 76 to 80, and a long one on x 40 to 70; the
+        -- cell records say nothing (no noGround: the ground is "here" everywhere, as the module's cells do under
+        -- the zeppelin tower)
+        local function zoneWith(holeFrom, holeTo)
+            local recs = {}
+            for x = 40, 100 do
+                for y = 54, 56 do
+                    if x >= holeFrom and x <= holeTo then
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 12, piece = 3 }
+                    else
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 0, piece = 0 }
+                    end
+                end
+            end
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" }, { "platform", "platform" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            return z
+        end
+        -- a short hole (5 yd): the ground is kept through it, the looks in it are holes, sure again beyond
+        local z = zoneWith(76, 80)
+        logic.setFloor(z, 0)
+        local px = 95
+        for x = 93, 71, -2 do
+            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            t:assertEqual(floor, 0, "ground at x " .. x)
+            t:assertEqual(z._index.inHole, x >= 76 and x <= 80, "hole at x " .. x)
+            px = x
+        end
+        t:assertTrue(z._index.floorSure)
+        -- a cold start right before the hole (a layer's setFloor): nothing followed yet, the deck is taken
+        z = zoneWith(76, 80)
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.updateFloor(z, 81, 55, false, 83, 55, false, false), 0)
+        t:assertEqual(logic.updateFloor(z, 79, 55, false, 81, 55, false, false), 3)
+        -- a hole longer than HOLE_MAX: the ground is given up after that much walking in it (the bound set to
+        -- 10 yd here: the test zone's grid ends at x 40)
+        z = zoneWith(40, 70)
+        logic.setFloor(z, 0)
+        local bound = logic.tracker.HOLE_MAX
+        logic.tracker.HOLE_MAX = 10
+        px = 95
+        local gaveUp = nil
+        for x = 93, 41, -2 do
+            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            if floor == 3 and not gaveUp then
+                gaveUp = x
+            end
+            px = x
+        end
+        logic.tracker.HOLE_MAX = bound
+        -- (the looks 2 yd apart: given up after 10 yd of hole, at x 59)
+        t:assertEqual(gaveUp, 59)
+    end,
+
+    ["the walk-graph tracker takes the module's floor as the prior at a cold start under a floor over the ground"] = function(t)
+        -- a two-storey room: the ground (piece 0, height 0) on x 70 to 100, y 44 to 56, with a bench across the
+        -- way (surfaces at 1.2 on the ground piece instead of the floor, x 80 to 84, y 47 to 50: not a step from
+        -- the floor, the way round it longer than the hop budget), and an upper floor (piece 2, height 4) over all
+        -- of x 70 to 90, y 46 to 54, reached by nothing here (Brill's tavern after a /reload, 2026-10-19 16:30:
+        -- the furnished ground lost to the empty upper floor)
+        local function zone()
+            local recs = {}
+            for x = 70, 100 do
+                for y = 44, 56 do
+                    local bench = x >= 80 and x <= 84 and y >= 47 and y <= 50
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = bench and 1.2 or 0, piece = 0 }
+                    if x <= 90 and y >= 46 and y <= 54 then
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = 4, piece = 2 }
+                    end
+                end
+            end
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            return z
+        end
+        -- the module set the ground: the ground stays, sure, across the benches
+        local z = zone()
+        logic.setFloor(z, 0)
+        local px = 89
+        for x = 87, 71, -2 do
+            local floor = logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false)
+            t:assertEqual(floor, 0, "ground at x " .. x)
+            t:assertTrue(z._index.floorSure, "sure at x " .. x)
+            px = x
+        end
+        -- the module set the upper floor: the upper floor stays
+        z = zone()
+        logic.setFloor(z, 2)
+        px = 89
+        for x = 87, 71, -2 do
+            t:assertEqual(logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false), 2, "upper floor at x " .. x)
+            px = x
+        end
+        -- the module's floor has no surface here: no prior, every surface at 0 as before (unsure)
+        z = zone()
+        logic.setFloor(z, 1)
+        logic.updateFloor(z, 87, 48.5, false, 89, 48.5, false, false)
+        t:assertEqual(z._index.floorSure, false)
+        -- and with the prior off, the benches cost the ground the floor (the fault of 2026-10-19 16:30)
+        local bound = logic.tracker.PRIOR
+        logic.tracker.PRIOR = 0
+        z = zone()
+        logic.setFloor(z, 0)
+        px = 89
+        local lost = false
+        for x = 87, 71, -2 do
+            if logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false) == 2 then
+                lost = true
+            end
+            px = x
+        end
+        logic.tracker.PRIOR = bound
+        t:assertTrue(lost)
+    end,
+
     ["the indoor layer covers the big halls; an unknown room counts where every candidate is covered"] = function(t)
         local z = newHallZone()
         logic.unpack(z)
@@ -385,6 +672,127 @@ testRunner:addSuite("Surroundings", {
             end
         end
         t:assertEqual(found, true)
+    end,
+
+    ["from a climb's top its opening goes down, whatever lies round its top on the grid"] = function(t)
+        -- walk 2026-10-20: the Abbey bell tower's floor lies round its ramp's top on the grid; from it the ramp
+        -- went "up" (its way on back into the tower). Data without top records: the top worked out from the feet
+        local z = newTowerZone()
+        -- the flight (row 0, column 1) rises east; the landing wraps round its cell: west of it (column 0),
+        -- east of it (columns 2 and 3) and along row 1 under it
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.atClimbTop(z, 2), true)
+        local mouth = nil
+        for _, m in ipairs(logic.regionAt(z, 95, 35).mouths) do
+            if m.label == "stairs to the landing" then
+                mouth = m
+            end
+        end
+        t:assertEqual(mouth.rise, "down")
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.atClimbTop(z, 2), false)
+    end,
+
+    ["a climb's top record is its opening and its guidance target from the floor at the top, as a foot from below"] = function(t)
+        -- user 2026-10-20: tops and feet alike; the data's top (export.climb_ends): where the flight meets the
+        -- landing (96, 38), the way on down it west (270), on the landing (piece 2)
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.atClimbTop(z, 2), true)
+        local region = logic.regionAt(z, 95, 25)
+        local mouth = nil
+        for _, m in ipairs(region.mouths) do
+            if m.label == "stairs to the landing" then
+                mouth = m
+            end
+        end
+        t:assertEqual(mouth.rise, "down")
+        -- its point the record's, and no way begins there: the record is guided to
+        t:assertEqual(mouth.points[1], 96)
+        t:assertEqual(mouth.points[2], 38)
+        for _, b in ipairs(logic.wayBeginnings(z, region)) do
+            t:assertEqual(b.label == "stairs to the landing", false)
+        end
+        local target = logic.footTarget(z, 95, 33)
+        t:assertEqual(target.kind, "climb")
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.through, 270)
+        -- from the ground at its foot: its foot, the way up
+        logic.setFloor(z, 0)
+        t:assertEqual(logic.atClimbTop(z, 2), false)
+        target = logic.footTarget(z, 96, 55)
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.y, 52)
+        t:assertEqual(target.through, 90)
+    end,
+
+    ["the end of a climb just crossed is no target near where it was stepped off; a second try at a foot is"] = function(t)
+        -- replay of trial L4e 2026-10-20: up the Abbey's main ramp, its top said the way back down on arrival
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        -- onto the flight at its foot, off it at its top: crossed
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 48)
+        logic.setFloor(z, 2)
+        logic.noteClimbStep(z, 95, 37)
+        t:assertEqual(z._index.crossed ~= nil, true)
+        local target = logic.footTarget(z, 95, 33)
+        t:assertEqual(target == nil or target.x ~= 96 or target.y ~= 38, true)
+        -- 15 yd on, the top is a target again
+        target = logic.footTarget(z, 95, 22)
+        t:assertEqual(z._index.crossed, nil)
+        -- a second try: onto the flight at its foot and back off there, its foot stays a target
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 55)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 49)
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 53)
+        t:assertNil(z._index.crossed)
+        target = logic.footTarget(z, 96, 55)
+        t:assertEqual(target.x, 96)
+        t:assertEqual(target.y, 52)
+    end,
+
+    ["the foot of the climb one walks down is no target; walked up from it, it is"] = function(t)
+        -- the Abbey's bell tower ramp 2026-10-20 09:20:54: going down, 2 yd before its foot, "2 Meter auf 7 Uhr,
+        -- weiter auf 12", and the turn key faced back up the ramp
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        -- onto the flight at its top, down it to 2 yd before its foot
+        logic.setFloor(z, 2)
+        logic.noteClimbStep(z, 95, 37)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 39)
+        local target = logic.footTarget(z, 95, 50)
+        t:assertEqual(target == nil or target.x ~= 96 or target.y ~= 52, true)
+        -- onto the flight at its foot (a second try, or a cold start on it): the foot stays as before
+        logic.setFloor(z, 0)
+        logic.noteClimbStep(z, 95, 54)
+        logic.setFloor(z, 1)
+        logic.noteClimbStep(z, 95, 51)
+        t:assertEqual(logic.dist(z._index.climbIn.x, z._index.climbIn.y, 96, 52) < logic.CROSSED, true)
     end,
 
     ["a structure's platform says what lies around it, as a square"] = function(t)
@@ -1170,6 +1578,31 @@ testRunner:addSuite("Surroundings", {
         exits = logic.aroundItems(region, 78, 35, { classes = { way = true }, leading = true, zone = z })
         t:assertEqual(#exits, 1)
         t:assertEqual(exits[1].label, "street of Test")
+    end,
+
+    ["the squares found are kept per floor piece, whatever set the floor"] = function(t)
+        -- walk 2026-10-20: a login put the player on the bell tower's floor with the cache filed as the
+        -- ground's; down in the hall under it the bell tower's square was found again, its one way said
+        local z = newSquareZone()
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local key = next(region.cells)
+        t:assertEqual(logic.regionCache(z)[key], region)
+        -- a login onto another floor (setFloor, forgetRegions): that floor starts empty
+        logic.setFloor(z, 7)
+        logic.forgetRegions(z)
+        t:assertNil(next(logic.regionCache(z)))
+        local upper = { cells = {} }
+        logic.regionCache(z)[key] = upper
+        -- back on the ground: the upper floor's square is not the ground's
+        logic.setFloor(z, 0)
+        t:assertNil(logic.regionCache(z)[key])
+        t:assertEqual(logic.regionAt(z, 78, 35).label, region.label)
+        -- a floor set with no word to the cache (the tracker, a hall's entry): kept per floor all the same
+        z._index.floor = 7
+        t:assertEqual(logic.regionCache(z)[key], upper)
+        z._index.floor = 0
+        t:assertEqual(logic.regionCache(z)[key].label, region.label)
     end,
 
     ["stairs beside a square: up or down from it is kept for the way on, never said"] = function(t)
@@ -2516,6 +2949,14 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopText(z, 2, 95, 9), "wait for the lift down, lift to the east")
         -- no stop off its cells
         t:assertEqual(logic.stopAt(z, 75, 35, nil), nil)
+        -- the nearest vehicle, on any floor or room (the walk log's boards): the ship 10 yd west,
+        -- the lift's shaft axis 4 yd north
+        local near, d = logic.nearestStop(z, 85, 35)
+        t:assertEqual(near, 1)
+        t:assertEqual(d, 10)
+        near, d = logic.nearestStop(z, 95, 9)
+        t:assertEqual(near, 2)
+        t:assertEqual(d, 4)
     end,
 
     ["a stop on a floor piece is found only up on it: the zeppelin tower's top, not its foot"] = function(t)

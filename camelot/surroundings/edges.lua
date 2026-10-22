@@ -183,6 +183,11 @@ end
 -- the floor joins or drops onto here, else the only one here); not swimming, on none (the floor
 -- the liquid joins here, else the ground). Returns the floor and whether it changed.
 function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
+    -- the walk-graph tracker where the data has the layer's surfaces (format 5; tracker.lua): the joins, the
+    -- drop edges and the lines decide nothing about the floor then, the surfaces do
+    if zone.surf and logic.tracker and logic.useTracker ~= false then
+        return logic.tracker.update(zone, x, y, swimming)
+    end
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
     local key = r * zone.cols + c
@@ -262,7 +267,10 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         local here = ix.floorCells[key]
         local pick, only, count = nil, nil, 0
         for p in pairs(here or {}) do
-            if p ~= floor or not offLines then
+            -- (on foot never into a liquid: swimming is the one height the game tells; the
+            -- Undercity's canal walk under a bridge ended in the canal beside it, and the player
+            -- walking up the bridge was held in the water, trial replay 2026-10-17)
+            if (p ~= floor or not offLines) and not (swimming == false and ix.liquids[p] ~= nil) then
                 only, count = p, count + 1
                 if logic.joinedHere(zone, floor, p, x, y) and (pick == nil or p < pick) then
                     pick = p
@@ -271,6 +279,18 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         end
         if pick == nil and count == 1 and ix.noGround[key] then
             pick = only
+        end
+        -- on foot with nothing joined here: still on the floor one was on while it lies in a cell
+        -- next to this one (its rim: a step beyond its last cell), not the ground absent here
+        if pick == nil and not offLines and swimming == false and was ~= 0 and ix.liquids[was] == nil
+            and ix.noGround[key] then
+            for dr = -1, 1 do
+                for dc = -1, 1 do
+                    if logic.floorHere(zone, (r + dr) * zone.cols + c + dc, was) then
+                        pick = was
+                    end
+                end
+            end
         end
         if offLines and ix.fallBeside then
             -- beyond its lines past a drop edge crossed: where that drop lands
@@ -395,6 +415,9 @@ end
 -- Sets the floor piece the player is on (0 the ground); every lookup follows it.
 function logic.setFloor(zone, floor)
     zone._index.floor = floor or 0
+    if logic.tracker then
+        logic.tracker.reset(zone)
+    end
     zone._index.fallBeside = nil
     zone._index.pendingJoins = {}
     zone._index.cameFrom = nil

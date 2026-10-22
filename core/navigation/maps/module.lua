@@ -181,29 +181,14 @@ function module:currentWaypoints()
 end
 
 -- Destinations to pick from by name (F10, /beacon to): the route data's
--- waypoints, and with an active engine its own targets too. An engine with
--- its own creature and object catalog hides the route data's spawns
--- (t = 2 creature, t = 3 object), so nobody is listed twice.
+-- waypoints, or with an active engine its own targets only (engine:search,
+-- see setRouteEngine). The engine's setting chooses between the two.
 function module:destinationWaypoints()
-    local waypoints = self:currentWaypoints()
     local engine = self:activeRouteEngine()
-    if engine == nil then
-        return waypoints, nil
+    if engine ~= nil then
+        return {}, engine
     end
-    local merged = {}
-    local hideSpawns = engine:hidesRouteDataSpawns()
-    for id, wp in pairs(waypoints) do
-        if not (hideSpawns and (wp.t == 2 or wp.t == 3)) then
-            merged[id] = wp
-        end
-    end
-    local px, py, _, map = UnitPosition("player")
-    if px ~= nil then
-        for _, wp in ipairs(engine:destinations(px, py, map) or {}) do
-            merged[wp.id] = wp
-        end
-    end
-    return merged, engine
+    return self:currentWaypoints(), nil
 end
 
 -- Route to the nearest waypoint whose name contains the fragment
@@ -219,15 +204,23 @@ function module:navigateToName(fragment)
     local foldCase = WowVision.utils.foldCase
     local needle = foldCase(fragment)
     local matches = WowVision.Router.nearest(waypoints, px, py, 1, function(wp)
-        return wp.n ~= nil and foldCase(wp.n):find(needle, 1, true) ~= nil
+        return wp.n ~= nil and (wp.search or foldCase(wp.n)):find(needle, 1, true) ~= nil
     end)
-    if #matches == 0 then
+    local target = matches[1] and matches[1].waypoint
+    if engine ~= nil then
+        -- the engine's nearest hit wins when it is nearer than the route data's
+        local _, _, _, map = UnitPosition("player")
+        local hit = (engine:search(fragment, px, py, map) or {})[1]
+        if hit ~= nil and (target == nil or hit.distance <= matches[1].distance) then
+            target = hit
+        end
+    end
+    if target == nil then
         WowVision:speak(L["No route found"] .. " " .. fragment)
         return false
     end
-    local target = matches[1].waypoint
     WowVision:speak(target.n)
-    if engine ~= nil and self:routeTo(target.x, target.y, target.n, nil, target.z) then
+    if engine ~= nil and self:routeTo(target.x, target.y, target.n, nil, target.z, target) then
         return true
     end
     return self:navigateTo(target.id, waypoints)
@@ -263,7 +256,11 @@ end
 -- everything after that (beacon, arrival cue, Ctrl-W/S, Shift-F12, the turn
 -- key) stays the same. engine: isActive(), routeTo(target) -> true when it
 -- took the request (false: not here, the request goes the old way),
--- destinations(px, py, map) -> { {id, n, x, y, z} }, hidesRouteDataSpawns().
+-- search(text, px, py, map) -> rows, info: its targets matching the text
+-- ("" = all), nearest first, { {id, n, x, y, z, detail, distance} }
+-- (detail: said after the distance), info { capped, shown, total } when the
+-- engine cut the list; cancel() -> true when it ended guidance of its own
+-- (Shift-F12). While it is active, F10 lists its targets only.
 function module:setRouteEngine(engine)
     self.routeEngine = engine
 end
@@ -277,13 +274,15 @@ function module:activeRouteEngine()
 end
 
 -- The one route request: to a world position (z when the target knows
--- it). True when the active engine took it; false leaves it to the caller.
-function module:routeTo(wx, wy, label, onArrive, z)
+-- it). data: the destination row when it came from the engine's own list
+-- (its target data). True when the active engine took it; false leaves it
+-- to the caller.
+function module:routeTo(wx, wy, label, onArrive, z, data)
     local engine = self:activeRouteEngine()
     if engine == nil then
         return false
     end
-    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive }) == true
+    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive, data = data }) == true
 end
 
 -- Open the navigation window aimed at a world position: the scanner's
@@ -293,8 +292,9 @@ end
 -- that destination; Enter there routes. Without map data on this continent
 -- there is nothing to route through, so a straight beacon is set instead.
 -- An active route engine routes at once: it finds the entry point itself.
-function module:openNavigationTo(wx, wy, label, onArrive)
-    if self:routeTo(wx, wy, label, onArrive) then
+-- data: what the target's source knows for a route engine (the scanner's group members: { unit }).
+function module:openNavigationTo(wx, wy, label, onArrive, data)
+    if self:routeTo(wx, wy, label, onArrive, nil, data) then
         return true
     end
     if next(self:currentWaypoints()) == nil then
@@ -423,7 +423,14 @@ end
 -- Shift-F12 and "/beacon stop" end whatever leads the way, a route or a
 -- straight beacon (the beacon alert falls silent with it).
 function module:cancelNavigation()
+    -- a route engine may hold guidance without a beacon (a search, a transit waiting for its far end)
+    local engine = self.routeEngine
+    local engineStopped = engine ~= nil and engine.cancel ~= nil and engine:cancel() == true
     if not self:isGuiding() then
+        if engineStopped then
+            WowVision:speak(L["Beacon stopped"])
+            return true
+        end
         WowVision:speak(L["No active waypoint"])
         return false
     end

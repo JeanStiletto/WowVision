@@ -58,6 +58,24 @@ function logic.stopDirections(zone, i, x, y)
     return item.dirs
 end
 
+-- The stop whose vehicle stands nearest to the position, on any floor or room: its index and the
+-- yards to the nearest point of its segments (a lift's is its shaft axis), or nil without stops.
+function logic.nearestStop(zone, x, y)
+    local best, bestD = nil, math.huge
+    for i, s in ipairs(zone._index.stops or {}) do
+        for _, t in ipairs(s.targets) do
+            local _, _, d = logic.segmentPoint(x, y, t[1], t[2], t[3], t[4])
+            if d < bestD then
+                best, bestD = i, d
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    return best, bestD
+end
+
 -- "wait for the ship to Auberdine, ship to the southwest"; "wait for the lift down, lift to the west"
 function logic.stopText(zone, i, x, y)
     local s = zone._index.stops[i]

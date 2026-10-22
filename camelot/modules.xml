@@ -31,11 +31,6 @@
        submodule): its zone and places list files register with the module
        above. -->
   <Include file="..\mapdata\WowVision_Surroundings\data.xml" />
-  <!-- WowNav routes (a setting under Navigation): the module, then the WowNav network as a library (the WowNav
-       repository as a submodule, branch wv-engine; its engine.xml loads the network and the packed zone files,
-       never WowNav's own core). -->
-  <Include file="wownav\modules.xml" />
-  <Include file="..\mapdata\WowNav\addon\WowVisionNavigation\engine.xml" />
   <!-- Developer tool: checks the group health readback in game
        (/wv ghprobe). -->
   <Script file="groupHealthProbe.lua" />
@@ -50,5 +45,15 @@
        Blizzard addon; lfg.lua adds what that build changed. -->
   <Script file="..\tbc\lfg.lua" />
   <Script file="lfg.lua" />
+  <!-- The gamepad action bars in the bars window (controller support). -->
+  <Script file="gamepadBars.lua" />
+  <!-- Developer tool: checks what controller support would rest on
+       (/wv padprobe). -->
+  <Script file="gamepadProbe.lua" />
+  <!-- WowNav routes (a setting under Navigation): Broesel's engine and route rules, then his navigation data
+       (the WoW_NavigationData repository as a submodule), packed by tools/wownav-pack.lua into
+       mapdata/WowNavPacked. -->
+  <Include file="wownav\modules.xml" />
+  <Include file="..\mapdata\WowNavPacked\data.xml" />
 
 </Ui>

@@ -124,7 +124,8 @@ local EDGE_TEXTS = {
 }
 
 -- `x, y`: the player; with them an edge with a depth per point says the depth at its nearest
--- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot).
+-- point (a ramp's side edge: 2 yd at the foot, 9 at the top; one value said "8 deep" at the foot),
+-- an edge ahead the depth at its point in the path (qx, qy).
 -- `qx, qy`: with `ahead`, the edge point in the player's path (edgeAhead): an edge ahead is said
 -- toward that point, where the path meets the water, not the way the drop faces. At a bank's
 -- corner the two differ: the user heard "5 at 2 o'clock, canal" (the drop of the bank beside the
@@ -141,9 +142,15 @@ function logic.edgeText(zone, i, ahead, x, y, qx, qy)
     local word = logic.dirWord(zone, angle, ahead ~= nil)
     local drop = e.drop
     if e.drops and x then
+        -- (an edge ahead: the depth where the path meets it, not at the point nearest the player; the harbour gate's
+        -- street edge said the 6 of a point beside the path, walk 2026-10-20 16:31:37)
+        local ax, ay = x, y
+        if ahead and qx then
+            ax, ay = qx, qy
+        end
         local p, best = e.points, math.huge
         for k = 1, #p - 1, 2 do
-            local d = logic.dist2(x, y, p[k], p[k + 1])
+            local d = logic.dist2(ax, ay, p[k], p[k + 1])
             local at = e.drops[(k + 1) / 2]
             if at and d < best then
                 best, drop = d, at
@@ -327,6 +334,38 @@ function logic.aimTarget(zone, x, y, facing)
     }
 end
 
+-- yd between where a ramp or stairs was stepped onto and off it for it to count as crossed (not a second try at
+-- its foot after a few steps up: the griffon ramp, that foot is guided to again)
+logic.CROSSED = 6
+
+-- Notes a floor change of the player at (x, y) on `zone`: onto a climb (where), off it (crossed or not). The end
+-- of a climb just crossed is no guidance target within LEAVE_NEAR of where the player stepped off it (as the place
+-- line leaves its opening out: aroundItems); up the Abbey's main ramp, its top said "back down" on arrival (replay of
+-- trial L4e, 2026-10-20), and the foot of a climb walked down did the same (STATE bug 56).
+function logic.noteClimbStep(zone, x, y)
+    local ix = zone._index
+    local v = logic.valueAt(zone, x, y)
+    local place = v and v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] and logic.placeOf(v) or nil
+    if place and ix.climbPlace == nil then
+        ix.climbIn, ix.crossed = { x = x, y = y }, nil
+        -- stepped onto the flight beside its own top record: going down it (climbTarget leaves its foot out)
+        ix.climbDown = nil
+        for _, t in ipairs(ix.climbTops or {}) do
+            if t.value == v and logic.dist(t.x, t.y, x, y) < logic.CROSSED then
+                ix.climbDown = place
+                break
+            end
+        end
+    elseif place == nil and ix.climbPlace ~= nil then
+        ix.climbDown = nil
+        local inAt = ix.climbIn
+        ix.crossed = inAt and logic.dist(inAt.x, inAt.y, x, y) >= logic.CROSSED
+            and { place = ix.climbPlace, x = x, y = y } or nil
+        ix.climbIn = nil
+    end
+    ix.climbPlace = place
+end
+
 local function climbTarget(zone, x, y, reach, prefer, floor)
     -- a foot on the floor piece the player is on (the ground, a landing, a building's floor); on a
     -- ramp or stairs also a foot on a floor the climb joins, but the one the player came from: the
@@ -340,6 +379,17 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     -- place's line named: without the name, only when the player heads elsewhere, and at it the
     -- way on; dropping it there took the griffon ramp's foot away, bug 40)
     local feet = {}
+    -- (not the end of the climb just crossed, near where the player stepped off it: logic.noteClimbStep)
+    local crossed = ix.crossed
+    if crossed and logic.dist(crossed.x, crossed.y, x, y) > logic.LEAVE_NEAR then
+        ix.crossed, crossed = nil, nil
+    end
+    -- the tops on the player's floor (the way down), as the feet on it (the way up): one rule for both ends
+    for _, f in ipairs(ix.climbTops or {}) do
+        if (f.floor or 0) == on and not (crossed and logic.placeOf(f.value) == crossed.place) then
+            feet[#feet + 1] = f
+        end
+    end
     for _, f in ipairs(ix.climbFeet) do
         local fl = f.floor or 0
         -- (and on a climb with lines of its own, its foot where its "at" line counts, within
@@ -351,7 +401,13 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
             local b = math.rad(f.bearing)
             atFoot = math.abs((f.x - x) * -math.sin(b) - (f.y - y) * math.cos(b)) <= logic.GUIDE_SIDE_CLIMB
         end
-        if fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)) then
+        -- (not the foot of the climb the player is on when they stepped onto it beside its own top: walked down to,
+        -- it said "2 yd behind, on up" and the turn key faced back up the ramp, the Abbey's bell tower ramp
+        -- 2026-10-20 09:20:54; stepped on anywhere else, a spiral's next flight or a second try, it stays)
+        local downTo = ix.climbDown ~= nil and ix.climbDown == ix.climbPlace and here and here ~= 0
+            and logic.placeOf(here) == ix.climbDown and logic.placeOf(f.value) == ix.climbDown
+        if (fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)))
+            and not (crossed and fl == on and logic.placeOf(f.value) == crossed.place) and not downTo then
             feet[#feet + 1] = f
         end
     end
@@ -362,16 +418,54 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
     local up = logic.riseOf(zone, f.value)
     -- a flight with a wall along one side and a drop along the other: the way on up toward its
     -- wall side, as said on it (logic.aimTarget)
-    local aim = aimOfFoot(zone, f)
+    local aim = not f.top and aimOfFoot(zone, f)
     if aim then
         up = logic.bearingOf(aim.x - f.x, aim.y - f.y)
+    end
+    -- at a top the way on is down the flight (its record's bearing)
+    if f.top then
+        up = f.bearing
+    end
+    -- with path lines (zone.pathLines): a foot on the player's own piece is guided to along the piece's line
+    -- toward the end nearer the foot (a tower's platform ring to its next flight, the Abbey gallery's strip), not
+    -- by the straight bearing, which ran through the tower's body (walks 2026-10-15 15:24, 2026-10-18 03:27)
+    -- (on a flight, the next flight's foot lies on the landing or platform the flight leads to: that piece's line)
+    local along = nil
+    local fl0 = f.floor or 0
+    local linePiece = (fl0 == on and on) or (fl0 ~= 0 and ix.joined[on] and ix.joined[on][fl0] and fl0) or nil
+    if ix.pathLines and on ~= 0 and linePiece and d > logic.GUIDE_AT then
+        -- the line that leads to this foot (laneToward), not the nearest line of the piece
+        local lane, px, py, toEnd = logic.laneToward(zone, linePiece, x, y, f.x, f.y)
+        local ld = lane and logic.dist(x, y, px, py)
+        local ex, ey = lane and (toEnd and lane.x2 or lane.x1), lane and (toEnd and lane.y2 or lane.y1)
+        -- near the line's end the foot itself: straight at it
+        if lane and logic.dist(x, y, ex, ey) <= logic.LANE_AHEAD then
+            lane = nil
+        end
+        if lane ~= nil then
+            local h
+            if ld > 1.0 then
+                -- beside the line: toward the point LANE_AHEAD on along it, back onto the middle
+                local ax, ay = logic.laneAhead(lane, px, py, toEnd)
+                h = logic.bearingOf(ax - x, ay - y)
+            else
+                local h1, h2 = logic.storedHeadings(lane, px, py)
+                h = toEnd and h1 or h2
+                if h == nil then
+                    local sx, sy = lane.x2 - lane.x1, lane.y2 - lane.y1
+                    h = logic.bearingOf(toEnd and sx or -sx, toEnd and sy or -sy)
+                end
+            end
+            along = h
+            dir = h
+        end
     end
     local name = logic.describe(zone, f.value, false, true, floor, logic.ownerOf(zone, logic.valueAt(zone, x, y)))
     return {
         key = "c" .. f.x .. "," .. f.y, kind = "climb", d = d, dir = dir, x = f.x, y = f.y, value = f.value,
         name = name, short = name, atName = name, at = name,
         through = up, throughFormat = up and T("on to the %s") or nil,
-        bearing = f.bearing, floor = f.floor or 0,
+        bearing = f.bearing, floor = f.floor or 0, along = along, top = f.top,
     }
 end
 

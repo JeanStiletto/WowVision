@@ -81,6 +81,7 @@ local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
 local BEND_WALK = 10 -- walked on the way since the last announcement or hint before a bend is said
 local STOP_REARM = 3 -- walked off every stop before the same stop is said again
 local HALL_GAP = 15 -- yards walked in a hall with no hall floor near (a bridge, over lava) before it ends
+local HALL_ENTRY_DZ = 3.0 -- yd: into the halls by a hall's floor only where their layer has a floor this near the height held
 local PASSED_REACH = 8 -- a doorway this close (a gate is 20 yd wide) when the player changes room, hall or goes in or out was walked through
 local PASSED_SAME = 4 -- a guidance target this close to that doorway is that doorway
 
@@ -221,13 +222,26 @@ local function updateHall(z, x, y, px, py)
         logic.setFloor(z, piece)
     end
     local inFloor, entryRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
+    -- the height the zone's floor is followed at: into the halls only where their layer has a floor at it, and onto
+    -- that floor (walk 2026-10-22 11:31:37, STATE bug 68: a step before the Ruins' bell tower doorway the tower's room
+    -- box took the player in where the halls' layer has only the canal ring 124 yd below; the layer started on the
+    -- ring, the ring's room lies apart from the tower and the next look put the player out again, a place said twice)
+    local layer = logic.layer(z, IsIndoors())
+    local heldZ = inFloor and layer and logic.tracker and logic.tracker.heldZ(z)
+    local atHeight = heldZ and logic.tracker.pieceAt(layer, x, y, heldZ, HALL_ENTRY_DZ)
+    if atHeight == false then
+        inFloor = false
+    end
     if inFloor then
         -- the room whose floor let the player in is the room they are in (not one found by x and y
         -- at another height; an older room held from before is forgotten), and the halls layer's
-        -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor)
+        -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor), or the one at the height
+        -- held where that room's piece lies at another
         hallGap, room, roomByDoor = 0, entryRoom, false
-        local layer = logic.layer(z, IsIndoors())
         local piece = layer and logic.roomPieceHere(layer, entryRoom, x, y)
+        if atHeight and (piece == nil or not logic.tracker.pieceAt(layer, x, y, heldZ, HALL_ENTRY_DZ, piece)) then
+            piece = atHeight
+        end
         if piece then
             logic.setFloor(layer, piece)
         end
@@ -315,6 +329,14 @@ end
 -- 2026-10-08)
 local LOG_MAX, TRAIL_MAX, TRAIL_STEP = 3000, 20000, 2
 local trailX, trailY = nil, nil
+-- the game's area (its subzone) at the last trail point that gave it, and the points since: a trail
+-- point gives it ("|<area>" at its end, "|" for none) when it changes and every TRAIL_AREA_EVERY points
+-- (a reduced walk set keeps it), so the replays hand the module what the game said (user 2026-10-17)
+local TRAIL_AREA_EVERY = 20
+local trailArea, trailSince = nil, 0
+-- the game's UI map at the last trail point that gave it ("m<map>" among the flags, with the area): the replays had
+-- one map per zone, while the halls are left and entered by the map (the Undercity's lifts, Ironforge's gate), 2026-10-22
+local trailMap = nil
 local sessionLogged = false
 
 local function logStore()
@@ -408,8 +430,10 @@ local function logEntry(kind, text, x, y, extra)
 end
 
 -- A trail point every few yards: "time x y", plus i (indoors), h (in a hall the game calls
--- outdoors), s (swimming), g (ghost), f with the facing in degrees and p with the floor piece
--- when it is not the ground, as one token ("isf270p33").
+-- outdoors), s (swimming), g (ghost), a (in the air: falling or jumping), f with the facing in degrees and p with the floor piece
+-- when it is not the ground, and m with the game's UI map where it or the area is given, as one token
+-- ("isf270p33m1458"); then "|<area>", the game's area, where it changed or every TRAIL_AREA_EVERY points (after
+-- a space: tools read the flags before it).
 local function logTrail(x, y)
     if trailX and logic.dist2(x, y, trailX, trailY) < TRAIL_STEP * TRAIL_STEP then
         return
@@ -424,11 +448,187 @@ local function logTrail(x, y)
     local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
     local piece = held and held._index.floor or 0
     local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
-        .. (UnitIsGhost("player") and "g" or "")
+        .. (UnitIsGhost("player") and "g" or "") .. (IsFalling() and "a" or "")
         .. (facing and ("f" .. facing) or "")
         .. (piece ~= 0 and ("p" .. piece) or "")
-    table.insert(log.trail, string.format("%d %.1f %.1f%s", time(), x, y, flags ~= "" and " " .. flags or ""))
+    local area = gameSubzone()
+    local uiMap = gameMap()
+    trailSince = trailSince + 1
+    local tail = ""
+    if area ~= trailArea or uiMap ~= trailMap or trailSince >= TRAIL_AREA_EVERY then
+        tail, trailArea, trailMap, trailSince = " |" .. area, area, uiMap, 0
+        if uiMap then
+            flags = flags .. "m" .. uiMap
+        end
+    end
+    table.insert(log.trail, string.format("%d %.1f %.1f%s%s", time(), x, y, flags ~= "" and " " .. flags or "", tail))
     log.trail = trim(log.trail, TRAIL_MAX)
+end
+
+-- Falls, for the walk log (walk review 2026-10-20c: x and y cannot tell a flight from the floor under it; how long the
+-- player was in the air can). Every stretch the game has the player in the air (IsFalling, the signal WowVision's fall
+-- sounds use) from its first frame to the landing, as one line of the log's falls: "<landing time> <seconds> <x y at
+-- the start> <x y at the landing> <flags>", flags j (the jump key started it: pressed within FALL_JUMP_GRACE before, as
+-- the fall sounds tell a hop), w (water: swimming at its start or landing, or out of the water within FALL_JUMP_GRACE),
+-- s (a slow-fall effect on the player), p with the floor piece held at its start. Looked at every frame (the looks come
+-- every CHECK_INTERVAL, too coarse for the 0.2 s of a step); only while the log is on. Nothing reads it in the game:
+-- the tools measure first how falls fit the drops (steps 0.2 to 0.4 s, 2026-10-05), before the tracker may use them.
+local FALLS_MAX, FALL_JUMP_GRACE = 5000, 0.8
+-- Slow Fall, Levitate, Noggenfogger's slow fall, the parachute cloak's: spell ids as in Classic (not checked on Forever)
+local SLOW_FALLS = { 130, 1706, 16593, 12438 }
+local fall = nil          -- the fall under way: start time, x, y, flags so far
+local lastJumpKey, lastSwimAt = -math.huge, -math.huge
+hooksecurefunc("JumpOrAscendStart", function()
+    lastJumpKey = GetTime()
+end)
+
+local function slowFalling()
+    local get = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+    if get == nil then
+        return false
+    end
+    for _, id in ipairs(SLOW_FALLS) do
+        local ok, aura = pcall(get, id)
+        if ok and aura ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function watchFall(now)
+    local swimming = IsSwimming()
+    if swimming then
+        lastSwimAt = now
+    end
+    local inAir = IsFalling()
+    if inAir and fall == nil then
+        local log = activeLog()
+        if log == nil then
+            return
+        end
+        local x, y = UnitPosition("player")
+        if x == nil then
+            return
+        end
+        local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+        fall = {
+            t = now, x = x, y = y, piece = held and held._index.floor or 0,
+            jump = now - lastJumpKey <= FALL_JUMP_GRACE,
+            water = swimming or now - lastSwimAt <= FALL_JUMP_GRACE,
+            slow = slowFalling(),
+        }
+    elseif inAir and fall then
+        fall.slow = fall.slow or slowFalling()
+    elseif not inAir and fall then
+        local f = fall
+        fall = nil
+        local log = activeLog()
+        local x, y = UnitPosition("player")
+        if log == nil or x == nil then
+            return
+        end
+        local flags = (f.jump and "j" or "") .. ((f.water or swimming) and "w" or "") .. (f.slow and "s" or "")
+            .. "p" .. f.piece
+        log.falls = log.falls or {}
+        table.insert(log.falls, string.format("%d %.2f %.1f %.1f %.1f %.1f %s", time(), now - f.t, f.x, f.y, x, y, flags))
+        log.falls = trim(log.falls, FALLS_MAX)
+    end
+end
+
+-- Boarding, for the walk log (user 2026-10-21: what matters first is knowing that the player stands where the
+-- platform should be and is not falling, a sign to stop moving; knowing they ride a ship is a small extra). Ships,
+-- zeppelins and lifts move and are in no surroundings data, so the tracker sees water or air under a deck. Near a
+-- stop's vehicle (BOARD_NEAR yd from where it stands: a ship's or zeppelin's 24 yd along its heading, a lift's shaft
+-- axis) a point every BOARD_STEP s goes into the log's boards: "<time> <stop> <yd to the vehicle> <x y> <flags>",
+-- flags a (in the air), s (swimming), m (moving on their own: IsPlayerMoving), c (carried: the position moved since
+-- the last point while the player was not moving on their own, now or then, and not in the air). Anywhere a carried
+-- stretch (a ship at sea) goes into the log's carried as one line when it ends: "<end time> <seconds> <yards> <x y at
+-- the start> <x y at the end> <stop near its start or ->". The game gives no height: a lift's ride shows only as
+-- standing on its axis without falling. Only while the log is on; nothing reads it in the game: the tools measure
+-- first how the signals fit the stops.
+local BOARD_NEAR, BOARD_STEP, BOARDS_MAX, CARRIED_MAX = 30, 0.5, 5000, 2000
+local CARRY_MIN, CARRY_JUMP, CARRY_END = 0.3, 40, 1.5   -- yd per step at least, more is a teleport; s to end a stretch
+local boardAt, boardX, boardY, boardMoving = -math.huge, nil, nil, false
+local carry = nil          -- the carried stretch under way: start time, x, y, stop near it, yards, last carried time, x, y
+
+local function endCarry(log)
+    local c = carry
+    carry = nil
+    log.carried = log.carried or {}
+    table.insert(log.carried, string.format("%d %.1f %.1f %.1f %.1f %.1f %.1f %s", time(), c.lastT - c.t, c.yd,
+        c.x, c.y, c.lx, c.ly, c.stop or "-"))
+    log.carried = trim(log.carried, CARRIED_MAX)
+end
+
+local function watchBoard(now)
+    if now - boardAt < BOARD_STEP then
+        return
+    end
+    boardAt = now
+    local log = activeLog()
+    local x, y = UnitPosition("player")
+    if log == nil or x == nil or UnitOnTaxi("player") then
+        carry, boardX = nil, nil
+        return
+    end
+    local moving, inAir = IsPlayerMoving() == true, IsFalling() == true
+    local moved = boardX and math.sqrt(logic.dist2(x, y, boardX, boardY)) or 0
+    local carried = boardX ~= nil and not moving and not boardMoving and not inAir
+        and moved >= CARRY_MIN and moved <= CARRY_JUMP
+    local stop, d = nil, nil
+    if zone and zone._index then
+        stop, d = logic.nearestStop(zone, x, y)
+    end
+    local nearStop = stop ~= nil and d <= BOARD_NEAR
+    if carried then
+        if carry == nil then
+            carry = { t = now - BOARD_STEP, x = boardX, y = boardY, yd = 0, stop = nearStop and stop or nil }
+        end
+        carry.yd = carry.yd + moved
+        carry.lastT, carry.lx, carry.ly = now, x, y
+    elseif carry and (moved > CARRY_JUMP or now - carry.lastT >= CARRY_END) then
+        endCarry(log)
+    end
+    boardX, boardY, boardMoving = x, y, moving
+    if nearStop then
+        local flags = (inAir and "a" or "") .. (IsSwimming() and "s" or "") .. (moving and "m" or "")
+            .. (carried and "c" or "")
+        log.boards = log.boards or {}
+        table.insert(log.boards, string.format("%d %d %.1f %.1f %.1f%s", time(), stop, d, x, y,
+            flags ~= "" and " " .. flags or ""))
+        log.boards = trim(log.boards, BOARDS_MAX)
+    end
+end
+
+-- The walk-graph tracker's cost, one silent log entry (kind "time") a minute while the log is on: the looks
+-- of the minute, their milliseconds in all and the slowest one, the most candidates kept and surfaces under
+-- the position after one look, the looks that ended unsure (the Lua time per look in the game was
+-- unmeasured, 2026-10-19; the user's next walk brings the numbers, no sighted check).
+local TIMING_EVERY = 60
+local timingAt = nil
+
+local function logTiming(x, y)
+    local tracker = logic.tracker
+    if tracker == nil or activeLog() == nil then
+        return
+    end
+    local now = GetTime()
+    if timingAt == nil then
+        timingAt = now
+        tracker.takeStats()
+        return
+    end
+    if now - timingAt < TIMING_EVERY then
+        return
+    end
+    timingAt = now
+    local s = tracker.takeStats()
+    if s.looks == 0 then
+        return
+    end
+    logEntry("time", string.format("%d looks, %.1f ms in all, %.2f ms the slowest, %d candidates and %d surfaces at most, %d unsure, %d in holes",
+        s.looks, s.ms, s.maxMs, s.maxCands, s.maxUnder, s.unsure, s.holes or 0), x, y)
 end
 
 -- The data registers here as it loads (its data.xml comes after this folder in camelot/modules.xml):
@@ -445,6 +645,11 @@ if namespace then
     end
     function namespace.addPlaces(places)
         table.insert(data.places, places)
+    end
+    -- the walk graph's surfaces per layer (format 5, zones/<zone>-surfaces.lua): the walk-graph tracker's data
+    function namespace.addSurfaces(key, layers)
+        data.surfaces = data.surfaces or {}
+        data.surfaces[key] = layers
     end
 end
 -- the game decodes a zone's JSON text (offline the tools put a stand-in in its place)
@@ -614,7 +819,14 @@ local function guideTo(z, g, t, x, y, brief)
     g.target, g.zone = t, z
     if logic.atTarget(z, t, x, y) then
         if not (g.key == t.key and g.at) then
-            say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+            -- already on the climb's own piece (stepped onto it by its line at the foot): its place line says the
+            -- way on a moment later, and "weiter auf 3" right before it was noise (user 2026-10-18 08:37)
+            local ixz = z._index
+            local onIt = t.kind == "climb" and ixz.lineFloors ~= nil and ixz.lineFloors[ixz.floor or 0]
+                and logic.placeOf(logic.valueAt(z, x, y)) == logic.placeOf(t.value)
+            if not onIt then
+                say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+            end
             g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, true, now, t.key, false
             noteSaid(g, t)
             g.atSaid = t.key
@@ -855,6 +1067,8 @@ local function checkEdges(z, x, y, px, py, rooms)
         if changed then
             -- the squares found so far were flooded on the old floor
             logic.forgetRegions(z)
+            z._index.floorBefore = before
+            logic.noteClimbStep(z, x, y)
             logEntry("floor", before .. " -> " .. floor, x, y)
         end
     end
@@ -1324,13 +1538,10 @@ local function updateIndoors(z, x, y, px, py)
             -- logged as an entry of its own (the walk log tools show where the floor switched;
             -- user 2026-10-06: a ground floor line at the top of the tavern's stairs)
             logEntry("floor", before .. " -> " .. floor, x, y)
-            -- the places found so far kept per floor piece, so stepping back onto a floor finds
-            -- its places again with what was said there (a fresh flood at every hop said the
-            -- stairs twice)
-            ix.regionsByFloor = ix.regionsByFloor or {}
-            ix.regionsByFloor[ix.regionFloor or 0] = ix.regionOf
-            ix.regionOf = ix.regionsByFloor[floor] or {}
-            ix.regionFloor = floor
+            -- (the floor held before: the turn key on a landing faces the flight not come from)
+            ix.floorBefore = before
+            logic.noteClimbStep(layer, x, y)
+            -- (the places found so far are kept per floor piece: logic.regionCache)
         end
         -- lava and drops inside warn as outdoors (user 2026-09-29: indoors keeps what outdoors
         -- has), each in the room its floor belongs to: this room, or while it is unknown
@@ -1422,6 +1633,8 @@ end
 
 module:hasUpdate(function(self)
     local now = GetTime()
+    watchFall(now)
+    watchBoard(now)
     if now - lastCheck < CHECK_INTERVAL then
         return
     end
@@ -1454,6 +1667,7 @@ module:hasUpdate(function(self)
         logEntry("floor", inHall and "into the halls" or "out of the halls", x, y, { subzone = gameSubzone() })
     end
     logTrail(x, y)
+    logTiming(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
     -- a jump inside (a hearthstone, a portal) starts afresh as a step in or out does: from the
@@ -1660,6 +1874,10 @@ local function guideFacing(x, y)
         and (logic.pastTarget(g.zone, t, x, y) or logic.onClimb(g.zone, t, x, y, outdoor.current)) then
         return through
     end
+    -- a foot guided to along the piece's own line (path lines, texts.lua climbTarget): the key turns along it
+    if t.along then
+        return math.rad(-t.along)
+    end
     return math.rad(-logic.bearingOf(t.x - x, t.y - y))
 end
 
@@ -1669,7 +1887,7 @@ end
 -- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
 -- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
 -- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
--- (also what it turned toward, for the walk log: "target", "room", "line", or nil)
+-- (also what it turned toward, for the walk log: "target", "room", "landing", "line", or nil)
 local function lineFacing()
     if not module:getEnabled() then
         return nil
@@ -1696,6 +1914,17 @@ local function lineFacing()
             return nil
         end
         z = layer
+    end
+    -- on a landing between flights: toward the flight the player did not come from (lanes.lua landingFacing;
+    -- the landing's own line is a stub, the inn's turned the player back down, walk 2026-10-19 22:11)
+    local onLanding = logic.landingFacing(z, z._index.floor, x, y, facing, z._index.floorBefore)
+    if onLanding then
+        return onLanding, "landing"
+    end
+    -- on a flight whose own line is a stub: along the direction it is said with (lanes.lua flightFacing)
+    local onFlight = logic.flightFacing(z, z._index.floor, x, y, facing)
+    if onFlight then
+        return onFlight, "flight"
     end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)
@@ -1841,11 +2070,26 @@ function module:leadOn()
     if on and on ~= 0 and grid._index.lineFloors and grid._index.lineFloors[on] then
         route = logic.climbRouteFrom(grid, on, x, y, GetPlayerFacing())
     end
+    -- (with end records: the climb end the guidance spoke of, or the one guided to here, before any other: Alt-I leads
+    -- where the guidance points, up a foot or down a top)
+    if route == nil and grid._index.climbTops then
+        local t, g2 = helperTarget(z, grid, x, y)
+        if t and t.kind == "climb" then
+            route, name, grid = logic.helperRoute(g2, t), t.name, g2
+        end
+    end
     if route == nil then
         -- a climb's line beginning right here (a spiral's foot often has no foot record)
         route = logic.climbNear(grid, x, y, on, logic.HELPER_NEAR)
         if route then
             route.kind = "climb"
+        end
+    end
+    if route == nil and on and on ~= 0 and grid._index.pathLines then
+        -- a climb up from this floor piece farther off, along the piece's own line (path-line data)
+        route = logic.floorClimbRoute(grid, on, x, y)
+        if route and route.foot then
+            name = logic.finishText(logic.describe(grid, route.foot.value, false, true, nil, nil))
         end
     end
     if route == nil then

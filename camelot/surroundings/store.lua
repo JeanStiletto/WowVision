@@ -163,6 +163,17 @@ local function expandLayer(S, palette, ground)
         end
         L.climbFeet, L.climbFeetFields = out, 5
     end
+    if S.climbTops then
+        local f, out = S.climbTops, {}
+        for i = 1, #f, 5 do
+            out[#out + 1] = f[i] / 10
+            out[#out + 1] = f[i + 1] / 10
+            out[#out + 1] = f[i + 2]
+            out[#out + 1] = f[i + 3]
+            out[#out + 1] = f[i + 4]
+        end
+        L.climbTops = out
+    end
     if S.climbAims then
         local a, out = S.climbAims, {}
         for i = 1, #a, 5 do

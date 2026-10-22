@@ -14,7 +14,9 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
 -- and the point; nil when there is none. `skip`: a lane left out; `place`: only lanes of that place.
-function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
+-- `own` (optional): only a stretch gated to the player's own piece (true), or to the piece given (a flight's
+-- path, a landing's or platform's line between flights).
+function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     local r, c = logic.cellOf(zone, x, y)
     local ix = zone._index
     local list = ix.lanes[r * zone.cols + c]
@@ -30,9 +32,11 @@ function logic.nearestLane(zone, x, y, reach, kinds, skip, place)
     -- the landing's 12 yd over it
     local joined = floor ~= 0 and ix.joined[floor] or nil
     local aloft = floor ~= 0 and not (joined and joined[0])
+    local ownPiece = own == true and floor or own
     local best, bestLane, bx, by = nil, nil, nil, nil
     for _, lane in ipairs(list) do
-        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (lane.piece == -1 or lane.piece == floor)
+        if (kinds == nil or kinds[lane.kind]) and lane ~= skip and (own or not lane.guideOnly)
+            and (own and (lane.piece == ownPiece and ownPiece ~= 0) or not own and (lane.piece == -1 or lane.piece == floor))
             and (place == nil or logic.placeOf(lane.value) == place) then
             local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             local here = true
@@ -211,7 +215,64 @@ end
 
 -- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
 -- each way: toward the stretch's end and back (bearings, or nil where it stored none).
-local function storedHeadings(lane, px, py)
+-- yd on along a line that the turn key and the guidance aim at from beside the line: off the middle, the
+-- player is pulled back onto it instead of walking parallel to it (user 2026-10-18: lines that keep one in the
+-- real middle by default; the zeppelin tower's first flight, left 4 yd to the open side)
+logic.LANE_AHEAD = 3.5
+
+-- The point `ahead` yd (LANE_AHEAD) on along a stretch from its point (px, py) toward its end (`toEnd`) or
+-- back toward its start, no farther than that end.
+function logic.laneAhead(lane, px, py, toEnd, ahead)
+    local dx, dy = lane.x2 - lane.x1, lane.y2 - lane.y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 1e-6 then
+        return px, py
+    end
+    local ux, uy = dx / len, dy / len
+    if not toEnd then
+        ux, uy = -ux, -uy
+    end
+    local ex, ey = toEnd and lane.x2 or lane.x1, toEnd and lane.y2 or lane.y1
+    local room = math.sqrt((ex - px) ^ 2 + (ey - py) ^ 2)
+    local a = math.min(ahead or logic.LANE_AHEAD, room)
+    return px + ux * a, py + uy * a
+end
+
+-- yd: a line's end this near a climb's foot leads to that foot (laneToward)
+logic.LANE_FOOT_END = 5.0
+
+-- The line of `piece` that leads from where the player stands toward the foot (fx, fy): among the piece's own
+-- stretches within reach the one with an end within LANE_FOOT_END of the foot, nearest by the way there (the
+-- player's distance to the stretch plus that end's distance to the foot). Returns the stretch, the player's
+-- point on it, whether the foot lies at its end (true) or its start, and that end's distance from the foot;
+-- nil when no such line. (The zeppelin tower's platform ring: the stretch nearest the player was the long one
+-- between the other two flights, and "toward its end nearer the foot" sent the player west past the foot,
+-- 7 Meter auf 12, then 6, every second, walk 2026-10-18 08:37.)
+function logic.laneToward(zone, piece, x, y, fx, fy)
+    local r, c = logic.cellOf(zone, x, y)
+    local list = zone._index.lanes[r * zone.cols + c]
+    if list == nil or piece == nil or piece == 0 then
+        return nil
+    end
+    local best, bestLane, bx, by, bEnd, bDe = nil, nil, nil, nil, nil, nil
+    for _, lane in ipairs(list) do
+        if lane.piece == piece and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
+            local d1, d2 = logic.dist(fx, fy, lane.x1, lane.y1), logic.dist(fx, fy, lane.x2, lane.y2)
+            local toEnd = d2 <= d1
+            local de = toEnd and d2 or d1
+            if de <= logic.LANE_FOOT_END and d <= logic.LANE_REACH and (best == nil or d + de < best) then
+                best, bestLane, bx, by, bEnd, bDe = d + de, lane, px, py, toEnd, de
+            end
+        end
+    end
+    if bestLane == nil then
+        return nil
+    end
+    return bestLane, bx, by, bEnd, bDe
+end
+
+function logic.storedHeadings(lane, px, py)
     local h = lane.headings
     if h == nil then
         return nil, nil
@@ -237,6 +298,26 @@ end
 -- said with the way it runs (a canal) along that. Returns the list and whether it is a fork's, or
 -- nil (no way here, a square).
 function logic.lineFacings(zone, x, y, value, _facing)
+    -- on a piece with a line of its own (data with WV_LINES=path, 2026-10-18: a flight's cheapest way through
+    -- its own floor, a landing's or platform's line between flights): along it, whatever the place is called;
+    -- the said direction of a flight is a straight bearing, the line winds with the flight
+    local ixp = zone._index
+    if ixp.pathLines and (ixp.floor or 0) ~= 0 then
+        local d, lane, px, py = logic.nearestLane(zone, x, y, logic.LANE_REACH, nil, nil, nil, true)
+        if d ~= nil and (lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2) then
+            if d > 1.0 then
+                -- beside the line: toward the point LANE_AHEAD on along it, each way
+                local ax, ay = logic.laneAhead(lane, px, py, true)
+                local bx2, by2 = logic.laneAhead(lane, px, py, false)
+                return { math.rad(-logic.bearingOf(ax - x, ay - y)), math.rad(-logic.bearingOf(bx2 - x, by2 - y)) }, false
+            end
+            local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
+            local h1, h2 = logic.storedHeadings(lane, px, py)
+            local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along
+            local f2 = (h2 and math.rad(-h2)) or (h1 and math.rad(-h1) + math.pi) or along + math.pi
+            return { f1, f2 }, false
+        end
+    end
     local kind = logic.kindOf(zone, value)
     if logic.TURN_KINDS[kind] or kind == "bridge" then
         local d, lane, px, py = nil, nil, nil, nil
@@ -247,7 +328,7 @@ function logic.lineFacings(zone, x, y, value, _facing)
             local along = math.atan2(lane.y2 - lane.y1, lane.x2 - lane.x1)
             -- a stored heading (clockwise from north) as a facing; near the line's end (none ahead)
             -- the heading the other way turned round, the way the line came; else the stretch's own
-            local h1, h2 = storedHeadings(lane, px, py)
+            local h1, h2 = logic.storedHeadings(lane, px, py)
             local f1 = (h1 and math.rad(-h1)) or (h2 and math.rad(-h2) + math.pi) or along
             local f2 = (h2 and math.rad(-h2)) or (h1 and math.rad(-h1) + math.pi) or along + math.pi
             return { f1, f2 }, false
@@ -309,6 +390,153 @@ function logic.lineTurnFacing(facings, facing, cycle)
         end
     end
     return next or best
+end
+
+-- The turn key on a landing between flights (2026-10-20): a climb piece joined to two or more climbs and to no
+-- floor (Brill's tavern landing, the Lion's Pride Inn's). Its own line is a stub there (invariants rule 12), and on
+-- the inn's landing the key faced back down the lower flight from the landing's far end (walk 2026-10-19 22:11).
+-- Toward a flight the player did not come from (`from`, the floor piece held before the landing), at the end of
+-- its join farthest from the other flights' joins (the far side of the landing: Brill's join with the upper leg
+-- runs 4 yd, its near end beside the lower leg's top); not knowing where the player came from, the flight nearest
+-- the facing; standing at that point already, along the direction that flight is said with. Returns the facing (radians, as
+-- GetPlayerFacing), or nil (no landing).
+logic.LANDING_ON = 2     -- cells around a landing's exit whose flight cells the turn key aims at, standing there
+logic.LANDING_NEAR = 2   -- yd from a landing's exit within which the turn key turns along the flight, not to the point
+
+function logic.landingFacing(zone, piece, x, y, facing, from)
+    local ix = zone._index
+    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+        return nil
+    end
+    for q in pairs(ix.joined[piece] or {}) do
+        if not ix.lineFloors[q] then
+            return nil   -- joined to a floor: a flight, no landing
+        end
+    end
+    local exits = {}
+    for q, pts in pairs(ix.joinPoints[piece] or {}) do
+        exits[#exits + 1] = { q = q, pts = pts }
+    end
+    if #exits < 2 then
+        return nil
+    end
+    table.sort(exits, function(a, b)
+        return a.q < b.q
+    end)
+    -- per flight the end of its join farthest from every other flight's join
+    for _, e in ipairs(exits) do
+        local bestD
+        for i = 1, #e.pts, 2 do
+            local px, py = e.pts[i], e.pts[i + 1]
+            local near
+            for _, o in ipairs(exits) do
+                if o ~= e then
+                    for k = 1, #o.pts, 2 do
+                        local d = logic.dist(px, py, o.pts[k], o.pts[k + 1])
+                        if near == nil or d < near then
+                            near = d
+                        end
+                    end
+                end
+            end
+            if bestD == nil or near > bestD then
+                e.x, e.y, bestD = px, py, near
+            end
+        end
+        e.facing = math.rad(-logic.bearingOf(e.x - x, e.y - y))
+    end
+    local came = false
+    for _, e in ipairs(exits) do
+        came = came or e.q == from
+    end
+    local best, bestKey
+    for _, e in ipairs(exits) do
+        if not (came and e.q == from) then
+            -- came from a flight: the nearest other; else the one nearest the facing
+            local key = came and logic.dist(x, y, e.x, e.y) or math.abs(logic.degreesBetween(e.facing, facing))
+            if bestKey == nil or key < bestKey then
+                best, bestKey = e, key
+            end
+        end
+    end
+    if best == nil then
+        return nil
+    end
+    if logic.dist(x, y, best.x, best.y) >= logic.LANDING_NEAR then
+        return best.facing
+    end
+    -- at that point already: toward the middle of that flight's own cells within LANDING_ON cells of it (the
+    -- flights' own lines are stubs in these buildings too: Brill's lower leg 1 yd, the inn's flights 2 yd)
+    local r0, c0 = logic.cellOf(zone, best.x, best.y)
+    local sx, sy, n, codes = 0, 0, 0, {}
+    for r = r0 - logic.LANDING_ON, r0 + logic.LANDING_ON do
+        for c = c0 - logic.LANDING_ON, c0 + logic.LANDING_ON do
+            local here = ix.floorCells[r * zone.cols + c]
+            if here and here[best.q] ~= nil then
+                local cx, cy = logic.cellCentre(zone, r, c)
+                sx, sy, n = sx + cx, sy + cy, n + 1
+                local v = here[best.q]
+                if v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] and v % logic.CODE ~= 0 then
+                    local k = v % logic.CODE % 1000 % 180
+                    codes[k] = (codes[k] or 0) + 1
+                end
+            end
+        end
+    end
+    if n == 0 or logic.dist(x, y, sx / n, sy / n) < 1 then
+        return nil
+    end
+    local toward = logic.bearingOf(sx / n - x, sy / n - y)
+    -- along the direction the flight is said with (the most cells' there: a few of Brill's lower leg carry the
+    -- landing's), the way toward its cells (the cells' middle alone was 25 to 35 degrees off on these small flights)
+    local axis, most
+    for k, m in pairs(codes) do
+        if most == nil or m > most or (m == most and k < axis) then
+            axis, most = k, m
+        end
+    end
+    if axis then
+        return math.rad(-(logic.angleGap(axis, toward) <= 90 and axis or axis + 180))
+    end
+    return math.rad(-toward)
+end
+
+-- The turn key on a flight whose own line near the player is a stub (shorter than FLIGHT_STUB yd within FLIGHT_NEAR:
+-- the U-stairs' flights, Brill's lower leg 1 yd, the inn's 2 yd, invariants rule 12): along the direction the flight
+-- is said with there (its cell's way up, the data's), up or down whichever lies nearer the facing; on the inn's upper
+-- flight the stub line turned the player east and back down (walk 2026-10-20 05:08:05). nil: no flight, or a line
+-- long enough to follow (lineFacings).
+logic.FLIGHT_STUB = 3
+logic.FLIGHT_NEAR = 6
+
+function logic.flightFacing(zone, piece, x, y, facing)
+    local ix = zone._index
+    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+        return nil
+    end
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local v = ix.floorCells[r0 * zone.cols + c0] and ix.floorCells[r0 * zone.cols + c0][piece]
+    local up = v and v ~= 0 and logic.riseOf(zone, v)
+    if not up then
+        return nil
+    end
+    local length, seen = 0, {}
+    local span = math.ceil((logic.FLIGHT_NEAR + logic.LANE_REACH) / zone.cell)
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+                if lane.piece == piece and not seen[lane] then
+                    seen[lane] = true
+                    length = length + logic.dist(lane.x1, lane.y1, lane.x2, lane.y2)
+                end
+            end
+        end
+    end
+    if length >= logic.FLIGHT_STUB then
+        return nil
+    end
+    local along = math.rad(-up)
+    return logic.lineTurnFacing({ along, along + math.pi }, facing, false)
 end
 
 -- Where a road or street leads ahead: from the nearest point on its centre line toward the point

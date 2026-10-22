@@ -165,8 +165,9 @@ local function onUpdate()
 end
 
 -- Without a beacon the turn key asks this for a facing to turn to instead (radians, as
--- GetPlayerFacing; nil: nothing here). WoW: Forever's surroundings set it: along the centre line
--- where the player stands.
+-- GetPlayerFacing; nil: nothing here). WowNav routes set it at a tram, ship or zeppelin dock (the
+-- boarding point, or the noted dock near it); WoW: Forever's surroundings along the centre line where the
+-- player stands.
 module.facingWithoutWaypoint = nil
 
 -- Far enough that the lead of a moving player does not bend the bearing to it.

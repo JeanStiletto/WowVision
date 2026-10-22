@@ -59,6 +59,7 @@ loadAddonFile("camelot/surroundings/store.lua")
 -- the game decodes a zone's JSON text (C_EncodingUtil.DeserializeJSON); here the plain Lua reader
 WowVision.surroundingsLogic.decodeJson = dofile("tools/json.lua")
 loadAddonFile("camelot/surroundings/edges.lua")
+loadAddonFile("camelot/surroundings/tracker.lua")
 loadAddonFile("camelot/surroundings/lanes.lua")
 loadAddonFile("camelot/surroundings/rooms.lua")
 loadAddonFile("camelot/surroundings/squares.lua")
@@ -71,11 +72,17 @@ loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
 loadAddonFile("camelot/surroundings/storeTests.lua")
 loadAddonFile("camelot/surroundings/helperTests.lua")
--- WowNav routes: the logic on the real network of the WowNav submodule (mapdata/WowNav, its engine.xml); without the
--- submodule only the parts that need no network run.
+-- WowNav routes: Broesel's engine (camelot/wownav/engine) on his real data, packed into mapdata/WowNavPacked by
+-- tools/wownav-pack.lua (its data.xml); without the packed data only the parts that need no network run.
+loadAddonFile("camelot/wownav/engine/NavNetwork.lua")
+loadAddonFile("camelot/wownav/engine/Guidance.lua")
+loadAddonFile("camelot/wownav/engine/TargetCatalog.lua")
+loadAddonFile("camelot/wownav/engine/TargetResolver.lua")
+loadAddonFile("camelot/wownav/engine/DockNavigation.lua")
+loadAddonFile("camelot/wownav/engine/TransitActivation.lua")
 do
-    local base = "mapdata/WowNav/addon/WowVisionNavigation/"
-    local xml = io.open(base .. "engine.xml", "r")
+    local base = "mapdata/WowNavPacked/"
+    local xml = io.open(base .. "data.xml", "r")
     if xml ~= nil then
         local text = xml:read("*a")
         xml:close()
@@ -84,7 +91,10 @@ do
         end
     end
 end
-loadAddonFile("camelot/wownav/logic.lua")
+loadAddonFile("camelot/wownav/text.lua")
+loadAddonFile("camelot/wownav/catalog.lua")
+loadAddonFile("camelot/wownav/route.lua")
+loadAddonFile("camelot/wownav/dock.lua")
 loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
@@ -149,6 +159,15 @@ do
             t:assertFalse(movement.flags.autorun)
             call("ToggleAutoRun")
             t:assertTrue(movement.flags.autorun)
+        end,
+
+        ["turning follows the game's turning events"] = function(t)
+            reset()
+            movement.turning = false
+            event("PLAYER_STARTED_TURNING")
+            t:assertTrue(movement.turning)
+            event("PLAYER_STOPPED_TURNING")
+            t:assertFalse(movement.turning)
         end,
 
         ["follow ends with AUTOFOLLOW_END"] = function(t)
@@ -229,10 +248,14 @@ loadAddonFile("core/db.lua")
 loadAddonFile("core/dbTests.lua")
 loadAddonFile("core/utils.lua")
 loadAddonFile("core/utilsTests.lua")
+loadAddonFile("core/scanner/nearest.lua")
+loadAddonFile("core/scanner/nearestTests.lua")
 loadAddonFile("core/secrets.lua")
 loadAddonFile("core/secretsTests.lua")
 loadAddonFile("core/ui/input/heldKeys.lua")
 loadAddonFile("core/ui/input/heldKeysTests.lua")
+loadAddonFile("core/ui/input/padLogic.lua")
+loadAddonFile("core/ui/input/padLogicTests.lua")
 loadAddonFile("core/ttsCacheBust.lua")
 loadAddonFile("core/ttsCacheBustTests.lua")
 loadAddonFile("core/speechSounds.lua")
@@ -326,11 +349,25 @@ WowVision.testing.testRunner:addSuite("BufferConstruction", {
         t:assertEqual(#buffer.items, 0)
 
         -- The store appears later (chat tabs open after the buffers restore)
-        local store = WowVision.createMessageStore("chat.test1", { messages = { "old line" } })
-        t:assertEqual(#buffer.items, 1)
-        store:add("new line")
+        local store = WowVision.createMessageStore("chat.test1", { messages = { "older line", "old line" } })
         t:assertEqual(#buffer.items, 2)
-        t:assertEqual(buffer.items[2]:getFocusString(), "new line")
+        -- It opens on the newest line and follows new ones
+        t:assertEqual(buffer:getFocus():getFocusString(), "old line")
+        store:add("new line")
+        t:assertEqual(#buffer.items, 3)
+        t:assertEqual(buffer.items[3]:getFocusString(), "new line")
+        t:assertEqual(buffer:getFocus():getFocusString(), "new line")
+        -- Moved back into history, it stays there while lines arrive
+        buffer:focusDirection(-1)
+        t:assertEqual(buffer:getFocus():getFocusString(), "old line")
+        store:add("newer line")
+        t:assertEqual(buffer:getFocus():getFocusString(), "old line")
+        -- Back at the end, it follows again
+        buffer:focusDirection(1)
+        buffer:focusDirection(1)
+        t:assertEqual(buffer:getFocus():getFocusString(), "newer line")
+        store:add("newest line")
+        t:assertEqual(buffer:getFocus():getFocusString(), "newest line")
 
         -- Choosing another tab swaps the lines
         WowVision.createMessageStore("chat.test2", { messages = { "other tab" } })
@@ -341,10 +378,12 @@ WowVision.testing.testRunner:addSuite("BufferConstruction", {
         store:add("ignored now")
         t:assertEqual(#buffer.items, 1)
 
-        -- Restored from the saved config, it attaches to the existing store
+        -- Restored from the saved config, it attaches to the existing store,
+        -- on its newest line
         local again = WowVision.buffers.RootBufferGroup:new(db)
         again:setDB(db)
         t:assertEqual(#again.items[1].items[1].items, 1)
+        t:assertEqual(again.items[1].items[1]:getFocus():getFocusString(), "other tab")
     end,
 })
 
@@ -480,6 +519,51 @@ loadAddonFile("core/graph/fieldControls.lua")
 loadAddonFile("core/graph/tests.lua")
 loadAddonFile("core/graph/controlTests.lua")
 
+-- Native quest source and the scanner's quest categories: the adapter and
+-- the provider load against stand-ins for the quest module and the scanner;
+-- the suite installs the game's map and quest log APIs per test and points
+-- the stand-in module at its own source.
+do
+    local savedBase = WowVision.base
+    local harness = { providers = {}, source = nil }
+    local questModule = { L = WowVision:getLocale() }
+    function questModule:hasSource()
+        return true
+    end
+    function questModule:isReady()
+        return true
+    end
+    function questModule:inProgress()
+        return harness.source:inProgress()
+    end
+    function questModule:targets(questId, phase)
+        return harness.source:targets(questId, phase)
+    end
+    function questModule:objectiveTargets(questId, index)
+        return harness.source:objectiveTargets(questId, index)
+    end
+    function questModule:quest(questId)
+        return harness.source:quest(questId)
+    end
+    function questModule:placeName()
+        return nil
+    end
+    WowVision.base = {
+        quests = questModule,
+        scanner = {
+            registerProvider = function(_, provider)
+                harness.providers[provider.key] = provider
+            end,
+        },
+    }
+    loadAddonFile("core/quests/Adapter.lua")
+    loadAddonFile("core/quests/native.lua")
+    loadAddonFile("core/quests/scanner.lua")
+    WowVision.quests._nativeTestHarness = harness
+    loadAddonFile("core/quests/nativeTests.lua")
+    WowVision.base = savedBase
+end
+
 -- Files that need the game client to run but should at least parse cleanly.
 local parseOnly = {
     "vanilla/speech.lua",
@@ -493,6 +577,7 @@ local parseOnly = {
     "core/graph/keyCapture.lua",
     "core/ui/input/actions.lua",
     "core/ui/input/activator.lua",
+    "core/ui/input/pad.lua",
     "core/ui/input/tests.lua",
     "core/ui/Window.lua",
     "core/ui/WindowManager.lua",
@@ -524,6 +609,11 @@ local parseOnly = {
     "retail/containers/containers.lua",
     "retail/containers/Bags.lua",
     "retail/containers/Bank.lua",
+    "retail/channels.lua",
+    "retail/socialUI.lua",
+    "retail/communities.lua",
+    "retail/guildControl.lua",
+    "core/windows/guildInvite.lua",
     "retail/QuestLog.lua",
     "retail/cooldownManager.lua",
     "retail/talentTree.lua",
