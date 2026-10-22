@@ -78,6 +78,7 @@ loadAddonFile("camelot/wownav/engine/NavNetwork.lua")
 loadAddonFile("camelot/wownav/engine/Guidance.lua")
 loadAddonFile("camelot/wownav/engine/TargetCatalog.lua")
 loadAddonFile("camelot/wownav/engine/TargetResolver.lua")
+loadAddonFile("camelot/wownav/engine/DockNavigation.lua")
 do
     local base = "mapdata/WowNavPacked/"
     local xml = io.open(base .. "data.xml", "r")
@@ -92,6 +93,7 @@ end
 loadAddonFile("camelot/wownav/text.lua")
 loadAddonFile("camelot/wownav/catalog.lua")
 loadAddonFile("camelot/wownav/route.lua")
+loadAddonFile("camelot/wownav/dock.lua")
 loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
