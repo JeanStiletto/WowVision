@@ -1,8 +1,11 @@
 -- The building helper (Alt plus the turn key): a beacon route from where the player stands through the next
--- exit the surroundings point at. A doorway, an entrance or a way out of the water: to it, then through it
--- (HELPER_THROUGH yd beyond, as the places list leads into a shop). The foot of a ramp or stairs, or a climb
--- the player stands on: along the climb's own centre line to its other end and onto the floor joined there (the
--- next landing: the griffon ramp's platform, a tower's upper floor). Pure: the module turns the points into a path.
+-- exit the surroundings point at. A doorway, an entrance or a way out of the water: to it. The foot of a ramp or
+-- stairs, or a climb the player stands on: along the climb's own centre line to its other end and to the join of
+-- the floor there (the next landing: the griffon ramp's platform, a tower's upper floor). Pure: the module turns the
+-- points into a path.
+-- The route has no points of its own beyond these (user 2026-10-17: "i don't want extra artificial points"). It
+-- ends where the surroundings' own rules say the player is there, on the line they say for it (helperArrived): out
+-- of the water on the place beyond, in the room beyond the doorway, on the landing's floor.
 --
 -- It reads what the export stored (the climbs' line stretches with their floor piece, the joins between pieces,
 -- the feet with their bearing up); it computes nothing the export could store, it only follows the stored lines.
@@ -11,11 +14,9 @@
 
 local logic = WowVision.surroundingsLogic
 
-logic.HELPER_THROUGH = 3   -- yd beyond a doorway, an entrance, a way out
 logic.HELPER_FOOT = 6      -- yd: a climb's line end at most this far from its foot belongs to it
 logic.HELPER_NEAR = 4      -- yd: a climb line beginning this near the player is the one to lead up
 logic.HELPER_LANDING = 6   -- yd: a join at most this far from the line's end is where the climb lands
-logic.HELPER_ONTO = 2      -- yd onto the landing past its join
 logic.HELPER_RADIUS = 1.5  -- yd: a point of the route counts as reached within this
 logic.HELPER_SIDE = 3      -- yd: passing a point's line (across the way in) counts within this beside it
 
@@ -160,22 +161,11 @@ local function lineLength(points)
     return sum
 end
 
--- Ends a climb route on its landing: the join point, then HELPER_ONTO yd on in the way the route last went.
+-- Ends a climb route on its landing: the join point (from there the floor tracking puts the player on it).
 local function onto(points, jx, jy)
     local last = points[#points]
     if dist(last.x, last.y, jx, jy) > 0.5 then
         points[#points + 1] = { x = jx, y = jy }
-        last = points[#points - 1]
-    else
-        last = points[#points - 1] or last
-    end
-    local tip = points[#points]
-    local l = dist(last.x, last.y, tip.x, tip.y)
-    if l > 0 then
-        points[#points + 1] = {
-            x = tip.x + (tip.x - last.x) / l * logic.HELPER_ONTO,
-            y = tip.y + (tip.y - last.y) / l * logic.HELPER_ONTO,
-        }
     end
 end
 
@@ -306,7 +296,7 @@ local function nextFlight(zone, piece, ex, ey, used)
 end
 
 -- On from the last of `points` on the climb `piece` through its staircase (`used`: the pieces walked): at a far end
--- record there, to it and HELPER_ONTO on onto its floor (away from the climb, against that end's way on); else into the
+-- record there, to it (no point beyond: being on its floor is the module's floor rule, helperArrived); else into the
 -- next flight along its line, and so on; with no end record found, onto the piece joined at the last line's end as
 -- before (landingAt). The route { points, piece, landing, short, last end }.
 local function throughStaircase(zone, points, piece, used, from)
@@ -317,8 +307,6 @@ local function throughStaircase(zone, points, piece, used, from)
             if dist(last.x, last.y, e.x, e.y) > 0.5 then
                 points[#points + 1] = { x = e.x, y = e.y }
             end
-            local fx, fy = logic.compassVector((e.bearing + 180) % 360)
-            points[#points + 1] = { x = e.x + fx * logic.HELPER_ONTO, y = e.y + fy * logic.HELPER_ONTO }
             return { points = points, piece = piece, landing = e.floor or 0, short = false, ending = e }
         end
         local q, qx, qy = nextFlight(zone, piece, last.x, last.y, used)
@@ -547,14 +535,9 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
     return { points = points, piece = piece, landing = landing, short = landing == nil }
 end
 
--- The points through a doorway, an entrance or a way out: it, then HELPER_THROUGH yd on along the way through.
+-- The point of a doorway, an entrance or a way out (the rest is the surroundings' rules: helperArrived).
 function logic.throughRoute(t)
-    local points = { { x = t.x, y = t.y } }
-    if t.through then
-        local fx, fy = logic.compassVector(t.bearing or t.through)
-        points[2] = { x = t.x + fx * logic.HELPER_THROUGH, y = t.y + fy * logic.HELPER_THROUGH }
-    end
-    return points
+    return { { x = t.x, y = t.y } }
 end
 
 -- The helper's route for a guidance target `t` (the surroundings' target, texts.lua): { points, kind, short,
@@ -580,6 +563,26 @@ function logic.helperRoute(zone, t)
     end
     if t.kind == "way" then
         return { points = { { x = t.x, y = t.y } }, kind = "way" }
+    end
+    return nil
+end
+
+-- Has the player arrived where the route `route` leads, by the surroundings' own rules? Asked when the module says
+-- (or logs) a place or room line, the moment it holds the player on a new place. `start` and `now`: { floor (the
+-- floor piece in the route's grid), liquid (that piece is a liquid's), room, inside }. Out of the water: off the
+-- piece swum in, on floor; through a doorway or an entrance: another room, or in or out of the building; up or down
+-- a climb with a landing: on the landing's piece. A route of none of these (a way's beginning, a climb whose line
+-- ends short) ends at its last point. Returns true, false, or nil (no rule: the last point decides).
+function logic.helperArrived(route, start, now)
+    local kind = route and route.kind
+    if kind == "exit" then
+        return now.floor ~= start.floor and not now.liquid
+    end
+    if kind == "doorway" or kind == "entrance" then
+        return now.room ~= start.room or now.inside ~= start.inside
+    end
+    if kind == "climb" and route.landing ~= nil then
+        return now.floor == route.landing and now.floor ~= start.floor
     end
     return nil
 end
