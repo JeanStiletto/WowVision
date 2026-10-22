@@ -1485,6 +1485,28 @@ local function restoreHere(z, x, y, outdoors)
     end
 end
 
+-- The platform or climb piece last said in room mode (roomPieceLine), where, so a step off and back on its edge is
+-- not said again until the player was ROOM_PIECE_AGAIN yd away.
+local roomPieceSaid = nil
+local ROOM_PIECE_AGAIN = 6
+local function roomPieceLine(layer, x, y)
+    local v = logic.valueAt(layer, x, y)
+    local kind = v and v ~= 0 and logic.kindOf(layer, v)
+    if not (kind == "platform" or logic.CLIMBS[kind]) then
+        return
+    end
+    local floor = layer._index.floor or 0
+    local s = roomPieceSaid
+    if s and s.floor == floor and logic.dist(s.x, s.y, x, y) < ROOM_PIECE_AGAIN then
+        return
+    end
+    roomPieceSaid = { floor = floor, x = x, y = y }
+    local text = logic.spotText(layer, x, y, v, nil, { facing = turnFacing(), swimming = IsSwimming() })
+    if text and text ~= "" then
+        say(text, "place", x, y)
+    end
+end
+
 local function updateIndoors(z, x, y, px, py)
     if not hereRestored then
         restoreHere(z, x, y)
@@ -1550,6 +1572,12 @@ local function updateIndoors(z, x, y, px, py)
         -- has), each in the room its floor belongs to: this room, or while it is unknown
         -- (stacked floors) any room here; and on its own floor piece
         checkEdges(layer, x, y, px, py, here)
+        -- in a room the layer does not cover (its room text speaks there): stepping onto a platform, a ramp or
+        -- stairs of the layer says that piece's place line, as everywhere else (the Trade Quarter canal's raised
+        -- platform and its ramp, user 2026-10-22: the room text stays, platforms named by the existing rules)
+        if floorChanged and not logic.inLayer(layer, room, x, y) then
+            roomPieceLine(layer, x, y)
+        end
     end
     keepHere(z, x, y)
     if layer and logic.inLayer(layer, room, x, y) then
