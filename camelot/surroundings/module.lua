@@ -857,7 +857,7 @@ local function guideTo(z, g, t, x, y, brief)
     end
 end
 
-local function checkGuide(z, x, y, roomId, skipDoor)
+local function checkGuide(z, x, y, roomId, skipDoor, climbZone)
     if not module.settings.guidance then
         guide.key = nil
         return
@@ -869,11 +869,12 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         guide.brief, guide.key, guide.named, guide.said = brief, nil, nil, {}
     end
     logic.wallSide = module.settings.wallSide == true
-    -- in a big room: its doorways; on foot elsewhere: entrances and street beginnings
+    -- in a big room: its doorways and the climb ends on the player's floor; on foot elsewhere: entrances, street
+    -- beginnings and climb ends
     local prefer = guide.key and guide.x and { x = guide.x, y = guide.y } or nil
     local function lookup(reach)
         if roomId then
-            return logic.roomDoorTarget(z, roomId, x, y, skipDoor, prefer, reach)
+            return logic.roomTarget(z, roomId, x, y, skipDoor, prefer, reach, climbZone)
         end
         return logic.footTarget(z, x, y, region, prefer, reach)
     end
@@ -905,13 +906,15 @@ local function checkGuide(z, x, y, roomId, skipDoor)
     end
     -- not the foot of a climb the player is past (going up it), nor of the one the player stands on;
     -- back down at that foot its "up to the west" is said again (a second try at the griffon ramp)
+    -- (a climb found for a room on the halls layer is checked, said and guided on that layer: t.zone)
+    local tz = t and t.zone or z
     if t and t.kind == "climb" then
-        if logic.onClimb(z, t, x, y, outdoor.current) then
+        if logic.onClimb(tz, t, x, y, outdoor.current) then
             if guide.key == t.key then
                 guide.at = false
             end
             t = nil
-        elseif logic.pastTarget(z, t, x, y) then
+        elseif logic.pastTarget(tz, t, x, y) then
             t = nil
         end
     end
@@ -946,7 +949,7 @@ local function checkGuide(z, x, y, roomId, skipDoor)
         guide.key = nil
         return
     end
-    guideTo(z, guide, t, x, y, brief)
+    guideTo(tz, guide, t, x, y, brief)
 end
 
 -- Down in a moat? The place here on the floor piece the player is on (updateFloor: in once fallen
@@ -1592,7 +1595,7 @@ local function updateIndoors(z, x, y, px, py)
             local dx, dy = logic.doorWorld(z, entryDoor)
             entryAway = dx == nil or logic.dist2(dx, dy, x, y) > logic.GUIDE_REACH ^ 2
         end
-        checkGuide(z, x, y, room, not entryAway and entryDoor or nil)
+        checkGuide(z, x, y, room, not entryAway and entryDoor or nil, layer)
     end
     checkStop(z, x, y, px, py, here)
 end

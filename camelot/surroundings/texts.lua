@@ -511,6 +511,37 @@ function logic.footTarget(zone, x, y, square, prefer, reach)
     return best
 end
 
+-- In a big room (logic.isBigRoom): its doorways and the ends of the ramps and stairs on the player's floor, the nearest
+-- (one rule with small rooms and the streets, footTarget): the Trade Quarter canal's rooms offered only their doorways,
+-- and the ramp down off a raised platform in one was never said (walk 2026-10-22 14:36, STATE bug 103). `climbZone`:
+-- the layer whose climb records and floor count (a city's halls layer, its rooms the zone's); a climb target carries
+-- it as .zone (said and checked on it).
+function logic.roomTarget(zone, roomId, x, y, skip, prefer, reach, climbZone)
+    local door = logic.roomDoorTarget(zone, roomId, x, y, skip, prefer, reach)
+    local cz = climbZone or zone
+    local floor = logic.floorOfValue(cz, logic.valueAt(cz, x, y))
+    local climb = climbTarget(cz, x, y, reach or GUIDE_REACH, prefer, floor)
+    if climb then
+        climb.zone = cz
+    end
+    if door == nil or climb == nil then
+        local only = door or climb
+        if only then
+            only.reach = only.reach or GUIDE_REACH
+        end
+        return only
+    end
+    local best, other = door, climb
+    if climb.d < door.d then
+        best, other = climb, door
+    end
+    if logic.samePoint(other, prefer) and logic.sticks(best.d, other.d) then
+        best = other
+    end
+    best.reach = best.reach or GUIDE_REACH
+    return best
+end
+
 logic.GUIDE_SIDE = 1.5 -- yd beside the line through a doorway before one is at it
 -- yd beside a climb's line at its foot (user 2026-10-01: the griffon ramp is 5 yd wide, its
 -- compass word 14 degrees off its line, so a start 1.5 yd to the wrong side ended over its rim

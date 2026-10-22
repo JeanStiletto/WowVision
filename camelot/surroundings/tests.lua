@@ -632,6 +632,22 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.footTarget(z, 95, 45))
     end,
 
+    ["in a big room the climb ends on the player's floor are guided to as its doorways are, on the climbs' layer"] = function(t)
+        -- (the Trade Quarter canal's platform: its room offered only doorways, its ramp down never said, bug 103)
+        local z = newTowerZone()
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        local rooms = newZone()
+        logic.unpack(rooms)
+        -- a room with no doorway in reach: the next flight's foot, found and said on the climbs' layer
+        local target = logic.roomTarget(rooms, 1, 95, 30, nil, nil, nil, z)
+        t:assertEqual(target.kind, "climb")
+        t:assertEqual(target.zone, z)
+        t:assertEqual(target.reach, logic.GUIDE_REACH)
+        -- without the climbs' layer the room's own zone is looked in: no climb there
+        t:assertNil(logic.roomTarget(rooms, 1, 95, 30))
+    end,
+
     ["a structure's place says the structure's name only where the player is not on it"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
