@@ -152,7 +152,14 @@ function logic.bridgeValue(zone, x, y, value, onWay)
     return best or value
 end
 
-logic.TURN_OFF, logic.TURN_ACROSS = 8, 60 -- degrees
+logic.TURN_OFF, logic.TURN_ACROSS = 12, 60 -- degrees (TURN_OFF 8 until 2026-10-23)
+-- yd on along the way, in the direction faced, between which the left/right hint takes the way's heading (since
+-- 2026-10-23, the user: one steps onto a way at a junction, where the line still bends from the join; the hint said
+-- the bend). Replayed on every walk (wv-surroundings scratch/streetpaths-2026-10-22/lr-variants.sh) and judged by the
+-- way's own shape (shapejudge.py, 5 degrees median off the way walked on straight stretches in the Undercity) and by
+-- the floor's longest straight run: with 6 to 18 yd and 12 degrees the fewest wrong and needless hints (Elwynn wrong
+-- 40 -> 25, needless 50 -> 18; the Undercity 5 right, 1 wrong, 2 needless against 7, 2, 6).
+logic.TURN_FROM, logic.TURN_TO = 6, 18
 local TURN_SPAN = 6 -- yd before and after the nearest point
 
 -- The nearest lane of a way with one direction here (not a fork or crossing): as nearestLane.
@@ -195,6 +202,22 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     local px, py, dx, dy = lineHere(zone, x, y, facing)
     if px == nil then
         return nil
+    end
+    if logic.TURN_FROM then
+        -- the way ahead, not the bend under the player (user 2026-10-23: one steps onto a way at a junction, where
+        -- the line still bends from the join; the hint said the bend): from the line's point TURN_FROM yd on along the
+        -- way, in the direction faced, to its point TURN_TO yd on
+        local n = math.sqrt(dx * dx + dy * dy)
+        local ux, uy = dx / n, dy / n
+        if ux * math.cos(facing) + uy * math.sin(facing) < 0 then
+            ux, uy = -ux, -uy
+        end
+        local reach = math.max(TURN_SPAN, logic.TURN_TO / 2)
+        local _a, _l1, ax, ay = logic.nearestLane(zone, px + ux * logic.TURN_FROM, py + uy * logic.TURN_FROM, reach, logic.LANE_KINDS)
+        local _b, _l2, bx, by = logic.nearestLane(zone, px + ux * logic.TURN_TO, py + uy * logic.TURN_TO, reach, logic.LANE_KINDS)
+        if ax and bx and (bx - ax) ^ 2 + (by - ay) ^ 2 >= MIN_SPAN * MIN_SPAN then
+            dx, dy = bx - ax, by - ay
+        end
     end
     local diff = logic.degreesBetween(math.atan2(dy, dx), facing)
     -- the way runs both ways: the end nearer the facing

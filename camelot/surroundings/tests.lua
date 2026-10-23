@@ -1021,16 +1021,17 @@ testRunner:addSuite("Surroundings", {
         -- the test road runs north-south; facing is counter-clockwise from north (west = 90)
         t:assertEqual(logic.turnHint(z, 92, 48, 0), 0)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(5)), 0)
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(12)), -1)    -- facing a little west of north
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(15)), -1)    -- facing a little west of north (TURN_OFF 12)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30)), 1)    -- facing northeast-ish
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(170)), 1)    -- walking south, 10 degrees off
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(165)), 1)    -- walking south, 15 degrees off
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(170)), 0)    -- 10 degrees off: under TURN_OFF
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(90)), nil)   -- facing across the road
         -- with the said axis (north to south): only while the facing's compass word is north or
         -- south; facing northeast the words tell already
         t:assertEqual(logic.axisOf(z, 21000), 0)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(20), 0), -1)
         t:assertEqual(logic.turnHint(z, 92, 48, math.rad(-30), 0), 0)
-        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(190), 0), -1)
+        t:assertEqual(logic.turnHint(z, 92, 48, math.rad(195), 0), -1)
     end,
 
     ["the turn key without a beacon faces along the centre line, the way nearer the facing"] = function(t)
