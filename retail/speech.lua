@@ -79,14 +79,41 @@ local function knownSilent(id)
     return false
 end
 
+-- A voice that hands the text to a screen reader (SAPI2SR, NVDA's bridge)
+-- ends the utterance at once, 17 ms measured 2026-10-23, while the screen
+-- reader goes on speaking; the stop still reaches it (measured in Sku). Only
+-- a key press made NVDA stop by itself, so controller presses in windows
+-- never cut it (user report 2026-10-22). A line of ours that ends this fast
+-- counts as heard for about as long as a screen reader takes to read it,
+-- after the lines before it (NVDA reads them one after another).
+local SCREEN_READER_END_MS = 120
+local SCREEN_READER_PER_CHAR = 0.07
+local SCREEN_READER_BASE = 0.5
+local SCREEN_READER_MAX = 15
+local SCREEN_READER_SECRET = 5
+local handedText = nil
+local queueStartMs = {}
+local screenReaderUntil = 0
+
+local function readingTime(text)
+    if type(text) ~= "string" or WowVision.isSecret(text) then
+        return SCREEN_READER_SECRET
+    end
+    return math.min(SCREEN_READER_MAX, SCREEN_READER_BASE + #text * SCREEN_READER_PER_CHAR)
+end
+
 -- Whether anything that can be heard is playing or about to: our queue,
 -- anything else playing (other speech, Blizzard's alerts, numbers beside
--- the queue), or speech called and not started yet that is not silent.
+-- the queue), speech called and not started yet that is not silent, or a
+-- line a screen reader may still be reading.
 function module:audibleNow()
     if self.speaking or #self.queue > 0 then
         return true
     end
     local now = GetTime()
+    if now < screenReaderUntil then
+        return true
+    end
     for id, startedAt in pairs(playing) do
         if now - startedAt > PLAYING_FORGET then
             playing[id] = nil
@@ -156,6 +183,7 @@ local function pollQueue()
     -- does not dispatch a second utterance on top of this one.
     module.speaking = true
     module.current = item
+    handedText = item.text
     expectStart("queue")
     oldSpeak(item.voice, item.text, item.rate, item.volume, true)
 end
@@ -261,11 +289,20 @@ local function frame_OnEvent(frame, event, utteranceID)
             asideUtterances[utteranceID] = true
             return
         end
+        if entry ~= nil and entry.owner == "queue" then
+            queueStartMs[utteranceID] = debugprofilestop()
+        end
         module.speaking = true
     elseif event == "VOICE_CHAT_TTS_PLAYBACK_FINISHED" or event == "VOICE_CHAT_TTS_PLAYBACK_FAILED" then
         if asideUtterances[utteranceID] then
             asideUtterances[utteranceID] = nil
             return
+        end
+        local startMs = queueStartMs[utteranceID]
+        queueStartMs[utteranceID] = nil
+        if event == "VOICE_CHAT_TTS_PLAYBACK_FINISHED" and startMs ~= nil
+            and debugprofilestop() - startMs < SCREEN_READER_END_MS then
+            screenReaderUntil = math.max(GetTime(), screenReaderUntil) + readingTime(handedText)
         end
         -- FAILED fires instead of FINISHED for rejected utterances (too short,
         -- too long, internal error). Without handling it the queue stalls forever.
@@ -365,6 +402,8 @@ end
 hooksecurefunc(C_VoiceChat, "StopSpeakingText", function()
     wipe(playing)
     wipe(pendingStarts)
+    wipe(queueStartMs)
+    screenReaderUntil = 0
     wipe(asideUtterances)
     module.speaking = false
     module.current = nil
