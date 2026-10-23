@@ -320,6 +320,15 @@ local function turnToPoint(x, y)
     local before = camera.turnWithCameraText()
     camera.beginTurn()
     turn.turnWithCamera = before .. " -> " .. camera.turnWithCameraText()
+    -- Gamepad: pressing the stick nudges the camera off the character, and
+    -- switching free look off hands that offset to the character before
+    -- the turn (pad log 2026-10-23, 11:43: jumps of 8 to 28 degrees before
+    -- the sweep, the turn off by as much). So the camera goes straight
+    -- behind the character first.
+    if camera.gamepadOn() then
+        stopCamera()
+        camera.align()
+    end
     if camera.gamepadOn() and camera.beginFreeLookTurn() then
         turn.freeLookDuring = camera.freeLookText()
         turn.mouselookDuring = IsMouselooking()
