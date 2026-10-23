@@ -10,6 +10,7 @@
 - [Monitors](./user/monitors.md)
 - [Group Health Monitor](./user/group-health.md)
 - [Keybindings](./user/keybindings.md)
+- [Controller](./user/controller.md)
 - [Chat](./user/chat.md)
 - [Settings & the WowVision Menu](./user/settings.md)
 - [Commands](./user/commands.md)
