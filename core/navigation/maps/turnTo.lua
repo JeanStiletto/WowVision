@@ -141,62 +141,15 @@ local function measure(turn)
         tostring(turn.mouselookAfter)
     )
     if turn.facingTrace ~= nil then
-        line = line .. " | turned by frame " .. table.concat(turn.facingTrace, "/")
-    end
-    if turn.gamepad then
-        line = line .. string.format(" | hand-overs %s, arrived %s",
-            #turn.handovers > 0 and table.concat(turn.handovers, "; ") or "only the first",
-            turn.arrivedFrame ~= nil and ("at frame " .. turn.arrivedFrame) or "no")
+        line = line .. string.format(" | camera stick at the press %s | turned by frame (@ camera stick) ",
+            turn.stickAtPress ~= nil and string.format("%.2f", turn.stickAtPress) or "?")
+            .. table.concat(turn.facingTrace, "/")
     end
     addLog(line)
     -- (the always-on pad log, saved: what a turn did with the gamepad on)
     if WowVision.pad ~= nil and WowVision.pad.log ~= nil then
         WowVision.pad.log("turn: %s", line)
     end
-end
-
--- Gamepad mode: the sweep turns the camera, but the pulse that hands it
--- to the character often does not take there; the character then took the
--- camera's direction only when the stick was touched again (pad log
--- 2026-10-23: 0 degrees after the turn, the exact target a second later).
--- So after the stop each frame checks whether the character arrived, and
--- while it stands still short of the target the hand-over is repeated,
--- alternating the pulse and a plain mouse look stop, up to
--- HANDOVER_TRIES times, at least HANDOVER_EVERY frames apart.
-local HANDOVER_EVERY = 4
-local HANDOVER_TRIES = 6
-
-local function gamepadSettled(turn)
-    local facing = GetPlayerFacing()
-    local x, y = UnitPosition("player")
-    if facing == nil or x == nil then
-        return true
-    end
-    local left = turnMath.relativeBearing(x, y, facing, turn.x, turn.y)
-    local still = turn.lastFacing ~= nil and math.abs(math.deg(facing - turn.lastFacing)) < 0.5
-    turn.lastFacing = facing
-    if math.abs(left) <= TOLERANCE then
-        if turn.arrivedFrame == nil then
-            turn.arrivedFrame = turn.framesSinceStop
-        end
-        return turn.framesSinceStop >= turn.settleFrames
-    end
-    turn.arrivedFrame = nil
-    if not still or turn.framesSinceStop - turn.lastPulse < HANDOVER_EVERY then
-        return false
-    end
-    if turn.pulses >= HANDOVER_TRIES then
-        return true
-    end
-    turn.pulses = turn.pulses + 1
-    turn.lastPulse = turn.framesSinceStop
-    if turn.pulses % 2 == 0 then
-        MouselookStop()
-    else
-        camera.transfer()
-    end
-    tinsert(turn.handovers, string.format("%d at frame %d, %.1f left", turn.pulses, turn.framesSinceStop, left))
-    return false
 end
 
 local function onUpdate()
@@ -215,17 +168,14 @@ local function onUpdate()
     -- (gamepad mode: how far the character has turned, frame by frame)
     if turn.facingTrace ~= nil and #turn.facingTrace < 40 then
         local facing = GetPlayerFacing()
-        tinsert(turn.facingTrace, facing ~= nil
+        local stick = camera.cameraStickLength()
+        tinsert(turn.facingTrace, (facing ~= nil
             and string.format("%.1f", turnMath.turned(turn.startFacing, facing, turn.direction, turn.target)) or "?")
+            .. (stick ~= nil and string.format("@%.2f", stick) or ""))
     end
     if turn.stopFrame ~= nil then
         turn.framesSinceStop = turn.framesSinceStop + 1
-        if turn.gamepad then
-            if gamepadSettled(turn) then
-                release(turn)
-                measure(turn)
-            end
-        elseif turn.framesSinceStop >= turn.settleFrames then
+        if turn.framesSinceStop >= turn.settleFrames then
             release(turn)
             measure(turn)
         end
@@ -344,10 +294,7 @@ local function turnToPoint(x, y)
         lead = relative - raw,
         moving = moving,
         facingTrace = camera.gamepadOn() and {} or nil,
-        gamepad = camera.gamepadOn(),
-        pulses = 1,
-        lastPulse = 0,
-        handovers = {},
+        stickAtPress = camera.cameraStickLength(),
     }
     current = turn
 
