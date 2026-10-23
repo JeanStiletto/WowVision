@@ -2163,6 +2163,8 @@ module:registerBinding({
     key = "surroundings/leadOn",
     label = L["Lead Through the Next Exit"],
     inputs = { "ALT-I" },
+    -- (controller: left shoulder + right stick press, next to the turn key)
+    padInputs = { "ALT-PADRSTICK" },
     script = "/run WowVision.base.navigation.surroundings:leadOn()",
 })
 
@@ -2171,5 +2173,7 @@ module:registerBinding({
     key = "surroundings/describe",
     label = L["Describe Surroundings"],
     inputs = { "ALT-L" },
+    -- (controller: left trigger + right stick press)
+    padInputs = { "SHIFT-PADRSTICK" },
     script = "/run WowVision.base.navigation.surroundings:describeAround()",
 })

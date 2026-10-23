@@ -204,5 +204,7 @@ module:registerBinding({
     key = "surroundings/places",
     label = L["Places"],
     inputs = { "ALT-F10" },
+    -- (controller: the shortcut layer, both shoulders + right stick press)
+    padInputs = { "LAYER-PADRSTICK" },
     script = "/run WowVision.UIHost:openWindow('surroundingsPlaces')",
 })
