@@ -903,6 +903,8 @@ module:registerBinding({
     -- layout. "Ö" never fired, and "#" is a different key on English and
     -- French layouts. H for health.
     inputs = { "ALT-H" },
+    -- With controller support: right trigger + right stick press.
+    padInputs = { "CTRL-PADRSTICK" },
     func = function()
         module:snapshot()
     end,
