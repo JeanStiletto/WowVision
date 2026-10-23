@@ -144,6 +144,27 @@ function module:startOwner(id)
     return entry.owner, entry.atMs
 end
 
+-- A voice that hands the text to a screen reader (SAPI2SR, NVDA's bridge)
+-- ends each line at once, while the screen reader goes on reading it, so
+-- StopSpeakingText has nothing left to stop there and NVDA reads the old
+-- line to its end. Only a key press made NVDA stop by itself; controller
+-- presses never did (user test 2026-10-23). What does reach the bridge is
+-- the next line itself: after a stop, the next line handed over carries
+-- this bookmark, and the bridge as patched for Sku (its installer 5.1,
+-- "Patch C") stops NVDA's speech when it sees it, then reads the line.
+-- Real SAPI voices skip the bookmark silently, and so does an unpatched
+-- bridge (measured in Sku, 2026-09-18).
+local INTERRUPT_MARK = '<bookmark mark="skuint"/>'
+local interruptNext = false
+
+local function handOver(text)
+    if interruptNext then
+        interruptNext = false
+        return text .. INTERRUPT_MARK
+    end
+    return text
+end
+
 local function pollQueue()
     if module.speaking then
         return
@@ -157,7 +178,7 @@ local function pollQueue()
     module.speaking = true
     module.current = item
     expectStart("queue")
-    oldSpeak(item.voice, item.text, item.rate, item.volume, true)
+    oldSpeak(item.voice, handOver(item.text), item.rate, item.volume, true)
 end
 
 local function enqueue(voice, text, rate, volume)
@@ -323,6 +344,10 @@ function module:speak(text, voice)
     -- the single switch: when on, this hits our queue; when off, Blizzard's
     -- original SpeakText runs directly. Busted here so both paths get it.
     text = WowVision.ttsCacheBust.bust(text)
+    if C_VoiceChat.SpeakText ~= queuedSpeak then
+        -- (without the queue this is the hand-over)
+        text = handOver(text)
+    end
     C_VoiceChat.SpeakText(voice or self.settings.voiceID, text, self.settings.speechRate, volume, false)
 end
 
@@ -356,6 +381,7 @@ function module:stop()
     end
     self.speaking = false
     self.current = nil
+    interruptNext = true
 end
 
 -- Whoever stops all speech: a stopped utterance never reports its end
