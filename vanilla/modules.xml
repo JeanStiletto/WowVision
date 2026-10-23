@@ -2,5 +2,10 @@
 ..\FrameXML\UI.xsd">
 
   <Script file="speech.lua" />
+  <!-- The surroundings (camelot/surroundings, the same module as on WoW:
+       Forever) with this client's data: the era folder of the
+       WowVision_Surroundings repository, exported from Classic Era. -->
+  <Include file="..\camelot\surroundings\modules.xml" />
+  <Include file="..\mapdata\WowVision_Surroundings\era\data.xml" />
 
 </Ui>

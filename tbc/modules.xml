@@ -11,5 +11,10 @@
   <Script file="lfg.lua" />
   <Script file="socketing.lua" />
   <Include file="auction\modules.xml" />
+  <!-- The surroundings (camelot/surroundings, the same module as on WoW:
+       Forever) with this client's data: the tbc folder of the
+       WowVision_Surroundings repository, exported from TBC Anniversary. -->
+  <Include file="..\camelot\surroundings\modules.xml" />
+  <Include file="..\mapdata\WowVision_Surroundings\tbc\data.xml" />
 
 </Ui>
