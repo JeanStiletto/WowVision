@@ -4,7 +4,9 @@ The surroundings module (`camelot/surroundings/`) describes where the player wal
 data prepared offline. The data is the repository
 [JeanStiletto/WowVision_Surroundings](https://github.com/JeanStiletto/WowVision_Surroundings), a
 git submodule at `mapdata/WowVision_Surroundings` (as `locale/` is): it is loaded as part of
-WowVision, `camelot/modules.xml` includes its `data.xml` after the module. It is generated from
+WowVision: each game version has its folder there, and its modules.xml includes that folder's
+`data.xml` after the module (`camelot/` `forever/data.xml`, `tbc/` `tbc/data.xml`, `vanilla/`
+`era/data.xml`). It is generated from
 the client's map files by the wv-surroundings tools (`tools/export.py`, stored by
 `tools/store.py`), one Lua file per zone. Each zone file registers its frame and its data as
 JSON text (`addZone`, on WowVision's own addon table); the module decodes and unpacks a zone only

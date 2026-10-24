@@ -339,11 +339,21 @@ local trailArea, trailSince = nil, 0
 local trailMap = nil
 local sessionLogged = false
 
+-- The game version the log was walked in ("2.5.6.70006", GetBuildInfo's version and build): the offline tools refuse a
+-- log of another version than the one they work on (wv-surroundings tools/clients.lua; user 2026-10-24: logs of one
+-- game version must never be taken for another's). Each game client keeps its own saved variables, so one label
+-- per log; written whenever the log is switched on and at every login while it is on.
+local function gameVersion()
+    local version, build = GetBuildInfo()
+    return version and (version .. "." .. tostring(build)) or nil
+end
+
 local function logStore()
     WowVisionDump = WowVisionDump or {}
     if type(WowVisionDump.surroundings) ~= "table" then
         WowVisionDump.surroundings = { entries = {}, trail = {} }
     end
+    WowVisionDump.surroundings.client = gameVersion()
     return WowVisionDump.surroundings
 end
 
@@ -1683,7 +1693,8 @@ module:hasUpdate(function(self)
     updateWords()
     if not sessionLogged and activeLog() then
         sessionLogged = true
-        logEntry("session", GetRealmName() .. ", " .. UnitName("player"), x, y)
+        activeLog().client = gameVersion()
+        logEntry("session", GetRealmName() .. ", " .. UnitName("player"), x, y, { client = gameVersion() })
     end
     local z = findZone(x, y, map)
     if z == nil then

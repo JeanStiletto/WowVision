@@ -28,9 +28,9 @@
   <Include file="legacy\modules.xml" />
   <Include file="surroundings\modules.xml" />
   <!-- The surroundings data (the WowVision_Surroundings repository as a
-       submodule): its zone and places list files register with the module
-       above. -->
-  <Include file="..\mapdata\WowVision_Surroundings\data.xml" />
+       submodule, its WoW: Forever folder): its zone and places list files
+       register with the module above. -->
+  <Include file="..\mapdata\WowVision_Surroundings\forever\data.xml" />
   <!-- Developer tool: checks the group health readback in game
        (/wv ghprobe). -->
   <Script file="groupHealthProbe.lua" />
