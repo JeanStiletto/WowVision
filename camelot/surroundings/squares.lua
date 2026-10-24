@@ -16,6 +16,7 @@ logic.BEGIN_MAX = 24 -- yd; a way meeting the square along a longer border runs 
 -- 78 squares, 2026-09-30: 21 real openings of streets, stairs, ramps and quays span 16 to 24 yd,
 -- the lane through the gate 18; the ways along a side start above 24)
 logic.ONWARD_CELLS = 24 -- cells of a way from its opening whose axis says where it leads on
+logic.TWO_WAY_SHARE = 0.25 -- share of those cells on each side of the opening for a way that leads both ways (onwardDirection)
 logic.ITEM_DIRS = 2 -- directions per thing while walking (a street meeting a square in five places)
 logic.HERE = 2 -- yd; closer than this a thing is "here", without a direction
 -- degrees between a climb's rise and the step from the square onto it: within this it goes up from
@@ -658,7 +659,11 @@ end
 -- opening (not the border's own direction: a mouth in a corner of the square has square cells
 -- south and west of it, and the lane through Stormwind's gate said "on to the southeast" while it
 -- runs north); without an axis, that direction itself, or `vx`, `vy` (from the square into the
--- opening) when the cells lie on the opening. An angle, or nil.
+-- opening) when the cells lie on the opening. An angle, or nil; nil too where the way runs on to both
+-- sides of the opening along its axis (TWO_WAY_SHARE of its first cells on each side): it passes the
+-- square there and leads both ways, so no one direction is true (TBC walk 2026-10-24 12:38:17: the
+-- Trade District's street beside the square by the stairs said "on to the south" or "on to the
+-- northeast", whichever side its name ended on first).
 local function onwardDirection(zone, region, mouth, vx, vy)
     -- a ramp or stairs leads on the way it goes from the square, up or down its own rise (the
     -- stairs past the landing by the auction house said "on to the west" going up to the north)
@@ -674,6 +679,7 @@ local function onwardDirection(zone, region, mouth, vx, vy)
     -- the axes of the cells by compass axis (4 bins), each bin with the sum of its doubled angles
     -- for the mean axis of the winning bin
     local votes, sinSum, cosSum, count, sx, sy = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 0, 0, 0
+    local centres = {}
     logic.flood(zone, mouth.cells, function(r, c, key)
         return not region.cells[key] and labelAtCell(zone, r, c, mouth) == mouth.label
     end, function(r, c)
@@ -686,6 +692,7 @@ local function onwardDirection(zone, region, mouth, vx, vy)
         end
         local cx, cy = logic.cellCentre(zone, r, c)
         sx, sy, count = sx + cx, sy + cy, count + 1
+        centres[#centres + 1] = { cx, cy }
         return count >= logic.ONWARD_CELLS
     end, nil, true)
     if count > 0 then
@@ -704,6 +711,20 @@ local function onwardDirection(zone, region, mouth, vx, vy)
     if best then
         local axis = (math.deg(math.atan2(sinSum[best], cosSum[best])) / 2) % 180
         local ax, ay = logic.compassVector(axis)
+        -- the way's cells on both sides of the opening along the axis: it leads both ways
+        local mx, my = mouthMiddle(zone, mouth)
+        local ahead, behind = 0, 0
+        for _, ce in ipairs(centres) do
+            local along = (ce[1] - mx) * ax + (ce[2] - my) * ay
+            if along > zone.cell then
+                ahead = ahead + 1
+            elseif along < -zone.cell then
+                behind = behind + 1
+            end
+        end
+        if #centres > 0 and math.min(ahead, behind) >= logic.TWO_WAY_SHARE * #centres then
+            return nil
+        end
         local len = math.sqrt(vx * vx + vy * vy)
         local along = len > 0 and (ax * vx + ay * vy) / len or 1
         -- the cells lie across the axis rather than along it (a bent lane from a corner mouth)
