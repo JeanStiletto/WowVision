@@ -14,7 +14,8 @@ local secrets = WowVision.secrets
 -- middle the page the side tabs pick, down the right side the tabs: Chat,
 -- Roster, Guild Benefits, Guild Info, Preferred Play (a row here, like every
 -- tab strip). The buttons along the bottom follow the page: Invite, Guild
--- Control, Guild Recruitment, Community Settings, View Log.
+-- Control, Guild Recruitment, Community Settings, View Log; then Maximize or
+-- Minimize.
 --
 -- Pages:
 -- - Chat: the channel dropdown, the latest messages, the chat box (the
@@ -140,7 +141,8 @@ local function addTexts(builder, frame, prefix)
     local index = 0
     local function walk(current)
         for _, region in ipairs({ current:GetRegions() }) do
-            if region:GetObjectType() == "FontString" and region:IsVisible() and speechText(region:GetText()) ~= nil then
+            local isText = region:GetObjectType() == "FontString" and region:IsVisible()
+            if isText and speechText(region:GetText()) ~= nil then
                 index = index + 1
                 local captured = region
                 builder:addItem(
@@ -440,15 +442,24 @@ end
 -- ---------------------------------------------------------------------------
 
 local FINDER_ENTRIES = {
-    { key = "setGuildFinder", label = function()
-        return COMMUNITIES_GUILD_FINDER
-    end },
-    { key = "setFindCommunity", label = function()
-        return COMMUNITY_FINDER_FIND_COMMUNITY
-    end },
-    { key = "setJoinCommunity", label = function()
-        return COMMUNITIES_JOIN_COMMUNITY
-    end },
+    {
+        key = "setGuildFinder",
+        label = function()
+            return COMMUNITIES_GUILD_FINDER
+        end,
+    },
+    {
+        key = "setFindCommunity",
+        label = function()
+            return COMMUNITY_FINDER_FIND_COMMUNITY
+        end,
+    },
+    {
+        key = "setJoinCommunity",
+        label = function()
+            return COMMUNITIES_JOIN_COMMUNITY
+        end,
+    },
 }
 
 local function finderEntry(data)
@@ -829,7 +840,8 @@ local function rewardLabel(index)
         else
             local faction = C_Reputation.GetGuildFactionData()
             if faction ~= nil and repLevel ~= nil and repLevel > faction.reaction then
-                requirement = format(REQUIRES_GUILD_FACTION, GetText("FACTION_STANDING_LABEL" .. repLevel, UnitSex("player")))
+                local standing = GetText("FACTION_STANDING_LABEL" .. repLevel, UnitSex("player"))
+                requirement = format(REQUIRES_GUILD_FACTION, standing)
             end
         end
         return join(itemName, cost, requirement)
@@ -862,14 +874,16 @@ local function renderBenefits(builder, frame)
             key = "rewards",
             label = GUILD_REWARDS_TITLE,
             rowLabel = function(data)
-                return rewardLabel(data.index)
+                local index = type(data) == "table" and data.index or data
+                return rewardLabel(index)
             end,
         })
     end
     for _, part in ipairs({ benefits.GuildAchievementPointDisplay, benefits.FactionFrame }) do
         if part ~= nil and part:IsShown() then
-            builder:beginStop("benefits:" .. tostring(part:GetParentKey()))
-            addTexts(builder, part, "benefits:" .. tostring(part:GetParentKey()) .. ":")
+            local key = "benefits:" .. tostring(part:GetParentKey())
+            builder:beginStop(key)
+            addTexts(builder, part, key .. ":")
         end
     end
 end
@@ -1052,8 +1066,14 @@ local function labelled(labelString, valueString)
     end
 end
 
-local function addNote(builder, key, background, labelString, noteString)
+-- noteKey names the note's font string on the background frame; it is
+-- looked up only once the background is known to be there.
+local function addNote(builder, key, background, labelString, noteKey)
     if background == nil or not background:IsShown() then
+        return
+    end
+    local noteString = background[noteKey]
+    if noteString == nil then
         return
     end
     builder:beginStop(key)
@@ -1086,27 +1106,27 @@ local function renderMemberDetail(builder, screen)
     builder:pushContext("memberDetail", fontText(card.Name))
     builder:beginStop("memberDetail:info")
     addFontLine(builder, "memberDetail:level", card.Level)
-    builder:addItem(ControlId.structural("memberDetail:zone"), nodes.text({ label = labelled(card.ZoneLabel, card.ZoneText) }))
+    builder:addItem(
+        ControlId.structural("memberDetail:zone"),
+        nodes.text({ label = labelled(card.ZoneLabel, card.ZoneText) })
+    )
     if card.RankDropdown ~= nil and card.RankDropdown:IsShown() then
         -- The dropdown shows the rank; the label names it.
         addDropdown(builder, card.RankDropdown, function()
             return join(plainText(card.RankLabel:GetText()), plainText(nodes.frameText(card.RankDropdown)()))
         end)
     else
-        builder:addItem(ControlId.structural("memberDetail:rank"), nodes.text({ label = labelled(card.RankLabel, card.RankText) }))
+        builder:addItem(
+            ControlId.structural("memberDetail:rank"),
+            nodes.text({ label = labelled(card.RankLabel, card.RankText) })
+        )
     end
     builder:addItem(
         ControlId.structural("memberDetail:online"),
         nodes.text({ label = labelled(card.OnlineLabel, card.OnlineText) })
     )
-    addNote(builder, "memberDetail:note", card.NoteBackground, card.NoteLabel, card.NoteBackground.PersonalNoteText)
-    addNote(
-        builder,
-        "memberDetail:officerNote",
-        card.OfficerNoteBackground,
-        card.OfficerNoteLabel,
-        card.OfficerNoteBackground.OfficerNoteText
-    )
+    addNote(builder, "memberDetail:note", card.NoteBackground, card.NoteLabel, "PersonalNoteText")
+    addNote(builder, "memberDetail:officerNote", card.OfficerNoteBackground, card.OfficerNoteLabel, "OfficerNoteText")
     addProxy(builder, card.RemoveButton, "memberDetail:remove")
     addProxy(builder, card.GroupInviteButton, "memberDetail:invite")
     addProxy(builder, card.CloseButton, "memberDetail:close", CLOSE)
@@ -1137,8 +1157,8 @@ local function renderTextEdit(builder, screen)
     end
     local title = fontText(frame.Title)
     builder:pushContext("guildTextEdit", title)
-    local editBox = frame.Container ~= nil and frame.Container.ScrollFrame ~= nil and frame.Container.ScrollFrame.EditBox
-        or nil
+    local scrollFrame = frame.Container ~= nil and frame.Container.ScrollFrame or nil
+    local editBox = scrollFrame ~= nil and scrollFrame.EditBox or nil
     if editBox ~= nil then
         builder:beginStop("guildTextEdit:text")
         local vtable = nodes.proxyEditBox({ editBox = editBox, label = title })
@@ -1164,36 +1184,27 @@ module:registerWindow({
 -- demoted, removed or left, newest first, the lines the log shows.
 -- ---------------------------------------------------------------------------
 
+-- Each takes the two players and the rank, as many as its text uses
+-- (format ignores the rest).
 local EVENT_FORMATS = {
-    invite = function(a, b)
-        return format(GUILDEVENT_TYPE_INVITE, a, b)
-    end,
-    join = function(a)
-        return format(GUILDEVENT_TYPE_JOIN, a)
-    end,
-    promote = function(a, b, rank)
-        return format(GUILDEVENT_TYPE_PROMOTE, a, b, rank)
-    end,
-    demote = function(a, b, rank)
-        return format(GUILDEVENT_TYPE_DEMOTE, a, b, rank)
-    end,
-    remove = function(a, b)
-        return format(GUILDEVENT_TYPE_REMOVE, a, b)
-    end,
-    quit = function(a)
-        return format(GUILDEVENT_TYPE_QUIT, a)
-    end,
+    invite = GUILDEVENT_TYPE_INVITE,
+    join = GUILDEVENT_TYPE_JOIN,
+    promote = GUILDEVENT_TYPE_PROMOTE,
+    demote = GUILDEVENT_TYPE_DEMOTE,
+    remove = GUILDEVENT_TYPE_REMOVE,
+    quit = GUILDEVENT_TYPE_QUIT,
 }
 
 local function eventLine(index)
     return safeLabel(function()
         local eventType, player1, player2, rank, year, month, day, hour = GetGuildEventInfo(index)
-        local formatter = EVENT_FORMATS[eventType]
-        if formatter == nil then
+        local eventFormat = EVENT_FORMATS[eventType]
+        if eventFormat == nil then
             return nil
         end
-        local text = formatter(player1 or UNKNOWN, player2 or UNKNOWN, rank)
-        return join(text, plainText(format(GUILD_BANK_LOG_TIME, TimeUtil.GetRecentTimeDate(year, month, day, hour))))
+        local text = format(eventFormat, player1 or UNKNOWN, player2 or UNKNOWN, rank or "")
+        local when = format(GUILD_BANK_LOG_TIME, TimeUtil.GetRecentTimeDate(year, month, day, hour))
+        return join(text, plainText(when))
     end, nil)
 end
 

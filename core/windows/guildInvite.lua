@@ -38,12 +38,15 @@ local function render(builder, screen)
     addLine(builder, "invite", GuildInviteFrameInviteText)
     addLine(builder, "guild", GuildInviteFrameGuildName)
     local points = frame.Points
-    if points ~= nil and points:IsShown() and points.Text ~= nil then
+    if points ~= nil and points:IsShown() and points.Title ~= nil and points.Text ~= nil then
         builder:addItem(
             ControlId.structural("guildInvite:points"),
             nodes.text({
                 label = function()
-                    return nodes.joinLabel(nodes.plainText(points.Title:GetText()), nodes.plainText(points.Text:GetText()))
+                    return nodes.joinLabel(
+                        nodes.plainText(points.Title:GetText()),
+                        nodes.plainText(points.Text:GetText())
+                    )
                 end,
             })
         )
