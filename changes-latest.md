@@ -19,6 +19,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * Added the /wv speech command to quickly adjust your speech settings. The syntax is /wv speech voiceID rate volume, for example /wv speech 1 8 100. Note: your first voice has ID 0.
 * The first time a character logs in with WowVision, the game's Lock Action Bars setting is turned off, so dragging spells and items off your action bars works without holding the pick up key. This happens once per character; if you lock the bars again in the game options, they stay locked.
 * Buffers: Alt+Down now moves toward the newest item in a buffer and Alt+Up toward the first. A new Invert Item Direction setting in the Buffers menu swaps the two keys back for anyone used to the old way.
+* Added the Aura buffer type: the buffs and debuffs on the player, target, focus or pet in any combination (the Sources setting), every one the game knows about. Each aura reads its name, stacks, time remaining with the total duration, and for debuffs the dispel type. Only My Auras keeps the ones you cast. Built to work on Retail in combat and in instances, where the game closes its aura list to addons: there each aura is read from its tooltip, name and time remaining, as the game formats it.
 * Added two Speech toggles for the game's own text-to-speech sounds (/tts playline and /tts playactivity). The sound between chat lines is turned off once per character.
 * The Speech Voice is now saved by the voice's name instead of its number, so installing or removing Windows voices no longer switches you to a different voice; an existing setting keeps the voice it meant. Every TTS alert gained a Voice setting of its own, following the Speech Voice until you pick one, and the minimap walking announcements choose their voice the same way.
 * Shift-F12 cancels the active route or beacon.
@@ -56,6 +57,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 * Fixed health and power in buffers going silent when read a second time.
 * Fixed the Speech Queue setting being ignored.
 * Added the chat channels window: the channel list under its headers (Enter selects a channel, Enter on a header folds it, Backspace opens the channel menu), the members of the selected channel with owner, moderator and offline (Backspace opens the player menu), Add, Settings and the new channel box. Shift click on a channel name in the chat reader opens it. The voice buttons are not read yet.
+* Added the Cooldown Manager Auras monitor, the first combat alert built for the secrets: for each aura in your cooldown manager's Tracked Buffs and Tracked Bars, alerts when it is applied, enters its pandemic window or drops off your target or yourself, read from what Blizzard's cooldown manager shows, so it works in combat and in instances where aura data is closed to addons. A Speak Tracked Auras key reads the time left and stacks of every tracked aura as the game draws them. The rule's Spell picker lists the auras in your Tracked Buffs and Tracked Bars. When a tracked aura expires in its pandemic window the rule goes straight to Missing, instead of a flash of Applied while the game catches up. The monitors framework now loads on Retail and WoW: Forever as well.
 * Added the Social window, which the friends key opens where the game turns it on (WoW Forever does, replacing the old friends list): the Battle.net bar with your BattleTag, status and menu; the Friends, Friend Requests, Recent Allies and Quick Join pages with search, filter and the list under collapsible headers (Enter selects a card, Backspace opens its menu, invite, summon, accept and decline in its context menu); the Raid page with role counts and groups; the ignore list, broadcast, raid info and Add Friend windows. Built on WoW Forever; Retail loads it too but has not been tested there. Recruit a Friend and moving raid members between groups are not read yet.
 
 #### Forever
@@ -76,10 +78,13 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 ### Classic
 * Fixed a bug where edit fields for spell IDs (for example in monitors) would behave extremely inconsistently and often not actually set the spell ID correctly.
 * Added initial support for the social tab, including friends, ignore, and the who list.
+* The guild tab of the friends window (the classic guild window): the message of the day, the roster with level, class, zone or last online, rank and note, Show Offline, the column view and sort headers, Add Member, Guild Control and Guild Information. The member card, the guild information, the event log and guild control (ranks, permissions, guild bank tabs) are windows of their own.
 
 #### The Burning Crusade Classic
 * Updated the TBC speech module to use the retail speech module. Speech output for TBC works again.
 * Implemented Sku's pathfinding data into TBC Anniversary. You can pathfind using f10. Note: pathfinding to scanner entries is not yet supported.
+* Added the craft window, used by Enchanting and the hunter's Beast Training: the skill bar, the filters, the craft list, the details with reagents, and the Enchant or Train button.
+* Added the hunter's stable: the selected pet, the current pet and stable slots, buying a slot. Enter on a slot selects it or puts down the pet you picked up; Drag in a slot's context menu picks the pet up.
 
 #### Mists of Pandaria Classic
 * Fixed a number of issues with the mounts tab of the collections pane.
