@@ -78,6 +78,7 @@ This is a massive refactor of the codebase thanks to Claude Fable 5. The UI has 
 ### Classic
 * Fixed a bug where edit fields for spell IDs (for example in monitors) would behave extremely inconsistently and often not actually set the spell ID correctly.
 * Added initial support for the social tab, including friends, ignore, and the who list.
+* The guild tab of the friends window (the classic guild window, which TBC Anniversary uses): the message of the day, the roster with level, class, zone or last online, rank and note, Show Offline, the column view and sort headers, Add Member, Guild Control and Guild Information. The member card, the guild information, the event log and guild control (ranks, permissions, guild bank tabs) are windows of their own.
 
 #### The Burning Crusade Classic
 * Updated the TBC speech module to use the retail speech module. Speech output for TBC works again.
