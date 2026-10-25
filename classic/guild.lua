@@ -51,6 +51,20 @@ local function addProxy(builder, button, key, label)
     end
 end
 
+-- The buttons that show, as one row.
+local function addButtonRow(builder, buttons)
+    builder:startRow()
+    for _, button in ipairs(buttons) do
+        if button ~= nil and button:IsShown() then
+            local vtable = nodes.proxyButton({ target = button })
+            if vtable ~= nil then
+                builder:addItem(ControlId.forObject(button), vtable)
+            end
+        end
+    end
+    builder:endRow()
+end
+
 local function addCheck(builder, button, label)
     if button == nil or not button:IsShown() then
         return
@@ -86,14 +100,6 @@ local function memberCount()
         return total or 0
     end
     return online or 0
-end
-
-local function memberName(index)
-    local fullName = GetGuildRosterInfo(index)
-    if fullName == nil then
-        return nil
-    end
-    return Ambiguate(fullName, "guild")
 end
 
 local function memberId(index)
@@ -177,17 +183,11 @@ end
 local function renderSortHeaders(builder)
     local prefix = playerView() and "GuildFrameColumnHeader" or "GuildFrameGuildStatusColumnHeader"
     builder:pushContext("sort", L["Sort"])
-    builder:startRow()
+    local headers = {}
     for i = 1, 4 do
-        local header = _G[prefix .. i]
-        if header ~= nil and header:IsVisible() then
-            local vtable = nodes.proxyButton({ target = header })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(header), vtable)
-            end
-        end
+        tinsert(headers, _G[prefix .. i])
     end
-    builder:endRow()
+    addButtonRow(builder, headers)
     builder:popContext()
 end
 
@@ -255,21 +255,12 @@ function friends.renderGuild(builder, screen)
         end
     end
     renderSortHeaders(builder)
-    builder:startRow()
-    for _, button in ipairs({
+    addButtonRow(builder, {
         GuildFrameAddMemberButton,
         GuildFrameControlButton,
         GuildFrameGuildInformationButton,
         GuildFrameImpeachButton,
-    }) do
-        if button ~= nil and button:IsShown() then
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-    end
-    builder:endRow()
+    })
     builder:popContext()
 end
 
@@ -337,14 +328,7 @@ local function renderMemberDetail(builder, screen)
     )
     if GuildFramePromoteButton:IsShown() then
         builder:beginStop("memberDetail:rankButtons")
-        builder:startRow()
-        for _, button in ipairs({ GuildFramePromoteButton, GuildFrameDemoteButton }) do
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-        builder:endRow()
+        addButtonRow(builder, { GuildFramePromoteButton, GuildFrameDemoteButton })
     end
     addNote(builder, "memberDetail:note", GuildMemberNoteBackground, GuildMemberDetailNoteLabel, PersonalNoteText)
     addNote(
@@ -355,16 +339,7 @@ local function renderMemberDetail(builder, screen)
         OfficerNoteText
     )
     builder:beginStop("memberDetail:buttons")
-    builder:startRow()
-    for _, button in ipairs({ GuildMemberRemoveButton, GuildMemberGroupInviteButton }) do
-        if button:IsShown() then
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-    end
-    builder:endRow()
+    addButtonRow(builder, { GuildMemberRemoveButton, GuildMemberGroupInviteButton })
     addProxy(builder, GuildMemberDetailCloseButton, "memberDetail:close", CLOSE)
     builder:popContext()
 end
@@ -409,16 +384,7 @@ local function renderGuildInfo(builder, screen)
         )
     end
     builder:beginStop("guildInfo:buttons")
-    builder:startRow()
-    for _, button in ipairs({ GuildInfoSaveButton, GuildInfoCancelButton, GuildInfoGuildEventButton }) do
-        if button ~= nil and button:IsShown() then
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-    end
-    builder:endRow()
+    addButtonRow(builder, { GuildInfoSaveButton, GuildInfoCancelButton, GuildInfoGuildEventButton })
     addProxy(builder, GuildInfoCloseButton, "guildInfo:close", CLOSE)
     builder:popContext()
 end
@@ -519,16 +485,7 @@ local function renderGuildControl(builder, screen)
         end
     end
     addEditBox(builder, GuildControlPopupFrameEditBox, L["Rank Name"])
-    builder:startRow()
-    for _, button in ipairs({ GuildControlPopupFrameAddRankButton, GuildControlPopupFrameRemoveRankButton }) do
-        if button ~= nil and button:IsShown() then
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-    end
-    builder:endRow()
+    addButtonRow(builder, { GuildControlPopupFrameAddRankButton, GuildControlPopupFrameRemoveRankButton })
     builder:popContext()
 
     builder:beginStop("guildControl:permissions")
@@ -543,11 +500,9 @@ local function renderGuildControl(builder, screen)
     for _, checkbox in ipairs(checkboxes) do
         addCheck(builder, checkbox)
     end
-    if GuildControlWithdrawGoldEditBox ~= nil and GuildControlWithdrawGoldEditBox:IsVisible() then
-        addEditBox(builder, GuildControlWithdrawGoldEditBox, function()
-            return nodes.joinLabel(GuildControlWithdrawGoldText:GetText(), GuildControlWithdrawGoldAmountText:GetText())
-        end)
-    end
+    addEditBox(builder, GuildControlWithdrawGoldEditBox, function()
+        return nodes.joinLabel(GuildControlWithdrawGoldText:GetText(), GuildControlWithdrawGoldAmountText:GetText())
+    end)
     builder:popContext()
 
     if GuildControlPopupFrameTabPermissions ~= nil and GuildControlPopupFrameTabPermissions:IsVisible() then
@@ -597,16 +552,7 @@ local function renderGuildControl(builder, screen)
     end
 
     builder:beginStop("guildControl:buttons")
-    builder:startRow()
-    for _, button in ipairs({ GuildControlPopupAcceptButton, GuildControlPopupFrameCancelButton }) do
-        if button ~= nil and button:IsShown() then
-            local vtable = nodes.proxyButton({ target = button })
-            if vtable ~= nil then
-                builder:addItem(ControlId.forObject(button), vtable)
-            end
-        end
-    end
-    builder:endRow()
+    addButtonRow(builder, { GuildControlPopupAcceptButton, GuildControlPopupFrameCancelButton })
     builder:popContext()
 end
 

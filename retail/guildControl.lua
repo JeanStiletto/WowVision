@@ -23,7 +23,7 @@ local fontText = nodes.fontText
 
 local function addProxy(builder, button, stopKey, label)
     if button == nil then
-        return nil
+        return
     end
     local vtable = nodes.proxyButton({ target = button, label = label })
     if vtable ~= nil then
@@ -32,7 +32,6 @@ local function addProxy(builder, button, stopKey, label)
         end
         builder:addItem(ControlId.forObject(button), vtable)
     end
-    return vtable
 end
 
 local function addCheck(builder, check, label, scrollFrame)
@@ -113,8 +112,9 @@ local function renderRankOrder(builder, page)
         end
     end
     builder:popContext()
+    -- No Duplicate Rank: Blizzard never shows page.dupButton (its Show is
+    -- commented out in Blizzard_GuildControlUI.lua).
     addProxy(builder, page.newButton, "newRank")
-    addProxy(builder, page.dupButton, "dupRank")
 end
 
 -- Rank Permissions page: the check boxes in the order the page shows them
@@ -125,7 +125,8 @@ local BANK_PERMISSION_ORDER = { 15, 19, 16 }
 
 local function renderRankPermissions(builder, page)
     addRankDropdown(builder, page.dropdown)
-    local prefix = page:GetName() .. "Checkbox"
+    local pageName = page:GetName()
+    local prefix = pageName .. "Checkbox"
 
     builder:beginStop("officer")
     addCheck(builder, page.OfficerCheckbox)
@@ -148,7 +149,7 @@ local function renderRankPermissions(builder, page)
     end
     builder:popContext()
 
-    local bankLabel = _G[page:GetName() .. "BankLabel"]
+    local bankLabel = _G[pageName .. "BankLabel"]
     if bankLabel ~= nil and bankLabel:IsShown() then
         builder:beginStop("bankPermissions")
         builder:pushContext("bankPermissions", plainText(bankLabel:GetText()) or GUILD_BANK)
@@ -208,7 +209,8 @@ local function renderDiscord(builder, page)
     local index = 0
     local function walk(frame)
         for _, region in ipairs({ frame:GetRegions() }) do
-            if region:GetObjectType() == "FontString" and region:IsVisible() and plainText(region:GetText()) ~= nil then
+            local isText = region:GetObjectType() == "FontString" and region:IsVisible()
+            if isText and plainText(region:GetText()) ~= nil then
                 index = index + 1
                 builder:addItem(ControlId.structural("discord:text:" .. index), nodes.text({ label = fontText(region) }))
             end
