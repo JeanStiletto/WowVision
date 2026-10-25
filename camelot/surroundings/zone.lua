@@ -194,9 +194,17 @@ function logic.expandDirs(zone, text)
             angles[#angles + 1] = tonumber(a)
         end
         table.sort(angles)
+        -- one word said once: two arms 13 degrees apart are two compass words but one clock hour
+        -- ("Die große Schmiede auf 5, 5 und 9", walk 2026-10-24 16:41:27)
         local words = {}
         for _, a in ipairs(angles) do
-            words[#words + 1] = logic.dirWord(zone, a)
+            local w = logic.dirWord(zone, a)
+            if w ~= words[#words] then
+                words[#words + 1] = w
+            end
+        end
+        if #words > 1 and words[#words] == words[1] then
+            words[#words] = nil
         end
         return string.format(template, logic.joinWords(words))
     end))

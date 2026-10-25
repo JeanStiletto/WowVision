@@ -3134,6 +3134,9 @@ testRunner:addSuite("Surroundings", {
             t:assertEqual(logic.axisKey(170), 0)
             -- a label with its directions as angles, clockwise from north
             t:assertEqual(logic.finishText(logic.expandDirs(z, "fork, Test road <d120,45,350>")), "fork, Test road at 2, 4 and 12 o'clock")
+            -- two arms of one hour are said once (two compass words, one hour: Ironforge, walk 2026-10-24)
+            t:assertEqual(logic.finishText(logic.expandDirs(z, "crossing, Test hall <d277,149,162>")), "crossing, Test hall at 5 and 9 o'clock")
+            t:assertEqual(logic.finishText(logic.expandDirs(z, "fork, Test road <d355,5,90>")), "fork, Test road at 12 and 3 o'clock")
         end)
         logic.clock = false
         t:assertEqual(logic.sameDir(100, 110), true)        -- both east
