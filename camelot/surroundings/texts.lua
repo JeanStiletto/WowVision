@@ -809,6 +809,17 @@ end
 -- place's own stored nearest road is then left out of its name). Not on a bridge either: it has a
 -- way at each end, and its direction and edges are what counts there (user 2026-10-10: "I know
 -- there must be one street at my back and one in front while I follow the bridge's centre line").
+-- A ramp's or stairs' way is said by its own name, not as a street (bug 7: "Library Wing, street to the
+-- northwest" beside the Abbey library's ramp; "tower, street to the north", "hut, street to the east"); quays and
+-- walks stay "street". The name of the climb whose way (`kind`, cell or line `value`) lies beside, or nil.
+local function climbBeside(zone, kind, value)
+    if not logic.CLIMBS[kind] then
+        return nil
+    end
+    local p = logic.place(zone, logic.placeOf(value))
+    return p and logic.expandDirs(zone, p.label) or nil
+end
+
 local function radiusParts(zone, x, y, kind, previous, opts)
     local parts, beside = {}, false
     local wasWay = logic.LANE_KINDS[logic.kind(zone, logic.keyPlace(previous))]
@@ -819,18 +830,15 @@ local function radiusParts(zone, x, y, kind, previous, opts)
         local ld, lane, lx, ly = logic.nearestLane(zone, x, y, ROAD_SIDE_REACH, logic.LANE_KINDS)
         if ld then
             d, dir, street = ld, logic.bearingOf(lx - x, ly - y), not logic.ROADS[lane.kind]
-            if logic.CLIMBS[lane.kind] then
-                -- a ramp's or stairs' line is said by its own name: it was "street" (bug 7:
-                -- "Library Wing, street to the northwest" beside the Abbey library's ramp; "tower,
-                -- street to the north", "hut, street to the east"); quays and walks stay "street"
-                local p = logic.place(zone, logic.placeOf(lane.value))
-                name = p and logic.expandDirs(zone, p.label) or nil
-            end
+            name = climbBeside(zone, lane.kind, lane.value)
         else
             d, dir = logic.nearestOfKinds(zone, x, y, logic.ROADS, ROAD_SIDE_REACH)
-            local sd, sdir = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
+            local sd, sdir, sv = logic.nearestOfKinds(zone, x, y, STREETS, ROAD_SIDE_REACH)
             if sd and (d == nil or sd < d) then
+                -- (a climb's line counts only on its own piece: stepped off a ramp onto the floor beside it, its
+                -- cells are found here, and the ramp was said "street", bug 118, Hall of Mysteries 2026-10-26)
                 d, dir, street = sd, sdir, true
+                name = sv and climbBeside(zone, logic.kindOf(zone, sv), sv)
             end
         end
         if d and name then

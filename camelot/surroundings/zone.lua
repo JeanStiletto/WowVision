@@ -461,16 +461,16 @@ function logic.nearestCell(zone, x, y, cells, reach, accept)
     return best, bx, by, bv
 end
 
--- The nearest cell within `reach` yards whose place kind is in `kinds`: distance and the angle
--- toward it (from the cell centres), or nil.
+-- The nearest cell within `reach` yards whose place kind is in `kinds`: distance, the angle
+-- toward it (from the cell centres) and the cell's value, or nil.
 function logic.nearestOfKinds(zone, x, y, kinds, reach)
-    local d, cx, cy = logic.nearestCell(zone, x, y, math.ceil(reach / zone.cell), reach, function(v)
+    local d, cx, cy, v = logic.nearestCell(zone, x, y, math.ceil(reach / zone.cell), reach, function(v)
         return kinds[logic.kindOf(zone, v)]
     end)
     if d == nil then
         return nil
     end
-    return d, logic.bearingOf(cx - x, cy - y)
+    return d, logic.bearingOf(cx - x, cy - y), v
 end
 
 logic.STEPS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } -- a cell's four neighbours

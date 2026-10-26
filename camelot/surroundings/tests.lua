@@ -2904,6 +2904,21 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.spotText(z, 92, 57, 10000, nil, { cut = true }), "grass")
     end,
 
+    ["off a ramp whose line is not found its cells say the ramp, not a street"] = function(t)
+        -- (bug 118: a climb's line counts only on its piece; on the floor beside the ramp the way's cells
+        -- were found and said "street", the Hall of Mysteries 2026-10-26)
+        local z = newWalkZone()
+        z.places = { { "grass", "grass" }, { "ramp", "ramp to the bank" } }
+        z.lanes = {}
+        logic.unpack(z)
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, logic.outdoorKey(z, 21000), { cut = true }), "grass, ramp to the bank to the east")
+        -- a walk's cells stay "street"
+        z.places[2] = { "canal walk", "canal walk" }
+        logic.pack(z)
+        logic.unpack(z)
+        t:assertEqual(logic.spotText(z, 92, 57, 10000, logic.outdoorKey(z, 21000), { cut = true }), "grass, street to the east")
+    end,
+
     ["on a bridge the street beside is not said"] = function(t)
         local z = newWalkZone()
         z.places[1] = { "bridge", "bridge" }
