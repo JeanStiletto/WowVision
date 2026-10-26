@@ -386,12 +386,14 @@ function logic.atClimbTop(zone, placeId)
     local ix = zone._index
     local floor = ix.floor or 0
     local own = ix.placePieces[placeId] or {}
-    -- the data's top records (since trial L4): a top of that climb on this floor
+    local feet = ix.footFloors and ix.footFloors[placeId]
+    -- the data's top records (since trial L4): a top of that climb on this floor, and none of its feet (a climb with
+    -- its foot and its top on one floor piece, the huts' stairs onto a ground that runs on inside: from that floor
+    -- the step onto it tells, riseFrom; STATE bug 113)
     if ix.climbTops then
         local tops = ix.topFloors[placeId]
-        return tops ~= nil and tops[floor] == true and not own[floor]
+        return tops ~= nil and tops[floor] == true and not own[floor] and not (feet and feet[floor])
     end
-    local feet = ix.footFloors and ix.footFloors[placeId]
     if feet == nil or feet[floor] or own[floor] then
         return false
     end
