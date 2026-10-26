@@ -415,6 +415,94 @@ local function joinedClimbMouths(zone, region, cells, floors)
     end
 end
 
+-- A ramp or stairs is offered from a square only at its own end there: its foot going up, its top going down (the
+-- end records, data since trial L4), never along its side (STATE bug 114: every stretch of border between the
+-- square's floor and a climb was an opening, its sides too; in Ironforge's halls 164 of 430 openings lay over 3 yd
+-- from the climb's foot or top, and on a strip beside the Hall of Mysteries' ramp the module said "at the ramp, on to
+-- the west" 6 yd from its foot, the strip running on parallel below it, walk 2026-10-25 17:59). A climb with an end
+-- on the square keeps the openings at it, one is made there where the border found none; a climb with ends elsewhere
+-- only is no opening from this square. An opening the data has no end of that kind for stays as before (up: no foot
+-- record, down: no top record, along the side: not both; data without tops: all): the stairs down from the Kharanos
+-- hut to its cellar have no top record, their border by the top was their only opening; the shop ledges in
+-- Stormwind with a foot record only are met "along" from the ledge. An end is on the square where it stands on one
+-- of its floors within END_REACH of its cells (the Command Center's ramp foot, 4 yd beyond the square's last cell).
+logic.CLIMB_END_OPENINGS = true
+logic.END_REACH = 6 -- yd
+
+-- The places of the climbs that have end records, per kind ("up" a foot, "down" a top; cached on the index).
+local function climbsWithEnds(zone)
+    local ix = zone._index
+    if ix.climbEndPlaces == nil then
+        local set = { up = {}, down = {} }
+        for _, e in ipairs({ { ix.climbFeet, "up" }, { ix.climbTops, "down" } }) do
+            for _, f in ipairs(e[1] or {}) do
+                set[e[2]][logic.placeOf(f.value)] = true
+            end
+        end
+        ix.climbEndPlaces = set
+    end
+    return ix.climbEndPlaces
+end
+
+local function climbEndOpenings(zone, region, cells, floors)
+    local ix = zone._index
+    if not logic.CLIMB_END_OPENINGS or not ix.climbTops then
+        return
+    end
+    local withEnds = climbsWithEnds(zone)
+    local cols = zone.cols
+    -- the climbs' end records on the square: on one of its floors, in or right beside its cells
+    local ends = {}
+    for _, e in ipairs({ { ix.climbFeet, "up" }, { ix.climbTops, "down" } }) do
+        for _, f in ipairs(e[1] or {}) do
+            if floors[f.floor or 0] then
+                local r, c = logic.cellOf(zone, f.x, f.y)
+                local k, near = math.ceil(logic.END_REACH / zone.cell), false
+                for dr = -k, k do
+                    for dc = -k, k do
+                        if not near and cells[(r + dr) * cols + c + dc] then
+                            local cx, cy = logic.cellCentre(zone, r + dr, c + dc)
+                            near = logic.dist(cx, cy, f.x, f.y) <= logic.END_REACH + zone.cell / 2
+                        end
+                    end
+                end
+                if near then
+                    ends[#ends + 1] = { f = f, rise = e[2], place = logic.placeOf(f.value) }
+                end
+            end
+        end
+    end
+    local kept, dropped = {}, {}
+    for _, m in ipairs(region.mouths) do
+        local place = m.class == "way" and m.value and logic.CLIMBS[logic.kindOf(zone, m.value)] and logic.placeOf(m.value)
+        local has = place and (m.rise and withEnds[m.rise][place] or not m.rise and withEnds.up[place] and withEnds.down[place])
+        if has and not m.endRecord then
+            dropped[place] = dropped[place] or m
+        else
+            kept[#kept + 1] = m
+        end
+    end
+    -- an end on the square no kept opening stands at: an opening there, named and valued like the climb's border
+    for _, e in ipairs(ends) do
+        local have = false
+        for _, m in ipairs(kept) do
+            if m.endRecord and m.value and logic.placeOf(m.value) == e.place and m.rise == e.rise then
+                for k = 1, #m.points - 1, 2 do
+                    if m.points[k] == e.f.x and m.points[k + 1] == e.f.y then
+                        have = true
+                    end
+                end
+            end
+        end
+        local like = dropped[e.place]
+        if not have and like then
+            kept[#kept + 1] = { label = like.label, class = like.class, spoken = like.spoken, value = like.value,
+                piece = like.piece, cells = like.cells, rise = e.rise, points = { e.f.x, e.f.y }, endRecord = true }
+        end
+    end
+    region.mouths = kept
+end
+
 -- The squares found so far on the floor piece the player is on (per cell key), kept per floor piece: stepping
 -- back onto a floor finds its places again with what was said there (a fresh flood at every hop said the
 -- stairs twice). Filed by the floor itself, whatever set it: a login put the player on the bell tower's floor
@@ -487,6 +575,7 @@ function logic.regionAt(zone, x, y)
         mouths = findMouths(zone, cells, list, floors, logic.placeOf(value)),
     }
     joinedClimbMouths(zone, region, cells, floors)
+    climbEndOpenings(zone, region, cells, floors)
     if ix.covered then
         region.mouths = doorMouths(zone, region)
     end
