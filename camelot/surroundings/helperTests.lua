@@ -116,10 +116,16 @@ testRunner:addSuite("Surroundings building helper", {
         local z = stairsZone()
         -- 2 yd north of the middle stretch, 0.5 yd before its end, facing west (+y): to the next turn's far end
         facesToward(t, logic.climbLineFacing(z, 1, 95, 53.5, math.pi / 2), 95, 53.5, 89, 54, "on along the line")
-        -- facing east (-y): back down, to the turn below
-        facesToward(t, logic.climbLineFacing(z, 1, 95, 53.5, -math.pi / 2), 95, 53.5, 93, 50, "down the line")
+        -- facing east (-y): back down; 2 yd beside the line the aim lies 4 yd on (bug 123), past the turn below to the foot
+        facesToward(t, logic.climbLineFacing(z, 1, 95, 53.5, -math.pi / 2), 95, 53.5, 97, 50, "down the line")
+        -- 0.5 yd beside it: LANE_AHEAD on, the turn below
+        facesToward(t, logic.climbLineFacing(z, 1, 93.5, 53.5, -math.pi / 2), 93.5, 53.5, 93, 50, "down, near the line")
         -- at the landing's join, facing on to it: nothing ahead, the line's rule
         t:assertNil(logic.climbLineFacing(z, 1, 88.5, 54, math.pi))
+        -- (bug 123) at the foot facing square across, a little toward the foot: away from it, up the line
+        facesToward(t, logic.climbLineFacing(z, 1, 96.5, 51, math.pi / 2 - 0.2), 96.5, 51, 93, 50, "square across at the foot")
+        -- facing the foot: toward it, the point within reach there (the line's rule then)
+        t:assertNil(logic.climbLineFacing(z, 1, 96.5, 51, 0))
         -- not on a climb with a line
         t:assertNil(logic.climbLineFacing(z, 2, 91, 53.5, 0))
         t:assertNil(logic.climbLineFacing(z, 0, 91, 53.5, 0))

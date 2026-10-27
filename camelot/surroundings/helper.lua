@@ -522,14 +522,16 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
     if #points == 0 then
         return nil
     end
-    -- the player's point on the line, where the route sets out from (the turn key's climbLineFacing)
+    -- the player's point on the line, where the route sets out from, and the way its stretch runs toward the end
+    -- faced (the turn key's climbLineFacing)
     local a, b = line[bestK], line[math.min(bestK + 1, #line)]
     local from = { x = a.x + bestT * (b.x - a.x), y = a.y + bestT * (b.y - a.y) }
+    local along = forward and math.atan2(b.y - a.y, b.x - a.x) or math.atan2(a.y - b.y, a.x - b.x)
     local first = forward and line[1] or line[#line]
     -- with end records: on through the staircase to the end faced, onto its floor
     if zone._index.climbTops then
         local route = throughStaircase(zone, points, piece, { [piece] = true }, nil)
-        route.from = from
+        route.from, route.along = from, along
         return route
     end
     local top = points[#points]
@@ -537,7 +539,17 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
     if landing then
         onto(points, jx, jy)
     end
-    return { points = points, piece = piece, landing = landing, short = landing == nil, from = from }
+    return { points = points, piece = piece, landing = landing, short = landing == nil, from = from, along = along }
+end
+
+-- yd along a climb route from the player's point on the line to its last point
+local function routeLength(route)
+    local px, py, n = route.from.x, route.from.y, 0
+    for _, p in ipairs(route.points) do
+        n = n + dist(px, py, p.x, p.y)
+        px, py = p.x, p.y
+    end
+    return n
 end
 
 -- The turn key on a climb with a line of its own (STATE bug 116, user 2026-10-27: "make it follow the Alt-I line"):
@@ -546,8 +558,16 @@ end
 -- more on along it from the player's point on the line, else its last. The line's own rule aimed LANE_AHEAD on along
 -- the stretch under the player only, held at the stretch's end: on Ironforge's wide ramp in the Hall of Mysteries,
 -- 4 yd beside the line, it turned the player 27 to 83 degrees across the ramp (walk 2026-10-26); the zeppelin tower's
--- walks went by Alt-I's route. Returns the facing (radians, as GetPlayerFacing), or nil: no climb line here, or its
--- point within HELPER_RADIUS of the player (the line's rule then).
+-- walks went by Alt-I's route.
+-- Bug 123 (walk 2026-10-27, measured on every logged press by a straight walk on the world's surfaces, the user
+-- picked both): facing square across the climb (CLIMB_SQUARE or more off its line both ways) with under CLIMB_AT_END yd
+-- of route left the way faced, the route the other way, away from that end (at the ramp's foot it took the
+-- way down and off); and beside the line the aim lies twice as far on as the player stands from the line, at least
+-- LANE_AHEAD (4.7 yd off, the point 3.8 yd on led over the ramp's side). Returns the facing (radians, as
+-- GetPlayerFacing), or nil: no climb line here, or its point within HELPER_RADIUS of the player (the line's rule then).
+logic.CLIMB_SQUARE = 60   -- degrees
+logic.CLIMB_AT_END = 3.0  -- yd
+
 function logic.climbLineFacing(zone, piece, x, y, facing)
     local ix = zone._index
     if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
@@ -557,11 +577,19 @@ function logic.climbLineFacing(zone, piece, x, y, facing)
     if route == nil or route.from == nil then
         return nil
     end
+    if facing ~= nil and math.abs(math.abs(logic.degreesBetween(route.along, facing)) - 90) < 90 - logic.CLIMB_SQUARE
+            and routeLength(route) < logic.CLIMB_AT_END then
+        local other = logic.climbRouteFrom(zone, piece, x, y, route.along + math.pi)
+        if other and other.from and routeLength(other) > routeLength(route) then
+            route = other
+        end
+    end
+    local ahead = math.max(logic.LANE_AHEAD, 2 * dist(x, y, route.from.x, route.from.y))
     local px, py, along, aim = route.from.x, route.from.y, 0, nil
     for _, p in ipairs(route.points) do
         along = along + dist(px, py, p.x, p.y)
         px, py, aim = p.x, p.y, p
-        if along >= logic.LANE_AHEAD then
+        if along >= ahead then
             break
         end
     end
