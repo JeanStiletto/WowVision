@@ -1929,7 +1929,7 @@ end
 -- facing; on a fork or crossing its arm nearest the facing, the next arm clockwise with each
 -- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
 -- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
--- (also what it turned toward, for the walk log: "target", "room", "landing", "line", or nil)
+-- (also what it turned toward, for the walk log: "target", "room", "landing", "flight", "climb", "line", or nil)
 local function lineFacing()
     if not module:getEnabled() then
         return nil
@@ -1967,6 +1967,11 @@ local function lineFacing()
     local onFlight = logic.flightFacing(z, z._index.floor, x, y, facing)
     if onFlight then
         return onFlight, "flight"
+    end
+    -- on a ramp or stairs with its own line: along the route Alt-I leads by from here (helper.lua climbLineFacing)
+    local onClimb = logic.climbLineFacing(z, z._index.floor, x, y, facing)
+    if onClimb then
+        return onClimb, "climb"
     end
     local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     local facings, fork = logic.lineFacings(z, x, y, value, facing)

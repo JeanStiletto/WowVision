@@ -110,6 +110,21 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertEqual(down.landing, 0)
     end,
 
+    ["the turn key on a climb aims along Alt-I's route, past the end of the stretch beside the player"] = function(t)
+        -- (STATE bug 116, Ironforge's ramp in the Hall of Mysteries, walk 2026-10-26: beside the line, the key aimed
+        -- at most to the stretch's end and turned the player across the ramp)
+        local z = stairsZone()
+        -- 2 yd north of the middle stretch, 0.5 yd before its end, facing west (+y): to the next turn's far end
+        facesToward(t, logic.climbLineFacing(z, 1, 95, 53.5, math.pi / 2), 95, 53.5, 89, 54, "on along the line")
+        -- facing east (-y): back down, to the turn below
+        facesToward(t, logic.climbLineFacing(z, 1, 95, 53.5, -math.pi / 2), 95, 53.5, 93, 50, "down the line")
+        -- at the landing's join, facing on to it: nothing ahead, the line's rule
+        t:assertNil(logic.climbLineFacing(z, 1, 88.5, 54, math.pi))
+        -- not on a climb with a line
+        t:assertNil(logic.climbLineFacing(z, 2, 91, 53.5, 0))
+        t:assertNil(logic.climbLineFacing(z, 0, 91, 53.5, 0))
+    end,
+
     ["along the floor only to a foot a climb goes up from, never down from a foot stored at a climb's top"] = function(t)
         -- (the Abbey main ramp's foot stored on the gallery at its top in trial K9: Alt-I led down, walk 2026-10-19)
         local z = stairsZone()

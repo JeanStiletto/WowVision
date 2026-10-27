@@ -522,17 +522,53 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
     if #points == 0 then
         return nil
     end
+    -- the player's point on the line, where the route sets out from (the turn key's climbLineFacing)
+    local a, b = line[bestK], line[math.min(bestK + 1, #line)]
+    local from = { x = a.x + bestT * (b.x - a.x), y = a.y + bestT * (b.y - a.y) }
     local first = forward and line[1] or line[#line]
     -- with end records: on through the staircase to the end faced, onto its floor
     if zone._index.climbTops then
-        return throughStaircase(zone, points, piece, { [piece] = true }, nil)
+        local route = throughStaircase(zone, points, piece, { [piece] = true }, nil)
+        route.from = from
+        return route
     end
     local top = points[#points]
     local landing, jx, jy = landingAt(zone, piece, top.x, top.y, nil, first.x, first.y, lineLength(line))
     if landing then
         onto(points, jx, jy)
     end
-    return { points = points, piece = piece, landing = landing, short = landing == nil }
+    return { points = points, piece = piece, landing = landing, short = landing == nil, from = from }
+end
+
+-- The turn key on a climb with a line of its own (STATE bug 116, user 2026-10-27: "make it follow the Alt-I line"):
+-- toward the first point of the route Alt-I leads by from here (climbRouteFrom: the whole line toward the end the
+-- player faces, past its stretches' ends, through the staircase onto the floor there) that lies LANE_AHEAD yd or
+-- more on along it from the player's point on the line, else its last. The line's own rule aimed LANE_AHEAD on along
+-- the stretch under the player only, held at the stretch's end: on Ironforge's wide ramp in the Hall of Mysteries,
+-- 4 yd beside the line, it turned the player 27 to 83 degrees across the ramp (walk 2026-10-26); the zeppelin tower's
+-- walks went by Alt-I's route. Returns the facing (radians, as GetPlayerFacing), or nil: no climb line here, or its
+-- point within HELPER_RADIUS of the player (the line's rule then).
+function logic.climbLineFacing(zone, piece, x, y, facing)
+    local ix = zone._index
+    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+        return nil
+    end
+    local route = logic.climbRouteFrom(zone, piece, x, y, facing)
+    if route == nil or route.from == nil then
+        return nil
+    end
+    local px, py, along, aim = route.from.x, route.from.y, 0, nil
+    for _, p in ipairs(route.points) do
+        along = along + dist(px, py, p.x, p.y)
+        px, py, aim = p.x, p.y, p
+        if along >= logic.LANE_AHEAD then
+            break
+        end
+    end
+    if aim == nil or dist(x, y, aim.x, aim.y) <= logic.HELPER_RADIUS then
+        return nil
+    end
+    return math.rad(-logic.bearingOf(aim.x - x, aim.y - y))
 end
 
 -- The point of a doorway, an entrance or a way out (the rest is the surroundings' rules: helperArrived).
