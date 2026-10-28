@@ -81,6 +81,15 @@ end
 
 settings:addRef("beacon", beaconAlert.parameters)
 
+-- Facing the waypoint (within the aligned cue's angle), the beacon sound pauses: the
+-- aligned/off-course cues alone say whether the heading still holds.
+settings:add({
+    key = "quietWhenAligned",
+    type = "Bool",
+    label = L["Silent While Facing the Beacon"],
+    default = true,
+})
+
 -- Alt-P cycles short -> medium -> long without opening settings.
 function module:cycleArrivalDistance()
     local index = (self.settings.arrivalRange or 2) % #arrivalRanges + 1

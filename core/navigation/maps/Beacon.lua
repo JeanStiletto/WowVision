@@ -74,6 +74,11 @@ function Beacon:update()
     -- onto or off the target is responsive.
     self:updateAlignment(relative)
 
+    -- Facing it: no sound until the off-course cue (setting quietWhenAligned).
+    if self.aligned and module.settings.quietWhenAligned then
+        return
+    end
+
     -- Ping faster the more directly the target is ahead, so turning toward it is
     -- audible feedback: ~0.7s off-axis down to ~0.3s when aimed at it.
     local pingRate = 1.3
