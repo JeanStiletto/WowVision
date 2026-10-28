@@ -283,7 +283,7 @@ local function startFloors(N, x, y)
         if last ~= nil and band.zMin - last.zMax <= FLOOR_GAP then
             last.zMax = math.max(last.zMax, band.zMax)
         else
-            floors[#floors + 1] = { zMin = band.zMin, zMax = band.zMax, reachable = true }
+            floors[#floors + 1] = { zMin = band.zMin, zMax = band.zMax, reachable = true, x = x, y = y }
         end
     end
     for _, floor in ipairs(floors) do
@@ -292,11 +292,12 @@ local function startFloors(N, x, y)
     return floors
 end
 
--- The floors of an ambiguous target (his bands or certified levels), with the ones that cannot be reached marked.
-local function targetFloors(outcome)
+-- The floors of an ambiguous target (his bands or certified levels), with the ones that cannot be reached marked;
+-- at the target's position (`x`, `y`: where the floor window looks up their names).
+local function targetFloors(outcome, x, y)
     local floors = {}
     for i, band in ipairs(outcome.result.bands) do
-        floors[#floors + 1] = { band = i, z = band.zMin, reachable = outcome.reachable[i] == true }
+        floors[#floors + 1] = { band = i, z = band.zMin, reachable = outcome.reachable[i] == true, x = x, y = y }
     end
     return floors
 end
@@ -635,7 +636,8 @@ local function onOutcome(self, request, outcome)
     if outcome.kind == "start" then
         startRoute(self, request, outcome)
     elseif outcome.kind == "choose" then
-        askFloor("target", targetFloors(outcome), function(floor)
+        local contract = request.contract or {}
+        askFloor("target", targetFloors(outcome, contract.x, contract.y), function(floor)
             request.contract.heightBand = floor.band
             search(self, request)
         end)
