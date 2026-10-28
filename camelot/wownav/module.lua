@@ -471,7 +471,8 @@ function search(self, request)
     else
         work = N.Job(route.prepare, route, request.contract, { nativeMapId = map }, request.startOverride)
     end
-    job = { request = request, startedAt = GetTime(), job = work }
+    job = { request = request, startedAt = GetTime(), job = work, frames = 0, misses = N.wholeMisses or 0,
+        answers = N.knownMissAnswers or 0 }
 end
 
 -- A route request from maps: { x, y, z, label, onArrive, data } (data: a row of the WowNav list). True when WowNav
@@ -664,6 +665,14 @@ local function stepJob(self)
         return
     end
     local done, outcome, failure = j.job:Step(BUDGET_MS, debugprofilestop)
+    j.frames = j.frames + 1
+    if done then
+        -- how long the search took, and the whole searches that missed (the floor check) and what they answered
+        local N = self:network()
+        logLine(string.format("search %s: %s after %.1f s in %d frames, %d whole misses, %d targets answered from them",
+            tostring(j.request.label), type(outcome) == "table" and tostring(outcome.kind) or tostring(failure),
+            GetTime() - j.startedAt, j.frames, (N.wholeMisses or 0) - j.misses, (N.knownMissAnswers or 0) - j.answers))
+    end
     if not done then
         if not j.noticed and GetTime() - j.startedAt >= SLOW_NOTICE then
             j.noticed = true
@@ -782,6 +791,7 @@ local function checkAction(self)
             job = {
                 request = request, startedAt = GetTime(),
                 job = N.Job(route.continueTo, route, toNode, targetNodeId, result),
+                frames = 0, misses = N.wholeMisses or 0, answers = N.knownMissAnswers or 0,
             }
         end
     end
