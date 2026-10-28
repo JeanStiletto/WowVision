@@ -81,12 +81,13 @@ end
 
 settings:addRef("beacon", beaconAlert.parameters)
 
--- Facing the waypoint (within the aligned cue's angle), the beacon sound pauses: the
--- aligned/off-course cues alone say whether the heading still holds.
+-- On a way with a direction of its own the beacon sound pauses: the player follows the way,
+-- the loop has nothing to add; the aligned/off-course cues stay. A module that knows the ways
+-- sets module.wayHere (a function: true while the player is on one); without it nothing changes.
 settings:add({
-    key = "quietWhenAligned",
+    key = "quietOnWays",
     type = "Bool",
-    label = L["Silent While Facing the Beacon"],
+    label = L["Beacon Silent on Ways With a Direction"],
     default = true,
 })
 
