@@ -32,6 +32,7 @@ Keep this list current; everything else is his text, line for line (line endings
   on a miss). Same answers, measured on the real data: his floor check (`Prepare`, and our bands of cells) routes every
   candidate of a band, and since data 5b8b5f2 joins the zones, each miss searched the whole continent (Stormwind,
   a target over three floors: 990 misses of 376,767 waypoints each, 1.94 million test slices; with the sets 3,025).
+  `N.wholeMisses` and `N.knownMissAnswers` count both for the module's trail.
 - `NavNetwork.lua`, memory: `N.UnloadZone`, `N.KeepZones` and the hook `N.onZoneUnloaded` drop decoded zones again
   (his core keeps every decoded zone for the session).
 - `NavNetwork.lua`, time slices: `N.Job(fn, ...)` runs any work that searches routes in a coroutine; the A* loop of

@@ -1403,6 +1403,8 @@ local SLICE_CHECK = 64     -- expansions between clock reads
 -- per foot-only switch. Such a set holds everything reachable from each of its waypoints, so it also bounds every
 -- start whose options all lie in it.
 local reachCache = nil
+-- counters for WowVision's trail: whole searches that missed (kept as sets) and targets answered from those sets
+N.wholeMisses, N.knownMissAnswers = 0, 0
 
 -- true when a search from startBinding can be told without searching that it cannot reach targetBinding
 local function KnownUnreachable(sets, startBinding, targetBinding)
@@ -1631,7 +1633,10 @@ function N.Route(startBinding, targetBinding, penalties, footOnly)
         local key = footOnly and "foot" or "all"
         sets = reachCache[key] or {}
         reachCache[key] = sets
-        if KnownUnreachable(sets, startBinding, targetBinding) then return nil, "no_route" end
+        if KnownUnreachable(sets, startBinding, targetBinding) then
+            N.knownMissAnswers = N.knownMissAnswers + 1
+            return nil, "no_route"
+        end
     end
     local avoid = AvoidanceFor(startBinding, targetBinding)
     local exhausted
@@ -1646,7 +1651,10 @@ function N.Route(startBinding, targetBinding, penalties, footOnly)
     local a, b = passes(avoid)
     if not a and avoid then a, b = passes(nil) end     -- Z2: no route without a hostile outpost: through it, never no route
     if not a then
-        if sets and exhausted then sets[#sets + 1] = exhausted end
+        if sets and exhausted then
+            sets[#sets + 1] = exhausted
+            N.wholeMisses = N.wholeMisses + 1
+        end
         return nil, "no_route"
     end
     local chosen, pass = a, "a"
