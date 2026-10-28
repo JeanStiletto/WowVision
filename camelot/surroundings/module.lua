@@ -1930,7 +1930,8 @@ end
 -- further press; in a room said with the way it runs, along it. Outdoors, in a city's big halls
 -- and in rooms; nil elsewhere (a square, no way here), and the key says there is no waypoint.
 -- (also what it turned toward, for the walk log: "target", "room", "landing", "flight", "climb", "line", or nil)
-local function lineFacing()
+-- `wayOnly`: the way here alone, not the guidance target (the beacon's quiet rule, maps.wayHere)
+local function lineFacing(wayOnly)
     if not module:getEnabled() then
         return nil
     end
@@ -1940,7 +1941,7 @@ local function lineFacing()
     if z == nil then
         return nil
     end
-    local toTarget = guideFacing(x, y)
+    local toTarget = not wayOnly and guideFacing(x, y)
     if toTarget then
         return toTarget, "target"
     end
@@ -1999,6 +2000,13 @@ WowVision.base.navigation.maps.facingWithoutWaypoint = function()
     local t = what == "target" and spokenGuide and spokenGuide.target
     turnLog(what or "nothing", facing, t and logic.finishText(t.name or t.short or "") or nil)
     return facing
+end
+-- The beacon's loop stays quiet on a way with a direction of its own (maps setting quietOnWays, user 2026-10-28:
+-- "I will align with the direction of the structure anyways, the beacon has no extra information to offer"): where
+-- the plain turn key has a way to turn along (a street, road, canal, bridge, fork, ramp, stairs, landing, a room
+-- said with its way); on squares and open ground the loop plays.
+WowVision.base.navigation.maps.wayHere = function()
+    return lineFacing(true) ~= nil
 end
 -- (the route's beacon: maps' turnToWaypoint calls this with the waypoint before it turns)
 WowVision.base.navigation.maps.onTurnToWaypoint = function(wx, wy)
