@@ -242,6 +242,39 @@ if haveNetwork then
         t:assertTrue(WowVisionNavigationText("outpost_target") ~= "outpost_target", "the warning has a text")
     end
 
+    suite["a whole search that missed its target answers later targets from inside it (same answers)"] = function(t)
+        setup()
+        local game = newGame()
+        local route = Route.new(game.env)
+        local x, y = bindablePosition(STORMWIND, game, route)
+        local start = route:startBinding(x, y)
+        local zone = N.LoadZone(STORMWIND)
+        local targets = {}
+        for i = 0, zone.n - 1, 50 do
+            targets[#targets + 1] = zone.base + i
+        end
+        -- each target alone, outside a job: no cache
+        local plain, missed = {}, 0
+        for i, id in ipairs(targets) do
+            plain[i] = N.RouteIds(start, id) ~= nil
+            if not plain[i] then
+                missed = missed + 1
+            end
+        end
+        t:assertTrue(missed > 1, "some waypoints cannot be reached from here")
+        -- all of them in one job: after the first miss the others come from the reached set
+        local cached = runJob(N.Job(function()
+            local out = {}
+            for i, id in ipairs(targets) do
+                out[i] = N.RouteIds(start, id) ~= nil
+            end
+            return out
+        end))
+        for i = 1, #targets do
+            t:assertEqual(cached[i], plain[i], "waypoint " .. targets[i])
+        end
+    end
+
     suite["the continent catalogue lists both layers with categories and zone"] = function(t)
         setup()
         local rows = zoneRows(STORMWIND)

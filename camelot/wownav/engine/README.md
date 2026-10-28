@@ -26,6 +26,12 @@ Keep this list current; everything else is his text, line for line (line endings
   `WVN7Src` / `WVN7LogicalSrc` / `WVN7DynSrc` and is compiled on first use (`Unpacked`, `IsPacked`,
   `ZoneAvailable`, `ZoneSource`, `LoadZone`, `N.LogicalTargets`, `N.DynTargets`, `N.DropTargets`). A raw table of a
   packed zone is freed after decoding. Unpacked files keep working.
+- `NavNetwork.lua`, known misses: inside a job (`N.Job`), a plain search (no outpost avoidance) that ran out without its
+  target keeps the set of waypoints it reached; `N.Route` answers "no route" at once for a later target none of whose
+  options is in a set that holds all of the start's options (`reachCache`, `KnownUnreachable`; `Pass` returns that set
+  on a miss). Same answers, measured on the real data: his floor check (`Prepare`, and our bands of cells) routes every
+  candidate of a band, and since data 5b8b5f2 joins the zones, each miss searched the whole continent (Stormwind,
+  a target over three floors: 990 misses of 376,767 waypoints each, 1.94 million test slices; with the sets 3,025).
 - `NavNetwork.lua`, memory: `N.UnloadZone`, `N.KeepZones` and the hook `N.onZoneUnloaded` drop decoded zones again
   (his core keeps every decoded zone for the session).
 - `NavNetwork.lua`, time slices: `N.Job(fn, ...)` runs any work that searches routes in a coroutine; the A* loop of

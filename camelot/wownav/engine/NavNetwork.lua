@@ -1399,6 +1399,29 @@ end
 -- Time slicing (chapter 7 point 4, "at most 30 ms per frame"): set while a route job's coroutine runs.
 local slicing = nil
 local SLICE_CHECK = 64     -- expansions between clock reads
+-- WowVision: the waypoints reached by the plain searches of the running job that found no target (N.Route), one list
+-- per foot-only switch. Such a set holds everything reachable from each of its waypoints, so it also bounds every
+-- start whose options all lie in it.
+local reachCache = nil
+
+-- true when a search from startBinding can be told without searching that it cannot reach targetBinding
+local function KnownUnreachable(sets, startBinding, targetBinding)
+    local starts, targets = Options(startBinding, false, true), Options(targetBinding, false, false)
+    for _, reached in ipairs(sets) do
+        local inside = true
+        for _, option in ipairs(starts) do
+            if reached[option.id] == nil then inside = false; break end
+        end
+        if inside then
+            local hit = false
+            for _, option in ipairs(targets) do
+                if reached[option.id] ~= nil then hit = true; break end
+            end
+            if not hit then return true end
+        end
+    end
+    return false
+end
 
 -- One pass. road = with road factor. Returns { path = {global IDs}, edges = {link refs}, length = geometric length
 -- of the links walked, cost }
@@ -1566,7 +1589,7 @@ local function Pass(startBinding, targetBinding, road, penalties, footOnly, avoi
             end
         end
     end
-    if not bestEnd then return nil, expansions end
+    if not bestEnd then return nil, expansions, g end
     local path, edges, length = { bestEnd }, {}, 0
     local id = bestEnd
     while previous[id] do
@@ -1600,15 +1623,32 @@ end
 -- Two passes: (a) comfort costs, (b) with the road factor 1/r; (b) wins when its geometric length is at most r x that
 -- of (a) (r = 1 + comfort/100, default 1.5; comfort 0 has no pass (b)). Start and target are bindings from N.Bind.
 function N.Route(startBinding, targetBinding, penalties, footOnly)
+    -- WowVision: inside a job, a plain search that ran out without its target knows every waypoint it reaches; a later
+    -- target outside that set, from a start inside it, has no route: the same answer without the whole search again
+    -- (the floor check routes every candidate of a band, each a search of the whole continent)
+    local sets
+    if reachCache then
+        local key = footOnly and "foot" or "all"
+        sets = reachCache[key] or {}
+        reachCache[key] = sets
+        if KnownUnreachable(sets, startBinding, targetBinding) then return nil, "no_route" end
+    end
     local avoid = AvoidanceFor(startBinding, targetBinding)
+    local exhausted
     local function passes(avoidance)
-        local a = Pass(startBinding, targetBinding, false, penalties, footOnly, avoidance)
-        if not a then return nil end
+        local a, _, reached = Pass(startBinding, targetBinding, false, penalties, footOnly, avoidance)
+        if not a then
+            if not avoidance then exhausted = reached end
+            return nil
+        end
         return a, N.comfort > 0 and Pass(startBinding, targetBinding, true, penalties, footOnly, avoidance) or nil
     end
     local a, b = passes(avoid)
     if not a and avoid then a, b = passes(nil) end     -- Z2: no route without a hostile outpost: through it, never no route
-    if not a then return nil, "no_route" end
+    if not a then
+        if sets and exhausted then sets[#sets + 1] = exhausted end
+        return nil, "no_route"
+    end
     local chosen, pass = a, "a"
     if b and b.length <= N.ROAD_MAX_RATIO * a.length then chosen, pass = b, "b" end
     local path = {}
@@ -1635,15 +1675,15 @@ end
 -- pending, do not drop zones or virtual points it may use (N.UnloadZone, N.KeepVirtual, N.DiscardVirtual, N.Reset).
 function N.Job(fn, ...)
     local args, count = { ... }, select("#", ...)
-    local job = { done = false }
+    local job = { done = false, reach = {} }
     job.thread = coroutine.create(function()
         return fn(unpack(args, 1, count))
     end)
     function job:Step(budget, clock)
         if self.done then return true, self.result, self.reason end
-        slicing = { clock = clock, deadline = clock() + budget }
+        slicing, reachCache = { clock = clock, deadline = clock() + budget }, self.reach
         local ok, result, reason = coroutine.resume(self.thread)
-        slicing = nil
+        slicing, reachCache = nil, nil
         if not ok then
             self.done, self.result, self.reason = true, nil, tostring(result)
         elseif coroutine.status(self.thread) == "dead" then
