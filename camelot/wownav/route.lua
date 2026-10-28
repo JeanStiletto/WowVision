@@ -653,7 +653,8 @@ function Route:update(x, y)
     local lastActivation = activation ~= nil and self.pathIndex >= #self.path
     if activation ~= nil and not self.activationPrepointSaid and self.A:PrepointReached(activation, x, y) then
         self.activationPrepointSaid = true
-        return { kind = "prepoint", unresolved = activation.actionSemanticStatus == "unresolved" }
+        return { kind = "prepoint", unresolved = activation.actionSemanticStatus == "unresolved",
+            dive = activation.facilityKind == "dive" }
     end
     if lastActivation then
         local observation
@@ -666,7 +667,7 @@ function Route:update(x, y)
             if not self.activationInside then
                 self.activationInside = true
                 return { kind = "activation", unresolved = activation.actionSemanticStatus == "unresolved",
-                    heightUnconfirmed = mode == "xy_only" }
+                    heightUnconfirmed = mode == "xy_only", dive = activation.facilityKind == "dive" }
             end
             return nil
         end

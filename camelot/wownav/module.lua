@@ -28,8 +28,12 @@ module:setLabel(L["WowNav Routes"])
 
 local settings = module:hasSettings()
 settings:add({ key = "enabled", type = "Bool", label = L["Routes from WowNav"], default = false })
--- WowNav's comfort level: a road route may be up to this many percent longer than the shortest way.
-settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Percent Longer)"], default = 50, min = 0, max = 300 })
+-- WowNav's comfort level: a road route may be up to this many percent longer than the shortest way (his default 60
+-- since 2026-10-25).
+settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Percent Longer)"], default = 60, min = 0, max = 300 })
+-- his /vn outposts (Z2, default on): routes go around the outposts and capitals of the opposing faction; without a way
+-- around they lead through one and say so
+settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = true })
 -- his /vn showauto (default off): the network's own waypoints near the player join the F10 list, by type and height
 settings:add({ key = "showAuto", type = "Bool", label = L["Show Automatic Waypoints"], default = false })
 -- his /vn radius and /vn toleranz: how far from the network a target may lie, and the height band of a floor
@@ -125,7 +129,8 @@ local function ready(self)
             speed = playerSpeed,
         })
     end
-    N.SetComfort(self.settings.comfort or 50)
+    N.SetComfort(self.settings.comfort or 60)
+    N.SetAvoidOutposts(self.settings.avoidOutposts ~= false)
     -- his settings live in WowVisionNavigationDB, where his resolver and route rules read them (R:Settings,
     -- Route.chokeFallback); while the standalone addon is loaded this module is off and the table is his
     WowVisionNavigationDB = type(WowVisionNavigationDB) == "table" and WowVisionNavigationDB or {}
@@ -211,7 +216,11 @@ local function logLine(line)
     end
 end
 
-local TRANSIT_WORDS = { portal = L["the portal"], tram = L["the tram"], lift = L["the elevator"] }
+local TRANSIT_WORDS = { portal = L["the portal"], tram = L["the tram"], lift = L["the elevator"], dive = L["a dive"],
+    surface = L["surfacing"] }
+-- his KIND_TEXT (ActionNavigation.lua): the player dives and surfaces himself, the portal text does not fit
+local TRANSIT_TEXTS = { dive = L["Dive here; the route goes on after it"],
+    surface = L["Surface here; the route goes on after it"] }
 
 -- The resolver's and the planner's reasons as WowVision texts.
 local REASONS = {
@@ -441,6 +450,11 @@ local function startRoute(self, request, outcome)
     -- his approx_target: a catalogue position that is itself only approximate
     if request.approx then
         text = text .. ". " .. WowVisionNavigationText("approx_target")
+    end
+    -- his Z2 warning: no way around an enemy outpost, or the target inside one
+    local outpost = outcome.plan and outcome.plan.result and outcome.plan.result.outpost
+    if outpost == "through" or outpost == "target" then
+        text = text .. ". " .. WowVisionNavigationText("outpost_" .. outpost)
     end
     say(text)
 end
@@ -718,14 +732,15 @@ function module:onRouteEvent(path, event)
         end
         route:reset()
     elseif kind == "prepoint" then
-        local key = event.unresolved and "prepoint_reached_unresolved" or "prepoint_reached_go_through"
+        local key = event.unresolved and "prepoint_reached_unresolved"
+            or (event.dive and "prepoint_reached_dive" or "prepoint_reached_go_through")
         say(WowVisionNavigationText(key))
     elseif kind == "activation" then
         if event.unresolved then
             say(WowVisionNavigationText("activation_position_reached",
                 event.heightUnconfirmed and WowVisionNavigationText("height_not_confirmed") or ""))
         else
-            say(WowVisionNavigationText("activation_area_entered"))
+            say(WowVisionNavigationText(event.dive and "activation_area_dive" or "activation_area_entered"))
         end
     elseif kind == "transit" then
         local request = self.request
@@ -733,7 +748,7 @@ function module:onRouteEvent(path, event)
         maps:stopPath()
         self.path = nil
         local word = TRANSIT_WORDS[event.action.kind] or L["the transit"]
-        local text = string.format(L["Use %s; the route goes on after it"], word)
+        local text = TRANSIT_TEXTS[event.action.kind] or string.format(L["Use %s; the route goes on after it"], word)
         -- his action_boarding: a vehicle (the elevator) is boarded only when it is safely there
         local mode = type(event.action.activation) == "table" and event.action.activation.mode or nil
         if mode == "board" then
@@ -1032,6 +1047,17 @@ module:registerBinding({
 })
 
 module.settings.class:getField("comfort").events.valueChange:subscribe(module, function()
+    if module:runningRequest() ~= nil then
+        recalcAt = GetTime() + RECALC_DELAY
+    end
+end)
+
+-- his /vn outposts: the running route is recalculated with the new choice
+module.settings.class:getField("avoidOutposts").events.valueChange:subscribe(module, function(_, _, _, _, value)
+    local N = module:network()
+    if N ~= nil and N.SetAvoidOutposts ~= nil then
+        N.SetAvoidOutposts(value ~= false)
+    end
     if module:runningRequest() ~= nil then
         recalcAt = GetTime() + RECALC_DELAY
     end

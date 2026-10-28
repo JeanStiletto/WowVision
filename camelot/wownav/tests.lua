@@ -86,10 +86,11 @@ local function bindablePosition(zoneId, game, route)
 end
 
 -- The list rows of one zone: his search with an empty text from a waypoint of that zone (the nearest 1000 targets).
-local function zoneRows(zoneId)
+-- text: a search word (the empty search lists the nearest 1000 of the continent only)
+local function zoneRows(zoneId, text)
     N.LoadZone(zoneId)
     local x, y = N.Position(zoneId * N.ZONE_BASE + 1)
-    local rows = catalog.search(N, C, 0, "", x, y, { german = false })
+    local rows = catalog.search(N, C, 0, text or "", x, y, { german = false })
     local out = {}
     for _, r in ipairs(rows) do
         if r.zoneId == zoneId then
@@ -217,6 +218,28 @@ if haveNetwork then
         end))
         t:assertNotNil(result, "a route across Stormwind")
         t:assertTrue(slices > 1, "the search yielded at least once")
+    end
+
+    suite["his outposts (Z2): a route into the enemy capital warns, the own capital does not"] = function(t)
+        setup()
+        local game = newGame()
+        local route = Route.new(game.env)
+        local x, y = bindablePosition(STORMWIND, game, route)
+        local start = route:startBinding(x, y)
+        local farId = STORMWIND * N.ZONE_BASE + 3000
+        local function routeAs(faction)
+            N.SetPlayerFaction(faction)
+            local result = runJob(N.Job(function()
+                return N.RouteIds(start, farId)
+            end))
+            N.SetPlayerFaction(nil)
+            return result
+        end
+        local horde = routeAs("Horde")
+        t:assertNotNil(horde, "an outpost never makes a route fail")
+        t:assertEqual(horde.outpost, "target", "Stormwind is an Alliance capital: the target lies in it")
+        t:assertNil(routeAs("Alliance").outpost, "no warning in the own capital")
+        t:assertTrue(WowVisionNavigationText("outpost_target") ~= "outpost_target", "the warning has a text")
     end
 
     suite["the continent catalogue lists both layers with categories and zone"] = function(t)
@@ -349,7 +372,7 @@ if haveNetwork then
         local game = newGame()
         local route = Route.new(game.env)
         bindablePosition(STORMWIND, game, route)
-        local rows = zoneRows(87)
+        local rows = zoneRows(87, "innkeeper")
         local target = rowsWith(rows, "innkeeper")
         t:assertNotNil(target, "Ironforge has an innkeeper")
         local contract = catalog.contract(target, 0)
@@ -589,20 +612,24 @@ if haveNetwork then
             t:assertEqual(result.kind, "start", tostring(result.reason))
             t:assertEqual(result.plan.path[#result.plan.path], target.nodeId,
                 "the route ends at the dock's waiting node")
-            -- data 9423773: that node lies down in the track bed; the route is cut before the drop
-            local _, _, nodeZ = N.Position(target.nodeId)
+            -- data 9423773 had that node down in the track bed (the route was cut before the drop); since 5b8b5f2 it
+            -- stands on the platform: either way the route ends up there (platform -4 to -5, track bed -11 to -14)
             local cut = dock.trimDrop(N, result.plan.path)
-            t:assertNotNil(cut, "the route to the tram dock ends with a drop")
-            local _, _, cutZ = N.Position(cut[#cut])
-            t:assertTrue(cutZ > nodeZ + 3, "the cut route ends on the platform")
+            local walked = cut or result.plan.path
+            local _, _, endZ = N.Position(walked[#walked])
+            t:assertTrue(endZ > -6, "the route ends on the platform, height " .. tostring(endZ))
             route:begin(result.plan, contract, result.result, to.n)
             t:assertNil(route.logicalTarget, "no logical end point behind a dock's waiting node")
             local nx, ny = N.Position(target.nodeId)
             local inside = (nx - target.x) ^ 2 + (ny - target.y) ^ 2 <= target.waitingRadius ^ 2
             route.waitCheck = dock.waitAreaCheck(N, target)
-            -- data 9423773: the tram's waiting point is at track level, the waiting node on the platform 7 yd away
-            t:assertFalse(inside, "the Stormwind tram dock's waiting node lies outside its waiting circle")
-            t:assertNil(route.waitCheck, "no circle rule that could never be met")
+            -- data 9423773: the waiting point at track level, the node on the platform 7 yd away, so no circle rule
+            -- that could never be met; where the node lies in the circle, his circle rule ends the route
+            if inside then
+                t:assertNotNil(route.waitCheck, "his circle rule where the waiting node lies in it")
+            else
+                t:assertNil(route.waitCheck, "no circle rule that could never be met")
+            end
             local arrived
             route.pathIndex = #route.path
             for _ = 1, 20 do
@@ -618,7 +645,22 @@ if haveNetwork then
             text.say = function(message)
                 said[#said + 1] = message
             end
-            t:assertNil(dock.arrived(N, target, nx, ny), "no boarding beacon 7 yd from the waiting point")
+            -- (the headless tests have no beacon paths: a stand-in for the boarding beacon)
+            local stand = dock.boardingPath == nil
+            if stand then
+                dock.boardingPath = function()
+                    return {}
+                end
+            end
+            local boarding = dock.arrived(N, target, nx, ny)
+            if stand then
+                dock.boardingPath = nil
+            end
+            if inside then
+                t:assertNotNil(boarding, "the boarding beacon at the waiting point")
+            else
+                t:assertNil(boarding, "no boarding beacon 7 yd from the waiting point")
+            end
             t:assertNotNil(said[1] and said[1]:find("the Deeprun Tram", 1, true), tostring(said[1]))
             local Dock = _G.WowVisionNavigationDockNavigation
             t:assertNotNil(Dock.reached, "the dock stays reached")
