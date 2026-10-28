@@ -2008,6 +2008,15 @@ end
 WowVision.base.navigation.maps.wayHere = function()
     return lineFacing(true) ~= nil
 end
+-- The floor choices of WowNav's routes name their floors (maps.floorName, user 2026-10-28) where the zone the
+-- player is in knows the floor there (logic.floorNameAt); elsewhere they keep their heights.
+WowVision.base.navigation.maps.floorName = function(x, y, height)
+    if not module:getEnabled() or zone == nil then
+        return nil
+    end
+    updateWords()
+    return logic.floorNameAt(zone, x, y, height)
+end
 -- (the route's beacon: maps' turnToWaypoint calls this with the waypoint before it turns)
 WowVision.base.navigation.maps.onTurnToWaypoint = function(wx, wy)
     local x, y = UnitPosition("player")

@@ -1008,6 +1008,40 @@ function logic.roomText(zone, id, previous, cut, x, y)
     return text
 end
 
+-- The name of the floor at a position and height (another system's floor choice, user 2026-10-28: "we know the
+-- floors' names, name them instead of heights"): on each layer with walk-graph surfaces, the halls' first and the zone
+-- last, the dry floor piece within FLOOR_NAME_DZ of `height`; its room there (the layer's rooms by floor), else its
+-- place in that cell. Reads only: the floor the player is on stays. nil where the data does not tell.
+logic.FLOOR_NAME_DZ = 3
+function logic.floorNameAt(zone, x, y, height)
+    local ix = zone and zone._index
+    if ix == nil or x == nil or height == nil or not logic.covers(zone, x, y) then
+        return nil
+    end
+    local seen = {}
+    for _, layer in ipairs({ ix.layerIn or false, ix.layer or false, zone }) do
+        if layer and not seen[layer] and layer.surf then
+            seen[layer] = true
+            local piece = logic.tracker.pieceAt(layer, x, y, height, logic.FLOOR_NAME_DZ)
+            if piece then
+                local r, c = logic.cellOf(layer, x, y)
+                local floorRooms = layer._index.floorRooms
+                local cell = floorRooms and floorRooms[r * layer.cols + c]
+                local rooms = cell and cell[piece]
+                local text = rooms and rooms[1] and logic.describeRoom(zone, rooms[1])
+                if text == nil then
+                    local v = logic.valueOfFloor(layer, r, c, piece)
+                    text = v ~= 0 and logic.describe(layer, v, false, true) or nil
+                end
+                if text ~= nil and text ~= "" then
+                    return logic.finishText(text)
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- On a square: the streets, water and squares not said yet (`said`) that come within APPROACH.
 function logic.approachText(zone, region, x, y, said)
     local items = logic.approaching(region, x, y, APPROACH, said, logic.ITEM_DIRS)
