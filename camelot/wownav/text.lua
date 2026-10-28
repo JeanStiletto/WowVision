@@ -56,6 +56,11 @@ local REASONS = {
     reason_map_changed_guidance_done = L["Map change; the activation guidance is finished."],
     activation_proof_invalid = L["The entrance has no valid proof."],
     action_boarding = L["Board only when the vehicle is safely there."],
+    prepoint_reached_dive = L["Prepoint reached. Dive here: walk straight ahead to the dive point; the beacon stays on until then."],
+    activation_area_dive = L["At the dive point. Dive here; the route stays on until the dive is confirmed."],
+    -- his Z2 warnings (faction outposts)
+    outpost_through = L["Warning: there is no way around the enemy outpost, the route leads through it."],
+    outpost_target = L["Warning: the target lies in an enemy outpost."],
     stop_outside_zones = L["Route ended outside the network's zones."],
     no_live_coordinates = L["No position of the group member available"],
     target_source_gone = L["The target is no longer available; no new route"],
@@ -102,6 +107,8 @@ local DYN = {
     boarding_boat = L["On the ship"],
     boarding_zeppelin = L["On the zeppelin"],
     boarding_vehicle = L["At the vehicle"],
+    dive_entry = L["Dive here"],
+    dive_exit = L["Surface here"],
 }
 local SUFFIX = {
     lower = L[" (lower)"],
@@ -195,7 +202,7 @@ local CATEGORY = {
     destructible_building = L["destructible building"], guild_bank = L["guild bank"], trapdoor = L["trapdoor"],
     waypoint = L["waypoint"], orientation = L["orientation point"], transport = L["transport"], live = L["live target"],
     zone_transition = L["zone transition"], transit = L["transit"], boat = L["ship"], tram = L["tram"],
-    dungeon = L["dungeon"], portal = L["portal"], zeppelin = L["zeppelin"], lift = L["elevator"],
+    dungeon = L["dungeon"], portal = L["portal"], zeppelin = L["zeppelin"], lift = L["elevator"], dive = L["dive"],
 }
 
 -- Automatic waypoints are named after their code (his AUTO_TYPES, in his order: the first bit that is set names the

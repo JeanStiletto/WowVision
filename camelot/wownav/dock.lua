@@ -20,7 +20,8 @@
 -- is at track level, the route ends on the platform about 7 yd away), his circle rule could never end the route: there
 -- the route ends at the waiting node as any route does, standing at that node counts as standing at the dock, and the
 -- boarding beacon starts only where his rule gives it a point. A route to a dock also ends before a last drop of more
--- than 3 yd: the tram's waiting nodes lie down in the track bed, the platform is the place to wait.
+-- than 3 yd: the tram's waiting nodes lay down in the track bed in data 9423773 (the platform is the place to wait);
+-- since data 5b8b5f2 the Stormwind waiting node stands on the platform and these rules stay as guards.
 
 -- (the headless tests load this file without WowVision's navigation: no beacon paths there)
 local maps = WowVision.base ~= nil and WowVision.base.navigation ~= nil and WowVision.base.navigation.maps or nil
