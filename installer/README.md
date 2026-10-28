@@ -184,6 +184,18 @@ register the same voice, so they never disagree as long as the payloads stay
 identical. Its signing script keeps its Sku name because it sits inside that
 shared payload.
 
+Since 2026-10-28 the payload carries the bridge's speech history (source:
+`dev/rework-docs/nvda-voice-signing/speech-history` in the Sku repo). Its
+`x64\nvdaControllerClient.dll` forwards every call to NV Access's original
+(shipped next to it as `nvdaControllerClient.nvaccess.dll`, still signed by
+NV Access) and records a program's spoken texts only while another program
+asks for that program. The one program that asks is the WoW Login Tool, and
+only while it drives WoW Forever's login and character screens: the client
+narrates those screens itself but stays silent when an item is narrated a
+second time, and the tool then repeats what the client said the first time.
+In the game world, or without the login tool running, nothing is recorded.
+The signing script signs it as an optional third file.
+
 ## Footprint and removal
 
 There is no uninstaller, because there is nothing to uninstall beyond files:

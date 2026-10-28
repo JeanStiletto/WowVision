@@ -190,7 +190,7 @@ namespace WowVisionInstaller
         // LoginToolInstaller upgrades every install whose marker predates it.
         public const string LoginToolRepo = "Sku75/Sku-WoW-Addon-TBC";
         public const string LoginToolTag = "login-tool";
-        public const string LoginToolVersion = "4.0";
+        public const string LoginToolVersion = "4.1";
         public const string LoginToolAsset = "WoW-Login-Tool.zip";
         public const string LoginToolFolderName = "WoW Login Tool";
 
@@ -199,11 +199,29 @@ namespace WowVisionInstaller
         public const string AnniversaryFlavor = "wow_anniversary";
         public const string MistsFlavor = "wow_classic";
         public const string RetailFlavor = "wow";
+        /// <summary>
+        /// The installer's ONE token for WoW Forever. The beta client
+        /// (_classic_beta_\WowB.exe) writes it into .flavor.info / .build.info;
+        /// the live client (_forever_\Wow.exe, since 2026-10) writes
+        /// <see cref="ForeverLiveFlavor"/>, which <see cref="NormalizeProduct"/>
+        /// maps onto it wherever a token is read from disk.
+        /// </summary>
         public const string ForeverFlavor = "wow_classic_beta";
+
+        /// <summary>The live WoW Forever client's token (build 1.60.1.70634).</summary>
+        public const string ForeverLiveFlavor = "wowf";
+
+        /// <summary>Flavor folder of the WoW Forever beta (ended 2026-10-21).</summary>
+        public const string ForeverBetaFolder = "_classic_beta_";
+
+        /// <summary>A product token as read from disk, as the installer uses it.</summary>
+        public static string NormalizeProduct(string token) =>
+            string.Equals(token, ForeverLiveFlavor, System.StringComparison.OrdinalIgnoreCase) ? ForeverFlavor : token;
 
         /// <summary>
         /// Every game process this installer cares about: the classic clients run
-        /// WowClassic.exe, retail Wow.exe, WoW Forever WowB.exe.
+        /// WowClassic.exe, retail and the live WoW Forever Wow.exe, the Forever
+        /// beta WowB.exe.
         /// </summary>
         public static readonly string[] GameProcessNames = { "WowClassic", "Wow", "WowB" };
     }

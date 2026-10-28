@@ -113,9 +113,11 @@ namespace WowVisionInstaller
             public readonly Dictionary<string, string> AddOns = new Dictionary<string, string>();
             public readonly Dictionary<string, string> FlavorDir = new Dictionary<string, string>();
 
+            // the live Forever client writes "wowf" (Config.ForeverLiveFlavor) into
+            // .flavor.info and .build.info; the installer reads it as ForeverFlavor
             public static readonly (string product, string folder, string exe, string build)[] Layout =
             {
-                (Config.ForeverFlavor,     "_classic_beta_", "WowB.exe",       "1.60.1.70450"),
+                (Config.ForeverFlavor,     "_forever_",      "Wow.exe",        "1.60.1.70634"),
                 (Config.AnniversaryFlavor, "_anniversary_",  "WowClassic.exe", "2.5.6.70006"),
                 (Config.EraFlavor,         "_classic_era_",  "WowClassic.exe", "1.15.9.70003"),
                 (Config.MistsFlavor,       "_classic_",      "WowClassic.exe", "5.5.4.70449"),
@@ -139,11 +141,12 @@ namespace WowVisionInstaller
                     Directory.CreateDirectory(Path.Combine(dir, "Interface", "AddOns"));
                     Directory.CreateDirectory(Path.Combine(dir, "WTF", "Account", "TESTACCOUNT", "Realm", "Char", "SavedVariables"));
                     Directory.CreateDirectory(Path.Combine(dir, "WTF", "Account", "TESTACCOUNT", "SavedVariables"));
-                    File.WriteAllText(Path.Combine(dir, ".flavor.info"), "Product Flavor!STRING:0\r\n" + c.product + "\r\n");
+                    string token = c.product == Config.ForeverFlavor ? Config.ForeverLiveFlavor : c.product;
+                    File.WriteAllText(Path.Combine(dir, ".flavor.info"), "Product Flavor!STRING:0\r\n" + token + "\r\n");
                     File.WriteAllText(Path.Combine(dir, c.exe), "x");
                     AddOns[c.product] = Path.Combine(dir, "Interface", "AddOns");
                     FlavorDir[c.product] = dir;
-                    buildInfo.Append($"eu|1|aa|{c.build}||{c.product}\r\n");
+                    buildInfo.Append($"eu|1|aa|{c.build}||{token}\r\n");
                 }
                 File.WriteAllText(Path.Combine(Base, ".build.info"), buildInfo.ToString());
 

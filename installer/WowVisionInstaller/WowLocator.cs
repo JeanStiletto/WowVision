@@ -12,6 +12,7 @@ namespace WowVisionInstaller
         public string Product;      // e.g. wow_anniversary, wow_classic_beta
         public string AddOnsPath;   // <flavor>\Interface\AddOns
         public string DisplayName;  // friendly label
+        public bool Beta;           // the WoW Forever beta folder (a live client wins over it)
     }
 
     /// <summary>
@@ -100,7 +101,7 @@ namespace WowVisionInstaller
         /// </summary>
         public static readonly ClientInfo[] Clients =
         {
-            new ClientInfo { Product = Config.ForeverFlavor, Folder = "_classic_beta_", Label = "WoW Forever",
+            new ClientInfo { Product = Config.ForeverFlavor, Folder = "_forever_", Label = "WoW Forever",
                              Short = "Forever", TocSuffixes = new[] { "Camelot" }, LoginTool = LoginToolMode.ToolOnly,
                              InterfaceMin = 16000, InterfaceMax = 19999 },
             new ClientInfo { Product = Config.AnniversaryFlavor, Folder = "_anniversary_", Label = "Anniversary (TBC)",
@@ -205,12 +206,16 @@ namespace WowVisionInstaller
                         Product = product,
                         AddOnsPath = addons,
                         DisplayName = $"{ProductLabel(product)}  —  {Path.GetFileName(flavorDir)}",
+                        Beta = Path.GetFileName(flavorDir).Equals(Config.ForeverBetaFolder, StringComparison.OrdinalIgnoreCase),
                     });
                 }
             }
 
+            // A leftover Forever BETA folder goes behind the live client: the
+            // first flavor of a product is the one installed into, and
+            // "_classic_beta_" sorts before "_forever_".
             var order = SupportedProducts.ToList();
-            return found.OrderBy(f => order.IndexOf(f.Product)).ToList();
+            return found.OrderBy(f => order.IndexOf(f.Product)).ThenBy(f => f.Beta ? 1 : 0).ToList();
         }
 
         /// <summary>
@@ -243,7 +248,7 @@ namespace WowVisionInstaller
                 if (!File.Exists(info)) return null;
                 // line 1 = header, line 2 = the product token (e.g. "wow_anniversary")
                 var lines = File.ReadAllLines(info);
-                return lines.Length >= 2 ? lines[1].Trim() : null;
+                return lines.Length >= 2 ? Config.NormalizeProduct(lines[1].Trim()) : null;
             }
             catch { return null; }
         }
@@ -532,7 +537,7 @@ namespace WowVisionInstaller
                     if (string.IsNullOrWhiteSpace(lines[r])) continue;
                     var cols = lines[r].Split('|');
                     if (verCol >= cols.Length || prodCol >= cols.Length) continue;
-                    if (!string.Equals(cols[prodCol].Trim(), product, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!string.Equals(Config.NormalizeProduct(cols[prodCol].Trim()), product, StringComparison.OrdinalIgnoreCase)) continue;
 
                     int iface = InterfaceFromBuildVersion(cols[verCol].Trim());
                     if (iface > 0) return iface;

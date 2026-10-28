@@ -209,7 +209,7 @@ namespace WowVisionInstaller
 
             // ── dialogs ──────────────────────────────────────────────────────
             ["dlg.browse.desc"]        = "Select your World of Warcraft folder, a game version folder, or the Interface\\AddOns folder.",
-            ["dlg.notRecognized.text"] = "That folder doesn't look like a World of Warcraft install. Pick the World of Warcraft folder, a game version folder (for example _classic_beta_ for WoW Forever, _anniversary_, _classic_era_, _classic_ or _retail_), or its Interface\\AddOns folder.",
+            ["dlg.notRecognized.text"] = "That folder doesn't look like a World of Warcraft install. Pick the World of Warcraft folder, a game version folder (for example _forever_ for WoW Forever, _anniversary_, _classic_era_, _classic_ or _retail_), or its Interface\\AddOns folder.",
             ["dlg.notRecognized.title"]= "Folder not recognized",
             ["dlg.closeGame.text"]     = "World of Warcraft must be fully closed for this step (WowVision is installed into a game version for the first time, or required game settings are fixed).\n\nClose the game completely (all the way to the desktop), then choose Retry. Or Cancel to stop.",
             ["dlg.closeGame.title"]    = "Please close World of Warcraft",
@@ -455,7 +455,7 @@ namespace WowVisionInstaller
 
             // ── Dialoge ──────────────────────────────────────────────────────
             ["dlg.browse.desc"]        = "Wähle deinen World-of-Warcraft-Ordner, einen Spielversions-Ordner oder den Ordner Interface\\AddOns.",
-            ["dlg.notRecognized.text"] = "Dieser Ordner sieht nicht nach einer World-of-Warcraft-Installation aus. Wähle den World-of-Warcraft-Ordner, einen Spielversions-Ordner (zum Beispiel _classic_beta_ für WoW Forever, _anniversary_, _classic_era_, _classic_ oder _retail_) oder dessen Ordner Interface\\AddOns.",
+            ["dlg.notRecognized.text"] = "Dieser Ordner sieht nicht nach einer World-of-Warcraft-Installation aus. Wähle den World-of-Warcraft-Ordner, einen Spielversions-Ordner (zum Beispiel _forever_ für WoW Forever, _anniversary_, _classic_era_, _classic_ oder _retail_) oder dessen Ordner Interface\\AddOns.",
             ["dlg.notRecognized.title"]= "Ordner nicht erkannt",
             ["dlg.closeGame.text"]     = "World of Warcraft muss für diesen Schritt vollständig geschlossen sein (WowVision wird zum ersten Mal in eine Spielversion installiert, oder erforderliche Spieleinstellungen werden korrigiert).\n\nSchließe das Spiel vollständig (bis zum Desktop) und wähle dann „Wiederholen“. Oder „Abbrechen“ zum Beenden.",
             ["dlg.closeGame.title"]    = "Bitte World of Warcraft schließen",
@@ -704,7 +704,7 @@ namespace WowVisionInstaller
 
             // ── boîtes de dialogue ───────────────────────────────────────────
             ["dlg.browse.desc"]        = "Sélectionnez votre dossier World of Warcraft, un dossier de version du jeu, ou le dossier Interface\\AddOns.",
-            ["dlg.notRecognized.text"] = "Ce dossier ne ressemble pas à une installation de World of Warcraft. Choisissez le dossier World of Warcraft, un dossier de version du jeu (par exemple _classic_beta_ pour WoW Forever, _anniversary_, _classic_era_, _classic_ ou _retail_), ou son dossier Interface\\AddOns.",
+            ["dlg.notRecognized.text"] = "Ce dossier ne ressemble pas à une installation de World of Warcraft. Choisissez le dossier World of Warcraft, un dossier de version du jeu (par exemple _forever_ pour WoW Forever, _anniversary_, _classic_era_, _classic_ ou _retail_), ou son dossier Interface\\AddOns.",
             ["dlg.notRecognized.title"]= "Dossier non reconnu",
             ["dlg.closeGame.text"]     = "World of Warcraft doit être entièrement fermé pour cette étape (WowVision est installé pour la première fois dans une version du jeu, ou des réglages du jeu nécessaires sont corrigés).\n\nFermez complètement le jeu (jusqu'au bureau), puis choisissez « Réessayer ». Ou « Annuler » pour arrêter.",
             ["dlg.closeGame.title"]    = "Veuillez fermer World of Warcraft",
