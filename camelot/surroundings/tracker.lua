@@ -7,8 +7,8 @@
 -- cheapest old candidate it can be reached from (a walk of steps costs nothing, a fall 2, a missing step at one
 -- height 1.5, a jump 8; a liquid surface on foot or a dry one swimming is no candidate, both are while the game
 -- says neither, in the air); candidates far costlier than the best are dropped. The floor is the best candidate's piece (of equal costs the nearest column's); it is SURE when
--- every candidate within the margin lies at that height, else unsure (floors at several heights are possible:
--- the speech should wait). Measured offline before
+-- every candidate within the margin lies at that height, else unsure (floors at several heights are possible;
+-- logged with the looks, nothing waits on it). Measured offline before
 -- it was built (STATE task 0 "THE TRACKER MEASUREMENT"): with about a second of evidence wrong on 4 / 4 / 0
 -- points where the piece module was wrong on 2.1 / 10.3 / 4.0 %.
 -- Holes of the walk graph (2026-10-19, after the walk of 10-18 21:55, bug 63: the zeppelin tower's base has no
@@ -96,9 +96,9 @@ for i = 1, #ALPHABET do
     VALUE[ALPHABET:byte(i)] = i - 1
 end
 local Z_OFFSET = 200000
--- (a record of 9 characters: col, height, piece, flags; 10 where the layer says `rec = 10`: a tenth with the
--- surface's place within its column in eighths of a yard, x in bits 3 to 5, y in bits 0 to 2, since 2026-10-19
--- evening; without it a surface is taken at its column's centre)
+-- (a record of 10 characters: col, height, piece, flags, and the surface's place within its column in eighths of a
+-- yard, x in bits 3 to 5, y in bits 0 to 2; the layer says `rec = 10`. Records of 9, without the place, were the
+-- data before 2026-10-19 evening: a surface taken at its column's centre)
 local COLS = 100003   -- a column key: r * COLS + c
 local byte = string.byte
 local floor = math.floor

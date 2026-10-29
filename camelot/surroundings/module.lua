@@ -221,7 +221,7 @@ local function updateHall(z, x, y, px, py)
     if piece then
         logic.setFloor(z, piece)
     end
-    local inFloor, entryRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
+    local inFloor, hallRoom = logic.inHallFloor(z, x, y, uiMap, z._index.floor or 0, hallMapWalked ~= nil, z._index.gameArea)
     -- the height the zone's floor is followed at: into the halls only where their layer has a floor at it, and onto
     -- that floor (walk 2026-10-22 11:31:37, STATE bug 68: a step before the Ruins' bell tower doorway the tower's room
     -- box took the player in where the halls' layer has only the canal ring 124 yd below; the layer started on the
@@ -237,8 +237,8 @@ local function updateHall(z, x, y, px, py)
         -- at another height; an older room held from before is forgotten), and the halls layer's
         -- floor is that room's (logic.roomPieceHere: the rooms are found by the floor), or the one at the height
         -- held where that room's piece lies at another
-        hallGap, room, roomByDoor = 0, entryRoom, false
-        local piece = layer and logic.roomPieceHere(layer, entryRoom, x, y)
+        hallGap, room, roomByDoor = 0, hallRoom, false
+        local piece = layer and logic.roomPieceHere(layer, hallRoom, x, y)
         if atHeight and (piece == nil or not logic.tracker.pieceAt(layer, x, y, heldZ, HALL_ENTRY_DZ, piece)) then
             piece = atHeight
         end
@@ -254,6 +254,17 @@ end
 -- Indoors: as the game says, or in one of the halls it calls outdoors (as of the last look).
 local function isInside()
     return IsIndoors() or hallGap ~= nil
+end
+
+-- The grid the player's floor is held in: the layer inside (a building, a city's halls), else the zone; nil with no
+-- zone data.
+local function heldGrid()
+    return zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+end
+
+-- How far from a guidance target it stays the target (its own reach, a way out's, else the guidance's).
+local function targetReach(t)
+    return t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
 end
 
 -- Forget the place on the ways (outdoors, or the indoor layer's): stepping between a room and the
@@ -425,7 +436,7 @@ local function logEntry(kind, text, x, y, extra)
     e.swimming = IsSwimming() or nil
     e.facing = facingDegrees()
     -- the floor piece the player is on (0 the ground), in the hall layer they are in or outdoors
-    local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+    local held = heldGrid()
     if held and (held._index.floor or 0) ~= 0 then
         e.floor = held._index.floor
     end
@@ -455,7 +466,7 @@ local function logTrail(x, y)
     trailX, trailY = x, y
     local facing = facingDegrees()
     -- p with the floor piece the player is on when it is not the ground ("if270p33")
-    local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+    local held = heldGrid()
     local piece = held and held._index.floor or 0
     local flags = (IsIndoors() and "i" or "") .. (hallGap and "h" or "") .. (IsSwimming() and "s" or "")
         .. (UnitIsGhost("player") and "g" or "") .. (IsFalling() and "a" or "")
@@ -521,7 +532,7 @@ local function watchFall(now)
         if x == nil then
             return
         end
-        local held = zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
+        local held = heldGrid()
         fall = {
             t = now, x = x, y = y, piece = held and held._index.floor or 0,
             jump = now - lastJumpKey <= FALL_JUMP_GRACE,
@@ -805,7 +816,7 @@ end
 -- A target said: remembered until the player is GUIDE_FORGET beyond its reach (forgetLeft), and
 -- the turn key's target.
 local function noteSaid(g, t)
-    g.said[t.key] = { x = t.x, y = t.y, reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH }
+    g.said[t.key] = { x = t.x, y = t.y, reach = targetReach(t) }
     spokenGuide = g
 end
 
@@ -1476,8 +1487,6 @@ local function updateLayer(z, layer, x, y, px, py, here)
     checkStop(z, x, y, px, py, here)
 end
 
--- Indoors: the room as far as known (switches at once; announced after the entry distance), the
--- doorways of a big room, the indoor layer's edges and halls, the stops in the room.
 -- Where the player was (the room, the levels of the indoor layer they were on, the floor piece
 -- outdoors), kept per character over a reload or logout: with no height in the game a reload
 -- upstairs left the module on the floor below (the Brill tavern, trial 2026-10-03; a login on the
@@ -1561,6 +1570,14 @@ local function roomPieceLine(layer, x, y)
     end
 end
 
+-- Out of a city's halls at (x, y) (a doorway to outside, or a hall no step leads from): logged once.
+local function leaveHalls(x, y)
+    hallGap, hallDoorOut = nil, { x, y }
+    logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
+end
+
+-- Indoors: the room as far as known (switches at once; announced after the entry distance), the
+-- doorways of a big room, the indoor layer's edges and halls, the stops in the room.
 local function updateIndoors(z, x, y, px, py)
     if not hereRestored then
         restoreHere(z, x, y)
@@ -1574,14 +1591,12 @@ local function updateIndoors(z, x, y, px, py)
     end)
     if crossed == 0 and hallGap ~= nil and room and z._index.rooms[room].hallMap then
         -- out of the halls through a doorway to outside (the throne room's onto the rose walk)
-        hallGap, hallDoorOut = nil, { x, y }
-        logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
+        leaveHalls(x, y)
     end
     local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false, IsIndoors())
     if found ~= nil and room ~= nil and found ~= room and hallGap ~= nil and logic.hallsApart(z, room, found) then
         -- no step leads from this hall into that one: out of the halls (a doorway left unnoticed)
-        hallGap, hallDoorOut = nil, { x, y }
-        logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
+        leaveHalls(x, y)
         found, room = nil, nil
     end
     -- up on a level of the indoor layer (a building's upper floor, its stairs) a doorway of the
@@ -1959,7 +1974,7 @@ local function guideFacing(x, y)
     end
     -- the guidance lets a target go as soon as the player steps onto its climb or past its doorway;
     -- the key keeps it until the player is as far from it as the guidance forgets it (forgetLeft)
-    local reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
+    local reach = targetReach(t)
     local d2 = logic.dist2(x, y, t.x, t.y)
     if d2 > (reach + GUIDE_FORGET) ^ 2 then
         return nil
@@ -2156,7 +2171,7 @@ local function helperTarget(z, grid, x, y)
     local g = spokenGuide
     local t = g and g.target
     if t ~= nil then
-        local reach = t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
+        local reach = targetReach(t)
         if logic.dist2(x, y, t.x, t.y) <= (reach + GUIDE_FORGET) ^ 2 then
             return t, g.zone or grid
         end

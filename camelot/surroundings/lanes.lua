@@ -236,8 +236,6 @@ function logic.turnHint(zone, x, y, facing, spokenAxis)
     return diff > 0 and 1 or -1
 end
 
--- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
--- each way: toward the stretch's end and back (bearings, or nil where it stored none).
 -- yd on along a line that the turn key and the guidance aim at from beside the line: off the middle, the
 -- player is pulled back onto it instead of walking parallel to it (user 2026-10-18: lines that keep one in the
 -- real middle by default; the zeppelin tower's first flight, left 4 yd to the open side)
@@ -295,6 +293,8 @@ function logic.laneToward(zone, piece, x, y, fx, fy)
     return bestLane, bx, by, bEnd, bDe
 end
 
+-- The heading the export stored for the spot (px, py) on `lane` (zone.lua: lane.headings), one
+-- each way: toward the stretch's end and back (bearings, or nil where it stored none).
 function logic.storedHeadings(lane, px, py)
     local h = lane.headings
     if h == nil then

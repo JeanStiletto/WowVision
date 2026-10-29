@@ -2,10 +2,10 @@
 -- liquid is one like any other), the floor pieces they lie on, and the ways out of the liquids.
 --
 -- An edge on a floor piece (a gate's wall-walk, a bridge deck over a bank, a landing) warns only
--- while the player is on that piece. There is no height on Forever (measured 2026-10-05), so the
--- player's floor is followed from the ground: it changes only at a join crossed, at a drop edge
--- crossed, or when the floor is no longer under them (updateFloor); walking under a piece never
--- counts.
+-- while the player is on that piece. The game gives no height, so the player's floor is followed: on the walk
+-- graph's surfaces (tracker.lua) where the data has them (every zone but the Deeprun Tram); else, the older piece
+-- tracker below, from the ground: it changes only at a join crossed, at a drop edge crossed, or when the floor is
+-- no longer under them (updateFloor); walking under a piece never counts.
 
 local logic = WowVision.surroundingsLogic
 
@@ -185,7 +185,7 @@ end
 function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
     -- the walk-graph tracker where the data has the layer's surfaces (format 5; tracker.lua): the joins, the
     -- drop edges and the lines decide nothing about the floor then, the surfaces do
-    if zone.surf and logic.tracker and logic.useTracker ~= false then
+    if zone.surf and logic.tracker then
         return logic.tracker.update(zone, x, y, swimming)
     end
     local ix = zone._index

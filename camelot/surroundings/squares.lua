@@ -436,7 +436,6 @@ end
 -- hut to its cellar have no top record, their border by the top was their only opening; the shop ledges in
 -- Stormwind with a foot record only are met "along" from the ledge. An end is on the square where it stands on one
 -- of its floors within END_REACH of its cells (the Command Center's ramp foot, 4 yd beyond the square's last cell).
-logic.CLIMB_END_OPENINGS = true
 logic.END_REACH = 6 -- yd
 
 -- The places of the climbs that have end records, per kind ("up" a foot, "down" a top; cached on the index).
@@ -456,7 +455,7 @@ end
 
 local function climbEndOpenings(zone, region, cells, floors)
     local ix = zone._index
-    if not logic.CLIMB_END_OPENINGS or not ix.climbTops then
+    if not ix.climbTops then
         return
     end
     local withEnds = climbsWithEnds(zone)
@@ -1039,15 +1038,6 @@ function logic.aroundItems(region, x, y, opts)
         end
     end
     return logic.capItems(groupItems(found, opts.dirs), opts.max, opts.cameFrom)
-end
-
--- The mouths of the region's ways (said with the square's exits on entry), as a set.
-function logic.wayMouths(region)
-    local said = {}
-    for _, m in ipairs(region.mouths) do
-        said[m] = m.class == "way" or nil
-    end
-    return said
 end
 
 -- Mouths of the region not yet said (`said`, a set kept by the caller) that the player has come

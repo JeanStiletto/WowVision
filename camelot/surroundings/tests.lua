@@ -758,7 +758,7 @@ testRunner:addSuite("Surroundings", {
         -- 90), the landing east of its top (column 4) and along its whole south side (row 1): the border meets the
         -- flight at its top and along its side; only the top record is the opening (walk 2026-10-25 17:59, the Hall
         -- of Mysteries' ramp: "at the ramp" said on a strip beside it, 6 yd from its foot)
-        local function openings(on)
+        local function openings()
             local z = newTowerZone()
             z.floorCells = { 0, 1, 1, 20090, 0, 2, 1, 20090, 0, 3, 1, 20085, 0, 4, 2, 30000,
                 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000, 1, 4, 2, 30000 }
@@ -766,7 +766,6 @@ testRunner:addSuite("Surroundings", {
             z.joins = { 0, 1, 95, 52, 90, 1, 2, 95, 20, 90, 1, 2, 90, 45, 0 }
             z.climbFeet = { 95, 52, 20090, 90, 0 }
             z.climbTops = { 95, 20, 20085, 270, 2 }
-            logic.CLIMB_END_OPENINGS = on
             logic.unpack(z)
             logic.setFloor(z, 2)
             local list = {}
@@ -775,16 +774,13 @@ testRunner:addSuite("Surroundings", {
                     list[#list + 1] = m
                 end
             end
-            logic.CLIMB_END_OPENINGS = true
             return list
         end
-        local list = openings(true)
+        local list = openings()
         t:assertEqual(#list, 1)
         t:assertEqual(list[1].endRecord, true)
         t:assertEqual(list[1].points[1], 95)
         t:assertEqual(list[1].points[2], 20)
-        -- (the side stretches the rule takes away: without it the border gave more)
-        t:assertEqual(#openings(false) > 1, true)
     end,
 
     ["the end of a climb just crossed is no target near where it was stepped off; a second try at a foot is"] = function(t)

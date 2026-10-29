@@ -74,7 +74,6 @@ local function nearestPoint(list, x, y)
     end
     return best, bestD
 end
-logic.placesNearest = nearestPoint
 
 local function byDistance(a, b)
     if (a.first == true) ~= (b.first == true) then

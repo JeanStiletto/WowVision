@@ -351,15 +351,15 @@ function logic.noteClimbStep(zone, x, y)
     if place and ix.climbPlace == nil then
         ix.climbIn, ix.crossed = { x = x, y = y }, nil
         -- stepped onto the flight beside its own top record: going down it (climbTarget leaves its foot out)
-        ix.climbDown = nil
+        ix.goingDownClimb = nil
         for _, t in ipairs(ix.climbTops or {}) do
             if t.value == v and logic.dist(t.x, t.y, x, y) < logic.CROSSED then
-                ix.climbDown = place
+                ix.goingDownClimb = place
                 break
             end
         end
     elseif place == nil and ix.climbPlace ~= nil then
-        ix.climbDown = nil
+        ix.goingDownClimb = nil
         local inAt = ix.climbIn
         ix.crossed = inAt and logic.dist(inAt.x, inAt.y, x, y) >= logic.CROSSED
             and { place = ix.climbPlace, x = x, y = y } or nil
@@ -406,8 +406,8 @@ local function climbTarget(zone, x, y, reach, prefer, floor)
         -- (not the foot of the climb the player is on when they stepped onto it beside its own top: walked down to,
         -- it said "2 yd behind, on up" and the turn key faced back up the ramp, the Abbey's bell tower ramp
         -- 2026-10-20 09:20:54; stepped on anywhere else, a spiral's next flight or a second try, it stays)
-        local downTo = ix.climbDown ~= nil and ix.climbDown == ix.climbPlace and here and here ~= 0
-            and logic.placeOf(here) == ix.climbDown and logic.placeOf(f.value) == ix.climbDown
+        local downTo = ix.goingDownClimb ~= nil and ix.goingDownClimb == ix.climbPlace and here and here ~= 0
+            and logic.placeOf(here) == ix.goingDownClimb and logic.placeOf(f.value) == ix.goingDownClimb
         if (fl == on or atFoot or (also and also[fl] and fl ~= ix.cameFrom and nearJoin(ix, on, fl, x, y)))
             and not (crossed and fl == on and logic.placeOf(f.value) == crossed.place) and not downTo then
             feet[#feet + 1] = f
