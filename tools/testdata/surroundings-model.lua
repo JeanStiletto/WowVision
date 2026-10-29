@@ -37,7 +37,6 @@ addon.addZone({
     exits = {95,20,10,0,90.5,21.5,8,270},
     exitFloors = {3,3},
     exitGroups = {1,1},
-    deadExits = {2},
     noContact = {0,1,0,2},
     structs = {"dock", "wall"},
     waterStructs = {1},

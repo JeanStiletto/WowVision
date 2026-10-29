@@ -26,7 +26,7 @@ local LAYERS = { { "indoor", "halls" }, { "indoorIn", "inside" } }
 -- per-cell lists: the model's key, the values after row and column, the key in a layer's cells
 local CELL_LISTS = { { "floorCells", 2, "floor" }, { "noGround", 0, "noGround" }, { "structCells", 1, "struct" },
     { "floorRooms", 2, "rooms" }, { "hallGround", 0, "hallGround" } }
-local COPIED = { "deadExits", "noContact", "liquids", "lineFloors", "doorFloors", "waterStructs", "structs", "rooms" }
+local COPIED = { "noContact", "liquids", "lineFloors", "doorFloors", "waterStructs", "structs", "rooms" }
 local WORDS = { "dirs", "dirsClock", "compass", "axes", "floors", "ofTemplate" }
 
 -- Steps in tenths of a yard (the first from 0) as world coordinates, appended to `out`.

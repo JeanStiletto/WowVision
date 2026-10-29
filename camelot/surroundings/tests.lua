@@ -2708,16 +2708,6 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.beginningReach(8, { span = 10 }), 13)
     end,
 
-    ["a way out of the water onto floor that joins nothing says it leads to a dead end"] = function(t)
-        local z = newZone()
-        z.deadExits = { 1 }
-        logic.unpack(z)
-        local target = logic.exitTarget(z, 95, 30, 3)
-        t:assertEqual(logic.guideText(z, target, true, false), "way out of the water to a dead end, 10 to the east, out to the north")
-        t:assertEqual(logic.guideText(z, target, false, false), "way out to a dead end, 10 to the east")
-        t:assertEqual(logic.guideText(z, target, false, true), "at the way out to a dead end, out to the north")
-    end,
-
     ["a neighbouring square is an exit even where it meets no other way"] = function(t)
         local z = newZone()
         -- square A on columns 0 to 2, square B (touching nothing else) on columns 3 to 5

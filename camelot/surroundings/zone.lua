@@ -948,12 +948,6 @@ function logic.unpack(zone, locale)
             ix.exits[i].group = g
         end
     end
-    -- ways out onto floor that joins nothing, or into a dead end (decided offline with the heights)
-    for _, i in ipairs(zone.deadExits or {}) do
-        if ix.exits[i] then
-            ix.exits[i].dead = true
-        end
-    end
     -- neighbouring cells of two squares with no walkable crossing between them (decided offline
     -- with the heights): no border between the two squares
     ix.noContact = {}

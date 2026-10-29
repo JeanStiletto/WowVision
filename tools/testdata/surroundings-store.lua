@@ -137,7 +137,6 @@ addon.addZone({ key = "storetest", label = "Store Test", map = 0, top = 100, lef
    "climbAims":[
     1,30000,805,50,0
    ],
-   "deadExits":[2],
    "noContact":[
     0,1,0,2
    ],

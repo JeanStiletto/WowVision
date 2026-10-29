@@ -634,8 +634,8 @@ function logic.onClimb(zone, t, x, y, currentKey)
 end
 
 -- The nearest way out of the floor piece the player is on (`floor`: a liquid's within EXIT_REACH;
--- the moat's from anywhere down in it, its nine place pieces are one floor and share them); one
--- onto floor that joins nothing or into a dead end says so. `down`: the place value of a hall's
+-- the moat's from anywhere down in it, its nine place pieces are one floor and share them). (A way out onto
+-- floor that joins nothing is no way out: the export drops it, review 2026-10-29.) `down`: the place value of a hall's
 -- lower floor the player is down on (the moat): named as its way out.
 function logic.exitTarget(zone, x, y, floor, down)
     local own = {}
@@ -648,17 +648,16 @@ function logic.exitTarget(zone, x, y, floor, down)
     if i == nil then
         return nil
     end
-    local dead = exit.dead
     local name = L["way out of the water"]
     if down and logic.kindOf(zone, down) == "moat" then
         name = L["way out of the moat"]
     end
     return {
         key = exit.group or exit.i or i, kind = "exit", d = d, dir = dir, x = exit.x, y = exit.y,
-        name = dead and L["way out of the water to a dead end"] or name,
-        short = dead and L["way out to a dead end"] or L["way out"],
-        atName = dead and L["at the way out to a dead end"] or L["at the way out"],
-        at = dead and L["at the way out to a dead end"] or L["at the way out"],
+        name = name,
+        short = L["way out"],
+        atName = L["at the way out"],
+        at = L["at the way out"],
         through = exit.out, throughFormat = T("out to the %s"),
     }
 end
