@@ -359,13 +359,23 @@ local function regionJoins(zone, r, c, key, floors, value)
 end
 
 -- A ramp or stairs joined to the region's floor at a point on the region is a mouth there too,
--- unless a mouth of that name is found already: a flight rising from the middle of a tower's deck
+-- unless that climb is a mouth already: a flight rising from the middle of a tower's deck
 -- lies over the deck's own cells, and the border never shows it (Alt-L on the zeppelin tower's deck
 -- named the stairs down, not the spiral up; user 2026-10-06).
 local function joinedClimbMouths(zone, region, cells, floors)
+    -- what the region has already: a climb by its place, anything else by its label (by label only, a
+    -- plain "ramp" elsewhere on the hall hid the ramp out of Ironforge's moat, whose top joins the hall:
+    -- stepping off it there counted as off its side, and the hall was said with nothing around it,
+    -- replay of the walk 2026-10-28 23:45:40 on trial L17, bug 115)
     local have = {}
+    local function key(label, value)
+        if value and value ~= 0 and logic.CLIMBS[logic.kindOf(zone, value)] then
+            return "p" .. logic.placeOf(value)
+        end
+        return label
+    end
     for _, m in ipairs(region.mouths) do
-        have[m.label] = true
+        have[key(m.label, m.value)] = true
     end
     local ix, cols = zone._index, zone.cols
     for f in pairs(floors) do
@@ -392,8 +402,8 @@ local function joinedClimbMouths(zone, region, cells, floors)
                         end
                         if v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] then
                             local label, _class, spoken = borderThing(zone, v, vr * cols + vc, logic.ownerOf(zone, region.value))
-                            if label and not have[label] then
-                                have[label] = true
+                            if label and not have[key(label, v)] then
+                                have[key(label, v)] = true
                                 -- (at an end record of the climb, its foot or top, that record is the opening and its
                                 -- guidance target, as for the climbs the border shows: findMouths)
                                 local rise = "up"
@@ -522,6 +532,28 @@ function logic.regionCache(zone)
     return ix.regionOf
 end
 
+-- Is an entrance on the region's level: one of its doorways' sills lies on one of the region's floors or on a
+-- piece joined to one (a doorstep)? True where the data does not say (no floors, or a sill with no floor piece of
+-- the grid: -1, -2). An entrance up a ramp or stairs is not the square's: the climb names it (B4, "ramp to
+-- Orphanage"), and the square said the shop twice, the climb and then its entrance (the user, walk 2026-10-28
+-- 23:24:38 on Cathedral Square: "Rampe Richtung Waisenhaus auf 12 ... Eingang von Waisenhaus auf 12", bug 133).
+local function onRegionFloor(zone, e, floors)
+    if e.floors == nil then
+        return true
+    end
+    for f in pairs(e.floors) do
+        if floors[f] or f < 0 then
+            return true
+        end
+        for g in pairs(floors) do
+            if logic.joinedPieces(zone, f, g) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
     if not logic.hasEdge(zone, value) then
@@ -581,7 +613,7 @@ function logic.regionAt(zone, x, y)
     end
     for _, e in ipairs(logic.entrances(zone)) do
         local er, ec = logic.cellOf(zone, e.x, e.y)
-        if logic.nearCell(zone, cells, er, ec, true) then
+        if logic.nearCell(zone, cells, er, ec, true) and onRegionFloor(zone, e, floors) then
             -- in the indoor layer a passage or the way out is said by its name alone
             table.insert(region.mouths, { label = e.building, class = e.plain and "room" or "entrance", points = { e.x, e.y } })
         end
