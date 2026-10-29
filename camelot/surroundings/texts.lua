@@ -253,6 +253,8 @@ local function beginningTarget(zone, x, y, reach, square, prefer)
     -- on a named floor the stairs down are "stairs" (logic.floorOf); a way of a structure the
     -- player is not on with the structure's name (b.spoken)
     local label = b.spoken or logic.floorLabel(zone, b.label, logic.floorOfValue(zone, square.value))
+    -- a fork's or crossing's arms in the player's words, never the data's "<d...>" (none begins a way today)
+    label = logic.expandDirs(zone, label)
     return {
         key = "w" .. b.label .. "@" .. math.floor(b.x) .. "," .. math.floor(b.y), kind = "way", d = d, dir = dir,
         label = b.label,   -- the way's own name (the name said may leave out a floor)

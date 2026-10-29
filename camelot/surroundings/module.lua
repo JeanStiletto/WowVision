@@ -825,6 +825,10 @@ local function guideTo(z, g, t, x, y, brief)
         if g.key ~= t.key then
             say(t.name, t.kind, x, y)
             g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
+            -- the target just named is the one the turn key and Alt-I take (review 2026-10-29: they took the one
+            -- named before the beacon started)
+            g.target, g.zone = t, z
+            noteSaid(g, t)
         end
         return
     end
@@ -882,6 +886,10 @@ end
 local function checkGuide(z, x, y, roomId, skipDoor, climbZone)
     if not module.settings.guidance then
         guide.key = nil
+        -- guidance off: the turn key no longer aims at the target last said
+        if spokenGuide == guide then
+            spokenGuide = nil
+        end
         return
     end
     forgetLeft(guide, x, y)
@@ -1890,13 +1898,13 @@ function module:describeAround()
         local t = self.settings.guidance and (out and logic.exitTarget(layer, x, y, layer._index.floor, down)
             or not out and logic.footTarget(layer, x, y, region))
         if t then
-            text = text .. ", " .. logic.guideText(layer, t, true, t.d <= logic.GUIDE_AT)
+            text = text .. ", " .. logic.guideText(layer, t, true, logic.atTarget(layer, t, x, y))
         end
     elseif isInside() then
         text = room and logic.roomText(z, room, nil, false, x, y) or L["room unknown"]
         local t = room and self.settings.guidance and logic.roomDoorTarget(z, room, x, y)
         if t then
-            text = text .. ", " .. logic.guideText(z, t, true, t.d <= logic.GUIDE_AT)
+            text = text .. ", " .. logic.guideText(z, t, true, logic.atTarget(z, t, x, y))
         end
     else
         local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
@@ -1909,7 +1917,7 @@ function module:describeAround()
             t = logic.footTarget(z, x, y, region)
         end
         if t then
-            text = text .. ", " .. logic.guideText(z, t, true, t.d <= logic.GUIDE_AT)
+            text = text .. ", " .. logic.guideText(z, t, true, logic.atTarget(z, t, x, y))
         end
     end
     -- where one waits for a ship, zeppelin, lift or tram
@@ -2233,7 +2241,9 @@ function module:leadOn()
         end
     end)
     maps:pathfind(path)
-    local text = name and string.format(L["Leading to %s"], name) or L["Leading along the climb"]
+    -- (the hours and a fork's arms resolved, as every other line: logic.finishText, expandDirs)
+    local text = name and logic.finishText(logic.expandDirs(grid, string.format(L["Leading to %s"], name)))
+        or L["Leading along the climb"]
     if route.short then
         text = text .. ", " .. L["the line ends before the top"]
     end
