@@ -49,12 +49,22 @@ function Beacon:compute()
     return distance, relative
 end
 
+-- On a way with a direction of its own (module.wayHere) the loop is silent (setting quietOnWays).
+function Beacon:quietHere()
+    return module.settings.quietOnWays and module.wayHere ~= nil and module.wayHere() and true or false
+end
+
 -- Edge-triggered alignment cue. Initialized silently so a cue only fires when the
--- player actually crosses the alignment threshold by turning.
+-- player actually crosses the alignment threshold by turning; but where the loop is
+-- silent, a new waypoint off the facing gives the off-course cue at once (nothing else
+-- would tell the player the way now turns away).
 function Beacon:updateAlignment(relative)
     local within = abs(relative) <= ALIGN_DEGREES
     if self.aligned == nil then
         self.aligned = within
+        if not within and self:quietHere() then
+            module:fireAlert("beacon", { action = "unaligned" })
+        end
     elseif within and not self.aligned then
         self.aligned = true
         module:fireAlert("beacon", { action = "aligned" })
@@ -98,7 +108,7 @@ function Beacon:update()
     self.lastPlay = now
 
     -- On a way with a direction of its own (module.wayHere): no loop, the cues stay (setting quietOnWays).
-    if module.settings.quietOnWays and module.wayHere ~= nil and module.wayHere() then
+    if self:quietHere() then
         return
     end
 
