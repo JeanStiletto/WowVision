@@ -759,6 +759,13 @@ local function say(text, kind, x, y, walked, extra)
     end
     if text and text ~= "" then
         speakLine(text, kind)
+    else
+        -- nothing to say (the next piece of the same way, no direction): logged, but nothing heard changes: the
+        -- names of the last line, the turn key's target and the helper's route stay (bug 32, review 2026-10-29)
+        extra = extra or {}
+        extra.walked = walked and round1(walked) or nil
+        logEntry(kind, text, x, y, extra)
+        return
     end
     if HEARD_STARTS[kind] then
         heardLines = { raw }
@@ -1024,6 +1031,25 @@ local function notePassedBeginning(z, fx, fy, square, wayKey)
     end
 end
 
+-- The floor piece of `grid` the sill of the doorway at (x, y) lies on: the doorway nearest within PASSED_REACH
+-- (the one just walked through), its piece of that grid (doorFloors); nil where none is near or its sill lies on
+-- the ground. Stepping in or out starts the grid entered on it: a door onto a raised floor over walkable ground
+-- (a balcony, a wall walk, a building's upper door) held the ground, and the raised floor's drops went unwarned
+-- (review 2026-10-29: RULES' "the outside sill takes the player onto its piece" lived in the old piece tracker only).
+local function sillFloor(grid, x, y)
+    local best, floor = PASSED_REACH ^ 2, nil
+    for _, door in ipairs(grid._index.doors or {}) do
+        local dx, dy = logic.doorWorld(grid, door)
+        if dx then
+            local d = logic.dist2(dx, dy, x, y)
+            if d <= best then
+                best, floor = d, door.floor
+            end
+        end
+    end
+    return floor and floor > 0 and floor or nil
+end
+
 -- Forget the doorway or beginning passed once the player was farther than its guidance reach.
 local function updatePassed(x, y)
     if passed and logic.dist2(x, y, passed.x, passed.y) > passed.reach ^ 2 then
@@ -1212,7 +1238,13 @@ local function checkBump(z, x, y, px, py, isIndoors)
     if vx == nil then
         return
     end
-    local o = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, isIndoors and room or 0)
+    -- indoors the room's objects, any room's while the room is unknown (stacked floors); outdoors the outdoor ones
+    -- (not `isIndoors and room or 0`: with the room unknown that gave the outdoor objects)
+    local objectRoom = 0
+    if isIndoors then
+        objectRoom = room
+    end
+    local o = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, objectRoom)
     local text, key
     if o then
         text, key = o.name, o
@@ -1400,6 +1432,10 @@ local function checkPlace(z, x, y, forced)
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), early = true })
             aheadSaid[outdoor.current] = nil
             heardLines = { text }
+            -- an Alt-I route that waits for this place's line ends here, as on a place said now (review 2026-10-29)
+            if helperArrival then
+                helperArrival()
+            end
         else
             say(text, "place", x, y, outdoor.walked)
         end
@@ -1712,14 +1748,21 @@ module:hasUpdate(function(self)
     logTiming(x, y)
     local isIndoors = IsIndoors() or inHall
     updatePassed(x, y)
-    -- a jump inside (a hearthstone, a portal) starts afresh as a step in or out does: from the
-    -- Undercity's halls into the Brill tavern, inside both times, the halls' room held (2026-10-13)
-    local jumped = isIndoors and wasIndoors and px ~= nil and logic.dist(x, y, px, py) > JUMP
+    -- a jump (a hearthstone, a portal, a graveyard release, a summon) starts afresh as a step in or out does: from
+    -- the Undercity's halls into the Brill tavern, inside both times, the halls' room held (2026-10-13); outdoors too
+    -- (review 2026-10-29: released to a graveyard in the same zone, its place came only after 8 yd of walking)
+    local jumped = wasIndoors ~= nil and px ~= nil and logic.dist(x, y, px, py) > JUMP
     if isIndoors ~= wasIndoors or jumped then
         if wasIndoors ~= nil then
             notePassed(z, x, y)
         end
         forgetPlace()
+        -- through a doorway: the grid entered starts on the floor its sill lies on (not after a jump: no doorway)
+        local entered = (isIndoors and logic.layer(z, IsIndoors())) or (not isIndoors and z) or nil
+        local sill = entered and not jumped and wasIndoors ~= nil and sillFloor(entered, x, y)
+        if sill then
+            logic.setFloor(entered, sill)
+        end
         outAt = (wasIndoors and not isIndoors) and now or nil
         cameIn = (isIndoors and wasIndoors == false and px and logic.dist(x, y, px, py) <= CAME_IN_STEP) and { x, y } or nil
         wasIndoors = isIndoors
@@ -1875,16 +1918,21 @@ function module:describeAround()
         text = text .. ", " .. logic.stopText(z, stop, x, y)
     end
     -- a drop or water edge within reach, or ahead in the line of the facing (user's walk
-    -- 2026-10-01: 1.4 yd from the canal the key said only the walk's name, then the fall)
-    if not isInside() then
+    -- 2026-10-01: 1.4 yd from the canal the key said only the walk's name, then the fall); inside on the layer
+    -- with the rooms here, as walking warns them (checkEdges): the halls' lava and canals, a room's drop
+    local ez, rooms = z, nil
+    if isInside() then
+        ez, rooms = layer, layer and roomsHere(z, x, y)
+    end
+    if ez then
         local facing = GetPlayerFacing()
-        local i = logic.nearestEdge(z, x, y, EDGE_REACH, nil, facing)
+        local i = logic.nearestEdge(ez, x, y, EDGE_REACH, rooms, facing)
         local along, qx, qy = nil, nil, nil
         if i == nil and facing then
-            i, along, qx, qy = logic.edgeAhead(z, x, y, math.cos(facing), math.sin(facing), EDGE_LOOK, nil)
+            i, along, qx, qy = logic.edgeAhead(ez, x, y, math.cos(facing), math.sin(facing), EDGE_LOOK, rooms)
         end
         if i then
-            text = text .. ", " .. logic.edgeText(z, i, along, x, y, qx, qy)
+            text = text .. ", " .. logic.edgeText(ez, i, along, x, y, qx, qy)
         end
     end
     say(text, "around", x, y)
@@ -2106,7 +2154,8 @@ local function helperTarget(z, grid, x, y)
         end
     end
     if isInside() and not (layerMode and grid ~= z) then
-        return room and logic.roomDoorTarget(z, room, x, y) or nil, z
+        -- any room's doorway, a small room's too (the guidance names doorways in big rooms only)
+        return room and logic.roomDoorTarget(z, room, x, y, nil, nil, nil, true) or nil, z
     end
     local down = downHere(grid, x, y)
     if down or logic.liquidKind(grid, grid._index.floor) then

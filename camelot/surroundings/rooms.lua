@@ -742,8 +742,10 @@ end
 -- left out.
 -- `prefer` {x, y}: the doorway guided to last stays the target unless another is nearer by more
 -- than GUIDE_STICK (Ironforge's Great Forge, 2026-10-01: seven doorway lines in 30 s).
-function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer)
-    if not logic.isBigRoom(zone, roomId) then
+-- `anySize`: any room, not only a big one (the building helper: Alt-I in a house's room leads to its doorway
+-- by the same rule as in a hall, the user 2026-10-29).
+function logic.nearestDoorway(zone, roomId, x, y, reach, skip, prefer, anySize)
+    if not anySize and not logic.isBigRoom(zone, roomId) then
         return nil
     end
     local ix = zone._index

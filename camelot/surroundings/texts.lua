@@ -226,9 +226,9 @@ end
 -- In a big room (logic.isBigRoom), the nearest of its doorways within reach, as a guidance target:
 -- the room behind it by name, the way through it leaving the room. `skip` (optional): a door left
 -- out (the one the player just came in by). `reach` (optional): searched within, GUIDE_REACH when
--- not given; the target's reach stays GUIDE_REACH.
-function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer, reach)
-    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, reach or GUIDE_REACH, skip, prefer)
+-- not given; the target's reach stays GUIDE_REACH. `anySize`: any room (the building helper), see nearestDoorway.
+function logic.roomDoorTarget(zone, roomId, x, y, skip, prefer, reach, anySize)
+    local d, door, dx, dy, beyond = logic.nearestDoorway(zone, roomId, x, y, reach or GUIDE_REACH, skip, prefer, anySize)
     if d == nil then
         return nil
     end
