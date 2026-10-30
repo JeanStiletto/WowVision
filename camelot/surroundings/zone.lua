@@ -264,15 +264,35 @@ function logic.cellOf(zone, x, y)
     return math.floor((zone.top - x) / zone.cell), math.floor((zone.left - y) / zone.cell)
 end
 
--- The cell key offsets of a cell and the 8 around it on a grid of `cols` columns, in the order rows north to south,
--- each row's cells west to east: `key + offset` for each (no guard at the grid's border: at its east or west edge
--- the outer offsets reach the last or first cell of the next row).
+-- The cell key offsets of the cell (r, c) and the 8 around it that lie in the grid, in the order rows north to south,
+-- each row's cells west to east: `r * zone.cols + c + offset` for each. A cell in the first or last column has no
+-- neighbour beyond it (the key one step west of column 0 is the last cell of the row before: the user 2026-10-30,
+-- the column wrap guard), nor a cell in the first or last row; a cell outside the grid has none of them in it.
+-- (Cached per grid width and the rows and columns in it: no new table at a call.)
 local AROUND = {}
-function logic.cellOffsets(cols)
-    local a = AROUND[cols]
+function logic.cellOffsets(zone, r, c)
+    local cols, rows = zone.cols, zone.rows
+    local rowMask, colMask = 0, 0
+    for i = -1, 1 do
+        if r + i >= 0 and r + i < rows then
+            rowMask = rowMask + 2 ^ (i + 1)
+        end
+        if c + i >= 0 and c + i < cols then
+            colMask = colMask + 2 ^ (i + 1)
+        end
+    end
+    local k = cols * 64 + rowMask * 8 + colMask
+    local a = AROUND[k]
     if a == nil then
-        a = { -cols - 1, -cols, -cols + 1, -1, 0, 1, cols - 1, cols, cols + 1 }
-        AROUND[cols] = a
+        a = {}
+        for dr = -1, 1 do
+            for dc = -1, 1 do
+                if rowMask % 2 ^ (dr + 2) >= 2 ^ (dr + 1) and colMask % 2 ^ (dc + 2) >= 2 ^ (dc + 1) then
+                    a[#a + 1] = dr * cols + dc
+                end
+            end
+        end
+        AROUND[k] = a
     end
     return a
 end
@@ -331,7 +351,7 @@ function logic.valueAtCell(zone, r, c)
             return own
         end
         local key = r * cols + c
-        for _, d in ipairs(logic.cellOffsets(cols)) do
+        for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
             local near = ix.floorCells[key + d]
             local nv = near and near[floor]
             if nv then
@@ -443,7 +463,7 @@ end
 -- cell key, or a set of values.
 function logic.nearCell(zone, map, r, c, want)
     local key = r * zone.cols + c
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
         local v = map[key + d]
         if v == want or (type(v) == "table" and v[want]) then
             return true
@@ -1479,7 +1499,7 @@ local function climbPieceHere(zone, r, c, value, around)
     end
     local place = logic.placeOf(value)
     local key = r * zone.cols + c
-    for _, d in ipairs(around and logic.cellOffsets(zone.cols) or { 0 }) do
+    for _, d in ipairs(around and logic.cellOffsets(zone, r, c) or (logic.inGrid(zone, r, c) and { 0 }) or {}) do
         for _, pv in pairs(ix.floorCells[key + d] or {}) do
             if logic.placeOf(pv) == place then
                 return true

@@ -35,7 +35,8 @@ function logic.floorHere(zone, key, floor)
     if floor == 0 then
         return not ix.noGround[key]
     end
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    local cols = zone.cols
+    for _, d in ipairs(logic.cellOffsets(zone, math.floor(key / cols), key % cols)) do
         local here = ix.floorCells[key + d]
         if here ~= nil and here[floor] ~= nil then
             return true
@@ -280,11 +281,9 @@ function logic.updateFloor(zone, x, y, cameOut, px, py, blocked, swimming)
         -- next to this one (its rim: a step beyond its last cell), not the ground absent here
         if pick == nil and not offLines and swimming == false and was ~= 0 and ix.liquids[was] == nil
             and ix.noGround[key] then
-            for dr = -1, 1 do
-                for dc = -1, 1 do
-                    if logic.floorHere(zone, (r + dr) * zone.cols + c + dc, was) then
-                        pick = was
-                    end
+            for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
+                if logic.floorHere(zone, key + d, was) then
+                    pick = was
                 end
             end
         end
@@ -342,7 +341,7 @@ function logic.swimFloor(zone, key, floor, swimming, x, y)
     end
     add(key)
     if #list == 0 then
-        for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
             add(key + d)
         end
     end
@@ -439,7 +438,7 @@ function logic.pieceWithLabel(zone, x, y, label, number)
     local r0, c0 = logic.cellOf(zone, x, y)
     local key = r0 * zone.cols + c0
     local found = nil
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    for _, d in ipairs(logic.cellOffsets(zone, r0, c0)) do
         for p, v in pairs(ix.floorCells[key + d] or {}) do
             if label == nil then
                 if p == number then

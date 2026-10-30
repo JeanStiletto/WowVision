@@ -2543,6 +2543,29 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, false), "3 east")
     end,
 
+    ["a cell in the first or last column does not see the opposite edge one row off"] = function(t)
+        -- 3 rows x 4 columns: the key one step west of (1, 0) is (0, 3), one step east of (1, 3) is (2, 0)
+        local z = { cols = 4, rows = 3 }
+        t:assertEqual(#logic.cellOffsets(z, 1, 1), 9)
+        t:assertEqual(#logic.cellOffsets(z, 1, 0), 6)
+        t:assertEqual(#logic.cellOffsets(z, 0, 0), 4)
+        t:assertEqual(#logic.cellOffsets(z, 5, 1), 0)   -- outside the grid: no cell of it
+        t:assertFalse(logic.nearCell(z, { [0 * 4 + 3] = true }, 1, 0, true))
+        t:assertFalse(logic.nearCell(z, { [2 * 4 + 0] = true }, 1, 3, true))
+        -- the neighbours in the grid still count, in column 0 and in the last column
+        t:assertTrue(logic.nearCell(z, { [0 * 4 + 1] = true }, 1, 0, true))
+        t:assertTrue(logic.nearCell(z, { [2 * 4 + 2] = true }, 1, 3, true))
+        -- a floor piece (5) only in the last cell of row 0: not on the floor in column 0 of row 1, beside it it is
+        z._index = { floorCells = { [0 * 4 + 3] = { [5] = 20000 } }, noGround = {} }
+        t:assertFalse(logic.floorHere(z, 1 * 4 + 0, 5))
+        t:assertTrue(logic.floorHere(z, 1 * 4 + 3, 5))
+        t:assertTrue(logic.floorHere(z, 0 * 4 + 2, 5))
+        -- and a piece only in the first cell of row 2: not seen from the last column of row 1
+        z._index.floorCells = { [2 * 4 + 0] = { [5] = 20000 } }
+        t:assertFalse(logic.floorHere(z, 1 * 4 + 3, 5))
+        t:assertTrue(logic.floorHere(z, 1 * 4 + 0, 5))
+    end,
+
     ["a climb's foot on the way is guided to like an entrance"] = function(t)
         local z = newWalkZone()
         z.dirs = { "running %s", "up to the %s" }

@@ -303,7 +303,7 @@ function logic.mouthValue(zone, r, c, key, floors, fromKey, own)
     end
     local joinAt = zone._index.joinAt
     local here = r * zone.cols + c
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
         for _, j in ipairs(joinAt[here + d] or {}) do
             local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
             if other and other >= 0 then
@@ -344,7 +344,7 @@ local function regionJoins(zone, r, c, key, floors, value)
     -- the two floors' cells, on either side)
     local joinAt = zone._index.joinAt
     local here = r * zone.cols + c
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
         for _, j in ipairs(joinAt[here + d] or {}) do
             local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
             if other and other >= 0 and logic.valueOfFloor(zone, r, c, other) == value then
@@ -390,7 +390,7 @@ local function joinedClimbMouths(zone, region, cells, floors)
                         local v, vr, vc = 0, r, c
                         for dr = -1, 1 do
                             for dc = -1, 1 do
-                                if v == 0 then
+                                if v == 0 and logic.inGrid(zone, r + dr, c + dc) then
                                     local w = logic.valueOfFloor(zone, r + dr, c + dc, other)
                                     if w ~= 0 then
                                         v, vr, vc = w, r + dr, c + dc

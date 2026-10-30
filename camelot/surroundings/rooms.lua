@@ -834,7 +834,7 @@ end
 function logic.hallGroundNear(zone, r, c)
     local hg = zone._index.hallGround
     local key = r * zone.cols + c
-    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+    for _, d in ipairs(logic.cellOffsets(zone, r, c)) do
         if hg[key + d] then
             return true
         end
