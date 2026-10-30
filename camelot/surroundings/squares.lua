@@ -551,6 +551,78 @@ local function onRegionFloor(zone, e, floors)
     return false
 end
 
+-- A city's ways between two places by their names, and the place key (English) each named hall
+-- stands for: {ways = {name = room}, places = {name = key}, labels = {key = name}}, cached.
+local function wayRooms(zone)
+    local top = zone.parent or zone
+    local ix = top._index
+    if ix.wayRooms == nil then
+        local ways, places, labels = {}, {}, {}
+        for _, room in pairs(ix.rooms or {}) do
+            if room.wayA and room.wayB and room.atA and room.atB then
+                ways[room.name] = ways[room.name] or room
+            elseif room.place then
+                places[room.name] = places[room.name] or room.place
+                labels[room.place] = labels[room.place] or room.name
+            end
+        end
+        ix.wayRooms = { ways = ways, places = places, labels = labels }
+    end
+    return ix.wayRooms
+end
+
+-- Distance between the nearest points of two mouths.
+local function mouthGap(a, b)
+    local best = math.huge
+    for i = 1, #a.points - 1, 2 do
+        local d = logic.nearestOfPoints(b.points, a.points[i], a.points[i + 1])
+        if d and d < best then
+            best = d
+        end
+    end
+    return best
+end
+
+-- A way between two places is said toward the place it leads to from here, as a room is entered
+-- ("Durchgang Richtung Mystikerviertel" from the main hall, not "Durchgang zwischen Haupthalle und
+-- Mystikerviertel"); from a way between the same two places toward the one whose opening here lies
+-- farther from its own (the user 2026-10-30: "große Halle zwischen Militärviertel und Haupthalle"
+-- listed "Durchgang zwischen Militärviertel und Haupthalle" beside the main hall's opening).
+local function towardWays(zone, region)
+    local known = wayRooms(zone)
+    local own = known.places[region.label]
+    local ownWay = known.ways[region.label]
+    for _, m in ipairs(region.mouths) do
+        local w = known.ways[m.label]
+        if w and w ~= ownWay then
+            local said = nil
+            if own == w.wayA then
+                said = w.atA
+            elseif own == w.wayB then
+                said = w.atB
+            elseif ownWay and ((ownWay.wayA == w.wayA and ownWay.wayB == w.wayB)
+                    or (ownWay.wayA == w.wayB and ownWay.wayB == w.wayA)) then
+                local ga, gb = math.huge, math.huge
+                for _, o in ipairs(region.mouths) do
+                    if o.label == known.labels[w.wayA] then
+                        ga = math.min(ga, mouthGap(m, o))
+                    elseif o.label == known.labels[w.wayB] then
+                        gb = math.min(gb, mouthGap(m, o))
+                    end
+                end
+                if ga < gb then
+                    said = w.atA
+                elseif gb < ga then
+                    said = w.atB
+                end
+            end
+            if said then
+                m.spoken = said
+            end
+        end
+    end
+end
+
 function logic.regionAt(zone, x, y)
     local value, r0, c0 = logic.valueAt(zone, x, y)
     if not logic.hasEdge(zone, value) then
@@ -642,6 +714,7 @@ function logic.regionAt(zone, x, y)
         local p = m.value and logic.place(zone, logic.placeOf(m.value))
         m.climb = p and logic.CLIMBS[p.kind] or nil
     end
+    towardWays(zone, region)
     return region
 end
 
@@ -1043,7 +1116,12 @@ function logic.capItems(items, max, cameFrom)
     end
     local out = {}
     for _, item in ipairs(items) do
-        if item.label ~= cameFrom then
+        -- (by the place's own name too: a way said toward somewhere, towardWays)
+        local came = item.label == cameFrom
+        for _, m in ipairs(item.mouths or {}) do
+            came = came or m.label == cameFrom
+        end
+        if not came then
             out[#out + 1] = item
         end
     end
