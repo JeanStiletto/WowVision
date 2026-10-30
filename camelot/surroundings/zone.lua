@@ -987,14 +987,29 @@ function logic.unpack(zone, locale)
         ix.noContact[b * cells + a] = true
     end)
 
-    -- objects, in the bucket of every cell their footprint's circle touches
+    -- objects, each with the box of cells its footprint's circle touches (r1..r2, c1..c2), in the bucket of every
+    -- block of cells that box reaches (logic.objectBlock: a table per block, not per cell; Elwynn 62730 cell
+    -- buckets of 1.3 objects each, 8.8 MB, user 2026-10-30): logic.objectAhead takes, cell by cell, the objects of
+    -- the cell's block whose box holds the cell (logic.objectCovers), the very objects and order a cell's bucket had
     ix.objects = {}
     eachRecord(zone.objects, 7, function(x, y, halfLength, halfWidth, angle, name, room)
         local o = {
             x = x, y = y, halfLength = halfLength / 10, halfWidth = halfWidth / 10, angle = math.rad(angle),
             name = zone.objectNames and zone.objectNames[name], room = room,
         }
-        addToCells(zone, ix.objects, x, x, y, y, math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10, o)
+        local margin = math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10
+        o.r1, o.r2 = math.floor((zone.top - x - margin) / zone.cell), math.floor((zone.top - x + margin) / zone.cell)
+        o.c1, o.c2 = math.floor((zone.left - y - margin) / zone.cell), math.floor((zone.left - y + margin) / zone.cell)
+        local added = {}
+        for r = o.r1, o.r2 do
+            for c = o.c1, o.c2 do
+                local block = logic.objectBlock(zone, r * zone.cols + c)
+                if not added[block] then
+                    added[block] = true
+                    addToBucket(ix.objects, block, o)
+                end
+            end
+        end
     end)
 
     -- centre line stretches, in the bucket of every cell within LANE_REACH of them
