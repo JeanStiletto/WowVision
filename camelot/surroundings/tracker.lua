@@ -298,7 +298,7 @@ local look
 
 -- One look: the floor piece at (x, y) on the layer `zone` (its surfaces in zone.surf), `swimming` true, false
 -- or nil (unknown). Returns floor, changed. Keeps zone._index.cands (the candidates: {s, cost, x, y, fell}),
--- .floor, .floorSure, .cameFrom, .fellFrom, .swumIn; clears the join bookkeeping of the piece tracker.
+-- .floor, .floorSure, .cameFrom, .fellFrom, .swumIn.
 function tracker.update(zone, x, y, swimming)
     local t0 = clock()
     local floor_, changed = look(zone, x, y, swimming)
@@ -622,8 +622,6 @@ function look(zone, x, y, swimming)
         ix.swumIn = nil
     end
     ix.floor = floor_
-    ix.pendingJoins = {}
-    ix.fallBeside = nil
     if floor_ ~= was then
         ix.cameFrom = was
         -- (the piece of the candidate fallen from, not always the piece held: review 2026-10-19)
