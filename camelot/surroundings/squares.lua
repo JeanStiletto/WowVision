@@ -697,7 +697,10 @@ end
 -- beside the opening (user 2026-09-29: the Mage Quarter's square and the Wizard's Sanctum's are one
 -- plaza, the street between them runs along its edge; the harbour's square and the Canals' meet
 -- over 40 yd, a street beside them joins the same two). A street touching any other way or square
--- leads on and stays; so do dead ends and streets touching this square only.
+-- leads on and stays; so do dead ends and streets touching this square only. A ramp or stairs is never
+-- a side street: it leads to another height, and the neighbours are found on the flat map (Northshire
+-- Abbey's ramp to floor 1 passed the bell tower's platform 35 yd up and was dropped from the Main Hall,
+-- bug 142, 2026-10-30; on Forever's data already).
 function logic.withoutSideStreets(zone, region)
     local direct = {}
     for _, m in ipairs(region.mouths) do
@@ -712,7 +715,8 @@ function logic.withoutSideStreets(zone, region)
     local kept = {}
     for _, m in ipairs(region.mouths) do
         local side = false
-        if m.class == "way" and m.cells and m.cells[1] and next(direct) and not isSquareMouth(zone, m) then
+        if m.class == "way" and m.cells and m.cells[1] and next(direct) and not isSquareMouth(zone, m)
+                and not (m.value and logic.CLIMBS[logic.kindOf(zone, m.value)]) then
             local squares, leadsOther = streetTouches(zone, m)
             if not leadsOther then
                 local neighbour = false
