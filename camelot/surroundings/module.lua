@@ -168,6 +168,7 @@ end
 local HERE_SAME = 1.5 -- yd from the kept spot (keepHere) that still count as the same
 local hereRestored = false -- the kept spot was looked at after loading (restoreHere)
 local hereKept = nil
+local hereTable = nil -- the table keepHere writes the spot into (one per session, filled anew at each write)
 local DOOR_AWAY = 4.0 -- yd from the doorway left by before the halls can take the player again
 local hallMapWas = nil      -- the game's map at the last look
 local hallMapWalked = nil   -- yd walked since it became the halls' (nil: not just now)
@@ -1123,8 +1124,7 @@ local function checkEdges(z, x, y, px, py, rooms)
         local before = z._index.floor or 0
         local floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py, pushing(), swimState())
         if changed then
-            -- the squares found so far were flooded on the old floor
-            logic.forgetRegions(z)
+            -- (the places found so far are kept per floor piece: logic.regionCache)
             z._index.floorBefore = before
             logic.noteClimbStep(z, x, y)
             logEntry("floor", before .. " -> " .. floor, x, y)
@@ -1512,9 +1512,15 @@ local function keepHere(z, x, y)
     -- numbers the pieces anew, and the number of the tavern's upper floor became another
     -- building's piece after the floor-pieces export, so a login upstairs landed on the ground
     -- (walk 2026-10-05)
-    WowVisionDB.surroundingsHere = { zone = z.key, x = x, y = y, room = room, roomName = r and r.name, halls = hallGap ~= nil,
-        layer = layer and layer.key, floor = floor, floorLabel = layer and logic.pieceLabel(layer, x, y, floor) or nil,
-        ground = ground, groundLabel = logic.pieceLabel(z, x, y, ground) }
+    -- (every field written each time into the session's own table: no new table at nearly every look)
+    if h == nil or h ~= hereTable then
+        hereTable = {}
+        WowVisionDB.surroundingsHere = hereTable
+    end
+    h = hereTable
+    h.zone, h.x, h.y, h.room, h.roomName, h.halls = z.key, x, y, room, r and r.name, hallGap ~= nil
+    h.layer, h.floor, h.floorLabel = layer and layer.key, floor, layer and logic.pieceLabel(layer, x, y, floor) or nil
+    h.ground, h.groundLabel = ground, logic.pieceLabel(z, x, y, ground)
 end
 
 -- (`outdoors`: the room is not taken back)
@@ -2039,6 +2045,16 @@ local function lineFacing(wayOnly)
     local onFlight = logic.flightFacing(z, z._index.floor, x, y, facing)
     if onFlight then
         return onFlight, "flight"
+    end
+    -- (the beacon's quiet rule asks only whether there is a way to turn along: the way's own line first, before the
+    -- route Alt-I would lead by on a climb, which builds that whole route at every ping; the same answer)
+    if wayOnly then
+        local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
+        local facings, fork = logic.lineFacings(z, x, y, value, facing)
+        local along = facings and logic.lineTurnFacing(facings, facing, fork)
+        if along then
+            return along, fork and "fork" or "line"
+        end
     end
     -- on a ramp or stairs with its own line: along the route Alt-I leads by from here (helper.lua climbLineFacing)
     local onClimb = logic.climbLineFacing(z, z._index.floor, x, y, facing)
