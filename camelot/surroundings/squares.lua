@@ -559,8 +559,17 @@ function logic.regionAt(zone, x, y)
     local ix = zone._index
     local cols = zone.cols
     local cache = logic.regionCache(zone)
-    if cache[r0 * cols + c0] then
-        return cache[r0 * cols + c0]
+    -- a cell holds the region of the place it says on the floor stood on: one cell can lie in two
+    -- regions (the moat's ring of the main hall over the big hall's floor beside it), and the big
+    -- hall's region came back on the ring: "Haupthalle, Haupthalle auf 10 und 9" (walk 2026-10-30
+    -- 19:12:05). A second region of a cell is kept apart, by its value (cache.byValue).
+    local hit = cache[r0 * cols + c0]
+    if hit and hit.value == value then
+        return hit
+    end
+    local other = cache.byValue and cache.byValue[value]
+    if other and other[r0 * cols + c0] then
+        return other[r0 * cols + c0]
     end
     -- the same region from whichever cell it is first worked out (static rule 1; bug 28: from the
     -- Ruins courtyard's north bank the bridge was guided to in the middle of its deck, from the
@@ -618,7 +627,14 @@ function logic.regionAt(zone, x, y)
     -- cached before the side streets are dropped: withoutSideStreets asks for the neighbouring
     -- squares' regions, which ask for this one again (the cache ends that round trip)
     for key in pairs(cells) do
-        cache[key] = region
+        local held = cache[key]
+        if held == nil or held.value == value then
+            cache[key] = region
+        else
+            cache.byValue = cache.byValue or {}
+            cache.byValue[value] = cache.byValue[value] or {}
+            cache.byValue[value][key] = region
+        end
     end
     region.mouths = logic.withoutSideStreets(zone, region)
     -- (a climb's openings are told apart by its place, groupItems)
