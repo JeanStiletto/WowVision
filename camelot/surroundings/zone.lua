@@ -730,9 +730,10 @@ end
 
 -- Buckets per block of cells (2026-10-30, the user: memory and game performance; a table per cell held Elwynn's
 -- objects in 62730 buckets of 1.3 each, 8.8 MB, its lines in 23322 of 4.3): an item that covers a box of cells
--- goes into the bucket of every block of BLOCK by BLOCK cells the box reaches, once, and keeps its box (r1..r2,
--- c1..c2); the items of one cell are those of its block whose box holds the cell (logic.boxHolds), in the order
--- they were added: the very items and order a bucket per cell had.
+-- goes into the bucket of every block of BLOCK by BLOCK cells the box reaches, once, and keeps its box (rows
+-- item[1]..item[2], columns item[3]..item[4]: the array part, four plain slots; four more named fields doubled the
+-- hash part of every object and stretch); the items of one cell are those of its block whose box holds the cell
+-- (logic.boxHolds), in the order they were added: the very items and order a bucket per cell had.
 logic.BLOCK = 4
 
 -- The block of cells the cell key `key` (row * cols + col) lies in: the key of its bucket.
@@ -743,14 +744,14 @@ function logic.blockOf(zone, key)
     return math.floor(r / b) * (math.floor(cols / b) + 1) + math.floor(c / b)
 end
 
--- Whether the box of cells of `item` (r1..r2, c1..c2) holds the cell key `key`: a cell of the box beyond the
+-- Whether the box of cells of `item` (item[1]..item[4]) holds the cell key `key`: a cell of the box beyond the
 -- grid's first or last column has the key of the row before or after (as a bucket per cell keyed it).
 function logic.boxHolds(item, key, cols)
     local r = math.floor(key / cols)
     local c = key - r * cols
     for d = -1, 1 do
         local rr, cc = r + d, c - d * cols
-        if rr >= item.r1 and rr <= item.r2 and cc >= item.c1 and cc <= item.c2 then
+        if rr >= item[1] and rr <= item[2] and cc >= item[3] and cc <= item[4] then
             return true
         end
     end
@@ -760,11 +761,11 @@ end
 -- Puts `item` into the buckets of the blocks of every cell the box (x0..x1, y0..y1, widened by `margin` yards)
 -- touches, and gives it that box of cells.
 local function addToBlocks(zone, buckets, x0, x1, y0, y1, margin, item)
-    item.r1, item.r2 = math.floor((zone.top - x1 - margin) / zone.cell), math.floor((zone.top - x0 + margin) / zone.cell)
-    item.c1, item.c2 = math.floor((zone.left - y1 - margin) / zone.cell), math.floor((zone.left - y0 + margin) / zone.cell)
+    item[1], item[2] = math.floor((zone.top - x1 - margin) / zone.cell), math.floor((zone.top - x0 + margin) / zone.cell)
+    item[3], item[4] = math.floor((zone.left - y1 - margin) / zone.cell), math.floor((zone.left - y0 + margin) / zone.cell)
     local added = {}
-    for r = item.r1, item.r2 do
-        for c = item.c1, item.c2 do
+    for r = item[1], item[2] do
+        for c = item[3], item[4] do
             local block = logic.blockOf(zone, r * zone.cols + c)
             if not added[block] then
                 added[block] = true
