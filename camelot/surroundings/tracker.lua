@@ -77,6 +77,11 @@ tracker.CHAIN = 1          -- 1: of candidates of one cost, the one reached from
                            -- piece held alone did that while the U was one piece. 0 = off; swept 2026-10-19 late on J2 and
                            -- K3, the whole set: Elwynn 155 -> 144 on K3 (J2 144 either way), Undercity 388 -> 389 (one point
                            -- in Brill's common room), Dun Morogh 38 either way
+tracker.THROUGH = 1        -- 1: a fall lands on the first dry floor under it, never through one: a lower surface with another
+                           -- dry floor in its 1 yd column between it and the fall's start costs JUMP, not FALL (the Abbey
+                           -- bell tower, walk 2026-10-30 17:47:28, bug 142: a hop 2 to 4 yd down off the platform onto the
+                           -- tower floor, and the Main Hall's floor 35 yd under both cost FALL alike; the hall won for 37 s).
+                           -- 0 = off
 tracker.PERSIST = true     -- the decoded columns and each surface's steps kept per layer from look to look, not decoded
                            -- afresh per look; the same floors (the data does not change; offline since 2026-10-21 night
                            -- for the replays of a million looks, tools/walklog/vtrack.lua; in the game since 2026-10-30,
@@ -87,7 +92,7 @@ tracker.SPAN = 48.0        -- yd: the kept columns are let go and kept afresh on
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
     tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") ~= "0"
-    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN" }) do
+    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -435,6 +440,21 @@ function look(zone, x, y, swimming)
             end
         end
     end
+    -- per surface the nearest dry floor over it in its own 1 yd column, a level or more up (THROUGH: a fall from
+    -- higher than that lands on that floor first)
+    local over = {}
+    if prev and tracker.THROUGH ~= 0 then
+        for i = 1, #now do
+            local b = now[i]
+            for k = 1, #now do
+                local c = now[k]
+                if not c.liquid and c.z > b.z + tracker.LEVEL and math.abs(c.x - b.x) <= 0.5 and math.abs(c.y - b.y) <= 0.5
+                        and (over[i] == nil or c.z < over[i]) then
+                    over[i] = c.z
+                end
+            end
+        end
+    end
     for i = 1, #now do
         local b = now[i]
         local local_ = 0
@@ -459,6 +479,9 @@ function look(zone, x, y, swimming)
                 else
                     if d <= tracker.NEAR and dz < -tracker.LEVEL then
                         t = tracker.FALL
+                        if over[i] and over[i] < a.s.z - tracker.LEVEL then
+                            t = tracker.JUMP   -- through a floor (THROUGH)
+                        end
                     elseif d <= tracker.NEAR and dz <= tracker.LEVEL and dz >= -tracker.LEVEL then
                         t = a.s.piece == b.piece and tracker.DETOUR or tracker.MISSING
                     elseif d <= tracker.NEAR and a.s.piece == b.piece and dz > 0 and dz <= tracker.STEEP then
