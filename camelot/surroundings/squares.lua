@@ -714,6 +714,8 @@ function logic.regionAt(zone, x, y)
         local p = m.value and logic.place(zone, logic.placeOf(m.value))
         m.climb = p and logic.CLIMBS[p.kind] or nil
     end
+    local own = logic.place(zone, logic.placeOf(value))
+    region.hall = own ~= nil and own.kind == "hall"
     towardWays(zone, region)
     return region
 end
@@ -1060,7 +1062,10 @@ end
 -- Two different climbs are two items, though their words are the same (each climb is a place of
 -- its own: the Great Forge's two plain ramps were "Rampe auf 12 und 9", the user 2026-10-30),
 -- unless they lie in the same direction word (no "Rampe Nordwesten, Rampe Nordwesten").
-local function groupItems(found, maxDirs)
+-- In a hall (`hall`) every other item has one direction, its nearest opening's: a way meeting the
+-- hall at several points was "Weg an der Lava, Die große Schmiede auf 12 und 9", heard as two ways
+-- (the user 2026-10-30, the Great Forge's lava walk is one ring round its lava).
+local function groupItems(found, maxDirs, hall)
     table.sort(found, function(a, b)
         return a.d < b.d
     end)
@@ -1089,7 +1094,7 @@ local function groupItems(found, maxDirs)
                 table.insert(climbItems[f.label], item)
             end
         end
-        logic.addDir(item, f.d >= logic.HERE and f.dir or nil, maxDirs)
+        logic.addDir(item, f.d >= logic.HERE and f.dir or nil, (hall and not (m and m.climb)) and 1 or maxDirs)
         if f.mouth then
             item.mouths[#item.mouths + 1] = f.mouth
         end
@@ -1169,7 +1174,7 @@ function logic.aroundItems(region, x, y, opts)
             found[#found + 1] = mouthFound(m, x, y)
         end
     end
-    return logic.capItems(groupItems(found, opts.dirs), opts.max, opts.cameFrom)
+    return logic.capItems(groupItems(found, opts.dirs, region.hall), opts.max, opts.cameFrom)
 end
 
 -- Mouths of the region not yet said (`said`, a set kept by the caller) that the player has come
@@ -1195,7 +1200,7 @@ function logic.approaching(region, x, y, reach, said, maxDirs)
             end
         end
     end
-    return groupItems(found, maxDirs)
+    return groupItems(found, maxDirs, region.hall)
 end
 
 -- Cliffs and water around an outdoor place: per class (from `classOf`, kind -> class word) the
