@@ -813,6 +813,24 @@ function logic.lanesAt(zone, key)
     return logic.cellItems(zone, ix.lanes, key, ix.laneCells)
 end
 
+-- Cells whose tables were built by the same records share one table (2026-10-30, the user: memory; Elwynn's 20933
+-- cells of rooms by floor hold 1117 different ones, its 11200 floor cells 1429): `sig` holds per cell key the
+-- records that built its table, in their order, so a shared table is built exactly as each of its cells' own
+-- (the same pieces, lists and order; pairs() goes through it the same way). Nothing writes into these tables
+-- after the unpack.
+local function shareCells(cells, sig)
+    local shared = {}
+    for key, t in pairs(cells) do
+        local s = table.concat(sig[key], ";")
+        local got = shared[s]
+        if got then
+            cells[key] = got
+        else
+            shared[s] = t
+        end
+    end
+end
+
 logic.LANE_REACH = 12 -- yd; farther from every centre line the grid alone decides
 logic.FEET_APART = 8 -- yd; two feet of one climb closer than this are one guidance target
 
@@ -894,16 +912,20 @@ function logic.unpack(zone, locale)
     ix.floorCells = {}
     ix.placePieces = {}
     local placeCounts = {}
+    local cellSig = {}
     eachRecord(zone.floorCells, 4, function(r, c, piece, value)
         local key = r * zone.cols + c
         ix.floorCells[key] = ix.floorCells[key] or {}
         ix.floorCells[key][piece] = value
+        cellSig[key] = cellSig[key] or {}
+        table.insert(cellSig[key], piece .. "=" .. value)
         -- (per piece the count of each place on it: below, the piece's own place)
         local place = logic.placeOf(value)
         local counts = placeCounts[piece] or {}
         placeCounts[piece] = counts
         counts[place] = (counts[place] or 0) + 1
     end)
+    shareCells(ix.floorCells, cellSig)
     -- per place the floor pieces whose own place it is (most of their cells): on a climb's own
     -- piece it is said by its name (logic.downPlace; the Abbey's gallery carries the ramp's place
     -- on three cells at the ramp's top, and is no part of the ramp)
@@ -957,6 +979,7 @@ function logic.unpack(zone, locale)
     if zone.floorRooms then
         -- (floorRoomIds: the rooms with floor in the records)
         ix.floorRooms, ix.floorRoomIds = {}, {}
+        local roomSig = {}
         eachRecord(zone.floorRooms, 4, function(r, c, piece, room)
             ix.floorRoomIds[room] = true
             local key = r * zone.cols + c
@@ -965,7 +988,10 @@ function logic.unpack(zone, locale)
             local list = byPiece[piece] or {}
             byPiece[piece] = list
             list[#list + 1] = room
+            roomSig[key] = roomSig[key] or {}
+            table.insert(roomSig[key], piece .. ":" .. room)
         end)
+        shareCells(ix.floorRooms, roomSig)
     end
     -- the cells where a hall the game calls outdoors lies on the ground (rooms.lua inHallFloor)
     ix.hallGround = {}
