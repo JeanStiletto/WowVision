@@ -29,16 +29,20 @@ local WHERE = {
 }
 
 -- The stop at a position: outdoors (`rooms` nil) one on open floor (room 0); indoors one in a room
--- of the set `rooms` (the room the player is in, or the candidates while it is unknown). Returns
--- its index and record, or nil.
-function logic.stopAt(zone, x, y, rooms)
+-- of the set `rooms` (the room the player is in, or the candidates while it is unknown). `floor`
+-- (optional): the floor piece held on the grid the player is in (indoors the layer's), else the
+-- zone's. Returns its index and record, or nil.
+function logic.stopAt(zone, x, y, rooms, floor)
     local ix = zone._index
     local r, c = logic.cellOf(zone, x, y)
+    floor = floor or ix.floor or 0
     for _, i in ipairs(ix.stopCells[r * zone.cols + c] or {}) do
         local s = ix.stops[i]
-        -- outdoors only on a floor piece its waiting floor lies on (the zeppelin tower's top
-        -- platform was said at its foot, under it, 2026-10-06)
-        if (rooms == nil and s.room == 0 and s.floors[ix.floor or 0]) or (rooms ~= nil and rooms[s.room]) then
+        -- only on a floor piece its waiting floor lies on (the zeppelin tower's top platform was
+        -- said at its foot, under it, 2026-10-06); in a room where the data lists them (the tram's
+        -- platform, not the track bed 10 yd under it in the same room: STATE bug 70)
+        if (rooms == nil and s.room == 0 and s.floors[floor])
+                or (rooms ~= nil and rooms[s.room] and (s.anyFloor or s.floors[floor])) then
             return i, s
         end
     end

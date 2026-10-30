@@ -877,7 +877,7 @@ function logic.unpack(zone, locale)
         return
     end
     -- the walk graph's surfaces per layer (format 5, the walk-graph tracker; tracker.lua), before the layers are
-    -- built from the data (unpackLayer takes its layer's): the piece tracker of before runs where the data has none
+    -- built from the data (unpackLayer takes its layer's); a grid with none keeps the floor it is set to
     if zone.parent == nil then   -- (a layer, unpacked through here too, keeps the surf unpackLayer gave it)
         local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
         zone.surfaces = S and S[zone.key] or nil
@@ -1135,8 +1135,7 @@ function logic.unpack(zone, locale)
             logic.LANE_REACH, lane)
         order[#order + 1] = lane
     end)
-    -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
-    -- onOwnLines); nil in data before 2026-10-16
+    -- the floor pieces with lines of their own (every ramp's and stairs'); nil in data before 2026-10-16
     -- data whose lines of flights, landings and platforms are the cheapest way through the piece (the export's
     -- WV_LINES=path, 2026-10-18): the turn key and the guidance to a foot follow them (lanes.lua, texts.lua)
     ix.pathLines = zone.pathLines == true
@@ -1145,7 +1144,7 @@ function logic.unpack(zone, locale)
         ix.lineFloors[piece] = true
     end
     -- the free ends of those pieces' lines (a stretch end no other stretch of its piece goes on
-    -- from): the piece is not stepped onto beyond them (edges.lua pastEnd)
+    -- from): the guidance ends there (helper.lua)
     local ends = {}
     local function endKey(lane, x, y)
         return string.format("%d %.1f %.1f", lane.piece, x, y)
@@ -1247,11 +1246,13 @@ function logic.unpack(zone, locale)
     ix.regionOf = {} -- squares found so far, per cell key
 
     -- stops (where one waits for a ship, zeppelin, lift or tram): {kind, destination, room, cells,
-    -- segments, {floor pieces; 0 the ground: outdoors the stop counts only on one of them, the
-    -- zeppelin tower's top was said at its foot, 2026-10-06}}; the stops on each cell
+    -- segments, {floor pieces; 0 the ground: the stop counts only on one of them, the zeppelin
+    -- tower's top was said at its foot, 2026-10-06; a stop in a room with none listed counts on
+    -- every floor of its room (anyFloor)}}; the stops on each cell
     ix.stops, ix.stopCells = {}, {}
     for i, s in ipairs(zone.stops or {}) do
         local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, floors = {}, targets = {} }
+        stop.anyFloor = stop.room ~= 0 and (type(s[6]) ~= "table" or #s[6] == 0)
         for _, fl in ipairs(type(s[6]) == "table" and s[6] or { 0 }) do
             stop.floors[fl] = true
         end
