@@ -25,8 +25,8 @@ tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testd
   zone into named records (all derived data under `zone._index`; `logic.pack` drops it);
   place texts; the entry rule (`logic.newEntry`); outdoor keys.
 - `edges.lua`: drop edges (of the cities' floors, structures, buildings; a drop into a liquid
-  is one like any other) and the floor piece the player is on (`logic.updateFloor`,
-  `logic.swimFloor`, `logic.setFloor`, `logic.joinedPieces`). The way-out target
+  is one like any other) and the floor piece the player is on (`logic.updateFloor`: the walk-graph
+  tracker, `logic.swimFloor`, `logic.setFloor`, `logic.joinedPieces`). The way-out target
   (`logic.exitTarget`) lives in `texts.lua`.
 - `lanes.lua`: centre lines of roads and streets: whether the player is on the way, turn
   hints, where a road leads, gentle bends, the facings the turn key turns to without a beacon
@@ -232,19 +232,15 @@ of the model has:
   cells where the ground has no floor; `joins`: a, b, x, y, angle: where piece a meets piece b
   (a 0 the ground, -1 a building's door) with the direction from a into b in degrees (-1 none:
   such a join only leads from a into b; -2 no point: the two are joined somewhere). The module
-  (`logic.updateFloor`) changes the floor only at a join crossed in its direction, at a drop edge
-  of the floor crossed (onto `u`), or when the floor is no longer under the player: then the
-  piece here that the floor joins or drops onto (joined within `logic.JOINED_HERE`, 6 yd, of the
-  player), else the only piece here where the ground is absent, else the ground. A building's
-  door join (a = -1) counts only within `logic.ROOMS_REACH` (6 yd) and only during the 3 s after
-  the player came out of the building. No fall is taken while the wall detection says the
-  player is blocked (a push against a railing just past an edge's rim). A liquid's surface (water, lava, slime) is a floor piece of its own
+  (`logic.updateFloor`) follows the floor on the layer's walk-graph surfaces (`tracker.lua`, every zone's data
+  has them since the Deeprun Tram's of 2026-10-30; the piece tracker of before, which changed the floor at the
+  joins crossed, the drop edges crossed and the climbs' lines, is gone); a grid with no surfaces keeps the floor
+  it was set to. A liquid's surface (water, lava, slime) is a floor piece of its own
   (`liquids`: piece, kind pairs, kind 1 water, 2 city water, 3 lava; its cells in `floorCells`
   with the liquid's place, the canal's name or the water under a bridge): swimming is the one
   height the game tells, so `updateFloor` (its `swimming` argument: true, false, nil in the air)
-  puts a swimming player on a liquid's piece here (the one the floor joins or drops onto, else
-  the only one) and a player on foot off it (the floor it joins here, else the only floor, else
-  the ground); on a liquid's piece no centre line decides the place, and its ways out are
+  keeps a swimming player on a liquid's surface and a player on foot off it (`logic.swimFloor`: the
+  floor stood up onto out of a liquid); on a liquid's piece no centre line decides the place, and its ways out are
   guided to (`logic.exitTarget` with the piece). `logic.valueAtCell` returns the floor piece's value where the cell
   lists it, else the grid's, so every lookup (places, squares, lanes, guidance) follows the
   floor the player is on; a square's neighbours are the cells its floor goes on into and the

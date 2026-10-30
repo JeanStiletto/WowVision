@@ -877,7 +877,7 @@ function logic.unpack(zone, locale)
         return
     end
     -- the walk graph's surfaces per layer (format 5, the walk-graph tracker; tracker.lua), before the layers are
-    -- built from the data (unpackLayer takes its layer's): the piece tracker of before runs where the data has none
+    -- built from the data (unpackLayer takes its layer's); a grid with none keeps the floor it is set to
     if zone.parent == nil then   -- (a layer, unpacked through here too, keeps the surf unpackLayer gave it)
         local S = WowVision.surroundingsData and WowVision.surroundingsData.surfaces
         zone.surfaces = S and S[zone.key] or nil
@@ -1135,8 +1135,7 @@ function logic.unpack(zone, locale)
             logic.LANE_REACH, lane)
         order[#order + 1] = lane
     end)
-    -- the floor pieces left beyond their own lines (every ramp's and stairs': edges.lua
-    -- onOwnLines); nil in data before 2026-10-16
+    -- the floor pieces with lines of their own (every ramp's and stairs'); nil in data before 2026-10-16
     -- data whose lines of flights, landings and platforms are the cheapest way through the piece (the export's
     -- WV_LINES=path, 2026-10-18): the turn key and the guidance to a foot follow them (lanes.lua, texts.lua)
     ix.pathLines = zone.pathLines == true
@@ -1145,7 +1144,7 @@ function logic.unpack(zone, locale)
         ix.lineFloors[piece] = true
     end
     -- the free ends of those pieces' lines (a stretch end no other stretch of its piece goes on
-    -- from): the piece is not stepped onto beyond them (edges.lua pastEnd)
+    -- from): the guidance ends there (helper.lua)
     local ends = {}
     local function endKey(lane, x, y)
         return string.format("%d %.1f %.1f", lane.piece, x, y)

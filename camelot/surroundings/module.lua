@@ -57,7 +57,6 @@ local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
 local EDGE_REPEAT = 1 -- the same edge warning is not said again within this
 local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead along
 local AHEAD_FORGET = 6 -- yd farther from a piece said ahead than when it was said: forgotten
-local CAME_OUT = 3 -- after coming out of a building it can lead onto a wall-walk this long
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
 local GUIDE_REPEAT = 2 -- at least between two guiding announcements
 local GUIDE_AWAY = 2 -- beyond "at" a target before it is guided to again
@@ -102,7 +101,6 @@ local layerMode = false -- in one of the big halls of the indoor layer: its plac
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
-local outAt = nil -- when the player last came out of a building
 local cameIn = nil -- {x, y}: where the player walked in from outside (a step, not a jump), until ENTRY_INDOORS walked from it
 -- drop edges warned about (again after stepping out of reach), per zone or layer: each numbers its
 -- own edges (a halls edge's number kept into the Brill tavern's layer after a hearthstone, 2026-10-13)
@@ -1081,7 +1079,8 @@ end
 -- (the one just walked through), its piece of that grid (doorFloors); nil where none is near or its sill lies on
 -- the ground. Stepping in or out starts the grid entered on it: a door onto a raised floor over walkable ground
 -- (a balcony, a wall walk, a building's upper door) held the ground, and the raised floor's drops went unwarned
--- (review 2026-10-29: RULES' "the outside sill takes the player onto its piece" lived in the old piece tracker only).
+-- (review 2026-10-29: RULES' "the outside sill takes the player onto its piece" lived in the piece tracker of before
+-- only).
 local function sillFloor(grid, x, y)
     local best, floor = PASSED_REACH ^ 2, nil
     for _, door in ipairs(grid._index.doors or {}) do
@@ -1132,8 +1131,8 @@ local function leftWater(x, y)
     end
 end
 
--- Is the player pushing against something (the wall detection's "blocked", fresh)? Then a step
--- past an edge's rim is a push against its railing, no fall (logic.updateFloor).
+-- Is the player pushing against something (the wall detection's "blocked", fresh)? The position only jitters
+-- then: no way of moving to look ahead along (checkEdges).
 local function pushing()
     local walls = WowVision.base.navigation.walls
     return walls ~= nil and walls.severity == 1 and GetTime() - (walls.severityAt or 0) <= BUMP_FRESH
@@ -1148,7 +1147,7 @@ end
 local function checkEdges(z, x, y, px, py, rooms)
     if rooms == nil then
         local before = z._index.floor or 0
-        local floor, changed = logic.updateFloor(z, x, y, outAt ~= nil and GetTime() - outAt < CAME_OUT, px, py, pushing(), swimState())
+        local floor, changed = logic.updateFloor(z, x, y, swimState())
         if changed then
             -- (the places found so far are kept per floor piece: logic.regionCache)
             z._index.floorBefore = before
@@ -1659,7 +1658,7 @@ local function updateIndoors(z, x, y, px, py)
         -- building's floors), as on the city's floors outdoors
         local ix = layer._index
         local before = ix.floor or 0
-        local floor, floorChanged = logic.updateFloor(layer, x, y, false, px, py, pushing(), swimState())
+        local floor, floorChanged = logic.updateFloor(layer, x, y, swimState())
         if floorChanged then
             -- logged as an entry of its own (the walk log tools show where the floor switched;
             -- user 2026-10-06: a ground floor line at the top of the tavern's stairs)
@@ -1818,7 +1817,6 @@ module:hasUpdate(function(self)
         if sill then
             logic.setFloor(entered, sill)
         end
-        outAt = (wasIndoors and not isIndoors) and now or nil
         cameIn = (isIndoors and wasIndoors == false and px and logic.dist(x, y, px, py) <= CAME_IN_STEP) and { x, y } or nil
         wasIndoors = isIndoors
         -- (into the halls by a hall's floor: on that hall's floor piece, updateHall)

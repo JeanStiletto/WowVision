@@ -819,8 +819,8 @@ function logic.inHall(zone, x, y, uiMap, current)
 end
 
 -- Is the player in a hall here (user 2026-10-07): a hall whose floor is here (inHall) lying on
--- the zone's floor piece the player is on (`zoneFloor`, edges.lua updateFloor: followed from piece
--- to piece at their joins, as on the zeppelin tower). Where the halls lie under other floor (the
+-- the zone's floor piece the player is on (`zoneFloor`, edges.lua updateFloor: the walk-graph
+-- tracker). Where the halls lie under other floor (the
 -- Undercity under the Ruins of Lordaeron, 110 yd down) their floor here in x and y is not enough:
 -- the rose walk's floor piece is none the canal under it lies on. The ground holds every floor
 -- that lies under nothing, at any height, so on the ground a hall counts only in the cells where

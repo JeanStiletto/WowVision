@@ -270,12 +270,12 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(col[2].z, 3)
         -- from the ground up the stairs onto the upper floor: sure at every step
         logic.setFloor(z, 0)
-        local floor = logic.updateFloor(z, 95, 50.5, false, nil, nil, false, false)
+        local floor = logic.updateFloor(z, 95, 50.5, false)
         t:assertEqual(floor, 0)
         t:assertTrue(z._index.floorSure)
         local seen = {}
         for x = 93, 71, -2 do
-            floor = logic.updateFloor(z, x, 50.5, false, x + 2, 50.5, false, false)
+            floor = logic.updateFloor(z, x, 50.5, false)
             seen[#seen + 1] = floor
             t:assertTrue(z._index.floorSure, "sure at x " .. x)
         end
@@ -289,7 +289,7 @@ testRunner:addSuite("Surroundings", {
         end
         t:assertTrue(sawStairs)
         -- a step off the upper floor's side onto the ground 4 yd below counts as a fall from it
-        floor = logic.updateFloor(z, 72, 55, false, 71, 50.5, false, false)
+        floor = logic.updateFloor(z, 72, 55, false)
         t:assertEqual(floor, 0)
         t:assertEqual(z._index.fellFrom, 2)
     end,
@@ -358,7 +358,7 @@ testRunner:addSuite("Surroundings", {
             local out = {}
             for i, p in ipairs(path) do
                 local q = path[i - 1] or p
-                local floor = logic.updateFloor(z, p[1], p[2], false, q[1], q[2], false, false)
+                local floor = logic.updateFloor(z, p[1], p[2], false)
                 out[#out + 1] = tostring(floor) .. (z._index.floorSure and "s" or "u")
             end
             logic.tracker.PERSIST = was
@@ -405,7 +405,7 @@ testRunner:addSuite("Surroundings", {
         logic.setFloor(z, 0)
         local px = 95
         for x = 93, 71, -2 do
-            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            local floor = logic.updateFloor(z, x, 55, false)
             t:assertEqual(floor, 0, "ground at x " .. x)
             t:assertEqual(z._index.inHole, x >= 76 and x <= 80, "hole at x " .. x)
             px = x
@@ -414,8 +414,8 @@ testRunner:addSuite("Surroundings", {
         -- a cold start right before the hole (a layer's setFloor): nothing followed yet, the deck is taken
         z = zoneWith(76, 80)
         logic.setFloor(z, 0)
-        t:assertEqual(logic.updateFloor(z, 81, 55, false, 83, 55, false, false), 0)
-        t:assertEqual(logic.updateFloor(z, 79, 55, false, 81, 55, false, false), 3)
+        t:assertEqual(logic.updateFloor(z, 81, 55, false), 0)
+        t:assertEqual(logic.updateFloor(z, 79, 55, false), 3)
         -- a hole longer than HOLE_MAX: the ground is given up after that much walking in it (the bound set to
         -- 10 yd here: the test zone's grid ends at x 40)
         z = zoneWith(40, 70)
@@ -425,7 +425,7 @@ testRunner:addSuite("Surroundings", {
         px = 95
         local gaveUp = nil
         for x = 93, 41, -2 do
-            local floor = logic.updateFloor(z, x, 55, false, px, 55, false, false)
+            local floor = logic.updateFloor(z, x, 55, false)
             if floor == 3 and not gaveUp then
                 gaveUp = x
             end
@@ -468,7 +468,7 @@ testRunner:addSuite("Surroundings", {
         logic.setFloor(z, 0)
         local px = 89
         for x = 87, 71, -2 do
-            local floor = logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false)
+            local floor = logic.updateFloor(z, x, 48.5, false)
             t:assertEqual(floor, 0, "ground at x " .. x)
             t:assertTrue(z._index.floorSure, "sure at x " .. x)
             px = x
@@ -478,13 +478,13 @@ testRunner:addSuite("Surroundings", {
         logic.setFloor(z, 2)
         px = 89
         for x = 87, 71, -2 do
-            t:assertEqual(logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false), 2, "upper floor at x " .. x)
+            t:assertEqual(logic.updateFloor(z, x, 48.5, false), 2, "upper floor at x " .. x)
             px = x
         end
         -- the module's floor has no surface here: no prior, every surface at 0 as before (unsure)
         z = zone()
         logic.setFloor(z, 1)
-        logic.updateFloor(z, 87, 48.5, false, 89, 48.5, false, false)
+        logic.updateFloor(z, 87, 48.5, false)
         t:assertEqual(z._index.floorSure, false)
         -- and with the prior off, the benches cost the ground the floor (the fault of 2026-10-19 16:30)
         local bound = logic.tracker.PRIOR
@@ -494,7 +494,7 @@ testRunner:addSuite("Surroundings", {
         px = 89
         local lost = false
         for x = 87, 71, -2 do
-            if logic.updateFloor(z, x, 48.5, false, px, 48.5, false, false) == 2 then
+            if logic.updateFloor(z, x, 48.5, false) == 2 then
                 lost = true
             end
             px = x
@@ -516,93 +516,23 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describe(layer, logic.valueAt(layer, 95, 25), true), "great hall of Test")
     end,
 
-    ["a ramp's piece with lines of its own is left beyond them and entered within them"] = function(t)
-        local function rampZone()
-            local z = newWalkZone()
-            z.places = { { "square", "square of Test" }, { "ramp", "ramp" } }
-            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
-            -- a ramp (piece 1) from its foot at x 97 south up to x 87 along y 50, its own line
-            -- tied to it (enter and leave per side, the piece), 1 yd in, 1.5 out
-            z.lanes = { 97, 50, 87, 50, 20000, 10, 15, 10, 15, 1 }
-            z.lineFloors = { 1 }
-            z.floorCells = { 0, 2, 1, 20000, 0, 3, 1, 20000, 1, 2, 1, 20000, 1, 3, 1, 20000,
-                2, 2, 1, 20000, 2, 3, 1, 20000, 3, 2, 1, 20000, 3, 3, 1, 20000 }
-            z.noGround = {}
-            -- the ground joins it at its foot, its way up south
-            z.joins = { 0, 1, 97, 50, 180 }
-            logic.unpack(z)
-            return z
-        end
-        local z = rampZone()
-        t:assertTrue(logic.onOwnLines(z, 93, 50.5, 1))
-        t:assertFalse(logic.onOwnLines(z, 93, 52, 1))
-        t:assertNil(logic.onOwnLines(z, 93, 50.5, 0))
-        -- on it within its lines; a step 2 yd beside them is off it, onto the ground beside
-        logic.setFloor(z, 1)
-        t:assertEqual(logic.updateFloor(z, 93, 50.5, false, 94, 50.5), 1)
-        t:assertEqual(logic.updateFloor(z, 93, 52, false, 93, 50.5), 0)
-        t:assertEqual(z._index.fellFrom, 1)
-        -- past its foot 2 yd beside the line: the join counts 2.5 yd beside its point, the line not
-        logic.setFloor(z, 0)
-        t:assertEqual(logic.updateFloor(z, 96, 52, false, 99, 52), 0)
-        -- on the line: onto it
-        t:assertEqual(logic.updateFloor(z, 96, 50.5, false, 99, 50.5), 1)
-        -- from the ground near the foot within the enter distance of its line, no join crossed
-        logic.setFloor(z, 0)
-        t:assertEqual(logic.updateFloor(z, 94, 50.5, false, 95, 50.5), 1)
-        -- within the enter distance of its line's end but past it: not onto it
-        logic.setFloor(z, 0)
-        t:assertEqual(logic.updateFloor(z, 97.6, 50.3, false, 99, 50.3), 0)
-    end,
-
-    ["a building's levels on a grid of their own join where they meet, not next to each other"] = function(t)
+    ["a building's levels on a grid of their own: the layer takes its frame"] = function(t)
         local z = newHallZone()
-        -- the halls the game calls indoors, on cells of 5 yd: stairs (level 1) from their foot at
-        -- y 59 west to y 45 (row 0, columns 0 to 2), the landing (level 2) over all of row 0, the
-        -- stairs' foot too (the Brill tavern's landing lies over the foot of its stairs); the
-        -- stairs are stepped onto at their foot and join the landing at their top, y 47
+        -- the halls the game calls indoors, on cells of 5 yd: stairs (level 1) and the landing over them (level 2)
         z.indoorIn = {
             top = 100, left = 60, cell = 5, rows = 2, cols = 12,
             rooms = { 1 }, grid = { "70000*12", "70000*12" }, lanes = {},
             floorCells = { 0, 0, 1, 70000, 0, 1, 1, 70000, 0, 2, 1, 70000,
                 0, 0, 2, 70000, 0, 1, 2, 70000, 0, 2, 2, 70000, 0, 3, 2, 70000, 0, 4, 2, 70000, 0, 5, 2, 70000 },
             noGround = {},
-            -- the joins run east (y down): from the main floor into the stairs at their foot,
-            -- from the stairs into the landing at their top
             joins = { 0, 1, 98, 59, 90, 1, 2, 98, 47, 90 },
         }
         logic.unpack(z)
         local layer = logic.layer(z, true)
         t:assertEqual(layer.cell, 5)
         t:assertEqual(layer.cols, 12)
-        -- up the stairs' foot: on the stairs, not on the landing over it
-        logic.updateFloor(layer, 98, 58, false, 98, 60)
-        t:assertEqual(layer._index.floor, 1)
-        -- past their top: the landing
-        logic.updateFloor(layer, 98, 46, false, 98, 50)
-        t:assertEqual(layer._index.floor, 2)
-        -- on the landing alone: still
-        logic.updateFloor(layer, 98, 38, false, 98, 46)
-        t:assertEqual(layer._index.floor, 2)
-        -- back down the stairs: the join crossed the other way
-        logic.updateFloor(layer, 98, 48, false, 98, 46)
-        t:assertEqual(layer._index.floor, 1)
-        -- and off their foot onto the main floor
-        logic.updateFloor(layer, 98, 60, false, 98, 58)
-        t:assertEqual(layer._index.floor, 0)
-        -- a look ending 0.3 yd past the foot's join (within the margin) changes nothing yet ...
-        logic.updateFloor(layer, 98, 58.7, false, 98, 61)
-        t:assertEqual(layer._index.floor, 0)
-        -- ... and the next look, beginning past the join, still counts the crossing (the zeppelin
-        -- tower's deck, walk 2026-10-06: the stairs were never entered)
-        logic.updateFloor(layer, 98, 56, false, 98, 58.7)
-        t:assertEqual(layer._index.floor, 1)
-        -- strafing along the join within the margin counts nothing
-        logic.updateFloor(layer, 98, 60, false, 98, 56)
-        t:assertEqual(layer._index.floor, 0)
-        logic.updateFloor(layer, 97, 59.2, false, 98, 59.3)
-        logic.updateFloor(layer, 99, 58.8, false, 97, 59.2)
-        t:assertEqual(layer._index.floor, 0)
+        t:assertTrue(logic.floorHere(layer, 0, 2))
+        t:assertFalse(logic.floorHere(layer, 7, 2))
     end,
 
     ["a flight with a wall side says its way up toward that side, and its foot the same way on"] = function(t)
@@ -893,19 +823,6 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.nearestEdge(z, 95, 35, 4, nil, south), nil)
     end,
 
-    ["a step over a rim falls, a push against its railing does not"] = function(t)
-        local z = newTowerZone()
-        logic.unpack(z)
-        -- from the landing over the flight's rim beside the join, pushing against something
-        logic.setFloor(z, 2)
-        logic.updateFloor(z, 91, 35, false, 95, 35, true)
-        t:assertEqual(z._index.floor, 2)
-        -- the same step, moving freely: a fall onto the ground
-        logic.setFloor(z, 2)
-        logic.updateFloor(z, 91, 35, false, 95, 35, false)
-        t:assertEqual(z._index.floor, 0)
-    end,
-
     ["up on a piece that joins the ground nowhere, the ground's paint is nothing"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
@@ -922,14 +839,13 @@ testRunner:addSuite("Surroundings", {
         local z = newTowerZone()
         logic.unpack(z)
         -- up the flight from the ground: the foot on the landing it joins
-        logic.updateFloor(z, 95, 49, false, 95, 53)
-        t:assertEqual(z._index.floor, 1)
+        logic.setFloor(z, 1)
+        z._index.cameFrom = 0
         local target = logic.footTarget(z, 95, 31)
         t:assertEqual(target ~= nil and target.kind, "climb")
         -- down the flight from the landing: not back to it
-        logic.setFloor(z, 2)
-        logic.updateFloor(z, 95, 37, false, 95, 33)
-        t:assertEqual(z._index.floor, 1)
+        logic.setFloor(z, 1)
+        z._index.cameFrom = 2
         target = logic.footTarget(z, 95, 31)
         t:assertEqual(target, nil)
     end,
@@ -1425,29 +1341,16 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.describe(z, 90000, true))
     end,
 
-    ["a liquid is a floor piece: swimming puts the player on it, on foot off it"] = function(t)
+    ["a liquid is a floor piece: on it the liquid's place, its cells known"] = function(t)
         local z = newZone()
         logic.unpack(z)
         local _v, r, c = logic.valueAt(z, 95, 5)
         t:assertEqual(logic.liquidIn(z, r * z.cols + c), 1)
         t:assertNil(logic.liquidIn(z, 0))
-        -- on the bridge: the bridge; swimming under it: the lake's piece, and the lake
+        -- on the bridge: the bridge; on the lake's piece under it: the lake
         t:assertEqual(logic.valueAt(z, 95, 5), 38090)
-        logic.updateFloor(z, 95, 5, false, 95, 6, false, true)
-        t:assertEqual(z._index.floor, 3)
+        logic.setFloor(z, 3)
         t:assertEqual(logic.valueAt(z, 95, 5), 50000)
-        -- in the air (jumping out of the water): no change; on foot again: no floor here joins the
-        -- lake, the ground neither, so still in the lake; walking out of its cell, the ground
-        logic.updateFloor(z, 95, 4, false, 95, 5, false, nil)
-        t:assertEqual(z._index.floor, 3)
-        logic.updateFloor(z, 95, 4, false, 95, 4, false, false)
-        t:assertEqual(z._index.floor, 3)
-        logic.updateFloor(z, 75, 4, false, 95, 4, false, false)
-        t:assertEqual(z._index.floor, 0)
-        -- falling off the dock's north edge into the lake: on the lake's piece
-        logic.updateFloor(z, 89, 30, false, 89, 30)
-        logic.updateFloor(z, 91, 30, false, 89, 30)
-        t:assertEqual(z._index.floor, 3)
         logic.pack(z)
         t:assertNil(z._index)
     end,
@@ -1464,12 +1367,10 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(logic.joinedHere(z, 2, 1, 88, 12))
         t:assertFalse(logic.joinedHere(z, 1, 2, 80, 15))
         t:assertFalse(logic.joinedHere(z, 1, 3, 90, 15))
-        -- swimming in the lake (the only liquid here), then standing: no floor joins the lake here
-        -- and the ground is absent, so the lake stays the floor
-        logic.updateFloor(z, 95, 5, false, 95, 6, false, true)
-        t:assertEqual(z._index.floor, 3)
-        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
-        t:assertEqual(z._index.floor, 3)
+        -- standing up in the lake (the walk-graph tracker's swimFloor): no floor joins the lake here and the ground
+        -- is absent, so none (the lake stays the floor)
+        local r, c = logic.cellOf(z, 95, 5)
+        t:assertNil(logic.swimFloor(z, r * z.cols + c, 3, false, 95, 5))
         logic.pack(z)
     end,
 
@@ -1481,22 +1382,19 @@ testRunner:addSuite("Surroundings", {
         z.floorCells = { 1, 4, 1, 40000, 1, 5, 1, 40000, 0, 4, 2, 38090, 0, 5, 3, 50000, 0, 5, 4, 50000, 0, 5, 5, 21090 }
         z.joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1, 3, 4, 95, 8, -1, 4, 5, 95, 2, -1 }
         logic.unpack(z)
+        local r, c = logic.cellOf(z, 95, 5)
+        local key = r * z.cols + c
         logic.setFloor(z, 3)
-        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
-        t:assertEqual(z._index.floor, 5)
+        t:assertEqual(logic.swimFloor(z, key, 3, false, 95, 5), 5)
         -- without the seam the ledge is no way out of piece 3: on foot on it never swum in (a fall
         -- the game did not make), the ground; standing up after swimming in it, still in it
         z.joins = { 0, 1, 88, 1, -1, -1, 1, 85, 25, -1, 1, 2, 90, 15, -1, 4, 5, 95, 2, -1 }
         logic.pack(z)
         logic.unpack(z)
         logic.setFloor(z, 3)
-        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
-        t:assertEqual(z._index.floor, 0)
-        logic.setFloor(z, 3)
-        logic.updateFloor(z, 95, 5, false, 95, 5, false, true)
-        t:assertEqual(z._index.floor, 3)
-        logic.updateFloor(z, 95, 5, false, 95, 5, false, false)
-        t:assertEqual(z._index.floor, 3)
+        t:assertEqual(logic.swimFloor(z, key, 3, false, 95, 5), 0)
+        z._index.swumIn = 3
+        t:assertNil(logic.swimFloor(z, key, 3, false, 95, 5))
         logic.pack(z)
     end,
 
@@ -1784,41 +1682,17 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(#logic.featuresAround(z, 75, 35, 35, classes, { land = true, water = true }), 0)
     end,
 
-    ["a wall-walk's edge warns only after stepping onto it, not from below"] = function(t)
+    ["a wall-walk's edge warns only up on it, not from below"] = function(t)
         local z = newZone()
         logic.unpack(z)
-        -- walking along the foot of the wall: under the wall-walk, never on it
-        logic.updateFloor(z, 85, 35, false, 85, 37)
-        logic.updateFloor(z, 83, 14, false, 85, 35)
-        t:assertEqual(z._index.floor, 0)
+        -- at the foot of the wall: under the wall-walk, never on it
+        logic.setFloor(z, 0)
         t:assertNil(logic.nearestEdge(z, 83, 14, 3))
-        -- up at the east end (the join from the ground), then along the wall-walk to its edge
-        logic.updateFloor(z, 88, 1, false, 88, 5)
-        t:assertEqual(z._index.floor, 1)
-        logic.updateFloor(z, 83, 14, false, 88, 1)
-        t:assertEqual(z._index.floor, 1)
+        -- up on the wall-walk at its edge
+        logic.setFloor(z, 1)
         local i, d = logic.nearestEdge(z, 83, 14, 3)
         t:assertEqual(i, 2)
         t:assertEqual(d, 2)
-        -- over the join to the tower top
-        logic.updateFloor(z, 95, 15, false, 88, 15)
-        t:assertEqual(z._index.floor, 2)
-        -- off every piece's cells: the ground again
-        logic.updateFloor(z, 85, 35, false, 88, 25)
-        t:assertEqual(z._index.floor, 0)
-    end,
-
-    ["coming out of a building onto a wall-walk counts; walking past that spot does not"] = function(t)
-        local z = newZone()
-        logic.unpack(z)
-        logic.updateFloor(z, 86, 25, false, 86, 27)
-        t:assertEqual(z._index.floor, 0)
-        logic.updateFloor(z, 86, 25, true, 86, 27)
-        t:assertEqual(z._index.floor, 1)
-        -- the tower top alone is not stepped onto from below
-        logic.setFloor(z, 0)
-        logic.updateFloor(z, 95, 15, false, 95, 17)
-        t:assertEqual(z._index.floor, 0)
     end,
 
     ["a place counts only after walking the entry distance inside it"] = function(t)
@@ -2723,7 +2597,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.belowClimb(z, target), false)
         -- fallen off its side onto the ground 4 yd up the ramp's way from its foot (the ground
         -- painted with the ramp): neither past the foot nor on the ramp
-        -- (what updateFloor leaves after a fall from piece 1: a drop edge of it crossed)
+        -- (what the tracker leaves after a fall from piece 1)
         z._index.floor, z._index.cameFrom, z._index.fellFrom = 0, 1, 1
         target = logic.footTarget(z, 94, 40.5)
         t:assertEqual(target.kind, "climb")
@@ -2803,36 +2677,6 @@ testRunner:addSuite("Surroundings", {
         t:assertNil(logic.pieceAhead(z, 96, 46, 0, 21000, logic.AHEAD_LOOK))
     end,
 
-    ["a piece is stepped onto from the ground, not from a piece lying over the ground there"] = function(t)
-        local z = newWalkZone()
-        -- the landing (piece 1) joins the ground at x 90, y 50; piece 2 lies on the same cells
-        -- (the Brill tavern's room upstairs over the cellar stairs' top) and joins piece 1 at x 86
-        z.floorCells = { 2, 2, 1, 10000, 2, 3, 1, 10000, 2, 2, 2, 10000, 2, 3, 2, 10000 }
-        z.joins = { 0, 1, 90, 50, -1, 1, 2, 86, 50, 180 }
-        logic.unpack(z)
-        -- from the ground the step joins it
-        logic.updateFloor(z, 90, 50, false, 90, 52)
-        t:assertEqual(z._index.floor, 1)
-        -- up on piece 2 the ground's join is no join: the floor stays
-        logic.setFloor(z, 2)
-        logic.updateFloor(z, 90, 50, false, 90, 52)
-        t:assertEqual(z._index.floor, 2)
-        -- from piece 1 over its join into piece 2, and back the other way
-        logic.setFloor(z, 1)
-        logic.updateFloor(z, 85, 50, false, 88, 50)
-        t:assertEqual(z._index.floor, 2)
-        logic.updateFloor(z, 88, 50, false, 85, 50)
-        t:assertEqual(z._index.floor, 1)
-        -- a fall over the landing's edge lands on the ground (u = 0)
-        z.structs, z.structCells = { "landing" }, { 2, 2, 1, 2, 3, 1 }
-        z.edges = { { 1, 90, 3, 0, 0, 90, 44, 86, 44, l = 1, u = 0 } }
-        logic.pack(z)
-        logic.unpack(z)
-        logic.setFloor(z, 1)
-        logic.updateFloor(z, 88, 42, false, 88, 46)
-        t:assertEqual(z._index.floor, 0)
-    end,
-
     ["a kept floor is found again by the place it carries at the spot, not by its number"] = function(t)
         local z = newWalkZone()
         -- piece 1 carries the square at (2, 2), piece 2 the canal walk at (2, 3) next to it
@@ -2872,8 +2716,7 @@ testRunner:addSuite("Surroundings", {
     ["a raised piece over other floor says its place only up on it, and its lines count only there"] = function(t)
         local z = newWalkZone()
         -- a landing (high piece 1) over the walk's cells (row 2, columns 2 and 3): up on it the
-        -- square's value (100), below it the walk's (211); stepped onto from the ground at x 90,
-        -- y 50; its line runs at y = 48 over the walk's line at y = 46
+        -- square's value (100), below it the walk's (211); its line runs at y = 48 over the walk's line at y = 46
         z.floorCells = { 2, 2, 1, 10000, 2, 3, 1, 10000 }
         z.joins = { 0, 1, 90, 50, -1 }
         z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 20, 40, 0, 92, 48, 88, 48, 10000, 20, 40, 20, 40, 1 }
@@ -2882,28 +2725,14 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.valueAt(z, 90, 50), 21000)
         local _d, lane = logic.nearestLane(z, 90, 47)
         t:assertEqual(lane.value, 21000)
-        -- stepping onto the landing: its value, its line; the walk's line below does not count
-        local _f, changed = logic.updateFloor(z, 90, 50, false, 90, 52)
-        t:assertEqual(z._index.floor, 1)
-        t:assertEqual(changed, true)
+        -- up on the landing: its value, its line; the walk's line below does not count
+        logic.setFloor(z, 1)
         t:assertEqual(logic.valueAt(z, 90, 50), 10000)
         _d, lane = logic.nearestLane(z, 90, 47)
         t:assertEqual(lane.value, 10000)
-        -- passing the join again leaves it where it is: a join without a direction only leads in
-        _f, changed = logic.updateFloor(z, 90, 50, false, 90, 52)
-        t:assertEqual(changed, false)
-        -- off its cells (two cells away; the cell beside counts as still on it): below again
-        logic.updateFloor(z, 90, 54, false, 90, 50)
-        t:assertEqual(z._index.floor, 1)
-        logic.updateFloor(z, 90, 58, false, 90, 54)
-        t:assertEqual(z._index.floor, 0)
+        -- below again
+        logic.setFloor(z, 0)
         t:assertEqual(logic.valueAt(z, 90, 50), 21000)
-        -- a cell with no ground and only the piece puts the player on it (the middle of a moat)
-        z.noGround = { 2, 3 }
-        logic.pack(z)
-        logic.unpack(z)
-        logic.updateFloor(z, 90, 46, false, 90, 42)
-        t:assertEqual(z._index.floor, 1)
     end,
 
     ["the next piece ahead is one the line leads onto, not a line beside it"] = function(t)
