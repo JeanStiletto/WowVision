@@ -80,7 +80,9 @@ since every export numbers the pieces anew.
   stays unless another is clearly nearer. Use these rather than writing the arithmetic again.
 - Derived data lives under `zone._index` (`ix`), built by `logic.unpack` from the data's flat
   lists (`eachRecord`) and dropped by `logic.pack`; lookups per grid cell are buckets keyed
-  `row * cols + col`.
+  `row * cols + col`, except the objects and the centre line stretches, which sit in buckets per block of
+  4 by 4 cells with their box of cells (`logic.blockOf`, `logic.boxHolds`; a cell's stretches:
+  `logic.lanesAt`): the same items in the same order per cell, a fraction of the memory.
 - Kinds are the data's English keys ("road", "canal walk", "deep water"); the words spoken
   come from the zone (localized) or from the locale strings. Ramps and stairs are the kinds
   "ramp" and "stairs" (`logic.CLIMBS`): ways with centre lines keyed like streets, on every

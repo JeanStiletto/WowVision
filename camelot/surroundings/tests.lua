@@ -294,6 +294,29 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(z._index.fellFrom, 2)
     end,
 
+    ["a block bucket gives a cell the items a bucket per cell gave it, the keys past the first column too"] = function(t)
+        -- a grid of 10 columns; an item's box rows 2 to 3, columns -1 to 1: per cell it was keyed r * 10 + c, so
+        -- its cells in column -1 had the keys of the last column one row up (19, 29)
+        local zone = { cols = 10 }
+        local item = { 2, 3, -1, 1 }
+        local buckets = {}
+        for r = 2, 3 do
+            for c = -1, 1 do
+                local b = logic.blockOf(zone, r * 10 + c)
+                buckets[b] = buckets[b] or {}
+                if buckets[b][#buckets[b]] ~= item then
+                    buckets[b][#buckets[b] + 1] = item
+                end
+            end
+        end
+        for _, key in ipairs({ 19, 20, 21, 29, 30, 31 }) do
+            t:assertEqual((logic.cellItems(zone, buckets, key) or {})[1], item, "key " .. key)
+        end
+        for _, key in ipairs({ 18, 22, 28, 39, 9, 40 }) do
+            t:assertNil(logic.cellItems(zone, buckets, key), "key " .. key)
+        end
+    end,
+
     ["the walk-graph tracker gives the same floors with its column cache (PERSIST) as without"] = function(t)
         -- the stairs and upper floor of the test above, walked up, along the floor and off its side, once decoding
         -- afresh per look and once keeping the columns and steps (tools/walklog/vtrack.lua)
