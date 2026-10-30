@@ -436,6 +436,48 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(gaveUp, 59)
     end,
 
+    ["entering a layer, the tracker starts at the height of the floor just held on the other layer"] = function(t)
+        -- a building entered from a hall (Ironforge's Mystic Ward, ground trial 2026-10-30): the building's layer has its
+        -- shop floor (piece 3, height 0) and a floor 24 yd over it (piece 4) in the same cells; the module's floor for the
+        -- layer is the upper one, the player walked in from the hall's floor at height 0
+        local function layer(pieces)
+            local recs = {}
+            for x = 70, 90 do
+                for y = 44, 56 do
+                    for _, pz in ipairs(pieces) do
+                        recs[#recs + 1] = { r = x - 60, c = y - 40, z = pz[2], piece = pz[1] }
+                    end
+                end
+            end
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "stairs", "stairs" }, { "floor", "upper floor" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            return z
+        end
+        logic.tracker.held = nil
+        local hall = layer({ { 0, 0 } })
+        logic.setFloor(hall, 0)
+        logic.updateFloor(hall, 80, 50, false)
+        local shop = layer({ { 3, 0 }, { 4, 24 } })
+        logic.setFloor(shop, 4)
+        t:assertEqual(logic.updateFloor(shop, 81, 50, false), 3, "the shop floor at the hall's height")
+        -- far from where the other floor was held (a hearthstone): the module's floor as before
+        logic.tracker.held = nil
+        local hall2 = layer({ { 0, 0 } })
+        logic.setFloor(hall2, 0)
+        logic.updateFloor(hall2, 70, 44, false)
+        local shop2 = layer({ { 3, 0 }, { 4, 24 } })
+        logic.setFloor(shop2, 4)
+        logic.tracker.held.x, logic.tracker.held.y = 10, 10
+        t:assertEqual(logic.updateFloor(shop2, 81, 50, false), 4, "no carry from far away")
+        logic.tracker.held = nil
+    end,
+
     ["the walk-graph tracker takes the module's floor as the prior at a cold start under a floor over the ground"] = function(t)
         -- a two-storey room: the ground (piece 0, height 0) on x 70 to 100, y 44 to 56, with a bench across the
         -- way (surfaces at 1.2 on the ground piece instead of the floor, x 80 to 84, y 47 to 50: not a step from
@@ -461,6 +503,7 @@ testRunner:addSuite("Surroundings", {
             z.joins = {}
             logic.unpack(z)
             z.surf = { x0 = 60, y0 = 40, rows = surfaceRows(recs) }
+            logic.tracker.held = nil   -- (a fresh start each time: no floor held on another layer, as after a reload)
             return z
         end
         -- the module set the ground: the ground stays, sure, across the benches

@@ -446,9 +446,31 @@ end
 logic.LANDING_ON = 2     -- cells around a landing's exit whose flight cells the turn key aims at, standing there
 logic.LANDING_NEAR = 2   -- yd from a landing's exit within which the turn key turns along the flight, not to the point
 
+logic.LANDING_AREA = 100   -- sq yd: a flat piece joined only to climbs is a landing up to this (its cells' area)
+-- A floor piece's area on its layer's grid: its cells times the cell's area (counted once per layer).
+function logic.pieceArea(zone, piece)
+    local ix = zone._index
+    if ix.pieceCells == nil then
+        local n = {}
+        for _, by in pairs(ix.floorCells or {}) do
+            for p in pairs(by) do
+                n[p] = (n[p] or 0) + 1
+            end
+        end
+        ix.pieceCells = n
+    end
+    return (ix.pieceCells[piece] or 0) * zone.cell * zone.cell
+end
+
 function logic.landingFacing(zone, piece, x, y, facing, from)
     local ix = zone._index
-    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+    -- (a flat piece joined only to climbs counts too when it is small, LANDING_AREA: the Golden Rose's landing
+    -- between its two flights is a floor piece of its own with the ground rule; a canal walk joined only to its ramps is
+    -- no landing)
+    if piece == nil or piece == 0 or ix.lineFloors == nil then
+        return nil
+    end
+    if not ix.lineFloors[piece] and logic.pieceArea(zone, piece) > logic.LANDING_AREA then
         return nil
     end
     for q in pairs(ix.joined[piece] or {}) do

@@ -157,6 +157,16 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertNil(logic.landingFacing(z, 1, 92, 50, 0, 0))
     end,
 
+    ["a small flat piece joined only to flights is a landing too, a big one is none"] = function(t)
+        -- the Golden Rose's landing between its two flights, a floor piece of its own (ground trial, 2026-10-30)
+        local z = landingZone()
+        z._index.lineFloors[2] = nil   -- the landing a flat floor piece, 3 cells of 16 sq yd
+        facesToward(t, logic.landingFacing(z, 2, 98, 49, 0, 1), 98, 49, 96, 42, "flat landing: the upper flight")
+        -- a canal walk joined only to its ramps is no landing
+        z._index.pieceCells = { [2] = 10 }
+        t:assertNil(logic.landingFacing(z, 2, 98, 49, 0, 1))
+    end,
+
     ["the turn key at a landing's exit turns along the flight there, the way it is said with"] = function(t)
         local z = landingZone()
         -- 0.7 yd from the upper flight's join: along "north to south", toward its cells (south)

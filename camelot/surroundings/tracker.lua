@@ -440,6 +440,14 @@ function look(zone, x, y, swimming)
             end
         end
     end
+    -- (a layer entered where another layer's floor was held a moment ago, within RESET: that floor's height
+    -- is the prior, not the module's floor of this layer; the Mystic Ward's shop entered from the hall at 502.8 took the
+    -- floor 24 yd over it, ground trial gl1b, 2026-10-30)
+    local carried = tracker.held
+    if prev == nil and tracker.PRIOR ~= 0 and carried and carried.zone ~= zone
+            and logic.dist(carried.x, carried.y, x, y) <= tracker.RESET then
+        priorZ = carried.z
+    end
     -- per surface the nearest dry floor over it in its own 1 yd column, a level or more up (THROUGH: a fall from
     -- higher than that lands on that floor first)
     local over = {}
@@ -580,6 +588,7 @@ function look(zone, x, y, swimming)
         ix.lookKind = "switch"
     end
     ix.lookZ, ix.lookCost = best.s.z, best.cost
+    tracker.held = { zone = zone, x = x, y = y, z = best.s.z }   -- (the floor held, for a layer entered next)
     -- normalised and pruned
     local kept = {}
     local min = best.cost
