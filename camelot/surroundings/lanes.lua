@@ -15,13 +15,12 @@ local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 -- once, in the order first met (row by row, each row's cells in column order); `filter(lane)` (optional): only the
 -- stretches it accepts.
 function logic.lanesNear(zone, x, y, reach, filter)
-    local buckets = zone._index.lanes
     local out, seen = {}, {}
     local r0, c0 = logic.cellOf(zone, x, y)
     local span = math.ceil(reach / zone.cell)
     for r = r0 - span, r0 + span do
         for c = c0 - span, c0 + span do
-            for _, lane in ipairs(buckets[r * zone.cols + c] or {}) do
+            for _, lane in ipairs(logic.lanesAt(zone, r * zone.cols + c) or {}) do
                 if not seen[lane] and (filter == nil or filter(lane)) then
                     seen[lane] = true
                     out[#out + 1] = lane
@@ -40,7 +39,7 @@ end
 function logic.nearestLane(zone, x, y, reach, kinds, skip, place, own)
     local r, c = logic.cellOf(zone, x, y)
     local ix = zone._index
-    local list = ix.lanes[r * zone.cols + c]
+    local list = logic.lanesAt(zone, r * zone.cols + c)
     if list == nil then
         return nil
     end
@@ -292,7 +291,7 @@ logic.LANE_FOOT_END = 5.0
 -- 7 Meter auf 12, then 6, every second, walk 2026-10-18 08:37.)
 function logic.laneToward(zone, piece, x, y, fx, fy)
     local r, c = logic.cellOf(zone, x, y)
-    local list = zone._index.lanes[r * zone.cols + c]
+    local list = logic.lanesAt(zone, r * zone.cols + c)
     if list == nil or piece == nil or piece == 0 then
         return nil
     end

@@ -123,7 +123,7 @@ function logic.onOwnLines(zone, x, y, floor)
         return nil
     end
     local r, c = logic.cellOf(zone, x, y)
-    for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+    for _, lane in ipairs(logic.lanesAt(zone, r * zone.cols + c) or {}) do
         if lane.piece == floor then
             local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
             local _enter, leave = logic.laneWidths(lane, x, y)
@@ -150,7 +150,7 @@ function logic.ontoOwnLines(zone, x, y, floor)
     end
     local r, c = logic.cellOf(zone, x, y)
     local best, bd = nil, nil
-    for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
+    for _, lane in ipairs(logic.lanesAt(zone, r * zone.cols + c) or {}) do
         local p = lane.piece
         if p ~= floor and ix.lineFloors[p] and joined[p] then
             local _px, _py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)

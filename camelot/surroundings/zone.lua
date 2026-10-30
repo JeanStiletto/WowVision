@@ -728,14 +728,88 @@ local function addToBucket(buckets, key, item)
     bucket[#bucket + 1] = item
 end
 
--- Puts `item` into the bucket of every cell the box (x0..x1, y0..y1, widened by `margin` yards)
--- touches.
-local function addToCells(zone, buckets, x0, x1, y0, y1, margin, item)
-    for r = math.floor((zone.top - x1 - margin) / zone.cell), math.floor((zone.top - x0 + margin) / zone.cell) do
-        for c = math.floor((zone.left - y1 - margin) / zone.cell), math.floor((zone.left - y0 + margin) / zone.cell) do
-            addToBucket(buckets, r * zone.cols + c, item)
+-- Buckets per block of cells (2026-10-30, the user: memory and game performance; a table per cell held Elwynn's
+-- objects in 62730 buckets of 1.3 each, 8.8 MB, its lines in 23322 of 4.3): an item that covers a box of cells
+-- goes into the bucket of every block of BLOCK by BLOCK cells the box reaches, once, and keeps its box (r1..r2,
+-- c1..c2); the items of one cell are those of its block whose box holds the cell (logic.boxHolds), in the order
+-- they were added: the very items and order a bucket per cell had.
+logic.BLOCK = 4
+
+-- The block of cells the cell key `key` (row * cols + col) lies in: the key of its bucket.
+function logic.blockOf(zone, key)
+    local cols, b = zone.cols, logic.BLOCK
+    local r = math.floor(key / cols)
+    local c = key - r * cols
+    return math.floor(r / b) * (math.floor(cols / b) + 1) + math.floor(c / b)
+end
+
+-- Whether the box of cells of `item` (r1..r2, c1..c2) holds the cell key `key`: a cell of the box beyond the
+-- grid's first or last column has the key of the row before or after (as a bucket per cell keyed it).
+function logic.boxHolds(item, key, cols)
+    local r = math.floor(key / cols)
+    local c = key - r * cols
+    for d = -1, 1 do
+        local rr, cc = r + d, c - d * cols
+        if rr >= item.r1 and rr <= item.r2 and cc >= item.c1 and cc <= item.c2 then
+            return true
         end
     end
+    return false
+end
+
+-- Puts `item` into the buckets of the blocks of every cell the box (x0..x1, y0..y1, widened by `margin` yards)
+-- touches, and gives it that box of cells.
+local function addToBlocks(zone, buckets, x0, x1, y0, y1, margin, item)
+    item.r1, item.r2 = math.floor((zone.top - x1 - margin) / zone.cell), math.floor((zone.top - x0 + margin) / zone.cell)
+    item.c1, item.c2 = math.floor((zone.left - y1 - margin) / zone.cell), math.floor((zone.left - y0 + margin) / zone.cell)
+    local added = {}
+    for r = item.r1, item.r2 do
+        for c = item.c1, item.c2 do
+            local block = logic.blockOf(zone, r * zone.cols + c)
+            if not added[block] then
+                added[block] = true
+                addToBucket(buckets, block, item)
+            end
+        end
+    end
+end
+
+-- The items of the cell key `key` in the block buckets `buckets` (a list in the order added; nil: none).
+-- `cache` (optional, a table kept beside the buckets) keeps the lists asked for, CELL_LISTS_KEPT at most.
+logic.CELL_LISTS_KEPT = 4096
+function logic.cellItems(zone, buckets, key, cache)
+    if cache then
+        local got = cache[key]
+        if got ~= nil then
+            return got or nil
+        end
+    end
+    local out = nil
+    for _, item in ipairs(buckets[logic.blockOf(zone, key)] or {}) do
+        if logic.boxHolds(item, key, zone.cols) then
+            out = out or {}
+            out[#out + 1] = item
+        end
+    end
+    if cache then
+        cache.n = (cache.n or 0) + 1
+        if cache.n > logic.CELL_LISTS_KEPT then
+            for k in pairs(cache) do
+                cache[k] = nil
+            end
+            cache.n = 1
+        end
+        cache[key] = out or false
+    end
+    return out
+end
+
+-- The centre line stretches of the cell key `key` (those within LANE_REACH of it), in the order of the data; nil
+-- where none.
+function logic.lanesAt(zone, key)
+    local ix = zone._index
+    ix.laneCells = ix.laneCells or {}
+    return logic.cellItems(zone, ix.lanes, key, ix.laneCells)
 end
 
 logic.LANE_REACH = 12 -- yd; farther from every centre line the grid alone decides
@@ -987,32 +1061,18 @@ function logic.unpack(zone, locale)
         ix.noContact[b * cells + a] = true
     end)
 
-    -- objects, each with the box of cells its footprint's circle touches (r1..r2, c1..c2), in the bucket of every
-    -- block of cells that box reaches (logic.objectBlock: a table per block, not per cell; Elwynn 62730 cell
-    -- buckets of 1.3 objects each, 8.8 MB, user 2026-10-30): logic.objectAhead takes, cell by cell, the objects of
-    -- the cell's block whose box holds the cell (logic.objectCovers), the very objects and order a cell's bucket had
+    -- objects, in the buckets of the blocks of every cell their footprint's circle touches (addToBlocks)
     ix.objects = {}
     eachRecord(zone.objects, 7, function(x, y, halfLength, halfWidth, angle, name, room)
         local o = {
             x = x, y = y, halfLength = halfLength / 10, halfWidth = halfWidth / 10, angle = math.rad(angle),
             name = zone.objectNames and zone.objectNames[name], room = room,
         }
-        local margin = math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10
-        o.r1, o.r2 = math.floor((zone.top - x - margin) / zone.cell), math.floor((zone.top - x + margin) / zone.cell)
-        o.c1, o.c2 = math.floor((zone.left - y - margin) / zone.cell), math.floor((zone.left - y + margin) / zone.cell)
-        local added = {}
-        for r = o.r1, o.r2 do
-            for c = o.c1, o.c2 do
-                local block = logic.objectBlock(zone, r * zone.cols + c)
-                if not added[block] then
-                    added[block] = true
-                    addToBucket(ix.objects, block, o)
-                end
-            end
-        end
+        addToBlocks(zone, ix.objects, x, x, y, y, math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10, o)
     end)
 
-    -- centre line stretches, in the bucket of every cell within LANE_REACH of them
+    -- centre line stretches, in the buckets of the blocks of every cell within LANE_REACH of them (addToBlocks; a
+    -- cell's stretches: logic.lanesAt)
     ix.lanes = {}
     -- 10 fields each: the ends, the cell value, the widths per side (enter and leave left of the stretch's
     -- direction, then right: a wall on one side does not narrow the other) and the raised piece it runs on
@@ -1022,7 +1082,7 @@ function logic.unpack(zone, locale)
             x1 = x1, y1 = y1, x2 = x2, y2 = y2, value = value, kind = logic.kindOf(zone, value),
             enter = enter / 10, leave = leave / 10, enter2 = enter2 / 10, leave2 = leave2 / 10, piece = piece,
         }
-        addToCells(zone, ix.lanes, math.min(x1, x2), math.max(x1, x2), math.min(y1, y2), math.max(y1, y2),
+        addToBlocks(zone, ix.lanes, math.min(x1, x2), math.max(x1, x2), math.min(y1, y2), math.max(y1, y2),
             logic.LANE_REACH, lane)
         order[#order + 1] = lane
     end)

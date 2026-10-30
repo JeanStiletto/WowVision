@@ -18,31 +18,6 @@ function logic.objectPoint(o, x, y)
     return qx, qy, logic.dist(x, y, qx, qy)
 end
 
-logic.OBJECT_BLOCK = 4 -- cells: the objects' buckets are blocks of this many cells each way (zone.lua unpack)
-
--- The block of cells the cell key `key` (row * cols + col) lies in: the key of the objects' bucket.
-function logic.objectBlock(zone, key)
-    local cols, b = zone.cols, logic.OBJECT_BLOCK
-    local r = math.floor(key / cols)
-    local c = key - r * cols
-    return math.floor(r / b) * (math.floor(cols / b) + 1) + math.floor(c / b)
-end
-
--- Whether the box of cells of object `o` (r1..r2, c1..c2) holds the cell key `key`: a cell of the box beyond the
--- grid's first or last column has the key of the row before or after (the key of a cell in the bucket the
--- object was put in before the blocks).
-function logic.objectCovers(o, key, cols)
-    local r = math.floor(key / cols)
-    local c = key - r * cols
-    for d = -1, 1 do
-        local rr, cc = r + d, c - d * cols
-        if rr >= o.r1 and rr <= o.r2 and cc >= o.c1 and cc <= o.c2 then
-            return true
-        end
-    end
-    return false
-end
-
 -- The object the player pushes against: moving (or trying to) along the unit vector (vx, vy), the
 -- nearest object within `reach` yards that lies that way. `room`: only objects of this room
 -- (0 = outdoors, nil = any). Returns the object and its distance, or nil.
@@ -54,8 +29,8 @@ function logic.objectAhead(zone, x, y, vx, vy, reach, room)
     for dr = -n, n do
         for dc = -n, n do
             local key = (r + dr) * zone.cols + c + dc
-            for _, o in ipairs(buckets[logic.objectBlock(zone, key)] or {}) do
-                if not seen[o] and logic.objectCovers(o, key, zone.cols) and (room == nil or o.room == room) then
+            for _, o in ipairs(buckets[logic.blockOf(zone, key)] or {}) do
+                if not seen[o] and logic.boxHolds(o, key, zone.cols) and (room == nil or o.room == room) then
                     seen[o] = true
                     local qx, qy, d = logic.objectPoint(o, x, y)
                     if d <= bestD and (d < TOUCHING or ((qx - x) * vx + (qy - y) * vy) / d >= logic.BUMP_ANGLE) then
