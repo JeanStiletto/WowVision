@@ -1,4 +1,4 @@
-# Surroundings (WoW: Forever)
+# Surroundings (WoW: Forever, TBC, Era)
 
 The surroundings module (`camelot/surroundings/`) describes where the player walks from map
 data prepared offline. The data is the repository
@@ -47,6 +47,14 @@ tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testd
 - `objects.lua`: objects one bumps into, whose wall it is.
 - `texts.lua`: every spoken text: places, squares, rooms, drop edges, guidance targets.
 - `stops.lua`: where one waits for a ship, zeppelin, lift or tram, and which way it will be.
+- `helper.lua`: the building helper (Alt plus the turn key) and the climbs' routes: a beacon route to the next
+  doorway, entrance or way out of the water, or along a climb's own stored centre line to its other end and the
+  floor joined there (`logic.helperRoute`, `logic.climbRouteFrom`); the turn key's facing on a climb
+  (`logic.climbLineFacing`). It follows only what the export stored (tested in `helperTests.lua`).
+- `tracker.lua`: the walk-graph tracker, the floor piece the player is on followed over a layer's own floor
+  surfaces (the zone's `<zone>-surfaces.lua` file, written by the tools' `surfaces.py`: every floor surface in
+  1 yd columns with its height, its piece and its steps to the neighbouring columns), with a few costed
+  candidates per look.
 
 `module.lua` is the WoW side: settings, the alert, the update loop, the walk log, `/wv surr`,
 `/wv surr around` and the describe key (both run `describeAround`). Every 0.2 s the loop pauses
@@ -115,7 +123,7 @@ The JSON object:
   number of points, the points, then the stretches' headings), `lineHeadings` whether the model
   has headings; `exits` with 6 values each (x, y, width, way out, floor, group); `edges` as
   `{h = the first 5 values, p = points, l, u, d}`; `climbFeet`, `climbAims`; and as the model has
-  them `deadExits`, `noContact`, `liquids`, `lineFloors`, `doorFloors`, `waterStructs`, `structs`,
+  them `noContact`, `liquids`, `lineFloors`, `doorFloors`, `waterStructs`, `structs`,
   `rooms` (a layer's covered rooms).
 - Coordinates (points, ways out, climbs, objects, joins) are whole tenths of a yard; a path (a
   polyline's or an edge's points) is its first point, then each the step from the one before.
@@ -171,8 +179,6 @@ of the model has:
   shore) share a group, and the guidance keys its target by the group, so it is named once while
   it follows the nearest stretch. In an indoor layer the moat's ways out come first, each with a
   negative group of its own.
-- `deadExits`: 1-based indexes into the ways out that lead onto floor joining nothing, or into
-  a dead end (decided offline with the heights; optional).
 - `noContact`: row, column, row, column quadruples: neighbouring cells of two squares with no
   walkable crossing between them (decided offline with the heights; optional). Such cells are
   no border between the squares.
