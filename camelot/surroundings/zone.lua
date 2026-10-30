@@ -315,7 +315,7 @@ function logic.paintedAtCell(zone, r, c)
     if not logic.inGrid(zone, r, c) then
         return 0
     end
-    local row = zone._index.rows[r + 1]
+    local row = logic.gridRow(zone, r + 1)
     if row == nil then
         return 0
     end
@@ -831,6 +831,41 @@ local function shareCells(cells, sig)
     end
 end
 
+-- Row `r` (1-based) of the grid as runs: `starts` (the first column of each run) and `values`; nil past the grid.
+-- Made from the row's text (zone.grid, palette values with counts: "3180113*4,0*12") when first read, and kept
+-- for the ROWS_KEPT rows read last (2026-10-30, the user: memory; all of Elwynn's 528 rows as runs held 1.6 MB,
+-- the text 0.5 MB).
+logic.ROWS_KEPT = 64
+function logic.gridRow(zone, r)
+    local ix = zone._index
+    local row = ix.rows[r]
+    if row then
+        return row
+    end
+    local text = zone.grid[r]
+    if text == nil then
+        return nil
+    end
+    local starts, values = {}, {}
+    local col = 0
+    for token in text:gmatch("[^,]+") do
+        local v, n = token:match("^(%d+)%*(%d+)$")
+        if v == nil then
+            v, n = token, 1
+        end
+        starts[#starts + 1] = col
+        values[#values + 1] = tonumber(v)
+        col = col + tonumber(n)
+    end
+    if ix.rowsKept >= logic.ROWS_KEPT then
+        ix.rows, ix.rowsKept = {}, 0
+    end
+    row = { starts = starts, values = values }
+    ix.rows[r] = row
+    ix.rowsKept = ix.rowsKept + 1
+    return row
+end
+
 logic.LANE_REACH = 12 -- yd; farther from every centre line the grid alone decides
 logic.FEET_APART = 8 -- yd; two feet of one climb closer than this are one guidance target
 
@@ -865,21 +900,8 @@ function logic.unpack(zone, locale)
         return #a > #b or (#a == #b and a < b)
     end)
 
-    ix.rows = {}
-    for r = 1, #zone.grid do
-        local starts, values = {}, {}
-        local col = 0
-        for token in zone.grid[r]:gmatch("[^,]+") do
-            local v, n = token:match("^(%d+)%*(%d+)$")
-            if v == nil then
-                v, n = token, 1
-            end
-            starts[#starts + 1] = col
-            values[#values + 1] = tonumber(v)
-            col = col + tonumber(n)
-        end
-        ix.rows[r] = { starts = starts, values = values }
-    end
+    -- the grid's rows as runs, made from the row's text when first read (logic.gridRow)
+    ix.rows, ix.rowsKept = {}, 0
 
     ix.places = {}
     for id, p in pairs(zone.places) do

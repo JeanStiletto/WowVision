@@ -81,7 +81,7 @@ testRunner:addSuite("Surroundings stored data", {
         local value = logic.valueAtCell(zone, 0, 2)
         local layerIn = zone._index.layerIn
         logic.dropLists(zone)
-        t:assertNil(zone.grid)
+        t:assertNotNil(zone.grid, "the grid's rows: logic.gridRow reads them")
         t:assertNil(zone.floorCells)
         t:assertNil(zone.indoorIn, "the inside layer's source")
         t:assertNil(layerIn.lanes, "a layer's own lists")

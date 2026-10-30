@@ -29,9 +29,10 @@ logic.ZONE_HEADER = { key = true, label = true, map = true, top = true, left = t
 
 -- The model's flat lists once the zone's index is built from them (logic.unpack): nothing in the module reads them
 -- after that, the index holds what they said (the user 2026-10-30: memory; Elwynn about 7 MB in LuaJIT with the
--- inside layer's own). The game drops them (module.lua findZone); the offline tools read them and keep them.
+-- inside layer's own). The game drops them (module.lua findZone); the offline tools read them and keep them. The
+-- grid's rows stay: logic.gridRow reads them.
 local FLAT_LISTS = { "floorCells", "floorRooms", "noGround", "structCells", "hallGround", "joins", "lanes",
-    "laneHeadings", "objects", "grid", "exits", "exitFloors", "exitGroups", "climbFeet", "climbTops", "climbAims",
+    "laneHeadings", "objects", "exits", "exitFloors", "exitGroups", "climbFeet", "climbTops", "climbAims",
     "noContact", "edges" }
 
 -- Drops the flat lists of an unpacked zone and of its layers, and the layers' sources (zone.indoor, zone.indoorIn).
