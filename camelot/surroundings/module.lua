@@ -1092,7 +1092,15 @@ local function sillFloor(grid, x, y)
             end
         end
     end
-    return floor and floor > 0 and floor or nil
+    return floor
+end
+
+-- The grid entered through a doorway starts on the floor its sill lies on, where there is one.
+local function startOnSill(grid, x, y)
+    local sill = grid and sillFloor(grid, x, y)
+    if sill then
+        logic.setFloor(grid, sill)
+    end
 end
 
 -- Forget the doorway or beginning passed once the player was farther than its guidance reach.
@@ -1601,9 +1609,13 @@ local function roomPieceLine(layer, x, y)
     end
 end
 
--- Out of a city's halls at (x, y) (a doorway to outside, or a hall no step leads from): logged once.
-local function leaveHalls(x, y)
+-- Out of a city's halls at (x, y) (a doorway to outside, or a hall no step leads from): logged once. The zone's grid
+-- is followed from here, while the game may say indoors a few steps longer (the gate's tunnel): it starts on the
+-- floor of the doorway's sill, as a step outdoors does (a hall's floor is a piece of its own on the zone's grid, held
+-- since the way in: out of Ironforge's gate it was the floor for a second, ground trial 2026-10-30).
+local function leaveHalls(z, x, y)
     hallGap, hallDoorOut = nil, { x, y }
+    startOnSill(z, x, y)
     logEntry("floor", "out of the halls", x, y, { subzone = gameSubzone() })
 end
 
@@ -1622,12 +1634,12 @@ local function updateIndoors(z, x, y, px, py)
     end)
     if crossed == 0 and hallGap ~= nil and room and z._index.rooms[room].hallMap then
         -- out of the halls through a doorway to outside (the throne room's onto the rose walk)
-        leaveHalls(x, y)
+        leaveHalls(z, x, y)
     end
     local found = logic.resolveRoom(z, x, y, room, px, py, roomByDoor, crossed or false, IsIndoors())
     if found ~= nil and room ~= nil and found ~= room and hallGap ~= nil and logic.hallsApart(z, room, found) then
         -- no step leads from this hall into that one: out of the halls (a doorway left unnoticed)
-        leaveHalls(x, y)
+        leaveHalls(z, x, y)
         found, room = nil, nil
     end
     -- up on a level of the indoor layer (a building's upper floor, its stairs) a doorway of the
@@ -1796,6 +1808,9 @@ module:hasUpdate(function(self)
     local inHall = updateHall(z, x, y, px, py)
     if inHall ~= wasHall then
         -- entering or leaving the halls, logged as a floor change (the walk log tools show where)
+        if not inHall then
+            startOnSill(z, x, y)
+        end
         logEntry("floor", inHall and "into the halls" or "out of the halls", x, y, { subzone = gameSubzone() })
     end
     logTrail(x, y)
@@ -1813,9 +1828,8 @@ module:hasUpdate(function(self)
         forgetPlace()
         -- through a doorway: the grid entered starts on the floor its sill lies on (not after a jump: no doorway)
         local entered = (isIndoors and logic.layer(z, IsIndoors())) or (not isIndoors and z) or nil
-        local sill = entered and not jumped and wasIndoors ~= nil and sillFloor(entered, x, y)
-        if sill then
-            logic.setFloor(entered, sill)
+        if not jumped and wasIndoors ~= nil then
+            startOnSill(entered, x, y)
         end
         cameIn = (isIndoors and wasIndoors == false and px and logic.dist(x, y, px, py) <= CAME_IN_STEP) and { x, y } or nil
         wasIndoors = isIndoors
