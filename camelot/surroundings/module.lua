@@ -668,8 +668,14 @@ if namespace then
     function namespace.addPlaces(places)
         table.insert(data.places, places)
     end
-    -- the walk graph's surfaces per layer (format 5, zones/<zone>-surfaces.lua): the walk-graph tracker's data
+    -- the walk graph's surfaces per layer (format 5, zones/<zone>-surfaces.lua): the walk-graph tracker's data;
+    -- a packed layer's rows are unpacked band by band as the tracker reads them (store.lua logic.bandRows)
     function namespace.addSurfaces(key, layers)
+        for _, layer in pairs(layers) do
+            if layer.bands then
+                logic.bandRows(layer)
+            end
+        end
         data.surfaces = data.surfaces or {}
         data.surfaces[key] = layers
     end
@@ -677,6 +683,11 @@ end
 -- the game decodes a zone's JSON text (offline the tools put a stand-in in its place)
 logic.decodeJson = function(text)
     return C_EncodingUtil.DeserializeJSON(text)
+end
+-- and unpacks the packed data (WowVision tools/surroundings-pack.py: zlib, then Base64)
+logic.inflate = function(packed)
+    local raw = C_EncodingUtil.DecodeBase64(packed)
+    return raw and C_EncodingUtil.DecompressString(raw, Enum.CompressionMethod.Zlib)
 end
 
 local function zones()

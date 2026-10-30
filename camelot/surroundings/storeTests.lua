@@ -75,4 +75,49 @@ testRunner:addSuite("Surroundings stored data", {
         t:assertEqual(zone.interiors[2].c, 1)
         t:assertEqual(zone.doorVia[3], 2)
     end,
+    -- the packed data (tools/surroundings-pack.py): the game's decoder is not here, a stand-in reverses the text
+    ["a packed zone unpacks on entry like the text and stays packed after leaving"] = function(t)
+        local inflate = logic.inflate
+        logic.inflate = function(packed)
+            return packed:reverse()
+        end
+        local zone = loadStored()
+        zone.json, zone.deflated = zone.json:reverse(), true
+        logic.unpack(zone, "deDE")
+        t:assertEqual(zone.places[2][2], "Teststraße")
+        t:assertEqual(logic.valueAtCell(zone, 0, 2), 28090)
+        logic.pack(zone)
+        t:assertEqual(zone.deflated, true)
+        logic.unpack(zone, "enUS")
+        t:assertEqual(zone.places[2][2], "Test road")
+        logic.inflate = inflate
+    end,
+    ["a packed surfaces layer gives its rows band by band, few kept"] = function(t)
+        local inflate, kept = logic.inflate, logic.BANDS_KEPT
+        local opened = 0
+        logic.inflate = function(packed)
+            opened = opened + 1
+            return packed
+        end
+        logic.BANDS_KEPT = 2
+        -- bands of 2 rows: rows 0 and 1, 2 (row 3 empty), 6 and 7; band 2 has none
+        local layer = logic.bandRows({ x0 = 0, y0 = 0, rec = 10, band = 2,
+            bands = { [0] = "row0\nrow1", [1] = "row2\n", [3] = "row6\nrow7" } })
+        local rows = layer.rows
+        t:assertEqual(rows[0], "row0")
+        t:assertEqual(rows[1], "row1")
+        t:assertEqual(opened, 1, "one band unpacked for both its rows")
+        t:assertNil(rows[3], "an empty row")
+        t:assertEqual(rows[2], "row2")
+        t:assertNil(rows[4], "a band with no rows")
+        t:assertNil(rows[-1], "a row before the layer")
+        t:assertEqual(opened, 2)
+        t:assertEqual(rows[7], "row7")
+        t:assertEqual(opened, 3)
+        t:assertNil(rawget(rows, 0), "the band asked for first was let go")
+        t:assertEqual(rawget(rows, 2), "row2")
+        t:assertEqual(rows[0], "row0", "a band let go unpacks again")
+        t:assertEqual(opened, 4)
+        logic.inflate, logic.BANDS_KEPT = inflate, kept
+    end,
 })

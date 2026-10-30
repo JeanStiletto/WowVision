@@ -66,3 +66,6 @@ libs/LibSharedMedia-3.0/
 
 # WowNav navigation data packed by tools/wownav-pack.lua (generated)
 /mapdata/WowNavPacked/
+
+# Surroundings data packed by tools/surroundings-pack.py (generated)
+/mapdata/WowVision_SurroundingsPacked/

@@ -29,8 +29,10 @@
   <Include file="surroundings\modules.xml" />
   <!-- The surroundings data (the WowVision_Surroundings repository as a
        submodule, its WoW: Forever folder): its zone and places list files
-       register with the module above. -->
-  <Include file="..\mapdata\WowVision_Surroundings\forever\data.xml" />
+       register with the module above. Packed for the game by
+       tools/surroundings-pack.py (generated, git-ignored; run it after every
+       export and after updating the data submodule). -->
+  <Include file="..\mapdata\WowVision_SurroundingsPacked\forever\data.xml" />
   <!-- Developer tool: checks the group health readback in game
        (/wv ghprobe). -->
   <Script file="groupHealthProbe.lua" />

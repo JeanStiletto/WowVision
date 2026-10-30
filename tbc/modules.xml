@@ -17,7 +17,9 @@
        Forever) with this client's data: the tbc folder of the
        WowVision_Surroundings repository, exported from TBC Anniversary. -->
   <Include file="..\camelot\surroundings\modules.xml" />
-  <Include file="..\mapdata\WowVision_Surroundings\tbc\data.xml" />
+  <!-- packed for the game by tools/surroundings-pack.py (generated, git-ignored; run it after every export
+       and after updating the data submodule) -->
+  <Include file="..\mapdata\WowVision_SurroundingsPacked\tbc\data.xml" />
   <!-- LOCAL TRIAL ONLY (local-play, never in a PR): the WowNav routes with
        Broesel's WoW: Forever data, to test the system on TBC until a TBC
        export exists. The cities are other models on Forever: a route may

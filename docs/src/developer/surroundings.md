@@ -4,9 +4,10 @@ The surroundings module (`camelot/surroundings/`) describes where the player wal
 data prepared offline. The data is the repository
 [JeanStiletto/WowVision_Surroundings](https://github.com/JeanStiletto/WowVision_Surroundings), a
 git submodule at `mapdata/WowVision_Surroundings` (as `locale/` is): it is loaded as part of
-WowVision: each game version has its folder there, and its modules.xml includes that folder's
-`data.xml` after the module (`camelot/` `forever/data.xml`, `tbc/` `tbc/data.xml`, `vanilla/`
-`era/data.xml`). It is generated from
+WowVision: each game version has its folder there, packed for the game by `tools/surroundings-pack.py`
+into the git-ignored `mapdata/WowVision_SurroundingsPacked` ("Packed data" below), and its modules.xml
+includes the packed folder's `data.xml` after the module (`camelot/` `forever/data.xml`, `tbc/`
+`tbc/data.xml`, `vanilla/` `era/data.xml`). It is generated from
 the client's map files by the wv-surroundings tools (`tools/export.py`, stored by
 `tools/store.py`), one Lua file per zone. Each zone file registers its frame and its data as
 JSON text (`addZone`, on WowVision's own addon table); the module decodes and unpacks a zone only
@@ -128,6 +129,28 @@ The JSON object:
 - Coordinates (points, ways out, climbs, objects, joins) are whole tenths of a yard; a path (a
   polyline's or an edge's points) is its first point, then each the step from the one before.
 - `extra` (in the zone or a layer): model fields the store does not know yet, kept as they are.
+
+## Packed data
+
+git keeps the data as readable text (diffs, history, and every offline tool reads it); the game loads it packed,
+about a fifth of the size, so a login reads and keeps far less (TBC 2026-10-30: 22.6 MB of text, 4.9 MB packed).
+`tools/surroundings-pack.py` writes `mapdata/WowVision_SurroundingsPacked/<client>/` (generated, git-ignored, as
+`tools/wownav-pack.lua` does for the WowNav data):
+
+- a zone file: its header with `deflated = true`, its JSON text zlib-compressed and Base64-coded;
+  `logic.unpack` gives it to `logic.inflate` first (the game's `C_EncodingUtil.DecodeBase64` and
+  `DecompressString` with `Enum.CompressionMethod.Zlib`), then decodes it as before;
+- a surfaces file: per layer its frame with `band` (rows per band, 32) and `bands` (per band one packed string
+  of its rows, a line each, an empty line for a row with none) in place of `rows`; `logic.bandRows` (store.lua)
+  gives the layer a `rows` table that unpacks a band when a row of it is first read and keeps only the
+  `logic.BANDS_KEPT` bands read last, so `tracker.lua` reads rows as before;
+- a places list file: copied as it is.
+
+Every packed file names the SHA-1 of its source text; the tool unpacks everything it packs and compares it with
+the source before writing. It runs at the end of every export into the data (wv-surroundings `store.py`
+`write_data_xml`) and must run after the data submodule changes in git (a checkout, a pull):
+`py tools/surroundings-pack.py` (all clients), `--client tbc` (one), `--check` (report stale files, exit code 1).
+A release build runs it before packaging.
 
 ## Zone data
 

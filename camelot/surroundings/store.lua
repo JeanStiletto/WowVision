@@ -16,11 +16,54 @@ logic.FORMAT = 4
 
 -- set by module.lua (the game's C_EncodingUtil.DeserializeJSON), offline by the tools
 logic.decodeJson = nil
+-- The packed data (WowVision tools/surroundings-pack.py, what the game loads; git keeps the text the tools read):
+-- a zone's JSON text and each band of a surfaces layer are compressed strings, `logic.inflate(packed)` gives the
+-- text back (set by module.lua: the game's C_EncodingUtil.DecodeBase64 and DecompressString; offline the tests
+-- put a stand-in in its place).
+logic.inflate = nil
 
 -- The fields a registered zone keeps while the player is elsewhere: its frame (findZone) and the
--- JSON text. logic.pack drops the rest.
+-- JSON text (`deflated`: packed). logic.pack drops the rest.
 logic.ZONE_HEADER = { key = true, label = true, map = true, top = true, left = true, cell = true, rows = true,
-    cols = true, format = true, json = true }
+    cols = true, format = true, json = true, deflated = true }
+
+-- A packed surfaces layer (its `bands`: per band of `band` rows one packed string of the rows, a line each, an
+-- empty line where a row has none) gets the `rows` the walk-graph tracker reads (tracker.lua column): a band is
+-- unpacked when a row of it is first asked for, and only the BANDS_KEPT bands asked for last stay unpacked (the
+-- tracker reads 16 rows around the player at most, two bands).
+logic.BANDS_KEPT = 4
+function logic.bandRows(layer)
+    local bands, size = layer.bands, layer.band
+    local open, order = {}, {}   -- the unpacked bands: a set, and in the order unpacked
+    local rows = {}
+    setmetatable(rows, { __index = function(_, r)
+        local b = math.floor(r / size)
+        if open[b] or bands[b] == nil then
+            return nil   -- (a row with no surfaces, or a band with none)
+        end
+        if #order >= logic.BANDS_KEPT then
+            local old = table.remove(order, 1)
+            open[old] = nil
+            for i = old * size, old * size + size - 1 do
+                rawset(rows, i, nil)
+            end
+        end
+        local text = logic.inflate(bands[b])
+        assert(text, "the surroundings surfaces could not be unpacked")
+        local i = b * size
+        for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+            if line ~= "" then
+                rawset(rows, i, line)
+            end
+            i = i + 1
+        end
+        open[b] = true
+        order[#order + 1] = b
+        return rawget(rows, r)
+    end })
+    layer.rows = rows
+    return layer
+end
 
 local LAYERS = { { "indoor", "halls" }, { "indoorIn", "inside" } }
 -- per-cell lists: the model's key, the values after row and column, the key in a layer's cells

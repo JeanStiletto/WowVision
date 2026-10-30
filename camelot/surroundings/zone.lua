@@ -756,7 +756,7 @@ function logic.unpack(zone, locale)
         zone.surf = zone.surfaces and zone.surfaces.zone or nil
     end
     if zone.json then
-        local data = logic.decodeJson(zone.json)
+        local data = logic.decodeJson(zone.deflated and logic.inflate(zone.json) or zone.json)
         assert(type(data) == "table", "the surroundings data of " .. tostring(zone.key) .. " could not be read")
         logic.expand(zone, data, locale)
     end

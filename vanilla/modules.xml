@@ -6,6 +6,8 @@
        Forever) with this client's data: the era folder of the
        WowVision_Surroundings repository, exported from Classic Era. -->
   <Include file="..\camelot\surroundings\modules.xml" />
-  <Include file="..\mapdata\WowVision_Surroundings\era\data.xml" />
+  <!-- packed for the game by tools/surroundings-pack.py (generated, git-ignored; run it after every export
+       and after updating the data submodule) -->
+  <Include file="..\mapdata\WowVision_SurroundingsPacked\era\data.xml" />
 
 </Ui>
