@@ -216,16 +216,15 @@ of the model has:
   doorway (the portal record, `logic.doorsBetween`): the grid cuts no walls between rooms, so
   two rooms with no doorway between them are no neighbours; a city's halls keep the grid's
   openings (no doorway records between them).
-- `lanes`: centre line stretches, `laneFields` values each (10 now; 7 and 8 in older files):
+- `lanes`: centre line stretches, 10 values each (`laneFields`, always 10):
   x1, y1, x2, y2, the cell value there, the distances from the line in 0.1 yards within which
   the way starts to count (enter) and beyond which it stops (leave) left of the stretch's
   direction, the same two right of it (a wall on one side no longer narrows the other), and the
   floor piece the stretch runs on where that floor lies over or under other floor (0 = the
   ground; -1 = not stacked: the stretch counts on every floor, the position alone finds it):
-  a stacked stretch counts only on its piece. 8-field files have one width pair and the piece;
-  7-field files the width pair alone.
-- `climbFeet`: the feet of ramps and stairs joined to the way below, `climbFeetFields` values
-  each (5; 3 and 4 in older files): x, y, the climb's cell value, the bearing up the climb in
+  a stacked stretch counts only on its piece.
+- `climbFeet`: the feet of ramps and stairs joined to the way below, 5 values each
+  (`climbFeetFields`, always 5): x, y, the climb's cell value, the bearing up the climb in
   degrees, and the floor piece at the foot (0 the ground): guided to only from that floor.
   Guidance targets on the way, like entrances; two feet of one climb closer than
   `logic.FEET_APART` are one target.

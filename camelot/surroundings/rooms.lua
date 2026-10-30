@@ -62,7 +62,7 @@ function logic.crossedDoor(zone, current, px, py, x, y, fits)
             -- Ruins of Lordaeron's sewer openings are 12 to 15 yd wide, and walking out at their
             -- sides went unnoticed (walk 2026-10-07 23:43)
             local near = function(u, v)
-                if door.half and door.half > 0 then
+                if door.half > 0 then
                     local along = math.abs((u - door.x) * -door.ny + (v - door.y) * door.nx)
                     local off = math.abs((u - door.x) * door.nx + (v - door.y) * door.ny)
                     return along <= door.half + logic.DOOR_SIDE and off <= logic.DOOR_REACH

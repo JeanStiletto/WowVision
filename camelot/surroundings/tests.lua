@@ -51,14 +51,14 @@ local function newZone()
             { 1, "back room", "room", { 11, 0, 20, 10 } },
             { 2, "barn", "large hall", { 30, 0, 40, 10 } },
         },
-        -- doors {room a, room b, interior, centre x, y, facing nx, ny, side of room a}:
+        -- doors {room a, room b, interior, centre x, y, facing nx, ny, side of room a, half width (0 unknown)}:
         -- outside to the common room; back room to the upstairs landing (a doorway at x = 10.5,
         -- the back room on its +x side); common room to landing, the stairs, at y = 5 (common
         -- room on the -y side)
         doors = {
-            { 0, 1, 1, 0, 5, 1, 0, 0 },
-            { 3, 2, 1, 10.5, 5, 1, 0, 1 },
-            { 1, 2, 1, 5, 5, 0, 1, -1 },
+            { 0, 1, 1, 0, 5, 1, 0, 0, 0 },
+            { 3, 2, 1, 10.5, 5, 1, 0, 1, 0 },
+            { 1, 2, 1, 5, 5, 0, 1, -1, 0 },
         },
     }
 end
@@ -86,7 +86,7 @@ local function newSquareZone()
     z.exits, z.exitFloors = {}, {}
     z.interiors = { { "Test Bank", 0, 0, 1, -1, 0, 0, -1 } }
     z.rooms = { { 1, "entrance", "room", { 60, 10, 62, 20 } } }
-    z.doors = { { 0, 1, 1, 65, 15, 1, 0, 0 } }
+    z.doors = { { 0, 1, 1, 65, 15, 1, 0, 0, 0 } }
     return z
 end
 
@@ -103,7 +103,7 @@ local function newLaneZone()
         places = { { "forest", "forest" }, { "road", "Test road" }, { "bridge", "bridge" } },
         grid = { "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2", "10000*2,21000*2,10000*2",
             "10000*2,30000*2,10000*2" },
-        lanes = { 100, 48, 84, 48, 21000, 20, 40 },
+        lanes = { 100, 48, 84, 48, 21000, 20, 40, 20, 40, 0 },
     }
 end
 
@@ -119,7 +119,7 @@ local function newWalkZone()
         axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
         places = { { "square", "square of Test" }, { "canal walk", "canal walk" } },
         grid = { "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*3,0*2", "10000*2,21000*3,0*2" },
-        lanes = { 100, 46, 84, 46, 21000, 20, 40 },
+        lanes = { 100, 46, 84, 46, 21000, 20, 40, 20, 40, 0 },
     }
 end
 
@@ -140,9 +140,9 @@ local function newHallZone()
         { 1, "stairs", "stairs", { 70, 50, 80, 60 }, f = 40, w = -1 },
     }
     z.doors = {
-        { 1, 2, 1, 90, 40, 0, 1, -1 },
-        { 1, 3, 1, 80, 5, 1, 0, 1 },
-        { 0, 1, 1, 100, 25, 0, 0, 0 },
+        { 1, 2, 1, 90, 40, 0, 1, -1, 0 },
+        { 1, 3, 1, 80, 5, 1, 0, 1, 0 },
+        { 0, 1, 1, 100, 25, 0, 0, 0, 0 },
     }
     z.indoor = {
         rooms = { 1 },
@@ -183,7 +183,6 @@ local function newTowerZone()
     z.noGround = {}
     z.joins = { 0, 1, 95, 52, 90, 1, 2, 95, 35, 90, 2, 3, 95, 25, 90 }
     z.ofTemplate = "%s of %s"
-    z.climbFeetFields = 5
     z.climbFeet = { 96, 25, 50000, 90, 2 }
     return z
 end
@@ -495,8 +494,7 @@ testRunner:addSuite("Surroundings", {
             z.places = { { "square", "square of Test" }, { "ramp", "ramp" } }
             z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
             -- a ramp (piece 1) from its foot at x 97 south up to x 87 along y 50, its own line
-            -- tied to it (laneFields 10: enter and leave per side, the piece), 1 yd in, 1.5 out
-            z.laneFields = 10
+            -- tied to it (enter and leave per side, the piece), 1 yd in, 1.5 out
             z.lanes = { 97, 50, 87, 50, 20000, 10, 15, 10, 15, 1 }
             z.lineFloors = { 1 }
             z.floorCells = { 0, 2, 1, 20000, 0, 3, 1, 20000, 1, 2, 1, 20000, 1, 3, 1, 20000,
@@ -620,7 +618,7 @@ testRunner:addSuite("Surroundings", {
         -- a roost's door at the landing's east end (x 95, y 21), 17 yd from its west end
         z.interiors = { { "Test Roost", 0, 0, 1, -1, 0, 0, -1 } }
         z.rooms = { { 1, "Test Roost", "large hall", { 90, 10, 100, 20 } } }
-        z.doors = { { 0, 1, 1, 95, 21, 0, -1, 0 } }
+        z.doors = { { 0, 1, 1, 95, 21, 0, -1, 0, 0 } }
         logic.unpack(z)
         logic.setFloor(z, 2)
         local target = logic.footTarget(z, 95, 38)
@@ -1002,12 +1000,12 @@ testRunner:addSuite("Surroundings", {
             { 1, "mine 4", "room", { 20, 30, 30, 40 }, f = 100 },
         }
         z.doors = {
-            { 1, 2, 1, 5, 30, 0, 1, -1 },
-            { 2, 3, 1, 10, 35, 1, 0, -1 },
-            { 2, 4, 1, 5, 60, 0, 1, -1 },
-            { 2, 5, 1, 0, 35, 1, 0, 1 },
-            { 5, 6, 1, -10, 35, 1, 0, 1 },
-            { 0, 6, 1, -20, 35, 0, 0, 0 },
+            { 1, 2, 1, 5, 30, 0, 1, -1, 0 },
+            { 2, 3, 1, 10, 35, 1, 0, -1, 0 },
+            { 2, 4, 1, 5, 60, 0, 1, -1, 0 },
+            { 2, 5, 1, 0, 35, 1, 0, 1, 0 },
+            { 5, 6, 1, -10, 35, 1, 0, 1, 0 },
+            { 0, 6, 1, -20, 35, 0, 0, 0, 0 },
             { 3, 7, 1, 20, 35, 1, 0, -1 },
         }
         logic.unpack(z)
@@ -1096,7 +1094,7 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(170), false), 135))
         -- a line on the bridge (running east, 6 degrees off) changes nothing: the direction said
         z = newLaneZone()
-        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 83, 58, 81, 38, 31045, 20, 40 }
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 20, 40, 0, 83, 58, 81, 38, 31045, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         facings = logic.lineFacings(z, 82, 48, 31045, math.rad(-90))
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-90), false), -45))
@@ -1128,7 +1126,7 @@ testRunner:addSuite("Surroundings", {
         -- or a scrap across it): the direction said, either way
         local z = newLaneZone()
         table.insert(z.places, { "ramp", "ramp" }) -- place 4
-        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 83, 48, 81, 48, 40052, 20, 40 }
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 20, 40, 0, 83, 48, 81, 48, 40052, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         t:assertEqual(logic.riseOf(z, 40052), 52)
         local facings = logic.lineFacings(z, 82, 48, 40052, 0)
@@ -1144,7 +1142,7 @@ testRunner:addSuite("Surroundings", {
         -- the stretch runs south (x falls), 16 yd in two samples; stored at the second (x 88): 190
         -- going south, 3 going north
         local z = newLaneZone()
-        z.lanes = { 100, 48, 84, 48, 21000, 20, 40 }
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 20, 40, 0 }
         z.laneHeadings = { 2, 180, 0, 190, 3 }
         logic.unpack(z)
         local facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
@@ -1155,7 +1153,7 @@ testRunner:addSuite("Surroundings", {
         t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-170), false), 180))
         -- near the line's end no heading ahead (-1): the other one turned round
         z = newLaneZone()
-        z.lanes = { 100, 48, 84, 48, 21000, 20, 40 }
+        z.lanes = { 100, 48, 84, 48, 21000, 20, 40, 20, 40, 0 }
         z.laneHeadings = { 2, 180, 0, -1, 3 }
         logic.unpack(z)
         facings = logic.lineFacings(z, 92, 48, 21000, math.rad(180))
@@ -1165,7 +1163,7 @@ testRunner:addSuite("Surroundings", {
     ["the turn key without a beacon faces along the stretch of the line it stands by"] = function(t)
         local z = newLaneZone()
         -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
-        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 90, 48, 80, 44, 21000, 20, 40 }
+        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 20, 40, 0, 90, 48, 80, 44, 21000, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         local function near(a, degrees)
             return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 0.5
@@ -1210,7 +1208,7 @@ testRunner:addSuite("Surroundings", {
     ["where the road leads ahead follows its centre line into a gentle bend"] = function(t)
         local z = newLaneZone()
         -- north-south to x = 90, then bending toward the east (y falls) down to x = 80
-        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 90, 48, 80, 44, 21000, 20, 40 }
+        z.lanes = { 100, 48, 90, 48, 21000, 20, 40, 20, 40, 0, 90, 48, 80, 44, 21000, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         local south = math.rad(180)
         local function degrees(a)
@@ -1291,7 +1289,7 @@ testRunner:addSuite("Surroundings", {
         local z = newWalkZone()
         z.places = { { "square", "square of Test" }, { "bridge", "bridge" }, { "canal", "canal of Test" } }
         z.grid = { "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2", "10000*2,20000*3,30000*2" }
-        z.lanes = { 100, 46, 84, 46, 20000, 20, 40 }
+        z.lanes = { 100, 46, 84, 46, 20000, 20, 40, 20, 40, 0 }
         z.structCells = { 1, 2, 1 }
         z.edges = { { 1, 270, 5, 0, 0, 92, 53, 94, 53, 96, 53, l = 0 } }
         logic.unpack(z)
@@ -1314,7 +1312,6 @@ testRunner:addSuite("Surroundings", {
         -- the walk's line runs south along y = 46; left of that direction is east (y below 46):
         -- enter 2, leave 4 there; right (west) enter 1.5, leave 3; the cells west of y = 48 square
         z.grid = { "10000*3,21000*2,0*2", "10000*3,21000*2,0*2", "10000*3,21000*2,0*2", "10000*3,21000*2,0*2" }
-        z.laneFields = 10
         z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 15, 30, 0 }
         logic.unpack(z)
         local _d, lane = logic.nearestLane(z, 94, 42)
@@ -1939,7 +1936,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         -- two back rooms the same way from the common room: numbered in the data, said plain
         z.rooms[2] = { 1, "back room 2", "room", { 0, 0, 10, 10 } }
-        z.doors[2] = { 3, 1, 1, 10.5, 5, 1, 0, 1 }
+        z.doors[2] = { 3, 1, 1, 10.5, 5, 1, 0, 1, 0 }
         z.spoken = { ["back room 2"] = "back room", ["stairs to the back room 2"] = "stairs to the back room" }
         logic.unpack(z)
         t:assertEqual(logic.describeRoom(z, 2, 1), "back room")
@@ -2080,7 +2077,7 @@ testRunner:addSuite("Surroundings", {
         local z = newZone()
         -- a second doorway of the common room 0.8 yd before the stairs', into the back room (the
         -- Trade Quarter's: the canal tunnel's doorway under the shop's)
-        table.insert(z.doors, 3, { 1, 3, 1, 5, 4.2, 0, 1, -1 })
+        table.insert(z.doors, 3, { 1, 3, 1, 5, 4.2, 0, 1, -1, 0 })
         logic.unpack(z)
         t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7), 3)
         t:assertEqual(logic.crossedDoor(z, 1, 5, 3, 5, 7, function(id) return id ~= 3 end), 2)
@@ -2365,10 +2362,10 @@ testRunner:addSuite("Surroundings", {
         z.rooms[7] = { 2, "hall", "room", { 40, 20, 45, 25 } }
         z.rooms[8] = { 2, "lift", "lift shaft", { 25, 20, 30, 25 } }
         z.rooms[9] = { 2, "niche", "room", { 45, 20, 50, 25 } }
-        z.doors[4] = { 8, 5, 2, 30, 22.5, 1, 0, -1 }
-        z.doors[5] = { 5, 6, 2, 35, 22.5, 1, 0, -1 }
-        z.doors[6] = { 6, 7, 2, 40, 22.5, 1, 0, -1 }
-        z.doors[7] = { 7, 9, 2, 45, 22.5, 1, 0, -1 }
+        z.doors[4] = { 8, 5, 2, 30, 22.5, 1, 0, -1, 0 }
+        z.doors[5] = { 5, 6, 2, 35, 22.5, 1, 0, -1, 0 }
+        z.doors[6] = { 6, 7, 2, 40, 22.5, 1, 0, -1, 0 }
+        z.doors[7] = { 7, 9, 2, 45, 22.5, 1, 0, -1, 0 }
         -- through door 5 from the first piece into the middle the niche's doorway (7), back the lift's (4)
         z.doorVia = { 0, 0, 0, 0, 0, 0, 0, 0, 7, 4, 7, 4, 0, 0 }
         logic.unpack(z)
@@ -2552,9 +2549,9 @@ testRunner:addSuite("Surroundings", {
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
         z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
         z.lanes = {}
-        -- the ramp's foot at (92, 44), the ramp rising to the northeast; a second foot of the
-        -- same ramp 2 yd away is the same target
-        z.climbFeet = { 92, 44, 22045, 90, 44, 22045 }
+        -- the ramp's foot at (92, 44), the ramp rising to the northeast (its line's bearing the compass
+        -- word's, 45); a second foot of the same ramp 2 yd away is the same target
+        z.climbFeet = { 92, 44, 22045, 45, 0, 90, 44, 22045, 45, 0 }
         logic.unpack(z)
         t:assertEqual(#z._index.climbFeet, 1)
         -- 6 yd west of the foot (y 50): the ramp by name with the way on up it (no "up" since
@@ -2573,10 +2570,9 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.guideText(z, target, false, false), "1 southeast")
         -- beyond the reach: nothing
         t:assertNil(logic.footTarget(z, 92, 58))
-        -- with the line's bearing in the data (climbFeetFields 4): the ramp really runs at 60
+        -- with a line's bearing finer than the compass word: the ramp really runs at 60
         -- degrees, so 1.5 yd back along that line is at the foot, 1.5 yd beside the line is not
-        z.climbFeetFields = 4
-        z.climbFeet = { 92, 44, 22045, 60 }
+        z.climbFeet = { 92, 44, 22045, 60, 0 }
         logic.pack(z)
         logic.unpack(z)
         target = logic.footTarget(z, 91.25, 45.3)
@@ -2610,7 +2606,7 @@ testRunner:addSuite("Surroundings", {
             -- the fork in row 2, column 1 (x 88 to 92, y 52 to 56); the ramp's foot at (92, 48)
             z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000,30000,22045*3,0*2", "10000*2,22045*3,0*2" }
             z.lanes = {}
-            z.climbFeet = { 92, 48, 22045 }
+            z.climbFeet = { 92, 48, 22045, 45, 0 }
             logic.unpack(z)
             return z
         end
@@ -2663,8 +2659,7 @@ testRunner:addSuite("Surroundings", {
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" } }
         z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
         z.lanes = {}
-        z.climbFeetFields = 4
-        z.climbFeet = { 92, 44, 22045, 60 }
+        z.climbFeet = { 92, 44, 22045, 60, 0 }
         -- the ramp is floor piece 1 over the ground, from its foot's cell up to the northeast
         z.floorCells = { 2, 4, 1, 22045, 1, 3, 1, 22045, 1, 4, 1, 22045 }
         logic.unpack(z)
@@ -2746,7 +2741,7 @@ testRunner:addSuite("Surroundings", {
     ["on a city walk the next piece is found ahead"] = function(t)
         local z = newWalkZone()
         -- the walk runs north-south to x = 88, then turns southeast (y falls) as a piece of its own
-        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 84, 42, 21045, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 20, 40, 0, 88, 46, 84, 42, 21045, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         local value, yards = logic.pieceAhead(z, 92, 46, math.pi, 21000, logic.AHEAD_LOOK)
         t:assertEqual(value, 21045)
@@ -2830,8 +2825,7 @@ testRunner:addSuite("Surroundings", {
         -- y 50; its line runs at y = 48 over the walk's line at y = 46
         z.floorCells = { 2, 2, 1, 10000, 2, 3, 1, 10000 }
         z.joins = { 0, 1, 90, 50, -1 }
-        z.laneFields = 8
-        z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 0, 92, 48, 88, 48, 10000, 20, 40, 1 }
+        z.lanes = { 100, 46, 84, 46, 21000, 20, 40, 20, 40, 0, 92, 48, 88, 48, 10000, 20, 40, 20, 40, 1 }
         logic.unpack(z)
         -- below: the walk and its line
         t:assertEqual(logic.valueAt(z, 90, 50), 21000)
@@ -2864,12 +2858,12 @@ testRunner:addSuite("Surroundings", {
     ["the next piece ahead is one the line leads onto, not a line beside it"] = function(t)
         local z = newWalkZone()
         -- the walk's line ends at x = 88; a stretch of another piece runs 5 yd beside it (y = 51)
-        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 92, 51, 84, 51, 21045, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 20, 40, 0, 92, 51, 84, 51, 21045, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         -- walking south along the line: it ends, the line beside it is no next piece
         t:assertNil(logic.pieceAhead(z, 96, 46, math.pi, 21000, logic.AHEAD_LOOK))
         -- a stretch meeting the line's end is
-        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 88, 46, 88, 30, 21045, 20, 40 }
+        z.lanes = { 100, 46, 88, 46, 21000, 20, 40, 20, 40, 0, 88, 46, 88, 30, 21045, 20, 40, 20, 40, 0 }
         logic.pack(z)
         logic.unpack(z)
         local value, yards = logic.pieceAhead(z, 92, 46, math.pi, 21000, logic.AHEAD_LOOK)
@@ -3067,7 +3061,7 @@ testRunner:addSuite("Surroundings", {
         z.dirs = { "running %s", "up to the %s" }
         z.places = { { "square", "square of Test" }, { "ramp", "ramp to the bank" }, { "stairs", "stairs" }, { "ramp", "ramp" } }
         z.grid = { "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2", "10000*2,22045*3,0*2" }
-        z.lanes = { 100, 46, 84, 46, 22045, 20, 40 }
+        z.lanes = { 100, 46, 84, 46, 22045, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         -- keyed by the way it rises (each flight its own piece), said with its axis: the same up or down
         t:assertEqual(logic.outdoorKey(z, 22045), "r2:u2")
@@ -3117,7 +3111,7 @@ testRunner:addSuite("Surroundings", {
         z.places = { { "square", "square of Test" }, { "street", "street of Test" } }
         -- the whole grid is square; the street's lane crosses it north-south at y = 50
         z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
-        z.lanes = { 100, 50, 84, 50, 21000, 20, 40 }
+        z.lanes = { 100, 50, 84, 50, 21000, 20, 40, 20, 40, 0 }
         logic.unpack(z)
         t:assertEqual((logic.outdoorValue(z, 92, 50, false)), 21000)
         -- 6 yd off the line, past its leave distance: the square again

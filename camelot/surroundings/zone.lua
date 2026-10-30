@@ -891,24 +891,22 @@ function logic.unpack(zone, locale)
     -- on the way, as entrances are
     -- (a climb with two line ends at its foot has two feet a yard or two apart: one target, else
     -- the guidance named the ramp to Thane's Boots anew at every step, replay of 2026-10-01)
-    -- x, y, the climb's cell value, and (climbFeetFields 4) the line's bearing up the climb in
-    -- degrees (0 north, clockwise): the way through at the foot, finer than the compass word
+    -- x, y, the climb's cell value, the line's bearing up the climb in degrees (0 north, clockwise):
+    -- the way through at the foot, finer than the compass word, and the floor piece at the foot (0 the
+    -- ground): guided to only from that floor
     ix.climbFeet = {}
-    -- (climbFeetFields 5) the floor piece at the foot (0 the ground): guided to only from that floor
-    local feetStride = zone.climbFeetFields or 3
     ix.footFloors = {}
-    eachRecord(zone.climbFeet, feetStride, function(x, y, value, bearing, floor)
+    eachRecord(zone.climbFeet, 5, function(x, y, value, bearing, floor)
         for _, f in ipairs(ix.climbFeet) do
             if f.value == value and logic.dist2(f.x, f.y, x, y) <= logic.FEET_APART ^ 2 then
                 return
             end
         end
-        ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = feetStride >= 4 and bearing or nil,
-            floor = feetStride >= 5 and floor or 0 }
+        ix.climbFeet[#ix.climbFeet + 1] = { x = x, y = y, value = value, bearing = bearing, floor = floor }
         -- (per place the floors its feet stand on: from there it is said by its name)
         local place = logic.placeOf(value)
         ix.footFloors[place] = ix.footFloors[place] or {}
-        ix.footFloors[place][feetStride >= 5 and floor or 0] = true
+        ix.footFloors[place][floor] = true
     end)
     -- the tops of ramps and stairs (export.climb_ends, data since trial L4): x, y, the top flight's cell value, the
     -- way on DOWN that flight (degrees), the floor piece at the top; guided to from that floor as a foot is from its
@@ -970,17 +968,13 @@ function logic.unpack(zone, locale)
 
     -- centre line stretches, in the bucket of every cell within LANE_REACH of them
     ix.lanes = {}
-    -- 8 since 2026-10-01: the raised piece the stretch runs on; 10: the widths per side (enter and
-    -- leave left of the stretch's direction, then right: a wall on one side no longer narrows the other)
-    local stride = zone.laneFields or 7
-    local wide = stride >= 10
+    -- 10 fields each: the ends, the cell value, the widths per side (enter and leave left of the stretch's
+    -- direction, then right: a wall on one side does not narrow the other) and the raised piece it runs on
     local order = {}
-    eachRecord(zone.lanes, stride, function(x1, y1, x2, y2, value, enter, leave, f8, f9, f10)
+    eachRecord(zone.lanes, 10, function(x1, y1, x2, y2, value, enter, leave, enter2, leave2, piece)
         local lane = {
             x1 = x1, y1 = y1, x2 = x2, y2 = y2, value = value, kind = logic.kindOf(zone, value),
-            enter = enter / 10, leave = leave / 10,
-            enter2 = (wide and f8 or enter) / 10, leave2 = (wide and f9 or leave) / 10,
-            piece = (wide and f10) or (stride >= 8 and f8) or 0,
+            enter = enter / 10, leave = leave / 10, enter2 = enter2 / 10, leave2 = leave2 / 10, piece = piece,
         }
         addToCells(zone, ix.lanes, math.min(x1, x2), math.max(x1, x2), math.min(y1, y2), math.max(y1, y2),
             logic.LANE_REACH, lane)
@@ -1070,7 +1064,7 @@ function logic.unpack(zone, locale)
     -- doors between rooms (0 = outside), and per room its doors and the rooms they join
     ix.doors, ix.doorsOf, ix.neighbours = {}, {}, {}
     for i, d in ipairs(zone.doors or {}) do
-        -- half: half the opening's width along its plane (nil in older exports)
+        -- half: half the opening's width along its plane (0 unknown)
         local door = { a = d[1], b = d[2], interior = d[3], x = d[4], y = d[5], nx = d[6], ny = d[7], side = d[8], half = d[9] }
         -- the floor piece its sill lies on (doorFloors; -1 none, nil older data): an entrance is guided
         -- to only from it (rooms.lua nearestEntrance)
@@ -1136,7 +1130,7 @@ function logic.unpackLayer(zone, src, suffix)
     local layer = {
         key = zone.key .. suffix, label = zone.label, map = zone.map,
         top = own and src.top or zone.top, left = own and src.left or zone.left,
-        cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, laneFields = zone.laneFields, dirs = zone.dirs, dirsClock = zone.dirsClock,
+        cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
         spoken = zone.spoken,
         lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, pathLines = src.pathLines, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
@@ -1150,7 +1144,7 @@ function logic.unpackLayer(zone, src, suffix)
         -- per door the layer's floor piece its sill lies on
         doorFloors = src.doorFloors,
         -- the feet of its climbs and their wall sides, as the zone's (one rule for every grid)
-        climbFeet = src.climbFeet, climbFeetFields = src.climbFeetFields, climbTops = src.climbTops, climbAims = src.climbAims,
+        climbFeet = src.climbFeet, climbTops = src.climbTops, climbAims = src.climbAims,
         -- on a grid of its own (cells of 2 yd) a doorway of 2 yd is one border cell and worth saying
         mouthMin = own and 1 or nil,
         doors = zone.doors, doorVia = zone.doorVia, _worded = true, _running = zone._running, _toward = zone._toward, parent = zone,
