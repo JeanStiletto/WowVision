@@ -77,14 +77,17 @@ tracker.CHAIN = 1          -- 1: of candidates of one cost, the one reached from
                            -- piece held alone did that while the U was one piece. 0 = off; swept 2026-10-19 late on J2 and
                            -- K3, the whole set: Elwynn 155 -> 144 on K3 (J2 144 either way), Undercity 388 -> 389 (one point
                            -- in Brill's common room), Dun Morogh 38 either way
-tracker.PERSIST = false    -- offline only (the replays of a million looks, tools/walklog/vtrack.lua): the decoded columns
-                           -- and each surface's steps kept per layer for the whole run, not decoded afresh per look; the
-                           -- same floors (the data does not change during a replay), 2026-10-21 night
+tracker.PERSIST = true     -- the decoded columns and each surface's steps kept per layer from look to look, not decoded
+                           -- afresh per look; the same floors (the data does not change; offline since 2026-10-21 night
+                           -- for the replays of a million looks, tools/walklog/vtrack.lua; in the game since 2026-10-30,
+                           -- the user: game performance). WV_TRACKER_PERSIST=0 offline: decoded afresh per look
+tracker.SPAN = 48.0        -- yd: the kept columns are let go and kept afresh once the player is this far from where they
+                           -- began (the memory stays that of the ground around the player; offline WV_TRACKER_SPAN)
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
-    tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") == "1"
-    for _, name in ipairs({ "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN" }) do
+    tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") ~= "0"
+    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -318,8 +321,11 @@ function look(zone, x, y, swimming)
     end
     local cache
     if tracker.PERSIST then
-        cache = S._cache or {}
-        S._cache = cache
+        cache = S._cache
+        if cache == nil or logic.dist(S._cacheX, S._cacheY, x, y) > tracker.SPAN then
+            cache = {}
+            S._cache, S._cacheX, S._cacheY = cache, x, y
+        end
     else
         cache = {}
     end

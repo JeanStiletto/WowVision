@@ -294,7 +294,7 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(z._index.fellFrom, 2)
     end,
 
-    ["the walk-graph tracker gives the same floors with its offline cache (PERSIST) as without"] = function(t)
+    ["the walk-graph tracker gives the same floors with its column cache (PERSIST) as without"] = function(t)
         -- the stairs and upper floor of the test above, walked up, along the floor and off its side, once decoding
         -- afresh per look and once keeping the columns and steps (tools/walklog/vtrack.lua)
         local recs = {}
@@ -343,6 +343,11 @@ testRunner:addSuite("Surroundings", {
         end
         local fresh, kept = walk(false), walk(true)
         t:assertEqual(kept, fresh)
+        -- the columns let go and kept afresh every few yards on the way (the game's SPAN, here 5 yd)
+        local span = logic.tracker.SPAN
+        logic.tracker.SPAN = 5
+        t:assertEqual(walk(true), fresh)
+        logic.tracker.SPAN = span
         t:assertTrue(fresh:find("2s") ~= nil)   -- the walk reached the upper floor
     end,
 
