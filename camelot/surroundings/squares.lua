@@ -621,6 +621,11 @@ function logic.regionAt(zone, x, y)
         cache[key] = region
     end
     region.mouths = logic.withoutSideStreets(zone, region)
+    -- (a climb's openings are told apart by its place, groupItems)
+    for _, m in ipairs(region.mouths) do
+        local p = m.value and logic.place(zone, logic.placeOf(m.value))
+        m.climb = p and logic.CLIMBS[p.kind] or nil
+    end
     return region
 end
 
@@ -963,18 +968,37 @@ end
 -- (nearest first, at most `maxDirs`; closer than HERE none), items nearest first. A climb's mouths
 -- up and down from the square are one item: no "up" or "down" said since 2026-10-04 (user: with
 -- rooms and places named they made word monsters, and the stairs one came up said "down here").
+-- Two different climbs are two items, though their words are the same (each climb is a place of
+-- its own: the Great Forge's two plain ramps were "Rampe auf 12 und 9", the user 2026-10-30),
+-- unless they lie in the same direction word (no "Rampe Nordwesten, Rampe Nordwesten").
 local function groupItems(found, maxDirs)
     table.sort(found, function(a, b)
         return a.d < b.d
     end)
-    local items, byLabel = {}, {}
+    local items, byLabel, climbItems = {}, {}, {}
     for _, f in ipairs(found) do
         local key = f.label
+        local m = f.mouth
+        if m and m.climb then
+            key = key .. "|" .. logic.placeOf(m.value)
+            if byLabel[key] == nil and f.d >= logic.HERE then
+                for _, other in ipairs(climbItems[f.label] or {}) do
+                    if other.dirs[1] and logic.sameDir(other.dirs[1], f.dir) then
+                        byLabel[key] = other
+                        break
+                    end
+                end
+            end
+        end
         local item = byLabel[key]
         if item == nil then
             item = { label = f.label, class = f.class, d = f.d, dirs = {}, mouths = {} }
             byLabel[key] = item
             items[#items + 1] = item
+            if key ~= f.label then
+                climbItems[f.label] = climbItems[f.label] or {}
+                table.insert(climbItems[f.label], item)
+            end
         end
         logic.addDir(item, f.d >= logic.HERE and f.dir or nil, maxDirs)
         if f.mouth then
@@ -984,9 +1008,21 @@ local function groupItems(found, maxDirs)
     return items
 end
 
--- At most `max` items (nil: all); with more, the item labelled `cameFrom` goes first.
+-- Items of at most `max` labels (nil: all; two climbs of one word, said apart, take one place: the
+-- Military Ward fell off the hall's line when its two ramps were split, 2026-10-30); with more, the
+-- item labelled `cameFrom` goes first.
+local function labelCount(items)
+    local seen, n = {}, 0
+    for _, item in ipairs(items) do
+        if not seen[item.label] then
+            seen[item.label], n = true, n + 1
+        end
+    end
+    return n
+end
+
 function logic.capItems(items, max, cameFrom)
-    if max == nil or #items <= max then
+    if max == nil or labelCount(items) <= max then
         return items
     end
     local out = {}
@@ -995,7 +1031,7 @@ function logic.capItems(items, max, cameFrom)
             out[#out + 1] = item
         end
     end
-    while #out > max do
+    while labelCount(out) > max do
         table.remove(out)
     end
     return out
