@@ -82,7 +82,12 @@ since every export numbers the pieces anew.
   lists (`eachRecord`) and dropped by `logic.pack`; lookups per grid cell are buckets keyed
   `row * cols + col`, except the objects and the centre line stretches, which sit in buckets per block of
   4 by 4 cells with their box of cells (`logic.blockOf`, `logic.boxHolds`; a cell's stretches:
-  `logic.lanesAt`): the same items in the same order per cell, a fraction of the memory.
+  `logic.lanesAt`): the same items in the same order per cell, a fraction of the memory. Cells whose
+  floor table or rooms-by-floor table were built by the same records share one table (`shareCells`):
+  nothing may write into them after the unpack. The grid's rows become runs when first read
+  (`logic.gridRow`, the 64 read last kept). In the game `findZone` then drops the flat lists
+  (`logic.dropLists`: nothing reads them after the unpack; the offline tools keep them), and the walk
+  log's zone line carries the unpack's milliseconds and the Lua memory after it (`unpackMs`, `luaMB`).
 - Kinds are the data's English keys ("road", "canal walk", "deep water"); the words spoken
   come from the zone (localized) or from the locale strings. Ramps and stairs are the kinds
   "ramp" and "stairs" (`logic.CLIMBS`): ways with centre lines keyed like streets, on every
