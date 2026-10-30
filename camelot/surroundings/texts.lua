@@ -593,12 +593,11 @@ function logic.belowClimb(zone, t)
     end
     local place = logic.placeOf(t.value)
     local r, c = logic.cellOf(zone, t.x, t.y)
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            for p, v in pairs(ix.floorCells[(r + dr) * zone.cols + c + dc] or {}) do
-                if p ~= fl and p == ix.fellFrom and logic.placeOf(v) == place then
-                    return true
-                end
+    local key = r * zone.cols + c
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        for p, v in pairs(ix.floorCells[key + d] or {}) do
+            if p ~= fl and p == ix.fellFrom and logic.placeOf(v) == place then
+                return true
             end
         end
     end

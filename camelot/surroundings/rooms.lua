@@ -833,11 +833,10 @@ end
 -- walk, where the game said "Ruins of Lordaeron" (walk 2026-10-07 23:46).
 function logic.hallGroundNear(zone, r, c)
     local hg = zone._index.hallGround
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            if hg[(r + dr) * zone.cols + c + dc] then
-                return true
-            end
+    local key = r * zone.cols + c
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        if hg[key + d] then
+            return true
         end
     end
     return false

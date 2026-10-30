@@ -264,6 +264,19 @@ function logic.cellOf(zone, x, y)
     return math.floor((zone.top - x) / zone.cell), math.floor((zone.left - y) / zone.cell)
 end
 
+-- The cell key offsets of a cell and the 8 around it on a grid of `cols` columns, in the order rows north to south,
+-- each row's cells west to east: `key + offset` for each (no guard at the grid's border: at its east or west edge
+-- the outer offsets reach the last or first cell of the next row).
+local AROUND = {}
+function logic.cellOffsets(cols)
+    local a = AROUND[cols]
+    if a == nil then
+        a = { -cols - 1, -cols, -cols + 1, -1, 0, 1, cols - 1, cols, cols + 1 }
+        AROUND[cols] = a
+    end
+    return a
+end
+
 function logic.cellCentre(zone, r, c)
     return zone.top - (r + 0.5) * zone.cell, zone.left - (c + 0.5) * zone.cell
 end
@@ -317,13 +330,12 @@ function logic.valueAtCell(zone, r, c)
         if own then
             return own
         end
-        for dr = -1, 1 do
-            for dc = -1, 1 do
-                local near = ix.floorCells[(r + dr) * cols + c + dc]
-                local nv = near and near[floor]
-                if nv then
-                    return nv
-                end
+        local key = r * cols + c
+        for _, d in ipairs(logic.cellOffsets(cols)) do
+            local near = ix.floorCells[key + d]
+            local nv = near and near[floor]
+            if nv then
+                return nv
             end
         end
         local joined = ix.joined[floor]
@@ -430,12 +442,11 @@ end
 -- Is `map[key]` of the cell (r, c) or one of its eight neighbours `want`? `map` holds a value per
 -- cell key, or a set of values.
 function logic.nearCell(zone, map, r, c, want)
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            local v = map[(r + dr) * zone.cols + c + dc]
-            if v == want or (type(v) == "table" and v[want]) then
-                return true
-            end
+    local key = r * zone.cols + c
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        local v = map[key + d]
+        if v == want or (type(v) == "table" and v[want]) then
+            return true
         end
     end
     return false
@@ -1467,13 +1478,11 @@ local function climbPieceHere(zone, r, c, value, around)
         return false
     end
     local place = logic.placeOf(value)
-    local reach = around and 1 or 0
-    for dr = -reach, reach do
-        for dc = -reach, reach do
-            for _, pv in pairs(ix.floorCells[(r + dr) * zone.cols + c + dc] or {}) do
-                if logic.placeOf(pv) == place then
-                    return true
-                end
+    local key = r * zone.cols + c
+    for _, d in ipairs(around and logic.cellOffsets(zone.cols) or { 0 }) do
+        for _, pv in pairs(ix.floorCells[key + d] or {}) do
+            if logic.placeOf(pv) == place then
+                return true
             end
         end
     end

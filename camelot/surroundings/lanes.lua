@@ -11,6 +11,27 @@ local logic = WowVision.surroundingsLogic
 local LANE_KEEP = { bridge = true, platform = true }
 local MIN_SPAN = 3 -- yd; a stretch of line shorter than this gives no direction
 
+-- The stretches in the lane buckets of the cells within `reach` yards (rounded up to whole cells) of (x, y), each
+-- once, in the order first met (row by row, each row's cells in column order); `filter(lane)` (optional): only the
+-- stretches it accepts.
+function logic.lanesNear(zone, x, y, reach, filter)
+    local buckets = zone._index.lanes
+    local out, seen = {}, {}
+    local r0, c0 = logic.cellOf(zone, x, y)
+    local span = math.ceil(reach / zone.cell)
+    for r = r0 - span, r0 + span do
+        for c = c0 - span, c0 + span do
+            for _, lane in ipairs(buckets[r * zone.cols + c] or {}) do
+                if not seen[lane] and (filter == nil or filter(lane)) then
+                    seen[lane] = true
+                    out[#out + 1] = lane
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- The nearest point on a centre line within `reach` yards (at most LANE_REACH) of a way whose kind
 -- is in `kinds` (a set; nil: any): distance, the lane {x1, y1, x2, y2, value, kind, enter, leave},
 -- and the point; nil when there is none. `skip`: a lane left out; `place`: only lanes of that place.
@@ -543,17 +564,11 @@ function logic.flightFacing(zone, piece, x, y, facing)
     if not up then
         return nil
     end
-    local length, seen = 0, {}
-    local span = math.ceil((logic.FLIGHT_NEAR + logic.LANE_REACH) / zone.cell)
-    for r = r0 - span, r0 + span do
-        for c = c0 - span, c0 + span do
-            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if lane.piece == piece and not seen[lane] then
-                    seen[lane] = true
-                    length = length + logic.dist(lane.x1, lane.y1, lane.x2, lane.y2)
-                end
-            end
-        end
+    local length = 0
+    for _, lane in ipairs(logic.lanesNear(zone, x, y, logic.FLIGHT_NEAR + logic.LANE_REACH, function(lane)
+        return lane.piece == piece
+    end)) do
+        length = length + logic.dist(lane.x1, lane.y1, lane.x2, lane.y2)
     end
     if length >= logic.FLIGHT_STUB then
         return nil

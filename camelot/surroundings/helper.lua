@@ -24,23 +24,11 @@ local function dist(ax, ay, bx, by)
     return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
 end
 
--- The stretches of a climb piece's line near (x, y) (the lane buckets of the cells around), each once.
+-- The stretches of a climb piece's line near (x, y) (the lane buckets of the cells within 80 yd), each once.
 local function climbLanes(zone, piece, x, y)
-    local ix = zone._index
-    local out, seen = {}, {}
-    local r0, c0 = logic.cellOf(zone, x, y)
-    local reach = math.ceil(80 / zone.cell)
-    for r = r0 - reach, r0 + reach do
-        for c = c0 - reach, c0 + reach do
-            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if lane.piece == piece and not seen[lane] then
-                    seen[lane] = true
-                    out[#out + 1] = lane
-                end
-            end
-        end
-    end
-    return out
+    return logic.lanesNear(zone, x, y, 80, function(lane)
+        return lane.piece == piece
+    end)
 end
 
 -- The climb piece whose line has a free end nearest (x, y) within `reach` (on the floor `fromFloor`'s side),
@@ -55,29 +43,23 @@ function logic.climbAtFoot(zone, x, y, reach, floor, upOnly)
         return nil
     end
     local joined = floor ~= nil and ix.joined[floor] or nil
-    local r0, c0 = logic.cellOf(zone, x, y)
     local best, bx, by, bd, bRank
-    local span = math.ceil((reach + logic.LANE_REACH) / zone.cell)
-    for r = r0 - span, r0 + span do
-        for c = c0 - span, c0 + span do
-            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if ix.lineFloors[lane.piece] and (floor == nil or lane.piece ~= floor and joined and joined[lane.piece]) then
-                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1, lane.x2, lane.y2 }, { lane.free2, lane.x2, lane.y2, lane.x1, lane.y1 } }) do
-                        if e[1] then
-                            local d = dist(x, y, e[2], e[3])
-                            -- 0 up from here, 1 down, 0.5 unknown (no rise in the value)
-                            local rank = 0.5
-                            local up = logic.riseOf(zone, lane.value)
-                            if up ~= nil and (e[4] ~= e[2] or e[5] ~= e[3]) then
-                                local away = logic.bearingOf(e[4] - e[2], e[5] - e[3])
-                                local off = math.abs((away - up + 180) % 360 - 180)
-                                rank = off < 90 and 0 or 1
-                            end
-                            if d <= reach and not (upOnly and rank == 1) and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
-                                best, bx, by, bd, bRank = lane.piece, e[2], e[3], d, rank
-                            end
-                        end
-                    end
+    for _, lane in ipairs(logic.lanesNear(zone, x, y, reach + logic.LANE_REACH, function(lane)
+        return ix.lineFloors[lane.piece] and (floor == nil or lane.piece ~= floor and joined and joined[lane.piece])
+    end)) do
+        for _, e in ipairs({ { lane.free1, lane.x1, lane.y1, lane.x2, lane.y2 }, { lane.free2, lane.x2, lane.y2, lane.x1, lane.y1 } }) do
+            if e[1] then
+                local d = dist(x, y, e[2], e[3])
+                -- 0 up from here, 1 down, 0.5 unknown (no rise in the value)
+                local rank = 0.5
+                local up = logic.riseOf(zone, lane.value)
+                if up ~= nil and (e[4] ~= e[2] or e[5] ~= e[3]) then
+                    local away = logic.bearingOf(e[4] - e[2], e[5] - e[3])
+                    local off = math.abs((away - up + 180) % 360 - 180)
+                    rank = off < 90 and 0 or 1
+                end
+                if d <= reach and not (upOnly and rank == 1) and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
+                    best, bx, by, bd, bRank = lane.piece, e[2], e[3], d, rank
                 end
             end
         end
@@ -227,22 +209,16 @@ local function lineEndAt(zone, rec)
     end
     local joined = ix.joined[rec.floor or 0] or {}
     local place = logic.placeOf(rec.value)
-    local r0, c0 = logic.cellOf(zone, rec.x, rec.y)
-    local span = math.ceil((logic.HELPER_FOOT + logic.LANE_REACH) / zone.cell)
     local best, bx, by, bd, bOwn
-    for r = r0 - span, r0 + span do
-        for c = c0 - span, c0 + span do
-            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if ix.lineFloors[lane.piece] and joined[lane.piece] then
-                    local own = logic.placeOf(lane.value) == place
-                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
-                        local d = e[1] and dist(rec.x, rec.y, e[2], e[3])
-                        if d and d <= logic.HELPER_FOOT
-                            and (bd == nil or (own and not bOwn) or (own == bOwn and d < bd)) then
-                            best, bx, by, bd, bOwn = lane.piece, e[2], e[3], d, own
-                        end
-                    end
-                end
+    for _, lane in ipairs(logic.lanesNear(zone, rec.x, rec.y, logic.HELPER_FOOT + logic.LANE_REACH, function(lane)
+        return ix.lineFloors[lane.piece] and joined[lane.piece]
+    end)) do
+        local own = logic.placeOf(lane.value) == place
+        for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
+            local d = e[1] and dist(rec.x, rec.y, e[2], e[3])
+            if d and d <= logic.HELPER_FOOT
+                and (bd == nil or (own and not bOwn) or (own == bOwn and d < bd)) then
+                best, bx, by, bd, bOwn = lane.piece, e[2], e[3], d, own
             end
         end
     end
@@ -275,20 +251,14 @@ logic.HELPER_NEXT = 10
 local function nextFlight(zone, piece, ex, ey, used)
     local ix = zone._index
     local joined = ix.joined[piece] or {}
-    local r0, c0 = logic.cellOf(zone, ex, ey)
-    local span = math.ceil((logic.HELPER_NEXT + logic.LANE_REACH) / zone.cell)
     local best, bx, by, bd
-    for r = r0 - span, r0 + span do
-        for c = c0 - span, c0 + span do
-            for _, lane in ipairs(ix.lanes[r * zone.cols + c] or {}) do
-                if ix.lineFloors[lane.piece] and not used[lane.piece] and joined[lane.piece] then
-                    for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
-                        local d = e[1] and dist(ex, ey, e[2], e[3])
-                        if d and d <= logic.HELPER_NEXT and (bd == nil or d < bd) then
-                            best, bx, by, bd = lane.piece, e[2], e[3], d
-                        end
-                    end
-                end
+    for _, lane in ipairs(logic.lanesNear(zone, ex, ey, logic.HELPER_NEXT + logic.LANE_REACH, function(lane)
+        return ix.lineFloors[lane.piece] and not used[lane.piece] and joined[lane.piece]
+    end)) do
+        for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
+            local d = e[1] and dist(ex, ey, e[2], e[3])
+            if d and d <= logic.HELPER_NEXT and (bd == nil or d < bd) then
+                best, bx, by, bd = lane.piece, e[2], e[3], d
             end
         end
     end

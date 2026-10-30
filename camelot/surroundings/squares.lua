@@ -302,15 +302,14 @@ function logic.mouthValue(zone, r, c, key, floors, fromKey, own)
         return painted
     end
     local joinAt = zone._index.joinAt
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            for _, j in ipairs(joinAt[(r + dr) * zone.cols + c + dc] or {}) do
-                local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
-                if other and other >= 0 then
-                    local v = logic.valueOfFloor(zone, r, c, other)
-                    if v ~= 0 and logic.placeOf(v) ~= own then
-                        return v, other
-                    end
+    local here = r * zone.cols + c
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        for _, j in ipairs(joinAt[here + d] or {}) do
+            local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
+            if other and other >= 0 then
+                local v = logic.valueOfFloor(zone, r, c, other)
+                if v ~= 0 and logic.placeOf(v) ~= own then
+                    return v, other
                 end
             end
         end
@@ -344,14 +343,13 @@ local function regionJoins(zone, r, c, key, floors, value)
     -- a join in the cell or one of its neighbours (the join points lie on the border between
     -- the two floors' cells, on either side)
     local joinAt = zone._index.joinAt
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            for _, j in ipairs(joinAt[(r + dr) * zone.cols + c + dc] or {}) do
-                local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
-                if other and other >= 0 and logic.valueOfFloor(zone, r, c, other) == value then
-                    floors[other] = true
-                    return true
-                end
+    local here = r * zone.cols + c
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        for _, j in ipairs(joinAt[here + d] or {}) do
+            local other = floors[j.a] and j.b or floors[j.b] and j.a or nil
+            if other and other >= 0 and logic.valueOfFloor(zone, r, c, other) == value then
+                floors[other] = true
+                return true
             end
         end
     end

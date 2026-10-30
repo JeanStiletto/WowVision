@@ -35,14 +35,10 @@ function logic.floorHere(zone, key, floor)
     if floor == 0 then
         return not ix.noGround[key]
     end
-    local cols = zone.cols
-    local r, c = math.floor(key / cols), key % cols
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            local here = ix.floorCells[(r + dr) * cols + c + dc]
-            if here ~= nil and here[floor] ~= nil then
-                return true
-            end
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        local here = ix.floorCells[key + d]
+        if here ~= nil and here[floor] ~= nil then
+            return true
         end
     end
     return false
@@ -346,10 +342,8 @@ function logic.swimFloor(zone, key, floor, swimming, x, y)
     end
     add(key)
     if #list == 0 then
-        for dr = -1, 1 do
-            for dc = -1, 1 do
-                add((r + dr) * cols + c + dc)
-            end
+        for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+            add(key + d)
         end
     end
     if not swimming and not ix.noGround[key] then
@@ -442,26 +436,23 @@ end
 -- from before a re-export: the number means another piece now).
 function logic.pieceWithLabel(zone, x, y, label, number)
     local ix = zone._index
-    local cols = zone.cols
     local r0, c0 = logic.cellOf(zone, x, y)
+    local key = r0 * zone.cols + c0
     local found = nil
-    for dr = -1, 1 do
-        for dc = -1, 1 do
-            local here = ix.floorCells[(r0 + dr) * cols + c0 + dc]
-            for p, v in pairs(here or {}) do
-                if label == nil then
+    for _, d in ipairs(logic.cellOffsets(zone.cols)) do
+        for p, v in pairs(ix.floorCells[key + d] or {}) do
+            if label == nil then
+                if p == number then
+                    return p
+                end
+            else
+                local place = v ~= 0 and logic.place(zone, logic.placeOf(v)) or nil
+                if place and place.label == label then
                     if p == number then
                         return p
                     end
-                else
-                    local place = v ~= 0 and logic.place(zone, logic.placeOf(v)) or nil
-                    if place and place.label == label then
-                        if p == number then
-                            return p
-                        end
-                        if found == nil or p < found then
-                            found = p
-                        end
+                    if found == nil or p < found then
+                        found = p
                     end
                 end
             end
