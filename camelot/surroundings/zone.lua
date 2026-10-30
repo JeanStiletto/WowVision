@@ -1247,11 +1247,13 @@ function logic.unpack(zone, locale)
     ix.regionOf = {} -- squares found so far, per cell key
 
     -- stops (where one waits for a ship, zeppelin, lift or tram): {kind, destination, room, cells,
-    -- segments, {floor pieces; 0 the ground: outdoors the stop counts only on one of them, the
-    -- zeppelin tower's top was said at its foot, 2026-10-06}}; the stops on each cell
+    -- segments, {floor pieces; 0 the ground: the stop counts only on one of them, the zeppelin
+    -- tower's top was said at its foot, 2026-10-06; a stop in a room with none listed counts on
+    -- every floor of its room (anyFloor)}}; the stops on each cell
     ix.stops, ix.stopCells = {}, {}
     for i, s in ipairs(zone.stops or {}) do
         local stop = { kind = s[1], to = s[2] or "", room = s[3] or 0, floors = {}, targets = {} }
+        stop.anyFloor = stop.room ~= 0 and (type(s[6]) ~= "table" or #s[6] == 0)
         for _, fl in ipairs(type(s[6]) == "table" and s[6] or { 0 }) do
             stop.floors[fl] = true
         end

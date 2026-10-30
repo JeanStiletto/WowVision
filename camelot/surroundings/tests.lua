@@ -3079,6 +3079,26 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.stopAt(z, 85, 15, nil), 2)
     end,
 
+    ["a stop in a room with its floor pieces listed counts only on them: the tram's platform, not its track bed"] = function(t)
+        local z = newZone()
+        -- the tram's stop in room 3, its waiting floor on piece 2 (the platform; the track bed beside it is piece
+        -- 5, in the same room); a lift's stop in room 3 with no list (data from before: every floor of its room)
+        z.stops = {
+            { "tram", "Ironforge", 3, { 0, 5 }, { 95, 5, 95, 9 }, { 2 } },
+            { "lift down", "", 3, { 0, 5 }, { 95, 0, 95, 0 }, {} },
+        }
+        logic.unpack(z)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [3] = true }, 2), 1)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [1] = true }, 2), nil)
+        -- in the track bed only the lift's stop, which lists no floors: on every floor of its room
+        t:assertEqual(logic.stopAt(z, 95, 5, { [3] = true }, 5), 2)
+        -- with no floor given, the zone's held floor
+        logic.setFloor(z, 5)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [3] = true }), 2)
+        logic.setFloor(z, 2)
+        t:assertEqual(logic.stopAt(z, 95, 5, { [3] = true }), 1)
+    end,
+
     ["a stop's destination comes in the client's language"] = function(t)
         local z = newZone()
         z.stops = { { "tram", "Stormwind City", 0, { 1, 0 }, { 80, 50, 80, 58 } } }

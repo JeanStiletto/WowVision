@@ -263,6 +263,12 @@ local function heldGrid()
     return zone and zone._index and (isInside() and logic.layer(zone, IsIndoors()) or zone) or nil
 end
 
+-- The floor piece held on that grid (0 the ground; nil with no zone data).
+local function heldFloor()
+    local g = heldGrid()
+    return g and (g._index.floor or 0) or nil
+end
+
 -- How far from a guidance target it stays the target (its own reach, a way out's, else the guidance's).
 local function targetReach(t)
     return t.reach or (t.kind == "exit" and logic.EXIT_REACH) or logic.GUIDE_REACH
@@ -1399,7 +1405,7 @@ end
 -- again only after the player walked STOP_REARM yards off every stop (a step off the edge of the
 -- area and back is quiet). `rooms`: indoors the set of rooms the player may be in, nil outdoors.
 local function checkStop(z, x, y, px, py, rooms)
-    local i = logic.stopAt(z, x, y, rooms)
+    local i = logic.stopAt(z, x, y, rooms, rooms and heldFloor() or nil)
     if i then
         stopOut = 0
         if i ~= stopSaid then
@@ -1891,7 +1897,7 @@ module:registerCommand({
                     parts[#parts + 1] = logic.finishText(string.format("Nearest entrance: %s, %d yards to the %s", e.text,
                         math.floor(d + 0.5), logic.dirWord(z, dir)))
                 end
-                local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
+                local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil, isInside() and heldFloor() or nil)
                 if stop then
                     parts[#parts + 1] = "Stop: " .. logic.finishText(logic.stopText(z, stop, x, y))
                 end
@@ -1962,7 +1968,7 @@ function module:describeAround()
         end
     end
     -- where one waits for a ship, zeppelin, lift or tram
-    local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil)
+    local stop = logic.stopAt(z, x, y, isInside() and roomsHere(z, x, y) or nil, isInside() and heldFloor() or nil)
     if stop then
         text = text .. ", " .. logic.stopText(z, stop, x, y)
     end
