@@ -732,12 +732,21 @@ local function findZone(x, y, map)
         if zone then
             logic.pack(zone)
         end
+        -- (the unpack's milliseconds and the game's Lua memory after it, in the walk log's zone line: what an entry
+        -- costs in the game, 2026-10-30)
+        local ms
         if found then
+            -- (debugprofilestop is the game's millisecond clock; the walk replays run without it)
+            local clock = debugprofilestop or function() return os.clock() * 1000 end
+            local t0 = clock()
             logic.unpack(found, GetLocale())
+            logic.dropLists(found)
+            ms = clock() - t0
         end
         zone = found
         if found then
-            logEntry("zone", found.label or found.key, x, y)
+            logEntry("zone", found.label or found.key, x, y,
+                { unpackMs = round1(ms), luaMB = round1(collectgarbage("count") / 1024) })
         end
         forgetPlace()
         -- the targets and stops are numbered per zone

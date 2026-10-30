@@ -27,6 +27,30 @@ logic.inflate = nil
 logic.ZONE_HEADER = { key = true, label = true, map = true, top = true, left = true, cell = true, rows = true,
     cols = true, format = true, json = true, deflated = true }
 
+-- The model's flat lists once the zone's index is built from them (logic.unpack): nothing in the module reads them
+-- after that, the index holds what they said (the user 2026-10-30: memory; Elwynn about 7 MB in LuaJIT with the
+-- inside layer's own). The game drops them (module.lua findZone); the offline tools read them and keep them.
+local FLAT_LISTS = { "floorCells", "floorRooms", "noGround", "structCells", "hallGround", "joins", "lanes",
+    "laneHeadings", "objects", "grid", "exits", "exitFloors", "exitGroups", "climbFeet", "climbTops", "climbAims",
+    "noContact", "edges" }
+
+-- Drops the flat lists of an unpacked zone and of its layers, and the layers' sources (zone.indoor, zone.indoorIn).
+-- Only a zone with its JSON text (format 4): leaving it and coming back expands them again (logic.pack).
+function logic.dropLists(zone)
+    local ix = zone._index
+    if ix == nil or zone.json == nil then
+        return
+    end
+    for _, z in ipairs({ zone, ix.layer or false, ix.layerIn or false }) do
+        if z then
+            for _, key in ipairs(FLAT_LISTS) do
+                z[key] = nil
+            end
+        end
+    end
+    zone.indoor, zone.indoorIn = nil, nil
+end
+
 -- A packed surfaces layer (its `bands`: per band of `band` rows one packed string of the rows, a line each, an
 -- empty line where a row has none) gets the `rows` the walk-graph tracker reads (tracker.lua column): a band is
 -- unpacked when a row of it is first asked for, and only the BANDS_KEPT bands asked for last stay unpacked (the

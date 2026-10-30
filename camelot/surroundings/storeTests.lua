@@ -75,6 +75,24 @@ testRunner:addSuite("Surroundings stored data", {
         t:assertEqual(zone.interiors[2].c, 1)
         t:assertEqual(zone.doorVia[3], 2)
     end,
+    ["an unpacked zone answers from its index with its flat lists dropped, and has them again on the next entry"] = function(t)
+        local zone = loadStored()
+        logic.unpack(zone, "enUS")
+        local value = logic.valueAtCell(zone, 0, 2)
+        local layerIn = zone._index.layerIn
+        logic.dropLists(zone)
+        t:assertNil(zone.grid)
+        t:assertNil(zone.floorCells)
+        t:assertNil(zone.indoorIn, "the inside layer's source")
+        t:assertNil(layerIn.lanes, "a layer's own lists")
+        t:assertEqual(logic.valueAtCell(zone, 0, 2), value)
+        t:assertEqual(zone._index.layerIn, layerIn)
+        logic.pack(zone)
+        logic.unpack(zone, "enUS")
+        t:assertNotNil(zone.grid)
+        t:assertNotNil(zone.indoorIn)
+        t:assertEqual(logic.valueAtCell(zone, 0, 2), value)
+    end,
     -- the packed data (tools/surroundings-pack.py): the game's decoder is not here, a stand-in reverses the text
     ["a packed zone unpacks on entry like the text and stays packed after leaving"] = function(t)
         local inflate = logic.inflate
