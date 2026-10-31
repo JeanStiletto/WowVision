@@ -674,6 +674,26 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.floorLabel(z, "stairs to the platform", 1), "stairs")
     end,
 
+    ["a room's name ending in a structure level's word is not a room on that level"] = function(t)
+        -- 2026-10-31: a tower's level "floor 1" (a structure level, no rooms on it, marked "level") and a building's
+        -- own named floor "upstairs": "Main Hall, floor 1" keeps its floor word, "room east, upstairs" loses it
+        local z = newTowerZone()
+        z.floors = {
+            { "upstairs", "upstairs", "stairs to upstairs", "stairs" },
+            { "floor 1", "floor 1", "ramp to floor 1", "ramp", "level" },
+        }
+        logic.unpack(z)
+        t:assertEqual(logic.floorOf(z, "Main Hall, floor 1"), nil)
+        t:assertEqual(logic.floorLabel(z, "Main Hall, floor 1", 2), "Main Hall, floor 1")
+        t:assertEqual(logic.floorOf(z, "floor 1"), 2)
+        local on, bare = logic.floorOf(z, "ramp to floor 1")
+        t:assertEqual(on, 2)
+        t:assertEqual(bare, "ramp")
+        local on2, bare2 = logic.floorOf(z, "room east, upstairs")
+        t:assertEqual(on2, 1)
+        t:assertEqual(bare2, "room east")
+    end,
+
     ["a stair joined in the middle of a platform is one of its openings"] = function(t)
         local z = newTowerZone()
         logic.unpack(z)
