@@ -1421,8 +1421,12 @@ function logic.floorOf(zone, label)
         elseif label == f[3] then
             return first(i), f[4]
         end
+        -- a room on a building's named floor ends in the floor's word; a structure's level (f[5] "level": the
+        -- zeppelin tower's "floor 1") has no rooms on it, so a room of another building whose name ends in the same
+        -- word is not on it (the Undercity's "hall 2, floor 1" lost its ", floor 1"; Northshire Abbey's gallery
+        -- "Main Hall, floor 1" was said "Main Hall" once a tower's level took that word, 2026-10-31)
         local tail = ", " .. f[1]
-        if #label > #tail and label:sub(-#tail) == tail then
+        if f[5] ~= "level" and #label > #tail and label:sub(-#tail) == tail then
             return first(i), label:sub(1, -#tail - 1)
         end
     end
