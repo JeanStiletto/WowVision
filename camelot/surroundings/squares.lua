@@ -507,6 +507,58 @@ local function climbEndOpenings(zone, region, cells, floors)
                 piece = like.piece, cells = like.cells, rise = e.rise, points = { e.f.x, e.f.y }, endRecord = true }
         end
     end
+    -- a landing between flights of one climb whose foot and top lie on other floors: the square joins two or more of
+    -- its flights (floor pieces) and no opening of it is kept: an opening onto each flight at its join points (the
+    -- Golden Rose's U-turn ramp, its landing a piece of its own since the ground rule: "Plattform" and nothing more,
+    -- the user bumped its walls both ways, walk 2026-10-31 09:26:58, bug 150). One flight joined is no landing: a
+    -- strip beside a climb stays without its opening (bug 114).
+    local flights, places = {}, {}
+    for f in pairs(floors) do
+        for other, pts in pairs(ix.joinPoints[f] or {}) do
+            if not floors[other] then
+                local r, c = logic.cellOf(zone, pts[1], pts[2])
+                if cells[r * cols + c] or logic.nearCell(zone, cells, r, c, true) then
+                    local v = 0
+                    for dr = -1, 1 do
+                        for dc = -1, 1 do
+                            if v == 0 and logic.inGrid(zone, r + dr, c + dc) then
+                                v = logic.valueOfFloor(zone, r + dr, c + dc, other)
+                            end
+                        end
+                    end
+                    local place = v ~= 0 and logic.CLIMBS[logic.kindOf(zone, v)] and logic.placeOf(v)
+                    if place and dropped[place] then
+                        local sx, sy, n = 0, 0, 0
+                        for k = 1, #pts - 1, 2 do
+                            sx, sy, n = sx + pts[k], sy + pts[k + 1], n + 1
+                        end
+                        if flights[place] == nil then
+                            flights[place] = {}
+                            places[#places + 1] = place
+                        end
+                        table.insert(flights[place], { piece = other, value = v, x = sx / n, y = sy / n, r = r, c = c })
+                    end
+                end
+            end
+        end
+    end
+    table.sort(places)
+    for _, place in ipairs(places) do
+        local list, have = flights[place], false
+        for _, m in ipairs(kept) do
+            if m.value and logic.placeOf(m.value) == place then
+                have = true
+            end
+        end
+        if #list >= 2 and not have then
+            table.sort(list, function(a, b) return a.piece < b.piece end)
+            local like = dropped[place]
+            for _, fl in ipairs(list) do
+                kept[#kept + 1] = { label = like.label, class = like.class, spoken = like.spoken, value = fl.value,
+                    piece = fl.piece, cells = { { fl.r, fl.c, fl.r, fl.c } }, points = { fl.x, fl.y } }
+            end
+        end
+    end
     region.mouths = kept
 end
 
