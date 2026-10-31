@@ -1594,10 +1594,15 @@ local ROOM_PIECE_AGAIN = 6
 local function roomPieceLine(layer, x, y)
     local v = logic.valueAt(layer, x, y)
     local kind = v and v ~= 0 and logic.kindOf(layer, v)
+    local floor = layer._index.floor or 0
     if not (kind == "platform" or logic.CLIMBS[kind]) then
+        -- a raised floor of its own that its room names (no platform: the Golden Rose's upper floor, ground trial
+        -- 2026-10-31) is a step off the climb as a platform's line was: back onto the climb, the climb is said
+        if floor ~= 0 then
+            roomPieceSaid = { floor = floor, x = x, y = y }
+        end
         return
     end
-    local floor = layer._index.floor or 0
     local s = roomPieceSaid
     if s and s.floor == floor and logic.dist(s.x, s.y, x, y) < ROOM_PIECE_AGAIN then
         return
