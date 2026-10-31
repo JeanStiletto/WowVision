@@ -1457,14 +1457,20 @@ local function checkPlace(z, x, y, forced)
     -- and its moat took turns within 2 s, and outdoors 3 nearly doubled the back and forth
     -- between places (replay of all walks, 2026-10-04)
     outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
-    if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y) then
+    if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y, z._index.floor or 0) then
         leftWay = logic.isWayKey(previous) and previous or nil
         -- off a way onto a square: at the way's end the square's description, before its end (a
-        -- step off it sideways) where the way is (logic.leftAtEnd)
+        -- step off it sideways) where the way is (logic.leftAtEnd). A way left from another floor piece than the
+        -- square's ends where its piece meets the square's: off its end (the road to Stormwind City on the approach
+        -- bridge, a piece of its own, onto the Valley of Heroes' square, whose openings are found on its own floors
+        -- only: the square's exits went unsaid, trial te2 replay 17:57:32)
+        -- The same where the way is no opening of the square at all (it ends at the square's rim on a cell or two of
+        -- paint, no mouth of it found): a way along the square's side is one of its openings, this one is not
         local sideways = false
-        if leftWay and logic.hasEdge(z, value) then
+        if leftWay and logic.hasEdge(z, value) and (outdoor.fromFloor == nil or outdoor.fromFloor == (z._index.floor or 0)) then
             local sq = logic.regionAt(z, x, y)
-            sideways = sq ~= nil and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
+            sideways = sq ~= nil and logic.isOpeningOf(z, sq, previous)
+                and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
         end
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways,

@@ -1683,24 +1683,25 @@ end
 
 function Entry:reset()
     self.current, self.candidate, self.walked, self.lastX, self.lastY = nil, nil, 0, nil, nil
-    self.fromX, self.fromY = nil, nil
+    self.fromX, self.fromY, self.fromFloor, self.currentFloor = nil, nil, nil, nil
 end
 
 -- Returns the key when it becomes the current one, else nil. `distanceFor(key)` (optional) gives
 -- a key its own distance; the shorter of the new key's and the current key's counts, so leaving
 -- a road is as quick as entering it. `fromX`, `fromY`: where the step onto the current key began
--- (where the one before was left).
-function Entry:update(key, x, y)
+-- (where the one before was left); `fromFloor`: the floor piece last stood on with the key before (`floor`, when
+-- given: a step off a way onto another piece is a step off its end, module.lua's sideways rule).
+function Entry:update(key, x, y, floor)
     if key == nil then
         self.candidate = nil
         return nil
     end
     if self.current == nil then
-        self.current, self.candidate = key, nil
+        self.current, self.candidate, self.currentFloor = key, nil, floor
         return key
     end
     if key == self.current then
-        self.candidate = nil
+        self.candidate, self.currentFloor = nil, floor
         return nil
     end
     if key ~= self.candidate then
@@ -1717,6 +1718,7 @@ function Entry:update(key, x, y)
     if self.walked >= distance then
         self.current, self.candidate = key, nil
         self.fromX, self.fromY = self.candidateX, self.candidateY
+        self.fromFloor, self.currentFloor = self.currentFloor, floor
         return key
     end
     return nil

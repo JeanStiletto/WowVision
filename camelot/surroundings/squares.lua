@@ -760,6 +760,7 @@ function logic.regionAt(zone, x, y)
             cache.byValue[value][key] = region
         end
     end
+    region.touching = region.mouths   -- every opening, the side streets too (logic.isOpeningOf)
     region.mouths = logic.withoutSideStreets(zone, region)
     -- (a climb's openings are told apart by its place, groupItems)
     for _, m in ipairs(region.mouths) do
@@ -1057,6 +1058,18 @@ end
 -- opening 14 yd wide or wider (user 2026-10-01: 18 yd on the Old Town square was too far, "10 or
 -- 15 should be sufficient")
 logic.BEGINNING_EXTRA = 7
+
+-- Is the way `wayKey` an opening of the square `region` (one of its mouths carries that way's label)? A way along
+-- the square's side is; a way that only reaches its rim on another floor or on a few cells of paint is not.
+function logic.isOpeningOf(zone, region, wayKey)
+    local label = logic.keyLabel(zone, wayKey)
+    for _, m in ipairs(region.touching or region.mouths) do
+        if m.label == label then
+            return true
+        end
+    end
+    return false
+end
 
 -- From how far a way beginning is guided to: the reach plus half its opening, capped.
 -- Did the player leave the way `wayKey` at its end onto the square `region`: the step off it began
