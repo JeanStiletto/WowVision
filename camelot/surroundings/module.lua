@@ -2074,6 +2074,25 @@ local function lineFacing(wayOnly)
     if isInside() then
         local layer = logic.layer(z, IsIndoors())
         if not (layerMode and layer) then
+            -- on a ramp or stairs piece of the layer in a room said by its text (the layer holds the floor there too:
+            -- the Slaughtered Lamb's and the Golden Rose's stairs): the landing, the flight or the climb's route, as
+            -- in the halls below; before, the key turned along the room's way or did nothing on the stairs (the
+            -- user's walk 2026-11-02 18:34, "it ignores the stair directions I am on")
+            local held = layer and (layer._index.floor or 0) ~= 0 and layer._index.floor
+            if held then
+                local onLanding = logic.landingFacing(layer, held, x, y, facing, layer._index.floorBefore)
+                if onLanding then
+                    return onLanding, "landing"
+                end
+                local onFlight = logic.flightFacing(layer, held, x, y, facing)
+                if onFlight then
+                    return onFlight, "flight"
+                end
+                local onClimb = logic.climbLineFacing(layer, held, x, y, facing)
+                if onClimb then
+                    return onClimb, "climb"
+                end
+            end
             -- a room said with the way it runs ("passage, north to south"): along it
             local r = room and z._index.rooms and z._index.rooms[room]
             if r and r.axis and not r.winding then
