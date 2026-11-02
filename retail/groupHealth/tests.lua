@@ -199,42 +199,57 @@ testRunner:addSuite("GroupHealth", {
         t:assertEqual(numbers[11], 36)
     end,
 
-    ["pitch levels: the shared ends are one level each, full is its own"] = function(t)
-        local levels = GroupHealth.pitchLevels(GroupHealth.voices:get("hedda"))
-        -- 15 steps, two pairs sharing a pitch, plus full.
-        t:assertEqual(#levels, 14)
-        t:assertEqual(levels[1][1], 0)
-        t:assertTrue(math.abs(levels[1][2] - 2 / 15) < 1e-9)
-        t:assertTrue(math.abs(levels[13][1] - 13 / 15) < 1e-9)
-        t:assertEqual(levels[13][2], 1)
-        t:assertEqual(levels[14][1], 1)
-    end,
-
-    ["pitch steps: the band of health within the steps of the reference"] = function(t)
-        local levels = GroupHealth.pitchLevels(GroupHealth.voices:get("hedda"))
-        t:assertNil(GroupHealth.pitchQuiet(levels, 61, 0))
-        t:assertNil(GroupHealth.pitchQuiet(levels, nil, 1))
-        -- 61 percent is step 9 (60 to 66.7): one step keeps only that level.
-        local one = GroupHealth.pitchQuiet(levels, 61, 1)
-        t:assertTrue(math.abs(one[1] - 9 / 15) < 1e-9)
-        t:assertTrue(math.abs(one[2] - 10 / 15) < 1e-9)
-        -- Two steps: one level each way.
-        local two = GroupHealth.pitchQuiet(levels, 61, 2)
-        t:assertTrue(math.abs(two[1] - 8 / 15) < 1e-9)
-        t:assertTrue(math.abs(two[2] - 11 / 15) < 1e-9)
-        -- 95 percent: the shared top level, never full health.
-        local top = GroupHealth.pitchQuiet(levels, 95, 1)
-        t:assertTrue(math.abs(top[1] - 13 / 15) < 1e-9)
-        t:assertEqual(top[2], 1)
-        -- At full health one step keeps only full.
-        t:assertEqual(GroupHealth.pitchQuiet(levels, 100, 1)[1], 1)
-    end,
-
-    ["segment text carries volume, pitch and words"] = function(t)
+    ["segment text carries volume, pitch and words, and a rate when given"] = function(t)
         t:assertEqual(
             GroupHealth.segment(100, -4, "3"),
             '<volume level="100"><pitch absmiddle="-4">3</pitch></volume>'
         )
+        t:assertEqual(
+            GroupHealth.segment(0, -4, "3", 10),
+            '<volume level="0"><rate absspeed="10"><pitch absmiddle="-4">3</pitch></rate></volume>'
+        )
+    end,
+
+    ["rate gate: the spoken rate where the part is heard, the fastest elsewhere"] = function(t)
+        local points = GroupHealth.ratePoints(0.35, 0.8, 7)
+        t:assertEqual(evaluate(points, 0.2), 10)
+        t:assertEqual(evaluate(points, 0.35), 7)
+        t:assertEqual(evaluate(points, 0.79), 7)
+        t:assertEqual(evaluate(points, 0.8), 10)
+        t:assertEqual(evaluate(points, 1), 10)
+        -- From 0, and including full health above 1.
+        t:assertEqual(evaluate(GroupHealth.ratePoints(0, 0.6, 7), 0), 7)
+        t:assertEqual(evaluate(GroupHealth.ratePoints(0, 0.6, 7), 0.6), 10)
+        t:assertEqual(evaluate(GroupHealth.ratePoints(1, 2, 7), 0.999), 10)
+        t:assertEqual(evaluate(GroupHealth.ratePoints(1, 2, 7), 1), 7)
+        -- Slow rates make the same gate.
+        t:assertEqual(evaluate(GroupHealth.ratePoints(0, 0.6, -5), 0.3), -5)
+    end,
+
+    ["rate gate: nothing to hear, or already the fastest rate, is fast throughout"] = function(t)
+        for _, points in ipairs({
+            GroupHealth.ratePoints(0.8, 0.8, 7),
+            GroupHealth.ratePoints(0, 0, 7),
+            GroupHealth.ratePoints(0, 0.6, 10),
+            GroupHealth.ratePoints(0, 0.6, nil),
+        }) do
+            t:assertEqual(evaluate(points, 0), 10)
+            t:assertEqual(evaluate(points, 0.5), 10)
+            t:assertEqual(evaluate(points, 1), 10)
+        end
+    end,
+
+    ["rate gate and volume gate agree on where a part is heard"] = function(t)
+        local profile = GroupHealth.voices:get("hedda")
+        local lowCopy, highCopy = GroupHealth.copyRanges(0, 0.7, profile)
+        for _, copy in ipairs({ lowCopy, highCopy }) do
+            local volume = GroupHealth.bandPoints(copy[1], copy[2])
+            local rate = GroupHealth.ratePoints(copy[1], copy[2], 7)
+            for i = 0, 100 do
+                local x = i / 100
+                t:assertEqual(evaluate(rate, x) == 7, evaluate(volume, x) == 100, "health " .. x)
+            end
+        end
     end,
 
     ["points key tells gates apart"] = function(t)
@@ -259,5 +274,48 @@ testRunner:addSuite("GroupHealth", {
         t:assertEqual(GroupHealth.fraction(150), 1)
         t:assertEqual(GroupHealth.fraction(-5), 0)
         t:assertEqual(GroupHealth.fraction(35), 0.35)
+    end,
+
+    ["repeat: never repeated members first, by number"] = function(t)
+        local members = {
+            party2 = { number = 3 },
+            player = { number = 1 },
+            party1 = { number = 2 },
+        }
+        local function every3()
+            return 3
+        end
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, every3).number, 1)
+        members.player.lastRepeat = 100
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, every3).number, 2)
+        members.party1.lastRepeat = 100
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, every3).number, 3)
+        members.party2.lastRepeat = 100
+        -- Everyone fresh: nobody until an interval has passed.
+        t:assertNil(GroupHealth.mostOverdue(members, 102.9, every3))
+        t:assertEqual(GroupHealth.mostOverdue(members, 103, every3).number, 1)
+    end,
+
+    ["repeat: the member furthest past its own interval goes first"] = function(t)
+        local members = {
+            tank = { number = 2, lastRepeat = 96, interval = 2 }, -- 2 intervals over
+            dps = { number = 1, lastRepeat = 91, interval = 6 }, -- 1.5 intervals over
+        }
+        local function intervalOf(member)
+            return member.interval
+        end
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, intervalOf).number, 2)
+        members.tank.lastRepeat = 100
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, intervalOf).number, 1)
+    end,
+
+    ["repeat: a role without an interval never repeats"] = function(t)
+        local members = { a = { number = 1 }, b = { number = 2, interval = 3 } }
+        local function intervalOf(member)
+            return member.interval
+        end
+        t:assertEqual(GroupHealth.mostOverdue(members, 100, intervalOf).number, 2)
+        members.b.interval = 0
+        t:assertNil(GroupHealth.mostOverdue(members, 100, intervalOf))
     end,
 })

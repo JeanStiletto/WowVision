@@ -17,67 +17,29 @@ local settings = module:hasSettings()
 -- Health is secret here (see logic.lua), so the addon never decides
 -- whether someone is hurt: every announcement is prepared behind volume
 -- gates (curves of ours) and the engine plays the one whose health range
--- matches.
---
--- What speaks, below the role's "Speak Below" (a member at exactly full
--- health as "<number> full"):
--- - With "Only When Health Changed Enough" (the default), Sku's rule: a
---   health event speaks the member at once, heard only when their health
---   moved the role's minimum change and the role's minimum pitch steps
---   since their last announcement (checks.lua, readback.lua).
--- - Without it, Sku's rule with no minimum: every health event (as Sku
---   with a minimum change of 0).
--- - Both: "<number> dead" once, an optional repeat of every member below
---   the role's repeat threshold at the role's interval, and the snapshot
---   key (everyone once).
--- All but the rule's numbers go through one queue that starts an utterance
--- every `spacing` seconds, one entry per member and lane (an entry already
--- waiting keeps its place and reads the health when it plays); the rule's
--- numbers go out at once.
---
--- Speech uses a game voice of its own, straight to the engine beside the
--- speech queue (speech:speakAside): pitch needs a real SAPI voice, which an
--- NVDA bridge voice is not.
+-- matches. Health changes are not followed (they come by the hundreds a
+-- second at times, far more than speech could say). What speaks:
+-- - The repeat: every member below their role's Repeat Below, at the
+--   role's interval, one member at a time and only while nothing else is
+--   queued or playing. The announcements come at a fixed rate whatever the
+--   fight does, and WowVision's own speech never waits behind more than
+--   the one announcement playing.
+-- - "<number> dead" once (whether a member is dead is not secret).
+-- - The snapshot key: everyone once, in number order, a member at full
+--   health as "<number> full".
+-- All of it goes through the speech queue (retail/speech.lua) with the
+-- monitor's own voice, rate and volume: pitch needs a real SAPI voice,
+-- which an NVDA bridge voice is not.
 
 local ROLE_KEYS = { TANK = "tank", HEALER = "healer", DAMAGER = "damager", NONE = "none" }
 
--- Sku's values per role, except one pitch step for tanks (Sku: none):
--- their minimum change (5 percent) is smaller than a pitch step (6.7), and
--- without it one tank announcement in seven sounded at the pitch of the
--- one before (simulation, 2026-10-13).
+-- Repeat Below after Sku's thresholds per role; the interval is Sku's
+-- default of 3 seconds.
 local ROLE_DEFAULTS = {
-    TANK = {
-        startThreshold = 90,
-        urgentThreshold = 50,
-        repeatThreshold = 80,
-        repeatInterval = 0,
-        minChange = 5,
-        minPitchSteps = 1,
-    },
-    HEALER = {
-        startThreshold = 80,
-        urgentThreshold = 40,
-        repeatThreshold = 70,
-        repeatInterval = 0,
-        minChange = 10,
-        minPitchSteps = 1,
-    },
-    DAMAGER = {
-        startThreshold = 70,
-        urgentThreshold = 35,
-        repeatThreshold = 60,
-        repeatInterval = 0,
-        minChange = 20,
-        minPitchSteps = 2,
-    },
-    NONE = {
-        startThreshold = 70,
-        urgentThreshold = 35,
-        repeatThreshold = 60,
-        repeatInterval = 0,
-        minChange = 30,
-        minPitchSteps = 3,
-    },
+    TANK = { repeatThreshold = 80, repeatInterval = 3 },
+    HEALER = { repeatThreshold = 70, repeatInterval = 3 },
+    DAMAGER = { repeatThreshold = 60, repeatInterval = 3 },
+    NONE = { repeatThreshold = 60, repeatInterval = 3 },
 }
 
 -- Settings ----------------------------------------------------------------------
@@ -95,7 +57,8 @@ settings:add({
     key = "rate",
     type = "Number",
     label = L["Speech Rate"],
-    -- Short numbers: five hurt members fit in little time.
+    -- Short numbers: five hurt members fit in little time. The voice
+    -- profiles were measured at this rate.
     default = 7,
     min = -10,
     max = 10,
@@ -107,16 +70,6 @@ settings:add({
     default = 100,
     min = 0,
     max = 100,
-})
-settings:add({
-    key = "spacing",
-    type = "Number",
-    label = L["Time Between Numbers (seconds)"],
-    -- Sku's 0.2. Paces the queue (changes without the rule, deaths, the
-    -- repeat, the snapshot); the rule's numbers go out at once.
-    default = 0.2,
-    min = 0.05,
-    max = 2,
 })
 settings:add({
     key = "includeSelf",
@@ -154,15 +107,6 @@ settings:add({
     label = L["Silent Out of Combat"],
     default = false,
 })
--- Sku's rule, the way a healer reacts to a health bar: not on every small
--- change. The key predates the rule (it was a ten percent step) and stays,
--- so the saved choice carries over.
-local ruleSetting = settings:add({
-    key = "onlyOnSteps",
-    type = "Bool",
-    label = L["Only When Health Changed Enough"],
-    default = true,
-})
 
 local raidGroupFields = {}
 for group = 1, GroupHealth.MAX_RAID_GROUPS do
@@ -195,38 +139,6 @@ for _, role in ipairs(GroupHealth.ROLES) do
         label = ROLE_LABELS[role],
         fields = {
             {
-                key = "startThreshold",
-                type = "Number",
-                label = L["Speak Below (percent)"],
-                default = defaults.startThreshold,
-                min = 0,
-                max = 100,
-            },
-            {
-                key = "minChange",
-                type = "Number",
-                label = L["Minimum Change (percent)"],
-                default = defaults.minChange,
-                min = 2,
-                max = 50,
-            },
-            {
-                key = "minPitchSteps",
-                type = "Number",
-                label = L["Minimum Pitch Steps"],
-                default = defaults.minPitchSteps,
-                min = 0,
-                max = 7,
-            },
-            {
-                key = "urgentThreshold",
-                type = "Number",
-                label = L["Urgent Below (percent)"],
-                default = defaults.urgentThreshold,
-                min = 0,
-                max = 100,
-            },
-            {
                 key = "repeatThreshold",
                 type = "Number",
                 label = L["Repeat Below (percent)"],
@@ -248,22 +160,13 @@ end
 
 -- A role's setting, falling back to the default when a saved category
 -- predates the key.
-function module:roleSetting(role, key)
-    local values = self.settings[ROLE_KEYS[role]]
+local function roleSetting(role, key)
+    local values = module.settings[ROLE_KEYS[role]]
     local value = values ~= nil and values[key] or nil
     if value == nil then
         value = ROLE_DEFAULTS[role][key]
     end
     return value
-end
-
-local function roleSetting(role, key)
-    return module:roleSetting(role, key)
-end
-
--- A role's minimum change in whole percent, never below the setting's floor.
-local function minChange(role)
-    return math.max(2, math.floor(roleSetting(role, "minChange") + 0.5))
 end
 
 local function raidGroupWatched(group)
@@ -275,11 +178,9 @@ end
 
 local isSecret = WowVision.secrets.isSecret
 
--- One curve object per point list, reused. Each readback plan brings its
--- digit curves and gates (readback.lua caps the plans); past CURVES_MAX the
--- cache starts afresh and the old curves are left to the garbage collector.
-local CURVES_MAX = 2048
-local curves, curveCount = {}, 0
+-- One curve object per point list, reused: the pitch scale, the full gate
+-- and two gates per role threshold.
+local curves = {}
 
 local function curveFor(points)
     local key = GroupHealth.pointsKey(points)
@@ -290,11 +191,7 @@ local function curveFor(points)
         for _, point in ipairs(points) do
             curve:AddPoint(point[1], point[2])
         end
-        if curveCount >= CURVES_MAX then
-            curves, curveCount = {}, 0
-        end
         curves[key] = curve
-        curveCount = curveCount + 1
     end
     return curve
 end
@@ -329,12 +226,12 @@ function module:profile()
     if cached == nil then
         local name = voiceName(voice)
         local profile = GroupHealth.voices:forVoice(name)
-        cached = { profile = profile, pitch = GroupHealth.pitchPoints(profile), levels = GroupHealth.pitchLevels(profile) }
+        cached = { profile = profile, pitch = GroupHealth.pitchPoints(profile) }
         if name ~= nil then
             profileCache[voice] = cached
         end
     end
-    return cached.profile, cached.pitch, cached.levels
+    return cached.profile, cached.pitch
 end
 
 local fullPoints = GroupHealth.fullPoints()
@@ -385,19 +282,18 @@ local function plainGuid(unit)
 end
 
 -- A member; `old` is the same person before the roster update, who keeps
--- their reference, repeat timing and death. Unit tokens move when someone leaves,
--- so the person is found by GUID; without one, the member starts afresh
--- (one silent check finds their reference).
+-- their repeat timing and death. Unit tokens move when someone leaves, so
+-- the person is found by GUID. Someone already dead when first seen is not
+-- announced: their death is old news (the snapshot says it).
 local function newMember(unit, number, role, old)
     local member = {
         unit = unit,
         guid = plainGuid(unit),
         number = number,
         role = role,
-        dead = false,
+        dead = plainTrue(UnitIsDeadOrGhost, unit),
     }
     if old ~= nil then
-        member.reference = old.reference
         member.lastRepeat = old.lastRepeat
         member.dead = old.dead
     end
@@ -477,62 +373,10 @@ function module:rebuild()
     self.rosterDirty = false
     self.raidMode = raid
     self.members, self.aliases = self:collect()
-    -- Whoever is new gets one silent check: their reference.
-    local checks = self:ruleChecks()
-    if checks ~= nil then
-        checks:readNew()
-    end
 end
 
 function module:memberFor(unit)
     return self.members[unit] or self.aliases[unit]
-end
-
--- The queue ---------------------------------------------------------------------
-
-module.queue = {}
-module.queued = {}
-
-local function entryKey(member, lane)
-    return member.unit .. ":" .. lane
-end
-
-function module:clearQueue()
-    self.queue = {}
-    self.queued = {}
-end
-
--- `force` entries play even when a roster update dropped the member: the
--- snapshot finishes what it started.
-function module:enqueue(member, lane, force)
-    local key = entryKey(member, lane)
-    if self.queued[key] then
-        return
-    end
-    self.queued[key] = true
-    tinsert(self.queue, { member = member, lane = lane, key = key, force = force, queuedAt = GetTime() })
-    self:pump()
-end
-
-function module:pump()
-    if self.pumping then
-        return
-    end
-    local entry = tremove(self.queue, 1)
-    if entry == nil then
-        return
-    end
-    self.queued[entry.key] = nil
-    -- A member dropped by a roster update is skipped.
-    if entry.force or self:memberFor(entry.member.unit) == entry.member then
-        self:trace(entry.member, "play", entry)
-        self:announce(entry.member, entry.lane)
-    end
-    self.pumping = true
-    C_Timer.After(self.settings.spacing or 0.2, function()
-        self.pumping = false
-        self:pump()
-    end)
 end
 
 -- Speaking ----------------------------------------------------------------------
@@ -546,30 +390,15 @@ function module:nextCount()
         self.fallbackCount = (self.fallbackCount or math.floor(GetTime() * 1000)) + 1
         return self.fallbackCount
     end
-    if data.utterances == nil then
-        -- Earlier builds counted per character: carry this one's count over.
-        data.utterances = self.data ~= nil and self.data.utterances or 0
-    end
-    data.utterances = data.utterances + 1
+    data.utterances = (data.utterances or 0) + 1
     return data.utterances
 end
 
--- `tag` ({ member, lane }) comes back when a stop of all speech cuts it.
--- `direct`: straight to the engine, in the caller's slot (a number carried
--- by a check).
-function module:speak(text, tag, direct)
-    local speech = WowVision.base.speech
-    local voice, rate, volume = self.settings.voice or 0, self.settings.rate, self.settings.volume
-    local checks = self:ruleChecks()
-    if direct or checks == nil then
-        speech:speakAside(voice, text, rate, volume)
-        return
-    end
-    -- Beside the checks our own speech takes a slot of their line, so its
-    -- start is never taken for a sample's (readback.lua).
-    checks.readback:speakOwn(function()
-        speech:speakAside(voice, text, rate, volume)
-    end, tag)
+-- Through the speech queue, with the monitor's own voice, rate and volume.
+-- The queue adds its cache-buster and the bridge hand-over by
+-- concatenation, which a secret text allows.
+function module:speak(text)
+    WowVision.base.speech:speak(text, self.settings.voice or 0, self.settings.rate, self.settings.volume)
 end
 
 function module:unavailable()
@@ -580,14 +409,10 @@ function module:unavailable()
 end
 
 -- The health range [low, high) a lane speaks in; a high above 1 includes
--- full health. "change" is a health change (with the rule, a number carried
--- by a check).
+-- full health.
 function module:laneRange(member, lane)
-    local role = member.role
-    if lane == "change" then
-        return 0, GroupHealth.fraction(roleSetting(role, "startThreshold"))
-    elseif lane == "repeat" then
-        return 0, GroupHealth.fraction(roleSetting(role, "repeatThreshold"))
+    if lane == "repeat" then
+        return 0, GroupHealth.fraction(roleSetting(member.role, "repeatThreshold"))
     elseif lane == "snapshot" and self.settings.announceFull then
         -- At full health the snapshot says "<number> full" instead.
         return 0, 1
@@ -595,165 +420,58 @@ function module:laneRange(member, lane)
     return 0, 2
 end
 
--- `quiet` (optional) keeps the number silent inside that band, Sku's rule
--- (gatePoints); `direct` speaks straight to the engine (a number carried by
--- a check). Returns how many utterances went out.
-function module:announce(member, lane, quiet, direct)
+-- Speaks the member on a lane ("repeat", "snapshot" or "dead"): the number
+-- behind the lane's gates, so the engine plays it only in the lane's
+-- health range. Returns whether anything was sent.
+function module:announce(member, lane)
     local number = tostring(member.number)
-    local tag = { member = member, lane = lane }
     if lane == "dead" then
-        self:speak(WowVision.ttsCacheBust.bust(number .. " " .. L["dead"]), tag, direct)
-        return 1
+        self:speak(number .. " " .. L["dead"])
+        return true
     end
-    -- A member who died while this waited gets no number.
     if plainTrue(UnitIsDeadOrGhost, member.unit) then
-        return 0
+        return false
     end
     local profile, pitchPoints = self:profile()
     local pitch = through(member.unit, pitchPoints)
     local low, high = self:laneRange(member, lane)
     local lowRange, highRange = GroupHealth.copyRanges(low, high, profile)
-    local lowPoints = GroupHealth.gatePoints(lowRange[1], lowRange[2], quiet)
-    local highPoints = GroupHealth.gatePoints(highRange[1], highRange[2], quiet)
-    local fullGate = quiet ~= nil and GroupHealth.gatePoints(1, 2, quiet) or fullPoints
-    local wantFull = (lane == "change" or lane == "snapshot") and self.settings.announceFull
-    -- A carried number whose gates keep every health silent is not sent:
-    -- fewer utterances at once in the engine.
-    local sendNumber = quiet == nil or not (GroupHealth.isSilent(lowPoints) and GroupHealth.isSilent(highPoints))
-    if quiet ~= nil and wantFull and GroupHealth.isSilent(fullGate) then
-        wantFull = false
-    end
-    local lowVolume = through(member.unit, lowPoints)
-    local highVolume = through(member.unit, highPoints)
-    if pitch == nil or lowVolume == nil or highVolume == nil then
+    local lowVolume = through(member.unit, GroupHealth.bandPoints(lowRange[1], lowRange[2]))
+    local highVolume = through(member.unit, GroupHealth.bandPoints(highRange[1], highRange[2]))
+    -- What is silent is spoken at the fastest rate (logic.lua, ratePoints):
+    -- it takes a third of the time and nobody hears it. The rate, like the
+    -- volume, is decided by the curve inside the secret.
+    local rate = self.settings.rate
+    local lowRate = through(member.unit, GroupHealth.ratePoints(lowRange[1], lowRange[2], rate))
+    local highRate = through(member.unit, GroupHealth.ratePoints(highRange[1], highRange[2], rate))
+    if pitch == nil or lowVolume == nil or highVolume == nil or lowRate == nil or highRate == nil then
         self:unavailable()
-        return 0
+        return false
     end
     -- Every announcement has the same two parts (logic.lua): the LOW copy
     -- (rising, the urgent part of the scale) and the HIGH copy last
     -- (falling, the healthy part). The volume gates pick the copy; the
     -- sentence shape never changes, so the voice's melody adds the same to
     -- every number of a copy.
-    -- "<number> full" ends the same utterance, silent unless the member
-    -- is at exactly full health (when both copies before it are silent, so
-    -- it is heard after their length): one utterance instead of two, as
-    -- the engine prepares one after another.
+    -- The snapshot's "<number> full" ends the same utterance, silent unless
+    -- the member is at exactly full health (when both copies before it are
+    -- silent, so it is heard after their length).
     local fullPart = ""
-    if wantFull then
-        local full = through(member.unit, fullGate)
-        if full ~= nil then
-            local bottom = profile.scale[#profile.scale]
-            fullPart = GroupHealth.segment(full, bottom, number .. " " .. L["full"])
-            sendNumber = true
+    if lane == "snapshot" and self.settings.announceFull then
+        local full = through(member.unit, fullPoints)
+        local fullRate = through(member.unit, GroupHealth.ratePoints(1, 2, rate))
+        if full ~= nil and fullRate ~= nil then
+            fullPart = GroupHealth.segment(full, profile.scale[#profile.scale], number .. " " .. L["full"], fullRate)
         end
     end
-    if not sendNumber then
-        return 0
-    end
     local pad = GroupHealth.uniquePad(self:nextCount())
-    self:speak(GroupHealth.segment(lowVolume, pitch, number .. pad)
-        .. GroupHealth.segment(highVolume, pitch, number) .. fullPart, tag, direct)
-    return 1
+    local lowPart = GroupHealth.segment(lowVolume, pitch, number .. pad, lowRate)
+    local highPart = GroupHealth.segment(highVolume, pitch, number, highRate)
+    self:speak(lowPart .. highPart .. fullPart)
+    return true
 end
 
--- Sku's rule (checks.lua) ----------------------------------------------------------
-
--- A stop of all speech cut a death of ours: it is said again, worth more
--- than the silence asked for. The snapshot and the repeat are not: a stop
--- during them means stop.
-local RESPEAK = { dead = true }
-
--- The checks while the setting is on, made on first use; nil while off.
-function module:ruleChecks()
-    if not self.settings.onlyOnSteps then
-        return nil
-    end
-    if self.checks == nil then
-        self.checks = GroupHealth.Checks:new({
-            members = function()
-                return self.members
-            end,
-            memberFor = function(unit)
-                return self:memberFor(unit)
-            end,
-            threshold = function(member)
-                return minChange(member.role)
-            end,
-            urgent = function(member)
-                return roleSetting(member.role, "urgentThreshold")
-            end,
-            speakBelow = function(member)
-                return GroupHealth.fraction(roleSetting(member.role, "startThreshold"))
-            end,
-            pitchQuiet = function(member)
-                local _, _, levels = self:profile()
-                return GroupHealth.pitchQuiet(levels, member.reference, roleSetting(member.role, "minPitchSteps"))
-            end,
-            carry = function(member, quiet)
-                return self:announce(member, "change", quiet, true)
-            end,
-            now = debugprofilestop,
-            frameMs = function()
-                local fps = GetFramerate()
-                return fps ~= nil and fps > 0 and 1000 / fps or nil
-            end,
-            startOwner = function(id)
-                return WowVision.base.speech:startOwner(id)
-            end,
-            after = C_Timer.After,
-            speak = function(text)
-                -- Silent, at the rate the fixed values were measured at.
-                WowVision.base.speech:speakAside(self.settings.voice or 0, text, GroupHealth.readbackConstants.RATE, 0)
-            end,
-            through = through,
-            nextCount = function()
-                return self:nextCount()
-            end,
-            onOwnCut = function(tag)
-                local member = tag ~= nil and tag.member or nil
-                if member ~= nil and RESPEAK[tag.lane] and self:memberFor(member.unit) == member and member.dead then
-                    self:trace(member, "respeak")
-                    self:enqueue(member, tag.lane)
-                end
-            end,
-            onError = function(err)
-                geterrorhandler()(err)
-            end,
-            onFailing = function()
-                print("WowVision: " .. L["Group health readings failing"])
-                WowVision:speak(L["Group health readings failing"])
-            end,
-            trace = function(member, what, detail, extra)
-                self:trace(member, what, detail, extra)
-            end,
-        })
-    end
-    return self.checks
-end
-
--- Switching the rule off and on starts it afresh: nothing of the old
--- checks may answer for members read since.
-ruleSetting.events.valueChange:subscribe(module, function()
-    module.checks = nil
-    if module.enabled then
-        module:rebuild()
-    end
-end)
-
--- WowVision's own stops (keys, Ctrl, interrupting alerts) leave out the
--- stop while only our silent samples play.
-WowVision.base.speech:addSilentJudge(GroupHealth.isOwnSilent)
-
--- Anyone stopping all speech cuts the samples and our speech with them:
--- the readback drops the cut samples, reads those members again and hands
--- back the cut speech.
-hooksecurefunc(C_VoiceChat, "StopSpeakingText", function()
-    if module.checks ~= nil then
-        module.checks.readback:onStop()
-    end
-end)
-
--- Health events -------------------------------------------------------------------
+-- Health events: deaths only ----------------------------------------------------------
 
 function module:silenced()
     return self.settings.silentOutOfCombat and not InCombatLockdown()
@@ -764,58 +482,52 @@ function module:onHealth(unit)
     if member == nil then
         return
     end
-    self:trace(member, "event", unit)
-    unit = member.unit
-    -- Dead or offline members get no numbers; a death is said once.
-    if plainTrue(UnitIsDeadOrGhost, unit) then
+    if plainTrue(UnitIsDeadOrGhost, member.unit) then
         if not member.dead then
             member.dead = true
-            -- Dead is a reference of 0: the resurrection is a change,
-            -- heard whatever health it brings.
-            member.reference = 0
             if self.settings.announceDeaths and not self:silenced() then
-                self:enqueue(member, "dead")
+                self:announce(member, "dead")
             end
         end
         return
     end
     member.dead = false
-    if plainFalse(UnitIsConnected, unit) or self:silenced() then
-        return
-    end
-    local checks = self:ruleChecks()
-    if checks ~= nil then
-        checks:onEvent(unit)
-    else
-        self:enqueue(member, "change")
-    end
 end
 
--- The repeat: each role at its own interval, every member below the role's
--- repeat threshold (the gate decides).
-local REPEAT_CHECK = 0.25
+-- The repeat ----------------------------------------------------------------------
 
+-- How often the repeat looks for a due member: fine enough that the next
+-- one follows the last closely, as each goes out only once the queue is
+-- empty again.
+local REPEAT_CHECK = 0.1
+
+-- One member per turn, the most overdue, and only while nothing is queued
+-- or playing: a silent announcement (a member above the threshold) takes
+-- as long as a spoken one, so letting them pile up would hold back
+-- everything else WowVision says. Dead and offline members take their
+-- turn silently, so they neither speak nor hold the others back.
 function module:checkRepeats()
     local now = GetTime()
     if self.nextRepeatCheck ~= nil and now < self.nextRepeatCheck then
         return
     end
     self.nextRepeatCheck = now + REPEAT_CHECK
-    if self:silenced() then
+    if self:silenced() or not WowVision.base.speech:idle() then
         return
     end
-    for _, member in pairs(self.members) do
-        local interval = roleSetting(member.role, "repeatInterval")
-        if interval ~= nil and interval > 0 and not member.dead then
-            if member.lastRepeat == nil or now - member.lastRepeat >= interval then
-                member.lastRepeat = now
-                self:enqueue(member, "repeat")
-            end
-        end
+    local member = GroupHealth.mostOverdue(self.members, now, function(m)
+        return roleSetting(m.role, "repeatInterval")
+    end)
+    if member == nil then
+        return
+    end
+    member.lastRepeat = now
+    if not member.dead and not plainFalse(UnitIsConnected, member.unit) then
+        self:announce(member, "repeat")
     end
 end
 
--- Everyone once, in number order, ungated.
+-- Everyone once, in number order, ungated; the repeat starts afresh after it.
 function module:snapshot()
     local list = {}
     for _, member in pairs(self.members) do
@@ -828,18 +540,16 @@ function module:snapshot()
     table.sort(list, function(a, b)
         return a.number < b.number
     end)
-    self:clearQueue()
+    local now = GetTime()
     for _, member in ipairs(list) do
+        member.lastRepeat = now
         if plainTrue(UnitIsDeadOrGhost, member.unit) then
-            self:enqueue(member, "dead", true)
+            self:announce(member, "dead")
         else
-            self:enqueue(member, "snapshot", true)
+            self:announce(member, "snapshot")
         end
     end
 end
-
--- Diagnostics (log.lua replaces this while its log is on).
-function module:trace(member, what, detail, extra) end
 
 -- Wiring ------------------------------------------------------------------------
 
@@ -848,25 +558,9 @@ module:registerEvent("event", "GROUP_ROSTER_UPDATE")
 module:registerEvent("event", "PLAYER_ROLES_ASSIGNED")
 module:registerEvent("event", "PLAYER_REGEN_ENABLED")
 module:registerEvent("event", "PLAYER_ENTERING_WORLD")
--- The readback times its silent samples by these.
-module:registerEvent("event", "VOICE_CHAT_TTS_PLAYBACK_STARTED")
-module:registerEvent("event", "VOICE_CHAT_TTS_PLAYBACK_FINISHED")
-module:registerEvent("event", "VOICE_CHAT_TTS_PLAYBACK_FAILED")
 
 function module:onEvent(event, ...)
-    if event == "VOICE_CHAT_TTS_PLAYBACK_STARTED" then
-        if self.checks ~= nil then
-            self.checks.readback:onStarted(...)
-        end
-    elseif event == "VOICE_CHAT_TTS_PLAYBACK_FINISHED" then
-        if self.checks ~= nil then
-            self.checks.readback:onFinished(..., false)
-        end
-    elseif event == "VOICE_CHAT_TTS_PLAYBACK_FAILED" then
-        if self.checks ~= nil then
-            self.checks.readback:onFinished(..., true)
-        end
-    elseif event == "UNIT_HEALTH" then
+    if event == "UNIT_HEALTH" then
         self:onHealth(...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         if self.rosterDirty then
@@ -888,10 +582,8 @@ function module:onEnable()
 end
 
 function module:onDisable()
-    self:clearQueue()
     self.members = {}
     self.aliases = {}
-    self.checks = nil
 end
 
 module:registerBinding({

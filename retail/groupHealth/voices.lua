@@ -1,16 +1,16 @@
 local GroupHealth = WowVision.groupHealth
 
 -- Voice profiles: the pitch levels of the group health monitor per game
--- voice (see logic.lua for why every voice needs its own). Made with
--- tools/voice-profiles, which measures a voice offline and prints the
--- register call to paste here; its README has the procedure. All measured
--- at the monitor's default speech rate 7.
+-- voice (see logic.lua for why every voice needs its own). Each voice was
+-- rendered offline through SAPI with the monitor's own markup at its
+-- default speech rate 7, and its peak pitch per absmiddle measured; the
+-- levels were then chosen so that each is heard about a semitone or more
+-- below the one before (the tests check that against `measured`).
 --
 -- low, high: the absmiddle of each level of the LOW and the HIGH copy,
 --   lowest health (highest pitch) first; 13 levels in all.
 -- measured: the voice's peak pitch per copy as a line, { a, b } = a + b *
---   absmiddle semitones; the tests check that every level falls about a
---   semitone or more below the one before.
+--   absmiddle semitones.
 -- match: part of the game's voice name, lowercase; the longest match wins.
 local voices = GroupHealth.voices
 

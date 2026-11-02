@@ -1,6 +1,6 @@
 -- The group health monitor's game-independent half: the curve points that
--- turn a member's health into a pitch or a volume gate, the pitch levels,
--- raid numbering and the spoken text. No WoW API in here, so the headless
+-- turn a member's health into a pitch or a volume gate, raid numbering, the
+-- spoken text and the repeat's order. No WoW API in here, so the headless
 -- suite covers it (retail/groupHealth/tests.lua).
 --
 -- Health is a SECRET value on Retail and WoW: Forever: addon code cannot
@@ -17,9 +17,9 @@
 -- - A word at volume 0 is silent but takes as long as if it were spoken.
 -- - PlaySoundFile refuses a secret path, so recorded files are no way out.
 --
--- So the addon never decides whether someone is hurt. Every health event
--- prepares the possible announcements, each behind a volume gate, and the
--- engine plays the one whose health range matches.
+-- So the addon never decides whether someone is hurt. Every announcement
+-- carries its possible forms, each behind a volume gate, and the engine
+-- plays the one whose health range matches.
 
 local GroupHealth = {}
 WowVision.groupHealth = GroupHealth
@@ -47,8 +47,8 @@ GroupHealth.MAX_RAID_GROUPS = 8
 -- share a level.
 --
 -- Each voice's melody differs, so each voice has its own levels: a voice
--- profile (voices.lua; made with tools/voice-profiles). A voice without
--- one uses the fallback profile.
+-- profile (voices.lua, measured offline through SAPI). A voice without one
+-- uses the fallback profile.
 GroupHealth.PITCH_STEPS = 15
 
 local VoiceProfiles = WowVision.Class("GroupHealthVoiceProfiles")
@@ -144,47 +144,6 @@ function GroupHealth.pitchPoints(profile)
     return points
 end
 
--- The pitch levels a listener tells apart, lowest health first, as health
--- ranges { low, high }: one per step of the scale, except where neighbours
--- in the same copy share a pitch (the two lowest, the two highest), and
--- last "full" at exactly full health, a word of its own.
-function GroupHealth.pitchLevels(profile)
-    local scale = profile.scale
-    local steps = #scale
-    local levels = {}
-    for k = 0, steps - 1 do
-        local index = k + 1
-        local sameCopy = (index < profile.highFrom) == (index - 1 < profile.highFrom)
-        if k > 0 and sameCopy and scale[index] == scale[index - 1] then
-            levels[#levels][2] = (k + 1) / steps
-        else
-            tinsert(levels, { k / steps, (k + 1) / steps })
-        end
-    end
-    tinsert(levels, { 1, 1.01 })
-    return levels
-end
-
--- Sku's "minimum pitch steps" as a band: the health that sounds less than
--- `steps` levels away from the reference (whole percent), where a number
--- stays silent. nil for no steps or no reference.
-function GroupHealth.pitchQuiet(levels, reference, steps)
-    if steps == nil or steps <= 0 or reference == nil then
-        return nil
-    end
-    local health = reference / 100
-    local at = #levels
-    for i, level in ipairs(levels) do
-        if health < level[2] then
-            at = i
-            break
-        end
-    end
-    local first = math.max(1, at - steps + 1)
-    local last = math.min(#levels, at + steps - 1)
-    return { levels[first][1], levels[last][2] }
-end
-
 -- A lane's health range [low, high) split between the copies: the LOW copy
 -- below the profile's split, the HIGH copy from it up. A `high` above 1
 -- includes full health.
@@ -217,58 +176,39 @@ function GroupHealth.bandPoints(low, high)
     return { { 0, 0 }, { low, 100 }, { high, 0 } }
 end
 
--- Volume 100 on [low, high) except inside `quiet` ({ low, high }, either
--- end may lie outside 0 to 1): Sku's rule as a gate, "moved at least the
--- threshold since the last announcement", with the band around that
--- announcement as `quiet`. Without `quiet`, bandPoints. A `high` above 1
--- includes full health.
-function GroupHealth.gatePoints(low, high, quiet)
-    if quiet == nil then
-        return GroupHealth.bandPoints(low, high)
-    end
-    low = low or 0
-    if high == nil or high <= low then
-        return SILENT
-    end
-    local pieces = {}
-    local below = math.min(high, quiet[1])
-    if below > low then
-        tinsert(pieces, { low, below })
-    end
-    local above = math.max(low, quiet[2])
-    if high > above and above <= 1 then
-        tinsert(pieces, { above, high })
-    end
-    if #pieces == 0 then
-        return SILENT
-    end
-    local points = {}
-    if pieces[1][1] > 0 then
-        tinsert(points, { 0, 0 })
-    end
-    for _, piece in ipairs(pieces) do
-        tinsert(points, { math.max(0, piece[1]), 100 })
-        if piece[2] <= 1 then
-            tinsert(points, { piece[2], 0 })
-        end
-    end
-    return points
-end
-
--- Whether a gate keeps every health silent: such an utterance need not be
--- sent at all (fewer utterances at once in the engine).
-function GroupHealth.isSilent(points)
-    for _, point in ipairs(points) do
-        if point[2] ~= 0 then
-            return false
-        end
-    end
-    return true
-end
-
 -- Volume 100 at exactly full health.
 function GroupHealth.fullPoints()
     return { { 0, 0 }, { 1, 100 } }
+end
+
+-- The engine's fastest rate, for what is silent anyway.
+GroupHealth.FAST_RATE = 10
+
+-- The rate curve of a part: `rate` (the monitor's setting) on [low, high),
+-- where the part can be heard, the fastest rate everywhere else. A silent
+-- word takes as long as a spoken one, and a silent part at rate 10 takes
+-- about a third of the time: two silent copies 0.23 instead of 0.70 s on
+-- Hedda, 0.29 instead of 0.66 on Zira (rendered offline through SAPI,
+-- 2026-11-02). The audible copy's pitch stays: measured within 0.15
+-- semitones at every level the profiles use, with the silent copy at rate
+-- 7 and at rate 10. A `high` above 1 includes full health.
+function GroupHealth.ratePoints(low, high, rate)
+    local fast = GroupHealth.FAST_RATE
+    local empty = high == nil or high <= 0 or (low ~= nil and low >= high)
+    if rate == nil or rate >= fast or empty then
+        return { { 0, fast } }
+    end
+    local points = {}
+    if low == nil or low <= 0 then
+        tinsert(points, { 0, rate })
+    else
+        tinsert(points, { 0, fast })
+        tinsert(points, { low, rate })
+    end
+    if high <= 1 then
+        tinsert(points, { high, fast })
+    end
+    return points
 end
 
 -- A cache key for a point list, so equal gates share one curve object.
@@ -307,10 +247,15 @@ function GroupHealth.raidNumbers(roster, maxIndex)
     return numbers
 end
 
--- One spoken part: the words at a volume and a pitch, either of which may
--- be a secret curve result. Plain concatenation only, which secrets allow.
-function GroupHealth.segment(volume, pitch, words)
-    return '<volume level="' .. volume .. '"><pitch absmiddle="' .. pitch .. '">' .. words .. "</pitch></volume>"
+-- One spoken part: the words at a volume and a pitch, and at a rate when
+-- given (ratePoints), any of which may be a secret curve result. Plain
+-- concatenation only, which secrets allow.
+function GroupHealth.segment(volume, pitch, words, rate)
+    local inner = '<pitch absmiddle="' .. pitch .. '">' .. words .. "</pitch>"
+    if rate ~= nil then
+        inner = '<rate absspeed="' .. rate .. '">' .. inner .. "</rate>"
+    end
+    return '<volume level="' .. volume .. '">' .. inner .. "</volume>"
 end
 
 -- The engine caches the audio of every text it speaks and replays it when
@@ -321,7 +266,7 @@ end
 -- written in base 8, each digit a run of 1 to 8 no-break spaces, the runs
 -- led by plain spaces. Inaudible (Sku measured U+00A0 on the client), and
 -- unlike the shared cache-buster's 512 variants per text it never repeats:
--- a tank's number would reach 512 within one long fight.
+-- a member repeated every few seconds passes 512 within one long fight.
 local NBSP = "\194\160"
 
 function GroupHealth.uniquePad(n)
@@ -331,19 +276,6 @@ function GroupHealth.uniquePad(n)
         tinsert(parts, " " .. string.rep(NBSP, digit + 1))
         n = math.floor(n / 8)
     until n == 0
-    return table.concat(parts)
-end
-
--- The readback's silent samples (readback.lua) need a padding of their
--- own: all of the same length, so the text is identical in all but its
--- code and plays the same time. 24 positions of a no-break space followed
--- by a space or a second no-break space.
-function GroupHealth.readbackPad(n)
-    local parts = {}
-    for _ = 1, 24 do
-        tinsert(parts, n % 2 == 1 and (NBSP .. NBSP) or (NBSP .. " "))
-        n = math.floor(n / 2)
-    end
     return table.concat(parts)
 end
 
@@ -358,4 +290,29 @@ function GroupHealth.fraction(percent)
         percent = 100
     end
     return percent / 100
+end
+
+-- The member whose repeat is the most overdue, for the one slot the repeat
+-- fills at a time: due when `now` is at least intervalOf(member) seconds
+-- past their last repeat (never repeated counts as overdue since forever;
+-- an interval of nil or 0 is no repeat); of the due ones, the one furthest
+-- past its interval, measured in intervals, so a tank at 2 seconds and a
+-- damage dealer at 6 both get their turn; ties go to the lower number.
+-- nil when nobody is due.
+function GroupHealth.mostOverdue(members, now, intervalOf)
+    local best, bestScore
+    for _, member in pairs(members) do
+        local interval = intervalOf(member)
+        if interval ~= nil and interval > 0 then
+            local score = math.huge
+            if member.lastRepeat ~= nil then
+                score = (now - member.lastRepeat) / interval
+            end
+            local earlier = bestScore == nil or score > bestScore or (score == bestScore and member.number < best.number)
+            if score >= 1 and earlier then
+                best, bestScore = member, score
+            end
+        end
+    end
+    return best
 end

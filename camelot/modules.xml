@@ -33,9 +33,6 @@
        tools/surroundings-pack.py (generated, git-ignored; run it after every
        export and after updating the data submodule). -->
   <Include file="..\mapdata\WowVision_SurroundingsPacked\forever\data.xml" />
-  <!-- Developer tool: checks the group health readback in game
-       (/wv ghprobe). -->
-  <Script file="groupHealthProbe.lua" />
   <!-- Developer tool: checks what an enemy count from nameplates rests on
        (/wv plates). -->
   <Script file="nameplateProbe.lua" />
