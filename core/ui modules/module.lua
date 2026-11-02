@@ -12,6 +12,15 @@ settings:add({
     default = false,
 })
 
+-- Letters jump to the next entry starting with them in the lists that own the keyboard: the WowVision menu, context
+-- and dropdown menus (graph/typeAhead.lua, graph/Host.lua).
+settings:add({
+    type = "Bool",
+    key = "letterNavigation",
+    label = L["Letter Navigation in Menus"],
+    default = true,
+})
+
 -- Chasing stuck movement keys with testers: prints when windows take, wait
 -- for and release the navigation keys, and what the held check saw.
 module:registerCommand({
@@ -207,13 +216,13 @@ module:registerBindings({
         inputs = {},
         func = function() end,
     },
-    -- Opens the WowVision menu, which otherwise needs /wv typed: the
-    -- controller's way in (the shortcut layer).
+    -- Opens the WowVision menu, which otherwise needs /wv typed: Shift-F1,
+    -- and the controller's way in (the shortcut layer).
     {
         type = "Function",
         key = "wowvision/menu",
         label = L["WowVision Menu"],
-        inputs = {},
+        inputs = { "SHIFT-F1" },
         interruptSpeech = true,
         func = function()
             WowVision.graph.settings.openMenu()

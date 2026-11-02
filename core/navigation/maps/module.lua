@@ -167,6 +167,64 @@ function module:whereText(x, y)
     return text
 end
 
+-- Sku's distance key: speaks how far the waypoint being walked to is. The
+-- distance goes to speech only, never to the chat.
+function module:announceDistance()
+    local waypoint = self.path ~= nil and self.path.currentWaypoint or nil
+    if waypoint == nil then
+        WowVision:speak(L["No active waypoint"])
+        return false
+    end
+    local distance = self:distanceTo(waypoint.x, waypoint.y)
+    if distance == nil then
+        WowVision:speak(L["Position unavailable"])
+        return false
+    end
+    WowVision:speak(string.format("%d %s", distance, L["yards"]))
+    return true
+end
+
+-- Sku announces on Alt Gr, which Windows reports as Ctrl and Alt held
+-- together, so Ctrl+Alt does the same. Alt Gr is no key the binding system
+-- can take on its own, so the update loop watches the chord and a held chord
+-- repeats while the player walks. Typing with Alt Gr (@, {, [) must stay
+-- silent: a focused edit box, or Shift, holds the announcement back.
+local DISTANCE_REPEAT_SECONDS = 1
+
+settings:add({
+    key = "announceDistanceAltGr",
+    type = "Bool",
+    label = L["Announce Distance with Alt Gr"],
+    default = true,
+})
+
+function module:updateDistanceKey()
+    local held = self.settings.announceDistanceAltGr
+        and IsControlKeyDown()
+        and IsAltKeyDown()
+        and not IsShiftKeyDown()
+        and GetCurrentKeyBoardFocus() == nil
+    if not held then
+        self.distanceKeyAt = nil
+        return
+    end
+    local now = GetTime()
+    if self.distanceKeyAt == nil or now - self.distanceKeyAt >= DISTANCE_REPEAT_SECONDS then
+        self.distanceKeyAt = now
+        self:announceDistance()
+    end
+end
+
+-- The same announcement on a key of the player's choosing; no default key,
+-- Alt Gr is covered above.
+module:registerBinding({
+    type = "Script",
+    key = "maps/announceDistance",
+    label = L["Announce Distance"],
+    inputs = {},
+    script = "/run WowVision.base.navigation.maps:announceDistance()",
+})
+
 function module:newDataset(key)
     local data = WowVision.Dataset:new()
     self.datasets:register(key, data)
@@ -217,9 +275,9 @@ function module:navigateToName(fragment)
         return wp.n ~= nil and (wp.search or foldCase(wp.n)):find(needle, 1, true) ~= nil
     end)
     local target = matches[1] and matches[1].waypoint
+    local _, _, _, map = UnitPosition("player")
     if engine ~= nil then
         -- the engine's nearest hit wins when it is nearer than the route data's
-        local _, _, _, map = UnitPosition("player")
         local hit = (engine:search(fragment, px, py, map) or {})[1]
         if hit ~= nil and (target == nil or hit.distance <= matches[1].distance) then
             target = hit
@@ -230,10 +288,48 @@ function module:navigateToName(fragment)
         return false
     end
     WowVision:speak(target.n)
-    if engine ~= nil and self:routeTo(target.x, target.y, target.n, nil, target.z, target) then
-        return true
+    -- the destination of Ctrl-Shift-N and the visited waypoints, as if picked in F10
+    self.lastDestination = target
+    local onArrive = self:arrivalFor(target)
+    if engine ~= nil then
+        -- no window to pick the entry point in: the one F10 would preselect
+        local start = self:preselectedEntry(self:entryPoints(waypoints, px, py, map, engine))
+        if self:routeTo(target.x, target.y, target.n, onArrive, target.z, target, start and start.waypoint) then
+            return true
+        end
     end
-    return self:navigateTo(target.id, waypoints)
+    return self:navigateTo(target.id, waypoints, { onArrive = onArrive })
+end
+
+-- How many entry points F10 offers.
+module.ENTRY_COUNT = 20
+
+-- Whether the player swims or dives: an entry point in water is preselected then.
+function module:inWater()
+    return (IsSwimming ~= nil and IsSwimming() == true) or (IsSubmerged ~= nil and IsSubmerged() == true)
+end
+
+-- The entry points of a route: the nearest points of the network, nearest
+-- first, as { waypoint, distance }. The route data's linked waypoints, or with
+-- an active engine its own (engine:entryPoints). Both kinds of data
+-- route from the one the player picks; the engine never looks for a start of
+-- its own.
+function module:entryPoints(waypoints, px, py, map, engine)
+    if engine ~= nil then
+        local entries = {}
+        for _, row in ipairs(engine:entryPoints(px, py, map, self.ENTRY_COUNT, self:inWater()) or {}) do
+            tinsert(entries, { waypoint = row, distance = row.distance })
+        end
+        return entries
+    end
+    return WowVision.Router.nearest(waypoints, px, py, self.ENTRY_COUNT, WowVision.Router.hasLinks)
+end
+
+-- The entry point preselected: the nearest, while swimming the nearest in
+-- water (only the engine's points know water). Second result: true when
+-- swimming found none in water.
+function module:preselectedEntry(entries)
+    return WowVision.Router.preselectEntry(entries, self:inWater())
 end
 
 -- Straight-line beacon to a world position (no routing). onArrive, if
@@ -259,18 +355,197 @@ function module:beaconTo(wx, wy, label, onArrive)
     end
 end
 
+-- The destination last picked (F10's Enter, the visited waypoints' keys):
+-- what "the nearest unvisited of the same name" is named like.
+module.lastDestination = nil
+
+-- What runs when a picked destination is reached: it is remembered as
+-- visited (navigation/visited.lua), then its own onArrive runs. The route's
+-- waypoints on the way are never remembered, only the destination.
+function module:arrivalFor(wp)
+    local onArrive = wp.onArrive
+    return function()
+        local visited = WowVision.base.navigation.visited
+        if visited ~= nil then
+            visited:markVisited(wp)
+        end
+        if onArrive ~= nil then
+            onArrive()
+        end
+    end
+end
+
+-- The destinations named like `name` (the same object: the route data's
+-- name before its first field, WowNav's whole name), as { waypoint,
+-- distance } -- the route data's, or an active engine's (direct: without its
+-- reachability check).
+function module:destinationsNamed(name, direct)
+    local px, py, _, map = UnitPosition("player")
+    local store = WowVision.visitedStore
+    local fold = WowVision.utils.foldCase
+    local base = store.baseName(name, fold)
+    if px == nil or base == nil then
+        return {}
+    end
+    local found = {}
+    local function add(wp)
+        if store.baseName(wp.n, fold) == base then
+            local dx, dy = wp.x - px, wp.y - py
+            tinsert(found, { waypoint = wp, distance = math.sqrt(dx * dx + dy * dy) })
+        end
+    end
+    local waypoints, engine = self:destinationWaypoints()
+    for _, wp in pairs(waypoints) do
+        add(wp)
+    end
+    if engine ~= nil then
+        for _, row in ipairs(engine:search(base, px, py, map, { direct = direct }) or {}) do
+            add(row)
+        end
+    end
+    return found
+end
+
+-- To a destination without the window: a direct point, or a route from the
+-- entry point F10 would preselect (as /beacon to). It becomes the last
+-- picked destination and is remembered as visited once reached. A virtual
+-- destination (wp.virtual: the corpse) is a position without links, routed
+-- to with a straight last leg, its routeData handed to a route engine; too
+-- far from the network it gets a straight beacon, as the scanner's targets.
+function module:goToDestination(wp, direct)
+    self.lastDestination = wp
+    local onArrive = self:arrivalFor(wp)
+    if direct then
+        self:directTo(wp.x, wp.y, wp.n, onArrive)
+        return true
+    end
+    local px, py, _, map = UnitPosition("player")
+    if px == nil then
+        WowVision:speak(L["Position unavailable"])
+        return false
+    end
+    WowVision:speak(wp.n)
+    local waypoints, engine = self:destinationWaypoints()
+    if engine ~= nil then
+        local data = wp
+        if wp.virtual then
+            data = wp.routeData
+        end
+        local start = self:preselectedEntry(self:entryPoints(waypoints, px, py, map, engine))
+        if self:routeTo(wp.x, wp.y, wp.n, onArrive, wp.z, data, start and start.waypoint) then
+            return true
+        end
+    end
+    if wp.virtual then
+        waypoints[wp.id] = wp
+    end
+    local entry = engine == nil and self:preselectedEntry(self:entryPoints(waypoints, px, py, map, nil)) or nil
+    local routed = self:navigateTo(wp.id, waypoints, { entryId = entry and entry.waypoint.id, onArrive = onArrive })
+    if not routed and wp.virtual then
+        self:beaconTo(wp.x, wp.y, wp.n, onArrive)
+        return true
+    end
+    return routed
+end
+
+-- Ctrl-Shift-N: the last destination's route again, from where the player
+-- stands (WowNav's /vn new, without its penalty on the current link). The
+-- route data enter at the nearest waypoints, as for /beacon to; a route
+-- engine starts at the player's position only when that is clear
+-- (engine:startHere says why not). Whatever guided before ends, a transit
+-- waiting for its far end too.
+function module:restartRoute()
+    local wp = self.lastDestination
+    if wp == nil then
+        WowVision:speak(L["No route to start again"])
+        return false
+    end
+    local px, py, _, map = UnitPosition("player")
+    if px == nil then
+        WowVision:speak(L["Position unavailable"])
+        return false
+    end
+    local onArrive = self:arrivalFor(wp)
+    local waypoints, engine = self:destinationWaypoints()
+    if engine ~= nil then
+        local start = engine.startHere ~= nil and engine:startHere(px, py, map) or nil
+        if start == nil then
+            return false
+        end
+        local data = wp
+        if wp.virtual then
+            data = wp.routeData
+        end
+        if self:routeTo(wp.x, wp.y, wp.n, onArrive, wp.z, data, start) then
+            return true
+        end
+        WowVision:speak(L["No route found"])
+        return false
+    end
+    if wp.virtual then
+        waypoints[wp.id] = wp
+    end
+    local routed = self:navigateTo(wp.id, waypoints, { onArrive = onArrive })
+    if not routed and wp.virtual then
+        self:beaconTo(wp.x, wp.y, wp.n, onArrive)
+    end
+    return routed
+end
+
+module:registerBinding({
+    type = "Script",
+    key = "maps/restartRoute",
+    label = L["Start the Route Again From Here"],
+    inputs = { "CTRL-SHIFT-N" },
+    script = "/run WowVision.base.navigation.maps:restartRoute()",
+})
+
+-- Exactly one point, no route (F10's "Direct", WowNav's /vn direct): a
+-- straight beacon to the destination, whatever guidance ran before (a route
+-- engine's too) ends first. Arrival says the point's name; onArrive runs
+-- after it.
+function module:directTo(wx, wy, label, onArrive)
+    local engine = self.routeEngine
+    if engine ~= nil and engine.cancel ~= nil then
+        engine:cancel()
+    end
+    self:stopPath()
+    local path = self.Path:new()
+    path:add({ x = wx, y = wy, n = label })
+    path.events.complete:subscribe(self, function()
+        self.path = nil
+        WowVision:speak(L["Arrived"] .. (label ~= nil and (" " .. label) or ""))
+        if onArrive ~= nil then
+            onArrive()
+        end
+    end)
+    self:pathfind(path)
+    WowVision:speak(string.format(L["Direct: %s, %d yards"], label or "", self:distanceTo(wx, wy) or 0))
+end
+
 -- Another route engine can take over the routing (camelot/wownav registers
--- WowNav). While its setting is on it gets every route request: the
--- scanner's Enter, the places list, /beacon to, the F10 window's Enter. The
--- engine computes the route itself and hands back a Path through pathfind;
--- everything after that (beacon, arrival cue, Ctrl-W/S, Shift-F12, the turn
--- key) stays the same. engine: isActive(), routeTo(target) -> true when it
--- took the request (false: not here, the request goes the old way),
--- search(text, px, py, map) -> rows, info: its targets matching the text
--- ("" = all), nearest first, { {id, n, x, y, z, detail, distance} }
+-- WowNav). While its setting is on it gets every route request: the F10
+-- window's Enter (the scanner's Enter and the places list open F10 first,
+-- as with the route data), /beacon to. F10 works the same for both: the
+-- player picks the entry point from the engine's nearest points, then the
+-- destination. The engine computes the route from that entry point and hands
+-- back a Path through pathfind; everything after that (beacon, arrival cue,
+-- Ctrl-W/S, Shift-F12, the turn key) stays the same. engine: isActive(),
+-- entryPoints(px, py, map, count, swimming) -> its nearest points to start
+-- at, nearest first, { {id, n, x, y, z, water, distance} }, routeTo(target) ->
+-- true when it took the request (false: not here, the request goes the old
+-- way; target.start is the chosen entry point's row, the route starts there),
+-- search(text, px, py, map, opts) -> rows, info: its targets matching the
+-- text ("" = all), nearest first, { {id, n, x, y, z, detail, distance} }
+-- (opts.direct: for F10's Direct, no reachability check)
 -- (detail: said after the distance), info { capped, shown, total } when the
 -- engine cut the list; cancel() -> true when it ended guidance of its own
--- (Shift-F12). While it is active, F10 lists its targets only.
+-- (Shift-F12); startAt(px, py, map) -> the start at the player's position
+-- when it is clear, else nil and why ("ambiguous": the floor is not clear),
+-- with startHere saying why (Ctrl-Shift-N, the route to the target);
+-- unitTarget(creatureId, px, py, map) -> its row of that creature near the
+-- player, nil without one (the route to the target, targetRoute.lua).
+-- While it is active, F10 lists its targets only.
 function module:setRouteEngine(engine)
     self.routeEngine = engine
 end
@@ -283,16 +558,18 @@ function module:activeRouteEngine()
     return nil
 end
 
--- The one route request: to a world position (z when the target knows
--- it). data: the destination row when it came from the engine's own list
--- (its target data). True when the active engine took it; false leaves it
--- to the caller.
-function module:routeTo(wx, wy, label, onArrive, z, data)
+-- The one route request to the engine: to a world position (z when the
+-- target knows it), from the entry point `start` (a row of
+-- engine:entryPoints). data: the destination row when it came from the
+-- engine's own list (its target data). True when the active engine took it;
+-- false leaves it to the caller.
+function module:routeTo(wx, wy, label, onArrive, z, data, start)
     local engine = self:activeRouteEngine()
     if engine == nil then
         return false
     end
-    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive, data = data }) == true
+    return engine:routeTo({ x = wx, y = wy, z = z, label = label, onArrive = onArrive, data = data, start = start })
+        == true
 end
 
 -- Open the navigation window aimed at a world position: the scanner's
@@ -301,17 +578,15 @@ end
 -- a straight last leg), preselects the closest entry point, and lands on
 -- that destination; Enter there routes. Without map data on this continent
 -- there is nothing to route through, so a straight beacon is set instead.
--- An active route engine routes at once: it finds the entry point itself.
+-- An active route engine gets the same window: the player picks the entry
+-- point from its network.
 -- data: what the target's source knows for a route engine (the scanner's group members: { unit }).
 function module:openNavigationTo(wx, wy, label, onArrive, data)
-    if self:routeTo(wx, wy, label, onArrive, nil, data) then
-        return true
-    end
-    if next(self:currentWaypoints()) == nil then
+    if self:activeRouteEngine() == nil and next(self:currentWaypoints()) == nil then
         self:beaconTo(wx, wy, label, onArrive)
         return false
     end
-    self.pendingTarget = { x = wx, y = wy, label = label, onArrive = onArrive }
+    self.pendingTarget = { x = wx, y = wy, label = label, onArrive = onArrive, data = data }
     WowVision.UIHost:openWindow("atlas")
     return true
 end
@@ -533,5 +808,6 @@ module:registerCommand({
 function module:onEnable()
     self:hasUpdate(function(self)
         self:updatePath()
+        self:updateDistanceKey()
     end)
 end

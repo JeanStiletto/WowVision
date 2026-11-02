@@ -18,8 +18,18 @@ local kinds = graph.kinds
 -- by distance, presented as ONE cursor node (chat-reader pattern: tens of
 -- thousands of entries cannot be per-tick builder nodes). Enter on a
 -- destination routes from the selected entry and closes the window.
-
-local ENTRY_COUNT = 20
+--
+-- A route engine (WowNav) gets the same window: its nearest points to start
+-- at are the entry points and the route starts at the one selected.
+-- While the player swims or dives the nearest water point is preselected,
+-- in its place by distance (dry land may be nearer).
+--
+-- The first stop is the "Direct" checkbox (off on every open; the window
+-- still lands on the entry points, Shift-Tab reaches it). Checked, there is
+-- no entry point to pick: Tab goes from it to the search, then to the
+-- destinations, and Enter on a destination sets exactly that point -- a
+-- straight beacon, no route (WowNav's /vn direct). The destinations are the
+-- same, a route engine's without its reachability check.
 
 local function entryLabel(entry)
     local wp = entry.waypoint
@@ -49,32 +59,35 @@ local function ensureData(screen)
     end
     local _, _, _, map = UnitPosition("player")
     screen._px, screen._py, screen._map = px, py, map
-    -- With a route engine on (WowNav), its targets join the list and it finds the entry point itself: no entry choice.
+    -- With a route engine on (WowNav), its targets are the destinations and its network's waypoints the entry points.
     screen._waypoints, screen._engine = module:destinationWaypoints()
-    -- an engine may say at once that no route can start here (WowNav: floor not clear, no network)
-    if screen._engine ~= nil and screen._engine.listOpened ~= nil then
-        screen._engine:listOpened()
+    screen._entries = module:entryPoints(screen._waypoints, px, py, map, screen._engine)
+    local entry, noWater = module:preselectedEntry(screen._entries)
+    if entry ~= nil then
+        screen._entryId = entry.waypoint.id
     end
-    if screen._engine ~= nil then
-        screen._entries = {}
-    else
-        screen._entries = WowVision.Router.nearest(screen._waypoints, px, py, ENTRY_COUNT, WowVision.Router.hasLinks)
-    end
-    if screen._entries[1] ~= nil then
-        screen._entryId = screen._entries[1].waypoint.id
+    -- only the engine's points know water: swimming without one nearby is said
+    if noWater and screen._engine ~= nil then
+        WowVision:speak(L["No water point nearby"])
     end
     screen._search = ""
     local target = module.pendingTarget
     module.pendingTarget = nil
     if target ~= nil then
-        local wp = { id = TARGET_ID, n = target.label, x = target.x, y = target.y, virtual = true, onArrive = target.onArrive }
+        local wp = { id = TARGET_ID, n = target.label, x = target.x, y = target.y, virtual = true, onArrive = target.onArrive,
+            routeData = target.data }
         screen._waypoints[TARGET_ID] = wp
         screen._target = wp
         screen._destIndex = 1
         if screen.state ~= nil then
             screen.state.nextSuggestedMove = ControlId.structural("destinations")
         end
+    elseif screen.state ~= nil then
+        -- the Direct checkbox comes first, the window lands on the selected entry point as before
+        screen.state.nextSuggestedMove = ControlId.structural(screen._entryId ~= nil and ("entry:" .. screen._entryId)
+            or "entriesEmpty")
     end
+    screen._direct = false
     return true
 end
 
@@ -100,7 +113,9 @@ local function destinations(screen)
         end
     end
     if screen._engine ~= nil then
-        local hits, info = screen._engine:search(screen._search, screen._px, screen._py, screen._map)
+        -- a direct point needs no route to it: the engine's hits without its reachability check
+        local hits, info = screen._engine:search(screen._search, screen._px, screen._py, screen._map,
+            { direct = screen._direct })
         for _, wp in ipairs(hits or {}) do
             local dx = wp.x - screen._px
             local dy = wp.y - screen._py
@@ -123,6 +138,16 @@ local function destinations(screen)
     return found
 end
 
+-- The entry point the player selected (or the preselected one), nil without any.
+local function selectedEntry(screen)
+    for _, entry in ipairs(screen._entries) do
+        if entry.waypoint.id == screen._entryId then
+            return entry
+        end
+    end
+    return nil
+end
+
 local function destinationCursor(screen)
     local function clampedIndex()
         local list = destinations(screen)
@@ -138,11 +163,16 @@ local function destinationCursor(screen)
         return list, index, count
     end
 
-    -- an engine's row may add a detail after the distance (WowNav: its categories and zone)
+    -- an engine's row may add a detail after the distance (WowNav: its categories and zone); a destination reached
+    -- in the last minutes says so first (navigation/visited.lua)
+    local visited = WowVision.base.navigation.visited
     local function labelOf(entry)
         local text = string.format("%s, %d %s", entry.waypoint.n, entry.distance, L["yards"])
         if entry.waypoint.detail ~= nil then
             text = text .. ", " .. entry.waypoint.detail
+        end
+        if visited ~= nil and visited:isVisited(entry.waypoint) then
+            text = L["Visited"] .. ", " .. text
         end
         return text
     end
@@ -212,14 +242,35 @@ local function destinationCursor(screen)
             end
             WowVision.UIHost:closeWindow("atlas")
             local wp = entry.waypoint
-            if screen._engine ~= nil and module:routeTo(wp.x, wp.y, wp.n, wp.onArrive, wp.z, wp) then
+            -- the picked destination (not a waypoint on the way) is remembered as visited once reached
+            module.lastDestination = wp
+            local onArrive = module:arrivalFor(wp)
+            if screen._direct then
+                module:directTo(wp.x, wp.y, wp.n, onArrive)
                 return
             end
-            local routed = module:navigateTo(wp.id, screen._waypoints, { entryId = screen._entryId, onArrive = wp.onArrive })
+            if screen._engine ~= nil then
+                -- the engine's own row is its target data; the window's target brings its source's (scanner)
+                local data = wp
+                if wp.virtual then
+                    data = wp.routeData
+                end
+                local start = selectedEntry(screen)
+                if module:routeTo(wp.x, wp.y, wp.n, onArrive, wp.z, data, start and start.waypoint) then
+                    return
+                end
+                if wp.virtual then
+                    module:beaconTo(wp.x, wp.y, wp.n, onArrive)
+                else
+                    WowVision:speak(L["No route found"])
+                end
+                return
+            end
+            local routed = module:navigateTo(wp.id, screen._waypoints, { entryId = screen._entryId, onArrive = onArrive })
             -- A target too far from the network for a last leg still gets a
             -- straight beacon, as the scanner gave before.
             if not routed and wp.virtual then
-                module:beaconTo(wp.x, wp.y, wp.n, wp.onArrive)
+                module:beaconTo(wp.x, wp.y, wp.n, onArrive)
             end
         end,
         bindings = {
@@ -260,7 +311,7 @@ local function destinationCursor(screen)
     }
 end
 
--- The entry point stop: the closest waypoints, Enter selects one (only without a route engine).
+-- The entry point stop: the closest waypoints, Enter selects one.
 local function renderEntries(builder, screen)
     builder:beginStop("entries")
     builder:pushContext("entries", L["Entry Points"])
@@ -302,7 +353,23 @@ local function render(builder, screen)
     end
     builder:pushContext("navigation", L["Navigation"])
 
-    if screen._engine == nil then
+    builder:beginStop("direct")
+    builder:addItem(ControlId.structural("direct"), nodes.toggle({
+        label = L["Direct"],
+        get = function()
+            return screen._direct
+        end,
+        set = function(value)
+            screen._direct = value == true
+            -- an engine's list depends on the mode (its reachability check)
+            if screen._engine ~= nil then
+                screen._destinations = nil
+                screen._destIndex = 1
+            end
+        end,
+    }))
+
+    if not screen._direct then
         renderEntries(builder, screen)
     end
 

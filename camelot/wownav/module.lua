@@ -6,10 +6,15 @@
 -- searches them: the nearest 1000 hits (catalog.lua). Like his zone loader, the player's zone and the zones that share
 -- a seam with it are decoded in the background, one per frame, so the first route there does not wait for them.
 --
--- A floor is asked only when there is a choice: where the start or the target lies over several floors and nothing
--- tells which one (floorsUi.lua); for the player's own floor a waypoint nearby can be picked as the start instead
--- (his start-point mode). The setting "Show Automatic Waypoints" (his showauto, default off) adds the network's own
--- waypoints near the player to F10, by type and height; Enter routes straight to one. A route that reaches a portal, the tram entrance or an elevator ends there; once
+-- The start is never searched by WowNav (his N.Bind of the player's position) -- except for Ctrl-Shift-N, which starts
+-- the route again from where the player stands when that is clear (engine:startHere): F10 lists the nearest targets that have
+-- a network point (and the network's own waypoints with "Show Automatic Waypoints") as entry points, like the route
+-- data's, and the route starts at the one the player picks (his start-point mode, /vn hier, for every route); while
+-- swimming the nearest water point is preselected. A route searched again
+-- (a new road preference, a new route around a blocked spot) starts at the route's last reached waypoint. The target's
+-- floor is asked only when there is a choice: a target over several floors and nothing tells which one
+-- (floorsUi.lua). The setting "Show Automatic Waypoints" (his showauto, default off) adds the network's own
+-- waypoints near the player to F10, by height; Enter routes straight to one. A route that reaches a portal, the tram entrance or an elevator ends there; once
 -- the player has come out at its far end, the route goes on from there by itself.
 --
 -- Docks of the tram, ships and zeppelins follow his dock guidance (dock.lua): a dock is walked to and waited at; at a
@@ -34,7 +39,7 @@ settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Per
 -- his /vn outposts (Z2, default on): routes go around the outposts and capitals of the opposing faction; without a way
 -- around they lead through one and say so
 settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = true })
--- his /vn showauto (default off): the network's own waypoints near the player join the F10 list, by type and height
+-- his /vn showauto (default off): the network's own waypoints near the player join the F10 list, by height
 settings:add({ key = "showAuto", type = "Bool", label = L["Show Automatic Waypoints"], default = false })
 -- his /vn radius and /vn toleranz: how far from the network a target may lie, and the height band of a floor
 settings:add({
@@ -158,21 +163,56 @@ function engine:routeTo(target)
     return module:routeTo(target)
 end
 
--- F10 opened (his WowVisionNavigationCheckStartAtOpen): says at once when the start is unclear or off the network.
-function engine:listOpened()
+-- F10's entry points: the nearest targets with a network point, and the network's waypoints with "Show Automatic
+-- Waypoints" (catalog.entryPoints); {} where WowNav has no data.
+function engine:entryPoints(px, py, map, count, swimming)
     local N = ready(module)
-    local x, y, map = route.env.position()
-    if N == nil or x == nil or not catalog.covers(N, map) then
-        return
+    if N == nil or px == nil or not catalog.covers(N, map) then
+        return {}
     end
     N.activeMapId = map
-    if #N.ZonesForPoint(x, y) == 0 then
-        return
+    return catalog.entryPoints(N, _G.WowVisionNavigationTargetCatalog, map, px, py, count,
+        { showAuto = module.settings.showAuto == true, swimming = swimming })
+end
+
+-- The start at the player's position, only when it is clear -- the one place WowNav binds the position itself (Ctrl-Shift-N,
+-- the route to the target). Says nothing; returns the start, or nil and why ("ambiguous": the floor is not clear,
+-- "none": no network here).
+function engine:startAt(px, py, map)
+    local N = ready(module)
+    if N == nil or px == nil or not catalog.covers(N, map) then
+        return nil, "none"
     end
-    local _, why = route:startBinding(x, y)
-    if why ~= nil then
+    N.activeMapId = map
+    local id, why = route:startBinding(px, py)
+    if id == nil then
+        return nil, why == "ambiguous" and "ambiguous" or "none"
+    end
+    local _, _, z = N.Position(id)
+    return { nodeId = id, z = z }
+end
+
+-- Ctrl-Shift-N (his /vn new, asked for by the player): the start at the player's position (engine:startAt). Says why
+-- not otherwise (floor not clear, no network) and returns nil.
+function engine:startHere(px, py, map)
+    local start, why = self:startAt(px, py, map)
+    if start == nil then
+        -- WowVision:speak, not say: this file's say is declared further down
         WowVision:speak(why == "ambiguous" and L["Your floor is not clear here"] or L["No WowNav network here"])
     end
+    return start
+end
+
+-- The route to the target: the catalogue's nearest target with the creature's ID (catalog.creatureRow), as a row of
+-- the list; nil where WowNav has no data or no such creature near the player.
+function engine:unitTarget(creatureId, px, py, map)
+    local N = ready(module)
+    if N == nil or px == nil or not catalog.covers(N, map) then
+        return nil
+    end
+    N.activeMapId = map
+    return catalog.creatureRow(N, _G.WowVisionNavigationTargetCatalog, map, creatureId, px, py,
+        WowVision.targetFind.UNIT_RADIUS)
 end
 
 -- Shift-F12 (his /vn stop): ends the search, the route, a transit waiting for its far end and the dock guidance.
@@ -187,8 +227,8 @@ function engine:cancel()
     return running
 end
 
-function engine:search(text, px, py, map)
-    return module:search(text, px, py, map)
+function engine:search(text, px, py, map, opts)
+    return module:search(text, px, py, map, opts)
 end
 
 maps:setRouteEngine(engine)
@@ -236,7 +276,8 @@ end
 
 -- ---- destinations: his search of the WowNav catalogue of the player's map (the nearest 1000 hits), with the
 -- automatic waypoints nearby when they are shown. Returns the rows, nearest first, and the search info (capped).
-function module:search(text, px, py, map)
+-- opts.direct: F10's Direct (his /vn direct list): a point is set straight, so no hit is dropped as unreachable.
+function module:search(text, px, py, map, opts)
     local N = ready(self)
     if N == nil or map == nil or not catalog.covers(N, map) then
         return {}, nil
@@ -245,7 +286,7 @@ function module:search(text, px, py, map)
     -- the boarding points of the docks join the hits (his list with Dock:BoardingTargets)
     local extra = catalog.ensure(N, C, map) ~= nil and px ~= nil and dock.boardingRows(N, px, py) or nil
     local rows, info = catalog.search(N, C, map, text, px, py,
-        { showAuto = self.settings.showAuto == true, extra = extra })
+        { showAuto = self.settings.showAuto == true, extra = extra, direct = opts ~= nil and opts.direct == true })
     if info.reason ~= nil then
         say(string.format(L["WowNav catalogue not usable: %s"], tostring(info.reason)))
     end
@@ -259,8 +300,8 @@ function module:floorChoice()
     return floorChoice
 end
 
-local function askFloor(kind, floors, onChoose, request)
-    floorChoice = { kind = kind, floors = floors, onChoose = onChoose, request = request }
+local function askFloor(floors, onChoose)
+    floorChoice = { floors = floors, onChoose = onChoose }
     WowVision.UIHost:openWindow("wownavFloors")
 end
 
@@ -273,25 +314,6 @@ function module:chooseFloor(floor)
     end
 end
 
--- The floors at the player's position: the height bands of the start cells, lowest first; bands at most 2 yd apart
--- are one floor (his chapter 4.1, the same rule N.FindCell uses to call a start ambiguous).
-local FLOOR_GAP = 2.0
-local function startFloors(N, x, y)
-    local floors = {}
-    for _, band in ipairs(N.HeightBands(x, y, { swimming = inWater() })) do
-        local last = floors[#floors]
-        if last ~= nil and band.zMin - last.zMax <= FLOOR_GAP then
-            last.zMax = math.max(last.zMax, band.zMax)
-        else
-            floors[#floors + 1] = { zMin = band.zMin, zMax = band.zMax, reachable = true, x = x, y = y }
-        end
-    end
-    for _, floor in ipairs(floors) do
-        floor.z = (floor.zMin + floor.zMax) / 2
-    end
-    return floors
-end
-
 -- The floors of an ambiguous target (his bands or certified levels), with the ones that cannot be reached marked;
 -- at the target's position (`x`, `y`: where the floor window looks up their names).
 local function targetFloors(outcome, x, y)
@@ -300,47 +322,6 @@ local function targetFloors(outcome, x, y)
         floors[#floors + 1] = { band = i, z = band.zMin, reachable = outcome.reachable[i] == true, x = x, y = y }
     end
     return floors
-end
-
--- ---- start points: his start-point mode (/vn hier), a waypoint nearby as "I am standing here"
-local START_POINTS = 40      -- nearest waypoints offered
-local startChoice = nil      -- { request, points }
-local search                 -- forward: starts the search of a request
-
-function module:startChoice()
-    return startChoice
-end
-
--- Opens the list of the nearest waypoints for a request whose start is unclear.
-function module:openStartPoints(request)
-    local N = self:network()
-    local px, py, map = route.env.position()
-    if N == nil or px == nil then
-        say(L["Position unavailable"])
-        return
-    end
-    N.activeMapId = map
-    floorChoice = nil
-    WowVision.UIHost:closeWindow("wownavFloors")
-    startChoice = { request = request, points = catalog.autoPoints(N, px, py, nil, START_POINTS) }
-    WowVision.UIHost:openWindow("wownavStart")
-end
-
-function module:chooseStartPoint(point)
-    local choice = startChoice
-    startChoice = nil
-    WowVision.UIHost:closeWindow("wownavStart")
-    if choice == nil or choice.request == nil then
-        return
-    end
-    -- the waypoint's height is the route's height from here (his manual start node: exact x, y and z)
-    route.anchor.last = point.z
-    local request = {}
-    for key, value in pairs(choice.request) do
-        request[key] = value
-    end
-    request.startOverride = point.nodeId
-    search(self, request)
 end
 
 -- ---- the route request
@@ -410,8 +391,10 @@ end
 local function startRoute(self, request, outcome)
     local N = self:network()
     local trimmed = false
-    if request.dockTarget ~= nil then
-        -- a dock's route ends before a last drop (the tram's waiting nodes lie in the track bed)
+    if request.dockTarget ~= nil and request.dockTarget.facilityKind == "tram" then
+        -- a tram dock's route ends before a last drop (its waiting nodes lay in the track bed); a ship's pier slopes
+        -- down to the dock (Menethil: 3.6 yd over 30 yd to the dock to Auberdine), cut there it ended 70 yd early and
+        -- the boarding beacon had no point
         local cut = dock.trimDrop(N, outcome.plan.path)
         if cut ~= nil then
             outcome.plan.path = cut
@@ -419,6 +402,12 @@ local function startRoute(self, request, outcome)
         end
     end
     route:begin(outcome.plan, request.contract, outcome.result, request.label)
+    -- a target picked as the start (not a waypoint) is the first waypoint itself; not after a transit, whose route
+    -- goes on from the far end
+    local start = request.start
+    if start ~= nil and start.nodeId == nil and route.path[1] == request.startOverride then
+        route:prependStart(start.x, start.y, start.z)
+    end
     if request.dockTarget ~= nil and not trimmed then
         route.waitCheck = dock.waitAreaCheck(N, request.dockTarget)
     end
@@ -460,10 +449,31 @@ local function startRoute(self, request, outcome)
     say(text)
 end
 
--- Starts the search for a request. request: { contract or nodeId, label, onArrive, startOverride }.
-function search(self, request)
+-- The network point of the request's start (request.startOverride, catalog.startNode): a waypoint's own or a target's
+-- resolved anew. False, said, when the entry point has none.
+local function bindStart(self, request)
+    local _, _, map = route.env.position()
+    local id, z = catalog.startNode(self:network(), _G.WowVisionNavigationTargetResolver, catalog.activeNav(),
+        request.start, map)
+    if id == nil then
+        say(L["No network point at the chosen start"])
+        return false
+    end
+    request.startOverride, request.startZ = id, z
+    return true
+end
+
+-- Starts the search for a request. request: { contract or nodeId, label, onArrive, start }; start: the entry point the
+-- route starts at (a row of catalog.entryPoints: a target or a waypoint). WowNav never binds the player's position for
+-- a start (his N.Bind): the player picks it in F10, like with the route data.
+local function search(self, request)
     local N = self:network()
     local _, _, map = route.env.position()
+    if request.startOverride == nil and not bindStart(self, request) then
+        return
+    end
+    -- the start point's height is the route's height from here (his manual start node: exact x, y and z)
+    route.anchor.last = request.startZ
     -- the engine looks for zones on the player's map only (index boxes of other maps overlap)
     N.activeMapId = map
     local work
@@ -476,8 +486,8 @@ function search(self, request)
         answers = N.knownMissAnswers or 0 }
 end
 
--- A route request from maps: { x, y, z, label, onArrive, data } (data: a row of the WowNav list). True when WowNav
--- took it.
+-- A route request from maps: { x, y, z, label, onArrive, data, start } (data: a row of the WowNav list; start: the
+-- entry point picked in F10, a row of catalog.entryPoints). True when WowNav took it.
 function module:routeTo(target)
     local N = ready(self)
     if N == nil then
@@ -497,22 +507,28 @@ function module:routeTo(target)
     if #N.ZonesForPoint(px, py) == 0 then
         return false
     end
+    -- every route starts at the entry point the player picked; none: nothing of the network near enough to list
+    local start = type(target.start) == "table" and target.start or nil
     if type(target.data) == "table" and target.data.nodeId ~= nil then
         -- an automatic waypoint: straight to it, no target to resolve
-        self:stopRoute()
-        search(self, { nodeId = target.data.nodeId, label = target.label, onArrive = target.onArrive })
+        if start == nil then
+            say(L["No WowNav network here"])
+            return true
+        end
+        local request = { nodeId = target.data.nodeId, label = target.label, onArrive = target.onArrive, start = start }
+        if bindStart(self, request) then
+            self:stopRoute()
+            search(self, request)
+        end
         return true
     end
-    if type(target.data) == "table" and target.data.boardingTargetId ~= nil then
-        -- a boarding point: straight to it (his WowVisionNavigationStartDirect), no route
-        self:stopRoute(nil, true)
-        self.dockPath = dock.directPath(N, target.data)
-        maps:pathfind(self.dockPath)
-        return true
-    end
+    -- a boarding point ("At the vehicle") picked as a route's destination is a place like any other: routed to on the
+    -- network, never taken for its dock (it lies a few yards from the dock's waiting point); F10's Direct leads
+    -- straight to it instead
+    local boarding = type(target.data) == "table" and target.data.boardingTargetId ~= nil
     local dockTarget
-    local dockRow = dock.isDockRow(target.data) and target.data or nil
-    if dockRow == nil then
+    local dockRow = not boarding and dock.isDockRow(target.data) and target.data or nil
+    if dockRow == nil and not boarding then
         -- a position (scanner, places list, /beacon to, the route data's own points) that is a dock is that dock; a
         -- target at the far end of a line while the player is in its station is a ride to that end's dock
         local wownavRow = type(target.data) == "table" and target.data.tid ~= nil
@@ -566,9 +582,17 @@ function module:routeTo(target)
             zStatus = target.z == nil and "unknown" or "known",
         }
     end
-    self:stopRoute()
-    search(self, { contract = contract, label = target.label, onArrive = target.onArrive, dockTarget = dockTarget,
-        activationTarget = activationTarget, approx = type(target.data) == "table" and target.data.approx == true })
+    if start == nil then
+        say(L["No WowNav network here"])
+        return true
+    end
+    local request = { contract = contract, label = target.label, onArrive = target.onArrive, dockTarget = dockTarget,
+        activationTarget = activationTarget, approx = type(target.data) == "table" and target.data.approx == true,
+        lowestFloor = type(target.data) == "table" and target.data.lowestFloor == true, start = start }
+    if bindStart(self, request) then
+        self:stopRoute()
+        search(self, request)
+    end
     return true
 end
 
@@ -637,25 +661,18 @@ local function onOutcome(self, request, outcome)
         startRoute(self, request, outcome)
     elseif outcome.kind == "choose" then
         local contract = request.contract or {}
-        askFloor("target", targetFloors(outcome, contract.x, contract.y), function(floor)
+        local floors = targetFloors(outcome, contract.x, contract.y)
+        if request.lowestFloor then
+            -- a target without a height that is walked to on the ground (the corpse run): the lowest floor a route
+            -- reaches, no question
+            request.contract.heightBand = WowVision.corpseFind.lowestFloor(floors).band
+            search(self, request)
+            return
+        end
+        askFloor(floors, function(floor)
             request.contract.heightBand = floor.band
             search(self, request)
         end)
-    elseif outcome.ambiguousStart then
-        local N = self:network()
-        local px, py = route.env.position()
-        local floors = px ~= nil and startFloors(N, px, py) or {}
-        if #floors > 1 then
-            askFloor("start", floors, function(floor)
-                -- his HeightAnchor.last: the band nearest to it is the start's floor
-                route.anchor.last = floor.z
-                search(self, request)
-            end, request)
-        else
-            -- nothing to choose by floor: a waypoint nearby decides (his /vn hier)
-            say(reasonText(outcome.reason))
-            self:openStartPoints(request)
-        end
     else
         say(reasonText(outcome.reason))
     end
@@ -765,10 +782,22 @@ function module:onRouteEvent(path, event)
         if mode == "board" then
             text = text .. ". " .. WowVisionNavigationText("action_boarding")
         end
-        say(text)
+        -- said before the portal already (transitAhead), or through it (its teleport came between two updates):
+        -- "The route goes on" follows at once
+        if not event.teleported and not event.announced then
+            say(text)
+        end
         local targetNodeId, result = route.targetBindingId, route.result
         route:reset()
-        route:startAction(event.action, request, targetNodeId, result)
+        route:startAction(event.action, request, targetNodeId, result, event)
+        local action, sv, av = event.action, event.action.sourceVolume or {}, event.action.arrivalVolume or {}
+        logLine(string.format("transit %s: waiting for its far end (%s), source %.1f %.1f r %s, arrival %.1f %.1f r %s",
+            tostring(action.kind), tostring(action.arrival and action.arrival.mode), sv.x or 0, sv.y or 0,
+            tostring(sv.radius or sv.half_x), av.x or 0, av.y or 0, tostring(av.radius or av.half_x)))
+    elseif kind == "transitAhead" then
+        -- a portal teleports the moment it is entered: what to do is said before it
+        say(string.format(L["Ahead: walk into %s; the route goes on after it"],
+            TRANSIT_WORDS[event.action.kind] or L["the transit"]))
     elseif kind == "lost" then
         self:stopRoute()
         say(L["Route ended"])
@@ -776,12 +805,32 @@ function module:onRouteEvent(path, event)
 end
 
 -- The transit continuation: once the player came out at the far end, the route goes on from there.
+-- The saved trail notes a jump of the player (a portal's teleport) while a transit waits: where he came out, how far
+-- from the transit's arrival, and whether the source was entered first -- so a missed arrival can be read later.
+local function traceAction(current, x, y, map)
+    if x == nil then
+        return
+    end
+    if current.traceX ~= nil and Route.distance(x, y, current.traceX, current.traceY) > 50 then
+        local av = current.action.arrivalVolume
+        logLine(string.format("transit: jumped to %.1f %.1f map %s, %.0f yd from its arrival, source %s", x, y,
+            tostring(map), type(av) == "table" and type(av.x) == "number" and Route.distance(x, y, av.x, av.y) or -1,
+            current.sourceEntered and "entered" or "never entered"))
+    end
+    current.traceX, current.traceY = x, y
+end
+
 local function checkAction(self)
     if route == nil or route.action == nil or job ~= nil then
         return
     end
     local x, y, map = route.env.position()
+    local current = route.action
     local state = route:observeAction(x, y, map, maps:arrivalDistance())
+    traceAction(current, x, y, map)
+    if state ~= nil then
+        logLine(string.format("transit: %s at %.1f %.1f", state, x or 0, y or 0))
+    end
     if state == "timeout" then
         say(L["The transit took too long; route ended"])
     elseif state == "arrived" then
@@ -841,8 +890,25 @@ function module:runningRequest()
     return nil
 end
 
+-- Where a route searched again starts: the last waypoint of the running route the player has reached (the one he came
+-- from; a blocked link lies after it), else its first; before the route is walked (still searched) the request's own
+-- start. Never the position bound anew: like every start, it is a waypoint of the route the player picked.
+local function restartPoint(self, request)
+    local N = self:network()
+    if route ~= nil and route.active and route.path ~= nil then
+        for i = math.max((route.pathIndex or 1) - 1, 1), 1, -1 do
+            local id = route.path[i]
+            if id ~= nil and id < N.VIRT_BASE then
+                local _, _, z = N.Position(id)
+                return { nodeId = id, z = z }
+            end
+        end
+    end
+    return request.start
+end
+
 -- A changed road preference applies to the running route as well (his /vn komfort does the same): once the slider
--- has rested for RECALC_DELAY, the same target is searched again from where the player is.
+-- has rested for RECALC_DELAY, the same target is searched again from the route's last reached waypoint.
 local function checkRecalculation(self)
     if recalcAt == nil or GetTime() < recalcAt then
         return
@@ -858,19 +924,22 @@ local function checkRecalculation(self)
             return
         end
         say(L["Searching the route again with the new road preference"])
+        local start = restartPoint(self, request)
         self:stopRoute()
         search(self, { contract = contract, nodeId = request.nodeId, label = request.label,
-            onArrive = request.onArrive })
+            onArrive = request.onArrive, start = start })
     end
 end
 
--- His /vn neu: the link the player is stuck on gets a penalty and the target is searched again from here.
+-- His /vn neu: the link the player is stuck on gets a penalty and the target is searched again from the route's last
+-- reached waypoint (before the blocked link).
 function module:newRoute()
     if route == nil or not route.active or self.path == nil then
         say(L["No active route"])
         return false
     end
     local request = self.request
+    local start = restartPoint(self, request)
     route:penalizeCurrentLink()
     self:stopRoute(true)
     local _, _, map = route.env.position()
@@ -881,7 +950,7 @@ function module:newRoute()
     end
     say(L["Searching a new route"])
     search(self, { contract = contract, nodeId = request.nodeId, label = request.label,
-        onArrive = request.onArrive })
+        onArrive = request.onArrive, start = start })
     return true
 end
 
