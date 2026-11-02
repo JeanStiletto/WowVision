@@ -2154,6 +2154,25 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(door.a, 0)
     end,
 
+    ["another piece of the region's own name is not said, a climb of its name is"] = function(t)
+        -- the Temple of the Moon's sunken centre: a second piece of the room's name joined north of
+        -- the ring at the door (user 2026-11-03: the dedup, the drop edge warns there)
+        local region = { label = "Temple of the Moon", hall = true, mouths = {
+            { label = "Temple of the Moon", class = "way", points = { 50, 30 } },
+            { label = "stairs", class = "way", climb = true, value = 7000, points = { 40, 60 } },
+            { label = "Temple of the Moon", class = "way", climb = true, value = 8000, points = { 70, 60 } },
+        } }
+        local items = logic.aroundItems(region, 50, 50)
+        local said = {}
+        for _, item in ipairs(items) do
+            said[#said + 1] = item.label
+        end
+        t:assertEqual(table.concat(said, ", "), "stairs, Temple of the Moon")
+        local near = logic.approaching(region, 50, 40, 25, {}, 2)
+        t:assertEqual(#near, 1)
+        t:assertEqual(near[1].label, "stairs")
+    end,
+
     ["a square finds what borders it: streets, canals, water and entrances, not open land"] = function(t)
         local z = newSquareZone()
         logic.unpack(z)

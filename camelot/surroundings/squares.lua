@@ -1206,6 +1206,15 @@ local function mouthFound(m, x, y)
     return { label = m.spoken or m.label, class = m.class, rise = m.rise, d = d, dir = dir, mouth = m }
 end
 
+-- A mouth of the region's own name that is no climb: another piece of the same place (the Temple
+-- of the Moon's sunken centre, 2.7 yd below the ring at its door, both the room's floor: "Temple
+-- of the Moon to the north" while in the temple, the user 2026-11-03: "the room part is sunken
+-- but that requires no extra navigational effort", the drop edge warns). Left out of the place
+-- line and the "near" lines.
+local function sameAsRegion(region, m)
+    return m.label == region.label and not m.climb
+end
+
 -- yd; the opening of the flight just left lies at most this far from where the player stepped off
 logic.LEAVE_NEAR = 12
 
@@ -1233,7 +1242,7 @@ function logic.aroundItems(region, x, y, opts)
         end
     end
     for _, m in ipairs(region.mouths) do
-        if (opts.classes == nil or opts.classes[m.class]) and m ~= left
+        if (opts.classes == nil or opts.classes[m.class]) and m ~= left and not sameAsRegion(region, m)
             and not (opts.leading and m.class == "way" and not isSquareMouth(opts.zone, m)
                 and not logic.CLIMBS[mouthKind(opts.zone, m)] and not logic.leadsOn(opts.zone, m, region)) then
             found[#found + 1] = mouthFound(m, x, y)
@@ -1256,7 +1265,8 @@ function logic.approaching(region, x, y, reach, said, maxDirs)
         end
     end
     for _, m in ipairs(region.mouths) do
-        if not said[m] and not labels[m.label] and m.class ~= "entrance" and m.class ~= "room" then
+        if not said[m] and not labels[m.label] and m.class ~= "entrance" and m.class ~= "room"
+            and not sameAsRegion(region, m) then
             local f = mouthFound(m, x, y)
             if f.d <= reach then
                 said[m] = true
