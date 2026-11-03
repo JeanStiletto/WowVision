@@ -33,6 +33,128 @@ module:registerCommand({
     end,
 })
 
+-- Testing the dropdown reader on a menu long enough to scroll, which the
+-- game's own scrolling menus (Group Finder, Delves, Guild Control) need a
+-- high character for: a real Blizzard context menu in scroll mode with a
+-- title, checkboxes, radio buttons, N buttons (default 60) and a scrolling
+-- submenu at the end; entries 1 and 50 and the submenu row have tooltips.
+-- Custom rows: a level range (two edit boxes), a row with a check button
+-- and a button, and a voice-style row with a button and a slider. A pick
+-- prints what was picked.
+module:registerCommand({
+    name = "bigmenu",
+    description = "Open a long scrolling test menu (optional number of entries)",
+    func = function(args)
+        if MenuUtil == nil or MenuUtil.CreateContextMenu == nil then
+            print("WowVision test menu: this client has no menu system")
+            return
+        end
+        local count = tonumber(args) or 60
+        -- "/wv bigmenu dump": the reader's view of the menu (/wv gdrop) a second
+        -- after it opens, since a command cannot be typed while it has the keys
+        if args == "dump" then
+            C_Timer.After(1, function()
+                WowVision:SlashCommand("gdrop")
+            end)
+        end
+        local checked = {}
+        local radio = 1
+        MenuUtil.CreateContextMenu(nil, function(_, root)
+            root:SetTag("MENU_WOWVISION_TEST")
+            root:SetScrollMode(200)
+            root:CreateTitle("WowVision test menu")
+            for i = 1, 3 do
+                root:CreateCheckbox("Checkbox " .. i, function()
+                    return checked[i] == true
+                end, function()
+                    checked[i] = not checked[i]
+                    print("Checkbox " .. i .. (checked[i] and " checked" or " unchecked"))
+                end)
+            end
+            for i = 1, 3 do
+                root:CreateRadio("Radio " .. i, function()
+                    return radio == i
+                end, function()
+                    radio = i
+                    print("Radio " .. i .. " selected")
+                end)
+            end
+            -- custom rows: Blizzard's level range (two edit boxes) and a row
+            -- with a check button and a button of its own
+            root:CreateTitle("Level range")
+            local levelRange = root:CreateTemplate("LevelRangeFrameTemplate")
+            levelRange:AddInitializer(function(frame)
+                if frame.Reset ~= nil then
+                    frame:Reset()
+                end
+            end)
+            local custom = root:CreateFrame()
+            custom:AddInitializer(function(frame)
+                local check = frame:AttachTemplate("UICheckButtonTemplate")
+                check:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                check:SetScript("OnClick", function(self)
+                    print("Inner checkbox " .. (self:GetChecked() and "checked" or "unchecked"))
+                end)
+                local button = frame:AttachTemplate("UIPanelButtonTemplate")
+                button:SetSize(100, 22)
+                button:SetPoint("LEFT", check, "RIGHT", 4, 0)
+                button:SetText("Inner button")
+                button:SetScript("OnClick", function()
+                    print("Inner button clicked")
+                end)
+                return 160, 26
+            end)
+            -- a row shaped like the unit menu's voice volume rows: a toggle
+            -- button and a slider (0 to 100) with a label of its own
+            local volume = root:CreateFrame()
+            volume:AddInitializer(function(frame)
+                local mute = frame:AttachTemplate("UIPanelButtonTemplate")
+                mute:SetSize(60, 20)
+                mute:SetPoint("LEFT", frame, "LEFT", 0, 0)
+                mute:SetText("Test mute")
+                mute:SetScript("OnClick", function()
+                    print("Test mute clicked")
+                end)
+                local slider = frame:AttachTemplate("UISliderTemplate")
+                slider:SetSize(120, 17)
+                slider:SetPoint("LEFT", mute, "RIGHT", 6, 0)
+                slider:SetMinMaxValues(0, 100)
+                slider:SetValueStep(1)
+                if slider.SetObeyStepOnDrag ~= nil then
+                    slider:SetObeyStepOnDrag(true)
+                end
+                if slider.Label == nil then
+                    slider.Label = slider:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+                    slider.Label:SetPoint("BOTTOM", slider, "TOP", 0, 0)
+                end
+                slider.Label:SetText("Test volume")
+                slider:SetValue(50)
+                return 200, 30
+            end)
+            root:CreateTitle("Entries")
+            for i = 1, count do
+                local entry = root:CreateButton("Entry " .. i, function()
+                    print("Picked entry " .. i)
+                end)
+                -- a tooltip on the first entry and on one far down (the tooltip key)
+                if (i == 1 or i == 50) and entry.SetTitleAndTextTooltip ~= nil then
+                    entry:SetTitleAndTextTooltip("Entry " .. i, "Tooltip text of entry " .. i)
+                end
+            end
+            local submenu = root:CreateButton("Submenu")
+            if submenu.SetTitleAndTextTooltip ~= nil then
+                submenu:SetTitleAndTextTooltip("Submenu", "Tooltip text of the submenu row")
+            end
+            submenu:SetScrollMode(200)
+            for i = 1, 30 do
+                submenu:CreateButton("Sub entry " .. i, function()
+                    print("Picked sub entry " .. i)
+                end)
+            end
+        end)
+    end,
+})
+
 -- Chasing controller problems with testers: the pad log (core/ui/input/
 -- pad.lua) runs by itself with the gamepad interface on; this starts it
 -- afresh.

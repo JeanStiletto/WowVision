@@ -362,6 +362,52 @@ WowVision.buffers.AuraBuffer.scanner = {
         return scanLines[index]
     end,
 }
+WowVision.testing.testRunner:addSuite("AuraBufferFilters", {
+    ["each client is offered the filters it knows, negated its own way"] = function(t)
+        local AuraBuffer = WowVision.buffers.AuraBuffer
+        local function tokens(offered)
+            local out = {}
+            for _, filter in ipairs(offered) do
+                tinsert(out, filter.token .. (filter.notToken and ("=" .. filter.notToken) or ""))
+            end
+            return table.concat(out, " ")
+        end
+        -- Retail and WoW: Forever: every filter, "!" negation
+        local retail = {
+            "HELPFUL", "HARMFUL", "PLAYER", "RAID", "CANCELABLE", "INCLUDE_NAME_PLATE_ONLY", "MAW",
+            "EXTERNAL_DEFENSIVE", "CROWD_CONTROL", "RAID_IN_COMBAT", "RAID_PLAYER_DISPELLABLE",
+            "BIG_DEFENSIVE", "IMPORTANT", "DISPELLABLE",
+        }
+        t:assertEqual(
+            tokens(AuraBuffer.clientFilters(retail, "!")),
+            "PLAYER=!PLAYER RAID=!RAID CANCELABLE=!CANCELABLE CROWD_CONTROL=!CROWD_CONTROL "
+                .. "RAID_PLAYER_DISPELLABLE=!RAID_PLAYER_DISPELLABLE DISPELLABLE=!DISPELLABLE "
+                .. "EXTERNAL_DEFENSIVE=!EXTERNAL_DEFENSIVE BIG_DEFENSIVE=!BIG_DEFENSIVE "
+                .. "RAID_IN_COMBAT=!RAID_IN_COMBAT IMPORTANT=!IMPORTANT"
+        )
+        -- TBC Anniversary: three filters, only Cancelable has a negative
+        local tbc = { "HELPFUL", "HARMFUL", "RAID", "INCLUDE_NAME_PLATE_ONLY", "PLAYER", "CANCELABLE", "NOT_CANCELABLE", "MAW" }
+        t:assertEqual(tokens(AuraBuffer.clientFilters(tbc, nil)), "PLAYER RAID CANCELABLE=NOT_CANCELABLE")
+        t:assertEqual(#AuraBuffer.clientFilters(nil, nil), 0, "no AuraUtil: no filters")
+    end,
+
+    ["the filter string joins the source with every Only and Not"] = function(t)
+        local AuraBuffer = WowVision.buffers.AuraBuffer
+        local offered = AuraBuffer.clientFilters({ "PLAYER", "CANCELABLE", "CROWD_CONTROL" }, "!")
+        t:assertEqual(AuraBuffer.buildFilter("HARMFUL", offered, {}), "HARMFUL")
+        t:assertEqual(
+            AuraBuffer.buildFilter("HARMFUL", offered, { PLAYER = "not", CROWD_CONTROL = "only", CANCELABLE = "any" }),
+            "HARMFUL|!PLAYER|CROWD_CONTROL"
+        )
+        -- Not where the client has no negative is left out
+        local old = AuraBuffer.clientFilters({ "PLAYER", "CANCELABLE", "NOT_CANCELABLE" }, nil)
+        t:assertEqual(
+            AuraBuffer.buildFilter("HELPFUL", old, { PLAYER = "not", CANCELABLE = "not" }),
+            "HELPFUL|NOT_CANCELABLE"
+        )
+    end,
+})
+
 WowVision.testing.testRunner:addSuite("BufferConstruction", {
     ["a static buffer constructs and persists through the root group"] = function(t)
         local db = { items = { _type = "array" } }
@@ -1169,6 +1215,7 @@ loadAddonFile("core/graph/Builder.lua")
 loadAddonFile("core/graph/ControlTypes.lua")
 loadAddonFile("core/graph/nodes.lua")
 loadAddonFile("core/graph/dropdownMenu.lua")
+loadAddonFile("core/graph/dropdownTests.lua")
 loadAddonFile("core/graph/scrollBox.lua")
 loadAddonFile("core/graph/settings.lua")
 loadAddonFile("core/graph/fieldControls.lua")
@@ -1323,6 +1370,7 @@ local parseOnly = {
     "core/chat/module.lua",
     "core/chat/ui.lua",
     "core/ui/tooltip/types/HyperlinkTooltip.lua",
+    "core/ui/tooltip/types/AuraTooltip.lua",
     "mists/auction.lua",
     "tbc/QuestLog.lua",
     "tbc/socketing.lua",
