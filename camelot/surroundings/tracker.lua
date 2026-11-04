@@ -584,11 +584,20 @@ function look(zone, x, y, swimming)
             new = rest
         else
             -- (nothing here explained but by jumps, the data misses something: a rise no jump makes stays a
-            -- candidate, a MISSING step dearer than a jump onto a ledge, so a tie of the two goes to the ledge)
+            -- candidate, a MISSING step dearer than a jump onto a ledge, so a tie of the two goes to the ledge; where
+            -- every candidate rose, nothing to weigh: the same cost on all of them changed no pick, but the walk on
+            -- an upper floor reached so counted as a "switch" at every look, 1265 in Elwynn's walk set)
+            local ledge = false
+            for i = 1, #new do
+                if not new[i].risen then
+                    ledge = true
+                    break
+                end
+            end
             best = nil
             for i = 1, #new do
                 local cand = new[i]
-                if cand.risen then
+                if cand.risen and ledge then
                     cand.cost = cand.cost + tracker.MISSING
                 end
                 if better(cand, best, was) then
