@@ -31,7 +31,7 @@ logic.ZONE_HEADER = { key = true, label = true, map = true, top = true, left = t
 -- after that, the index holds what they said (the user 2026-10-30: memory; Elwynn about 7 MB in LuaJIT with the
 -- inside layer's own). The game drops them (module.lua findZone); the offline tools read them and keep them. The
 -- grid's rows stay: logic.gridRow reads them.
-local FLAT_LISTS = { "floorCells", "floorRooms", "noGround", "structCells", "hallGround", "joins", "lanes",
+local FLAT_LISTS = { "floorCells", "floorRooms", "noGround", "groundSplit", "structCells", "hallGround", "joins", "lanes",
     "laneHeadings", "objects", "exits", "exitFloors", "exitGroups", "climbFeet", "climbTops", "climbAims",
     "noContact", "edges" }
 
@@ -93,7 +93,7 @@ end
 local LAYERS = { { "indoor", "halls" }, { "indoorIn", "inside" } }
 -- per-cell lists: the model's key, the values after row and column, the key in a layer's cells
 local CELL_LISTS = { { "floorCells", 2, "floor" }, { "noGround", 0, "noGround" }, { "structCells", 1, "struct" },
-    { "floorRooms", 2, "rooms" }, { "hallGround", 0, "hallGround" } }
+    { "floorRooms", 2, "rooms" }, { "hallGround", 0, "hallGround" }, { "groundSplit", 2, "groundSplit" } }
 local COPIED = { "noContact", "liquids", "lineFloors", "doorFloors", "waterStructs", "structs", "rooms" }
 local WORDS = { "dirs", "dirsClock", "compass", "axes", "floors", "ofTemplate" }
 

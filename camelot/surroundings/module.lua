@@ -90,6 +90,7 @@ local outdoor = logic.newEntry(ENTRY_OUTDOORS)
 local indoor = logic.newEntry(ENTRY_INDOORS)
 local laneDecided = false -- a centre line decided the last outdoor value (see distanceFor)
 local leftWay = nil -- the way piece the player last stepped off (back onto it only after a few yards)
+local leftClimb = nil -- the ramp or stairs piece the player last stepped off (the same)
 local wasIndoors = nil -- indoors at the last look (nil before the first)
 local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
@@ -331,6 +332,12 @@ outdoor.distanceFor = function(key)
     -- a second, Stormwind 2026-09-29)
     if logic.isWayKey(key) and logic.isWayKey(outdoor.current) and key ~= outdoor.current then
         return key == leftWay and ENTRY_NARROW or 0
+    end
+    -- onto a ramp or stairs: at once, so a short flight is heard while one is on it (the Temple of the Moon's way up,
+    -- flights of 3 yd: stepped onto and off before its line came, walk 2026-11-04 08:39:31, bug 165); back onto the
+    -- flight just left only after a few yards (the floor at a stair's foot flips)
+    if logic.CLIMBS[there] and key ~= outdoor.current then
+        return key == leftClimb and ENTRY_NARROW or 0
     end
     if logic.NARROW[logic.kind(zone, logic.keyPlace(key))] then
         return ENTRY_NARROW
@@ -1459,6 +1466,7 @@ local function checkPlace(z, x, y, forced)
     outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y, z._index.floor or 0) then
         leftWay = logic.isWayKey(previous) and previous or nil
+        leftClimb = previous and logic.CLIMBS[logic.kind(z, logic.keyPlace(previous))] and previous or nil
         -- off a way onto a square: at the way's end the square's description, before its end (a
         -- step off it sideways) where the way is (logic.leftAtEnd). A way left from another floor piece than the
         -- square's ends where its piece meets the square's: off its end (the road to Stormwind City on the approach

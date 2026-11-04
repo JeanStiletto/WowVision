@@ -60,6 +60,13 @@ tracker.PRIOR = 8.0        -- the cost a surface at another height starts with a
                            -- 2026-10-19 16:30 after a /reload in the common room: the ground and the upper floor both
                            -- started at 0, the furnished ground paid missing steps where the empty upper floor paid
                            -- nothing, and the upper floor won after 4 yd, "sure".
+tracker.RISE = 4.0         -- yd: a move up onto a surface more than this over the candidate it starts from, that no steps
+                           -- explain, is none a player makes (no jump climbs that high): such a surface is no candidate
+                           -- while the look has another explanation than a jump (a walk, a fall, a missing step); where
+                           -- nothing else explains it (the data misses a climb), it costs JUMP as before. The Temple of
+                           -- the Moon, walk 2026-11-04 08:39:34, bug 163: the gallery 20 yd over the hall floor was a
+                           -- candidate at JUMP under the whole ring, every fall of the player's real chain made it
+                           -- cheaper against it, and it won after a 1.5 yd drop and a 1.7 yd ledge; 0 = off
 tracker.DETOUR = 1.5       -- the cost of a move at one height on the SAME piece that no step chain explains (a table or
                            -- a bench cuts the ground's walk graph, the way round it is longer than the hop budget);
                            -- MISSING by default (a sweep against the truth decides, 2026-10-19 afternoon)
@@ -92,7 +99,7 @@ tracker.SPAN = 48.0        -- yd: the kept columns are let go and kept afresh on
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
     tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") ~= "0"
-    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH" }) do
+    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH", "RISE" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -166,6 +173,17 @@ local function column(S, r, c, cache)
     return out or nil
 end
 tracker.column = column
+
+-- Whether the candidate `cand` is a better floor than `best` (nil: none yet), `was` the floor piece held: the cheaper;
+-- of one cost the one reached from the floor held (CHAIN), then the nearest column's, then the piece held.
+local function better(cand, best, was)
+    if best == nil or cand.cost < best.cost then
+        return true
+    end
+    return cand.cost == best.cost and ((cand.cont and not best.cont)
+        or (cand.cont == best.cont and (cand.off < best.off - 0.01
+        or (cand.off <= best.off + 0.01 and cand.s.piece == was and best.s.piece ~= was))))
+end
 
 -- The surface a step from `s` leads to in the column (r, c): the one nearest in height within STEP_DZ.
 local function stepTo(S, s, r, c, cache)
@@ -471,6 +489,7 @@ function look(zone, x, y, swimming)
         end
         if local_ then
         local cost, fell, from, step = 0, false, nil, 0
+        local risen = false   -- (the cheapest way here is a rise over RISE: see below)
         if priorZ and (b.z > priorZ + tracker.LEVEL or b.z < priorZ - tracker.LEVEL) then
             cost = tracker.PRIOR
         end
@@ -506,10 +525,14 @@ function look(zone, x, y, swimming)
                     allJump = false
                 end
                 local v = a.cost + t
+                -- (a rise over RISE, or a walk on from a candidate that rose so: kept apart, any other way here is
+                -- taken first; the chain of a rise stays one, so a fall the real chain pays never makes it the best)
+                local high = tracker.RISE ~= 0 and ((t >= tracker.JUMP and dz > tracker.RISE) or a.risen == true)
                 -- (of two ways equally cheap, a fall from the floor held explains more than a walk on a
                 -- floor long left: the guidance back onto a climb needs the floor fallen from)
-                if cost == nil or v < cost or (v == cost and t == tracker.FALL and not fell and a.s.piece == was) then
-                    cost, fell, from, step = v, t == tracker.FALL, a.s.piece, t
+                if cost == nil or (risen and not high) or (high == risen and (v < cost
+                        or (v == cost and t == tracker.FALL and not fell and a.s.piece == was))) then
+                    cost, fell, from, step, risen = v, t == tracker.FALL, a.s.piece, t, high
                     if DEBUG == "3" then
                         io.stderr:write(string.format("  cand %.1f/%d from %.1f/%d cost %.1f at %.1f %.1f: t %.1f -> %.1f\n",
                             b.z, b.piece, a.s.z, a.s.piece, a.cost, a.x, a.y, t, v))
@@ -528,14 +551,50 @@ function look(zone, x, y, swimming)
         if b.piece == was and off <= tracker.KEEP * tracker.KEEP then
             off = 0
         end
-        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off, step = step }
+        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off, step = step, risen = risen }
         cand.cont = tracker.CHAIN == 1 and from == was
         new[#new + 1] = cand
-        if best == nil or cost < best.cost or (cost == best.cost and ((cand.cont and not best.cont)
-            or (cand.cont == best.cont and (cand.off < best.off - 0.01
-            or (cand.off <= best.off + 0.01 and b.piece == was and best.s.piece ~= was))))) then
+        if better(cand, best, was) then
             best = cand
         end
+        end
+    end
+    -- (RISE: the surfaces reached only by a rise no jump makes are dropped while another candidate here is explained
+    -- by a walk, a fall or a missing step; the best is chosen again among the rest)
+    if best and best.risen ~= nil and tracker.RISE ~= 0 then
+        local explained = false
+        for i = 1, #new do
+            if not new[i].risen and new[i].step < tracker.JUMP then
+                explained = true
+                break
+            end
+        end
+        if explained then
+            local rest = {}
+            best = nil
+            for i = 1, #new do
+                local cand = new[i]
+                if not cand.risen then
+                    rest[#rest + 1] = cand
+                    if better(cand, best, was) then
+                        best = cand
+                    end
+                end
+            end
+            new = rest
+        else
+            -- (nothing here explained but by jumps, the data misses something: a rise no jump makes stays a
+            -- candidate, a MISSING step dearer than a jump onto a ledge, so a tie of the two goes to the ledge)
+            best = nil
+            for i = 1, #new do
+                local cand = new[i]
+                if cand.risen then
+                    cand.cost = cand.cost + tracker.MISSING
+                end
+                if better(cand, best, was) then
+                    best = cand
+                end
+            end
         end
     end
     if best == nil then

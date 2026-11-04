@@ -392,9 +392,24 @@ function logic.forgetRegions(zone)
     ix.regionOf, ix.regionsByFloor, ix.regionFloor = {}, nil, ix.floor or 0
 end
 
--- The cell value at a world position, plus row and column.
+-- The ground's name per sub-square of a cell (the export's ground_seams): SEAM_SUBS per side, bit 4 * sub-row +
+-- sub-column of the mask from the cell's north-west corner.
+logic.SEAM_SUBS = 4
+
+-- The cell value at a world position, plus row and column. On the ground, a cell holding walked terrain and a city's
+-- floor (zone.groundSplit) gives the other part's name in its sub-squares: the shore beside a square says the shore.
 function logic.valueAt(zone, x, y)
     local r, c = logic.cellOf(zone, x, y)
+    local ix = zone._index
+    local split = ix and (ix.floor or 0) == 0 and ix.groundSplit and ix.groundSplit[r * zone.cols + c]
+    if split then
+        local S = logic.SEAM_SUBS
+        local sr = math.min(S - 1, math.max(0, math.floor(((zone.top - x) / zone.cell - r) * S)))
+        local sc = math.min(S - 1, math.max(0, math.floor(((zone.left - y) / zone.cell - c) * S)))
+        if math.floor(split[2] / 2 ^ (sr * S + sc)) % 2 == 1 then
+            return split[1], r, c
+        end
+    end
     return logic.valueAtCell(zone, r, c), r, c
 end
 
@@ -964,6 +979,12 @@ function logic.unpack(zone, locale)
     ix.noGround = {}
     eachRecord(zone.noGround, 2, function(r, c)
         ix.noGround[r * zone.cols + c] = true
+    end)
+    -- the ground's other name in a cell holding walked terrain and a city's floor (groundSplit: row, col, value,
+    -- the mask of its sub-squares; logic.valueAt)
+    ix.groundSplit = {}
+    eachRecord(zone.groundSplit, 4, function(r, c, value, mask)
+        ix.groundSplit[r * zone.cols + c] = { value, mask }
     end)
     -- (joinPoints: per pair of pieces the points where they meet, x, y flat, both ways)
     ix.joinAt, ix.joined, ix.joinPoints = {}, {}, {}

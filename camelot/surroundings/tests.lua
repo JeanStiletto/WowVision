@@ -294,6 +294,45 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(z._index.fellFrom, 2)
     end,
 
+    ["the walk-graph tracker keeps the floor below over a gallery 20 yd up that only a jump reaches (RISE, bug 163)"] = function(t)
+        -- rows = x - 60, cols = y - 40. The ground (piece 0) at 0 on x 90 to 100, a dip at -2 on x 85 to 89 (a fall
+        -- into it), a ledge out of it at -0.3 on x 70 to 84 (1.7 yd up: no step, a jump); a gallery (piece 2) at 20
+        -- over x 70 to 94 on y 48 to 52, not over the start (the Temple of the Moon, walk 2026-11-04 08:39: fall +
+        -- jump on the real chain cost more than the one jump onto the gallery, which won)
+        local recs = {}
+        for x = 70, 100 do
+            for y = 44, 56 do
+                local h = x >= 90 and 0 or (x >= 85 and -2 or -0.3)
+                recs[#recs + 1] = { r = x - 60, c = y - 40, z = h, piece = 0 }
+                if y >= 48 and y <= 52 and x <= 94 then
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = 20, piece = 2 }
+                end
+            end
+        end
+        local rows = surfaceRows(recs)
+        local function walk(rise)
+            local was = logic.tracker.RISE
+            logic.tracker.RISE = rise
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "floor", "gallery" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = rows }
+            logic.setFloor(z, 0)
+            local floor = logic.updateFloor(z, 99, 50.5, false)
+            for x = 97, 71, -2 do
+                floor = logic.updateFloor(z, x, 50.5, false)
+            end
+            logic.tracker.RISE = was
+            return floor
+        end
+        t:assertEqual(walk(0), 2)   -- (without the rule the gallery won, as in the walk)
+        t:assertEqual(walk(logic.tracker.RISE), 0)
+    end,
+
     ["a block bucket gives a cell the items a bucket per cell gave it, the keys past the first column too"] = function(t)
         -- a grid of 10 columns; an item's box rows 2 to 3, columns -1 to 1: per cell it was keyed r * 10 + c, so
         -- its cells in column -1 had the keys of the last column one row up (19, 29)
@@ -1385,6 +1424,21 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.valueAt(z, 105, 30), 0)    -- north of the data
         t:assertEqual(logic.covers(z, 95, 55), true)
         t:assertEqual(logic.covers(z, 95, 70), false)
+    end,
+
+    ["on the ground, a split cell gives its other part's name in that part's sub-squares"] = function(t)
+        local z = newZone()
+        -- cell (0, 0) is forest (10000); its sub-squares 0 (north-west corner) and 3 (north-east) are the shore
+        z.groundSplit = { 0, 0, 21090, 1 + 8 }
+        logic.unpack(z)
+        t:assertEqual(logic.valueAt(z, 99, 59), 21090)   -- sub-row 0, sub-column 0
+        t:assertEqual(logic.valueAt(z, 99, 51), 21090)   -- sub-row 0, sub-column 3
+        t:assertEqual(logic.valueAt(z, 99, 56), 10000)   -- sub-row 0, sub-column 1
+        t:assertEqual(logic.valueAt(z, 95, 55), 10000)   -- the middle
+        t:assertEqual(logic.valueAtCell(z, 0, 0), 10000) -- the cell itself keeps the larger part's name
+        -- up on another floor piece the ground's split is not looked at
+        logic.setFloor(z, 3)
+        t:assertNotEqual(logic.valueAt(z, 99, 59), 21090)
     end,
 
     ["a value speaks its place and direction"] = function(t)
