@@ -55,6 +55,7 @@
     - [Slash Commands](./user/en/reference/commands.md)
     - [Features by Game Version](./user/en/reference/versions.md)
     - [Glossary and FAQ](./user/en/reference/glossary.md)
+- [Credits](./user/en/credits.md)
 
 # Benutzerhandbuch (Deutsch)
 
@@ -108,6 +109,7 @@
     - [Slash-Befehle](./user/de/reference/commands.md)
     - [Funktionen nach Spielversion](./user/de/reference/versions.md)
     - [Glossar und FAQ](./user/de/reference/glossary.md)
+- [Danksagung](./user/de/credits.md)
 
 # Developer Guide
 
