@@ -106,6 +106,76 @@ local function addGeneralBufferLines(db)
     end
 end
 
+-- Soft targeting arcs and ranges used to default to the game's own values.
+-- Those saved defaults go, so the reconcile that follows fills in the new
+-- widest and longest ones. The account store holds them too.
+local function dropOldSoftTargetDefaults(db)
+    local targeting = db.submodules and db.submodules.targeting
+    local settings = targeting and targeting.settings
+    if settings == nil then
+        return
+    end
+    for _, key in ipairs({ "softEnemy", "softFriend", "softInteract" }) do
+        if settings[key .. "Arc"] == "game" then
+            settings[key .. "Arc"] = nil
+        end
+        if settings[key .. "Range"] == 0 then
+            settings[key .. "Range"] = nil
+        end
+    end
+end
+
+-- The arcs and ranges moved from the module's settings onto its soft target
+-- alerts. Anything left of them goes along; the reconcile that follows fills
+-- in the rest.
+local function moveSoftTargetSettings(db)
+    local targeting = db.submodules and db.submodules.targeting
+    local settings = targeting and targeting.settings
+    if settings == nil then
+        return
+    end
+    if targeting.alerts == nil then
+        targeting.alerts = {}
+    end
+    for _, key in ipairs({ "softEnemy", "softFriend", "softInteract" }) do
+        local alert = targeting.alerts[key]
+        if alert == nil then
+            alert = {}
+            targeting.alerts[key] = alert
+        end
+        if settings[key .. "Arc"] ~= nil then
+            alert.arc = settings[key .. "Arc"]
+            settings[key .. "Arc"] = nil
+        end
+        if settings[key .. "Range"] ~= nil then
+            alert.range = settings[key .. "Range"]
+            settings[key .. "Range"] = nil
+        end
+    end
+end
+
+-- The Range module lost its menu entry, and with it the Enabled switch: only
+-- its alert is left to switch. A character who had turned the module off keeps
+-- it off that way, on this character alone, as the module's switch was.
+local function moveRangeSwitchToAlert(db)
+    local range = db.submodules and db.submodules.range
+    if range == nil or range.enabled ~= false then
+        return
+    end
+    range.enabled = true
+    if range.alerts == nil then
+        range.alerts = {}
+    end
+    if range.alerts.rangeChange == nil then
+        range.alerts.rangeChange = {}
+    end
+    range.alerts.rangeChange.enabled = false
+    if range.alertScopes == nil then
+        range.alertScopes = {}
+    end
+    range.alertScopes.rangeChange = "char"
+end
+
 local migrations = {
     {
         version = 1,
@@ -130,6 +200,18 @@ local migrations = {
     {
         version = 3,
         migrate = addGeneralBufferLines,
+    },
+    {
+        version = 4,
+        migrate = dropOldSoftTargetDefaults,
+    },
+    {
+        version = 5,
+        migrate = moveSoftTargetSettings,
+    },
+    {
+        version = 6,
+        migrate = moveRangeSwitchToAlert,
     },
 }
 
@@ -163,6 +245,14 @@ local globalMigrations = {
         version = 2,
         migrate = addGeneralBufferLines,
     },
+    {
+        version = 3,
+        migrate = dropOldSoftTargetDefaults,
+    },
+    {
+        version = 4,
+        migrate = moveSoftTargetSettings,
+    },
 }
 
 local GLOBAL_DB_VERSION = globalMigrations[#globalMigrations].version
@@ -178,6 +268,39 @@ function dbManager:beginReconcileGlobal(default, db)
     end
     db._version = GLOBAL_DB_VERSION
     return dbManager:reconcile(default, db)
+end
+
+-- Key bindings live at the top of each store, outside the module tree, and
+-- are account-wide unless this character chose otherwise. Bindings joined the
+-- account store later than settings, so they carry their own seeding stamp:
+-- the first character to get here fills the account from its own keys. A
+-- character's own copy stays behind either way. Returns the store to bind.
+function dbManager:resolveBindings(defaults, charDB, globalDB)
+    charDB.bindings = dbManager:reconcile(defaults, charDB.bindings or {})
+    if globalDB._bindingsSeeded then
+        globalDB.bindings = dbManager:reconcile(defaults, globalDB.bindings or {})
+    else
+        globalDB.bindings = WowVision.classes.deepCopy(charDB.bindings)
+        globalDB._bindingsSeeded = true
+    end
+    if charDB.bindingScope == "char" then
+        return charDB.bindings
+    end
+    return globalDB.bindings
+end
+
+-- Same directions as classes.setFieldScope: to global JOINS the account's
+-- keys, to character FORKS the current ones. Returns the store to bind.
+function dbManager:setBindingScope(charDB, globalDB, scope)
+    if scope == "char" then
+        if charDB.bindingScope ~= "char" then
+            charDB.bindings = WowVision.classes.deepCopy(globalDB.bindings)
+            charDB.bindingScope = "char"
+        end
+        return charDB.bindings
+    end
+    charDB.bindingScope = nil
+    return globalDB.bindings
 end
 
 WowVision.dbManager = dbManager

@@ -10,6 +10,8 @@
 tinsert = table.insert
 tremove = table.remove
 unpack = unpack or table.unpack
+-- WoW's Lua 5.1 has math.atan2 (WowNav's fishing code uses it); Lua 5.3+ folded it into math.atan.
+math.atan2 = math.atan2 or math.atan
 
 -- WoW API stand-in: records the run script on the fake frame.
 function ExecuteFrameScript(frame, script)
@@ -87,6 +89,7 @@ loadAddonFile("camelot/wownav/engine/TargetCatalog.lua")
 loadAddonFile("camelot/wownav/engine/TargetResolver.lua")
 loadAddonFile("camelot/wownav/engine/DockNavigation.lua")
 loadAddonFile("camelot/wownav/engine/TransitActivation.lua")
+loadAddonFile("camelot/wownav/engine/FishingNavigation.lua")
 do
     local base = "mapdata/WowNavPacked/"
     local xml = io.open(base .. "data.xml", "r")
@@ -102,6 +105,7 @@ loadAddonFile("camelot/wownav/text.lua")
 loadAddonFile("camelot/wownav/catalog.lua")
 loadAddonFile("camelot/wownav/route.lua")
 loadAddonFile("camelot/wownav/dock.lua")
+loadAddonFile("camelot/wownav/fishing.lua")
 loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
@@ -303,6 +307,51 @@ loadAddonFile("core/objects/types/tests.lua")
 -- catches recursion/typo failures the parse check cannot.
 loadAddonFile("core/alerts/alerts.lua")
 loadAddonFile("core/alerts/outputs.lua")
+
+-- The real Module, for what it does with the stores. Its frames, bindings
+-- and profiler are the game's side: stand-ins, in place only while Module.lua
+-- loads and while a module is built, since the tests run long after this.
+do
+    local function libStub()
+        return {
+            NewLocale = function()
+                return {}
+            end,
+            GetLocale = function()
+                return {}
+            end,
+        }
+    end
+    local function frame()
+        return { SetScript = function() end }
+    end
+    local standIn = {
+        new = function()
+            return {
+                getDefaultDB = function()
+                    return {}
+                end,
+            }
+        end,
+    }
+    local function withStandIns(body, ...)
+        local savedLibStub, savedCreateFrame = LibStub, CreateFrame
+        local savedInput, savedProfiler = WowVision.input, WowVision.Profiler
+        LibStub, CreateFrame = libStub, frame
+        WowVision.input, WowVision.Profiler = { BindingSet = standIn }, standIn
+        body(...)
+        LibStub, CreateFrame = savedLibStub, savedCreateFrame
+        WowVision.input, WowVision.Profiler = savedInput, savedProfiler
+    end
+    withStandIns(loadAddonFile, "core/module/Module.lua")
+    local Module = WowVision.Module
+    local initialize = Module.initialize
+    function Module:initialize(key)
+        withStandIns(initialize, self, key)
+    end
+    loadAddonFile("core/module/alertScopeTests.lua")
+end
+
 -- The buffer family on the new class system: construction and db round trip.
 loadAddonFile("core/ViewList.lua")
 loadAddonFile("core/buffers/Buffer.lua")
@@ -352,16 +401,83 @@ C_UnitAuras.GetAuraDataByIndex = function(unit, index, filter)
 end
 loadAddonFile("core/buffers/types/AuraBuffer.lua")
 local scanLines = {}
+local scanName = nil
+local fakeDispelTypes = {}
 WowVision.buffers.AuraBuffer.scanner = {
     fill = function(unit, index, filter)
         local aura = fakeIndexRead(unit, index, filter)
         scanLines = aura and fakeTooltips[aura.name] or {}
+        scanName = aura and aura.name or nil
         return #scanLines
     end,
     line = function(index)
         return scanLines[index]
     end,
+    right = function(index)
+        return index == 1 and fakeDispelTypes[scanName] or nil
+    end,
 }
+WowVision.testing.testRunner:addSuite("AuraBufferStacks", {
+    ["under restriction the player's stacks come from Blizzard's buttons"] = function(t)
+        local AuraBuffer = WowVision.buffers.AuraBuffer
+        local countShown = true
+        local count = {
+            IsShown = function()
+                return countShown
+            end,
+            GetText = function()
+                return "3"
+            end,
+        }
+        local button = {
+            hasValidInfo = true,
+            unit = "player",
+            Count = count,
+            buttonInfo = { auraType = "Buff", index = 1 },
+        }
+        local savedBuff = BuffFrame
+        local function read(unit, filter)
+            local item = AuraBuffer.AuraItem:new({ unit = unit, filter = filter, index = 1, harmful = false })
+            return item:getFocusString()
+        end
+        BuffFrame = { auraFrames = { { hasValidInfo = false }, button } }
+        restrictedUnits.player = true
+        local body = function()
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 3 stacks, 59 minutes remaining")
+
+            -- A filter renumbers the positions: another aura's count must not be said
+            t:assertEqual(read("player", "HELPFUL|PLAYER"), "Mark of the Wild, 59 minutes remaining")
+
+            countShown = false
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+            countShown = true
+
+            -- Another aura's button, a weapon enchant, another unit: none of them count
+            button.buttonInfo = { auraType = "Buff", index = 2 }
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+            button.buttonInfo = { auraType = "TempEnchant", index = 1 }
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+            button.buttonInfo = { auraType = "Buff", index = 1 }
+            button.unit = "vehicle"
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+            button.unit = "player"
+
+            -- A button that throws costs the stacks, not the line
+            button.Count = {}
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+
+            BuffFrame = nil
+            t:assertEqual(read("player", "HELPFUL"), "Mark of the Wild, 59 minutes remaining")
+        end
+        local ok, err = pcall(body)
+        restrictedUnits.player = nil
+        BuffFrame = savedBuff
+        if not ok then
+            error(err, 0)
+        end
+    end,
+})
+
 WowVision.testing.testRunner:addSuite("AuraBufferFilters", {
     ["each client is offered the filters it knows, negated its own way"] = function(t)
         local AuraBuffer = WowVision.buffers.AuraBuffer
@@ -409,6 +525,34 @@ WowVision.testing.testRunner:addSuite("AuraBufferFilters", {
 })
 
 WowVision.testing.testRunner:addSuite("BufferConstruction", {
+    ["Retail and Forever offer no tracked buffer, and saved ones still load"] = function(t)
+        local groupTypes = WowVision.buffers.groupTypes
+        local saved = {}
+        for i, entry in ipairs(groupTypes) do
+            saved[i] = entry
+        end
+        local function offered(key)
+            for _, entry in ipairs(WowVision.buffers.BufferGroup:getField("items").availableTypes) do
+                if entry.key == key then
+                    return true
+                end
+            end
+            return false
+        end
+        t:assertTrue(offered("Tracked"))
+        loadAddonFile("retail/buffers.lua")
+        local tracked, static = offered("Tracked"), offered("Static")
+        for i = #groupTypes, 1, -1 do
+            groupTypes[i] = nil
+        end
+        for i, entry in ipairs(saved) do
+            groupTypes[i] = entry
+        end
+        t:assertEqual(tracked, false)
+        t:assertTrue(static)
+        t:assertNotNil(WowVision.buffers:create("Tracked", { label = "Saved" }))
+    end,
+
     ["a static buffer constructs and persists through the root group"] = function(t)
         local db = { items = { _type = "array" } }
         local root = WowVision.buffers.RootBufferGroup:new(db)
@@ -518,6 +662,17 @@ WowVision.testing.testRunner:addSuite("BufferConstruction", {
         t:assertEqual(#buffer.items, 3)
         t:assertEqual(buffer.items[1]:getFocusString(), "Sunfire, Burns.")
         t:assertEqual(buffer.items[2]:getFocusString(), "Mark of the Wild, 59 minutes remaining, of 3600 seconds")
+
+        -- A debuff's dispel type comes from the first line's right side; a
+        -- buff's is left out, as in the index read
+        fakeDispelTypes.Sunfire = "Magic"
+        fakeDispelTypes["Mark of the Wild"] = "Magic"
+        t:assertEqual(buffer.items[1]:getFocusString(), "Sunfire, Burns., Magic")
+        t:assertEqual(buffer.items[2]:getFocusString(), "Mark of the Wild, 59 minutes remaining, of 3600 seconds")
+        fakeDispelTypes.Sunfire = ""
+        t:assertEqual(buffer.items[1]:getFocusString(), "Sunfire, Burns.")
+        fakeDispelTypes.Sunfire = nil
+        fakeDispelTypes["Mark of the Wild"] = nil
         restrictedUnits.target = nil
         buffer:rebuild()
 
@@ -1407,6 +1562,7 @@ local parseOnly = {
     "core/WowVision.lua",
     "core/module/Module.lua",
     "core/alerts/alerts.lua",
+    "retail/targeting.lua",
 }
 for _, path in ipairs(parseOnly) do
     local chunk, err = loadfile(path)

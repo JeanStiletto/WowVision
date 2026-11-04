@@ -2,6 +2,8 @@
 ..\FrameXML\UI.xsd">
 
   <Script file="speech.lua" />
+  <Script file="buffers.lua" />
+  <Script file="targeting.lua" />
   <Script file="QuestLog.lua" />
   <Script file="cooldownManager.lua" />
   <Include file="monitors/modules.xml" />
@@ -32,6 +34,8 @@
        Forever. -->
   <Script file="communities.lua" />
   <Script file="guildControl.lua" />
+  <!-- The group finder (PVEFrame): the tabs and the Dungeon Finder, follower dungeons included. -->
+  <Script file="groupFinder.lua" />
   <Include file="containers/modules.xml" />
   <Include file="groupHealth/modules.xml" />
 

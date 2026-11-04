@@ -401,7 +401,7 @@ local function onLuaError(message)
         lastSpokenError = message
         lastSpokenAt = GetTime()
         pcall(function()
-            alert:fire({ text = "Lua error: " .. message })
+            alert:fire({ text = L["Lua error"] .. ": " .. message })
         end)
     end
     inHandler = false
