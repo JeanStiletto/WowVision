@@ -104,6 +104,7 @@ end
 loadAddonFile("camelot/wownav/text.lua")
 loadAddonFile("camelot/wownav/catalog.lua")
 loadAddonFile("camelot/wownav/route.lua")
+loadAddonFile("camelot/wownav/trace.lua")
 loadAddonFile("camelot/wownav/dock.lua")
 loadAddonFile("camelot/wownav/fishing.lua")
 loadAddonFile("camelot/wownav/tests.lua")

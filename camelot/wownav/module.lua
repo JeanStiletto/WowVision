@@ -22,12 +22,17 @@
 -- (fishing.lua) a beacon sounds from the water and the turn key faces it, until the player leaves the place.
 --
 -- With the standalone WowVisionNavigation addon loaded as well, this stays off (both use the same globals).
+--
+-- Diagnostics (trace.lua, saved in WowVisionDump with his field names): every route's walk (waypoints, one sample per
+-- guidance update while moving, falls, events), his blockage telemetry, and his /vn log as the binding "WowNav Log
+-- Entry" and /wv navlog [comment] (/wv navlog clear empties it).
 
 local maps = WowVision.base.navigation.maps
 local catalog = WowVision.wownavCatalog
 local Route = WowVision.wownavRoute
 local dock = WowVision.wownavDock
 local fishing = WowVision.wownavFishing
+local trace = WowVision.wownavTrace
 
 local module = WowVision.base.navigation:createModule("wownav")
 local L = module.L
@@ -111,6 +116,43 @@ local function playerFacing()
     return facing
 end
 
+-- A boolean WoW API read safely (his SafeBool): false stays false, a missing or failing function is nil.
+local function safeBool(func)
+    if func == nil then
+        return nil
+    end
+    local ok, result = pcall(func)
+    if not ok or (issecretvalue ~= nil and issecretvalue(result)) then
+        return nil
+    end
+    return result
+end
+
+-- The game's state for the saved diagnostics (trace.lua). full: also what only his /vn log entry carries (zone names,
+-- the map position, indoors).
+local function gameState(full)
+    local x, y, _, map = UnitPosition("player")
+    local game = {
+        timestamp = date("%Y-%m-%d %H:%M:%S"), time = GetTime(), x = x, y = y, map = map,
+        facing = playerFacing(), moving = safeBool(IsPlayerMoving), speed = playerSpeed(),
+        falling = safeBool(IsFalling) == true, swimming = inWater(),
+    }
+    if full then
+        game.zone = GetZoneText ~= nil and GetZoneText() or nil
+        game.subzone = GetSubZoneText ~= nil and GetSubZoneText() or nil
+        game.indoors, game.outdoors = safeBool(IsIndoors), safeBool(IsOutdoors)
+        local uiMap = C_Map.GetBestMapForUnit("player")
+        game.uiMapID = uiMap
+        if uiMap ~= nil then
+            local position = C_Map.GetPlayerMapPosition(uiMap, "player")
+            if position ~= nil then
+                game.normalizedX, game.normalizedY = position:GetXY()
+            end
+        end
+    end
+    return game
+end
+
 local indexed = false
 local function ready(self)
     local N, G = self:network()
@@ -134,6 +176,10 @@ local function ready(self)
                 return IsPlayerMoving ~= nil and IsPlayerMoving() == true
             end,
             speed = playerSpeed,
+            -- his blockage telemetry, saved by trace.lua
+            telemetry = function(entry)
+                trace.blockage(entry, gameState())
+            end,
         })
     end
     N.SetComfort(self.settings.comfort or 60)
@@ -478,6 +524,7 @@ local function startRoute(self, request, outcome)
     self.path = path
     self.request = request
     maps:pathfind(path)
+    trace.routeStarted(route, gameState())
 
     local count = #route.path
     local yards = px ~= nil and routeLength(N, route.path, route.pathIndex, px, py) or 0
@@ -697,6 +744,9 @@ function module:stopRoute(keepPenalties, keepDock)
         self.dockPath = nil
     end
     if route ~= nil then
+        if self.path ~= nil and route.active then
+            trace.routeEnded(route, gameState(), "stopped")
+        end
         route:cancelAction()
         route:reset(keepPenalties)
     end
@@ -766,6 +816,7 @@ function module:onRouteEvent(path, event)
     if path ~= self.path then
         return
     end
+    trace.routeEvent(route, gameState(), event)
     local kind = event.kind
     if kind == "advance" then
         if event.careful then
@@ -1134,6 +1185,9 @@ function module:onEnable()
         checkAction(self)
         checkRecalculation(self)
         checkPassive(self)
+        if self.path ~= nil and route.active then
+            trace.sample(route, gameState())
+        end
         local _, _, map = route.env.position()
         if map ~= nil and map ~= dockMap then
             -- his ZoneLoaded at a continent change: a reached dock is forgotten, a noted one is kept
@@ -1187,6 +1241,41 @@ module:registerBinding({
     label = L["WowNav Route Status"],
     inputs = {},
     script = "/run WowVision.base.navigation.wownav:status()",
+})
+
+-- His /vn log [comment]: one full snapshot of the player and the route into the saved log (WowVisionDump.wownavLog).
+function module:logEntry(comment)
+    local entry, count = trace.logEntry(route, gameState(true), comment)
+    say(string.format(L["WowNav log entry %d saved"], count))
+    print(string.format("WowNav log #%d [%s] %s/%s map %s world %.1f %.1f facing %.2f target %s waypoint %s of %s distance %s%s",
+        count, entry.timestamp, tostring(entry.zone), tostring(entry.subzone), tostring(entry.mapID), entry.worldX or 0,
+        entry.worldY or 0, entry.viewDirection or -1, tostring(entry.navigationTarget), tostring(entry.pathIndex),
+        tostring(entry.pathLength),
+        entry.distanceToWaypoint and string.format("%.1f", entry.distanceToWaypoint) or "-",
+        comment and (" comment " .. comment) or ""))
+end
+
+module:registerCommand({
+    name = "navlog",
+    scope = "WowVision",
+    description = "WowNav log entry (his /vn log): /wv navlog [comment] saves a snapshot of position and route; /wv navlog clear empties the log",
+    func = function(args)
+        local text = (args or ""):match("^%s*(.-)%s*$")
+        if text:lower() == "clear" then
+            trace.clearLog()
+            print("WowNav log cleared")
+            return
+        end
+        module:logEntry(text ~= "" and text or nil)
+    end,
+})
+
+module:registerBinding({
+    type = "Script",
+    key = "wownav/log",
+    label = L["WowNav Log Entry"],
+    inputs = {},
+    script = "/run WowVision.base.navigation.wownav:logEntry()",
 })
 
 module:registerBinding({

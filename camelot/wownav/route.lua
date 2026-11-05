@@ -203,23 +203,33 @@ local function edgeKey(a, b)
     return tostring(a) .. "_" .. tostring(b)
 end
 
+-- kind: "frozen" (checkBlockage) | "no_approach" (checkApproach), as in his telemetry.
 -- Returns the reaction ("reentry" | "fallback") or nil.
-function Route:handleBlockage(x, y)
+function Route:handleBlockage(x, y, kind)
     if not self.active or not self.path then
         return nil
     end
     local toId = self.path[self.pathIndex]
     local fromId = self.pathIndex > 1 and self.path[self.pathIndex - 1] or nil
     local key
+    local count = 1
     if fromId then
         key = edgeKey(fromId, toId)
-        self.blockagesPerEdge[key] = (self.blockagesPerEdge[key] or 0) + 1
+        count = (self.blockagesPerEdge[key] or 0) + 1
+        self.blockagesPerEdge[key] = count
     end
+    local entry = self:blockageTelemetry(x, y, kind, fromId, toId, count)
     -- the certified re-entry first, whatever the kind of stuck (his 10.6bf)
-    if self:tryRouteReentry(x, y) then
+    local reentered, skipped = self:tryRouteReentry(x, y)
+    if reentered then
         if key then
             self.blockagesPerEdge[key] = nil
         end
+        entry.reaction = "route_reentry"
+        entry.skippedWaypoints = skipped
+        local nx, ny = self.N.Position(self.path[1])
+        entry.reentryDistance = distance(x, y, nx, ny)
+        self:telemetry(entry)
         return "reentry"
     end
     -- choke fallback (his 10.6bq): one step back at a gate when the player drifted off the run-up segment; his
@@ -236,11 +246,119 @@ function Route:handleBlockage(x, y)
                 self.blockagesPerEdge[key] = nil
             end
             self:resetApproach()
+            entry.reaction = "choke_fallback"
+            entry.fallbackLateral = lateral
+            entry.fallbackLimit = limit
+            entry.fallbackAfterIndex = self.pathIndex
+            self:telemetry(entry)
             return "fallback"
         end
     end
     -- no automatic new route, ever (his 10.6bi / 10.6dg, the user's decision)
+    entry.reaction = "recalculation_suppressed"
+    self:telemetry(entry)
     return nil
+end
+
+-- His blockage telemetry entry (HandleBlockage, WowVisionNavigationDB.blockageTelemetry, the fields of 10.6ba, 10.6bo
+-- and 10.6bp) with his field names, so that his evaluation reads ours. Left out: finalApproach (WowVision has no forced
+-- final approach) and the re-entry's radius and polygon (his old certificate; the attachment cells prove it now).
+function Route:blockageTelemetry(x, y, kind, fromId, toId, count)
+    local entry = {
+        timestamp = self.env.date ~= nil and self.env.date() or nil,
+        kind = kind or "frozen",
+        worldX = x,
+        worldY = y,
+        estimatedHeight = self.anchor.height,
+        edgeFrom = fromId,
+        edgeTo = toId,
+        blockagesOnEdge = count,
+        targetName = self.targetName,
+        pathIndex = self.pathIndex,
+        pathLength = #self.path,
+        viewDirection = self.env.facing(),
+        isPlayerMoving = self.env.moving(),
+        playerSpeed = self.env.speed(),
+    }
+    if toId and self.N.Exists(toId) then
+        local zx, zy = self.N.Position(toId)
+        local dx, dy = zx - x, zy - y
+        entry.bearing = atan2(dy, dx) % (2 * math.pi)
+        entry.distanceToWaypoint = sqrt(dx * dx + dy * dy)
+        entry.waypointX, entry.waypointY = zx, zy
+    end
+    if fromId and toId then
+        local _, lateral = self.G.SegmentProgress(x, y, fromId, toId)
+        entry.lateralDistance = lateral
+    end
+    return entry
+end
+
+-- Hands a finished telemetry entry to the module (env.telemetry); without one (a test) nothing is kept.
+function Route:telemetry(entry)
+    if self.env.telemetry ~= nil then
+        self.env.telemetry(entry)
+    end
+end
+
+-- His waypoint codes (AUTO_TYPES of WowVisionNavigation.lua), joined with "+" as his /vn log writes them.
+local AUTO_TYPES = {
+    { 8, "water_exit" }, { 64, "zone_border" }, { 32, "action" }, { 2, "gate" }, { 16, "level_change" },
+    { 4, "road_junction" }, { 128, "target_access" }, { 512, "branch" }, { 1, "corner" }, { 256, "coverage" },
+}
+function Route.waypointBaseCode(bits)
+    local names = {}
+    for _, entry in ipairs(AUTO_TYPES) do
+        if (bits or 0) % (entry[1] * 2) >= entry[1] then
+            names[#names + 1] = entry[2]
+        end
+    end
+    return table.concat(names, "+")
+end
+
+-- The route's part of his /vn log entry (CreateLogEntry) at (x, y), with his field names; the module adds the game's
+-- part (map, zone, facing, indoors). His count levels and search nodes are left out (WowVision does not count them).
+function Route:logFields(x, y, entry)
+    entry = entry or {}
+    entry.navigationActive = self.active == true
+    entry.navigationTarget = self.targetName
+    entry.estimatedHeight = self.anchor.height
+    entry.blockageCheckX, entry.blockageCheckY = self.blockageCheckX, self.blockageCheckY
+    if not self.active or not self.path then
+        return entry
+    end
+    local N = self.N
+    local waypointId = self.path[self.pathIndex]
+    entry.currentWaypointId = waypointId
+    entry.pathIndex = self.pathIndex
+    entry.pathLength = #self.path
+    if waypointId == nil or not N.Exists(waypointId) then
+        return entry
+    end
+    local kx, ky, kz = N.Position(waypointId)
+    entry.currentWaypointZ = kz
+    if x ~= nil then
+        local dx, dy = kx - x, ky - y
+        local wz = self.anchor.height
+        local dz = wz and (kz - wz) or 0
+        entry.distanceToWaypoint = sqrt(dx * dx + dy * dy)
+        entry.distanceToWaypoint3D = sqrt(dx * dx + dy * dy + dz * dz)
+        entry.heightDifferenceToWaypoint = wz and (kz - wz) or nil
+    end
+    if waypointId < N.VIRT_BASE then
+        entry.waypointBaseCode = Route.waypointBaseCode(N.Bits(waypointId))
+        entry.waypointArea = N.Area(waypointId)
+        entry.waypointRadius = N.Radius(waypointId)
+        entry.waypointGateHalfWidth = N.GateHalfWidth(waypointId)
+    end
+    entry.arrivalRule = self.lastArrivalRule
+    -- his blockage telemetry's lateralDistance (10.6bp), here on every entry: the sideways drift off the link
+    local fromId = self.pathIndex > 1 and self.path[self.pathIndex - 1] or nil
+    if x ~= nil and fromId ~= nil and N.Exists(fromId) then
+        local _, lateral = self.G.SegmentProgress(x, y, fromId, waypointId)
+        entry.lateralDistance = lateral
+    end
+    return entry
 end
 
 -- "Moves but does not get closer" (his 10.6ba). Returns the reaction of handleBlockage or nil.
@@ -277,7 +395,7 @@ function Route:checkApproach(x, y, dist, now)
         return nil
     end
     self:resetApproach()
-    return self:handleBlockage(x, y)
+    return self:handleBlockage(x, y, "no_approach")
 end
 
 -- "Runs against a wall" (his CheckBlockage, without the beep). Returns the reaction of handleBlockage or nil.
@@ -319,7 +437,7 @@ function Route:checkBlockage(x, y, now)
         if self.active and not self.blockageEscalated
             and (now - self.blockageStuckSince) >= Route.BLOCKAGE_ESCALATION_WAIT_TIME then
             self.blockageEscalated = true
-            reaction = self:handleBlockage(x, y)
+            reaction = self:handleBlockage(x, y, "frozen")
         end
     else
         self.blockageStuckSince = nil
@@ -649,6 +767,7 @@ function Route:update(x, y)
         return nil
     end
     self.nextUpdate = now + Route.UPDATE_INTERVAL
+    self.updates = (self.updates or 0) + 1
     local N, G = self.N, self.G
 
     -- a portal on the way teleports as soon as the player is in it, maybe before the route's last waypoint

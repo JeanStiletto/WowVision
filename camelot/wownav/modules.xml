@@ -5,7 +5,8 @@
        route.lua follows a route with his rules; path.lua walks it with WowVision's beacon; module.lua takes the route
        requests; dock.lua guides to tram, ship and zeppelin docks (his DockNavigation.lua); fishing.lua turns the
        player to the water at a fishing spot (his FishingNavigation.lua); floorsUi.lua asks a floor when there is a
-       choice. The data is included after this file from camelot/modules.xml. -->
+       choice; trace.lua keeps the walk trace, the blockage telemetry and the log entries in WowVisionDump with
+       his field names. The data is included after this file from camelot/modules.xml. -->
   <Script file="engine\NavNetwork.lua" />
   <Script file="engine\Guidance.lua" />
   <Script file="engine\TargetCatalog.lua" />
@@ -17,6 +18,7 @@
   <Script file="catalog.lua" />
   <Script file="route.lua" />
   <Script file="path.lua" />
+  <Script file="trace.lua" />
   <Script file="dock.lua" />
   <Script file="fishing.lua" />
   <Script file="module.lua" />

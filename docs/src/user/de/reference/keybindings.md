@@ -104,6 +104,7 @@ Siehe [Chat](../windows/chat.md).
 | Direkt zum nächsten unbesuchten gleichnamigen Ziel (Direct to the Nearest Unvisited of the Same Name) | Unbelegt | Dasselbe als gerades Signal statt als Route |
 | WowNav-Routenstatus (WowNav Route Status) | Unbelegt | (WoW: Forever) Spricht den Zustand der WowNav-Route |
 | Neue WowNav-Route um eine versperrte Stelle (New WowNav Route Around a Blocked Spot) | Unbelegt | (WoW: Forever) Plant eine neue Route, die die Stelle meidet, an der du feststeckst |
+| WowNav-Logeintrag (WowNav Log Entry) | Unbelegt | (WoW: Forever) Speichert, wo du stehst und was die Route tut, für eine Fehlermeldung |
 
 Alt Gr ist keine Belegung: Es wird direkt gelesen, bleibt stumm, während du in einem Eingabefeld tippst, und lässt sich mit der Einstellung Entfernung mit Alt Gr ansagen (Announce Distance with Alt Gr) im Modul Karten (Maps) ausschalten. Siehe [Navigation und Routen](../world/navigation.md) und [WowNav](../world/wownav.md).
 

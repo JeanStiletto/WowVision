@@ -132,12 +132,13 @@ Bleibst du hängen, versucht WowNav, wieder in die Route einzusteigen und an Eng
 
 ### Routenstatus und neue Route
 
-Zwei Belegungen sind standardmäßig nicht belegt; belege sie im Fenster für die Tastenbelegung (WowVision-Menü, Benutzeroberfläche, Tastenbelegung), siehe [Tastenbelegung](../basics/keybindings.md):
+Drei Belegungen sind standardmäßig nicht belegt; belege sie im Fenster für die Tastenbelegung (WowVision-Menü, Benutzeroberfläche, Tastenbelegung), siehe [Tastenbelegung](../basics/keybindings.md):
 
 | Belegung | Was sie tut |
 |----------|-------------|
 | WowNav-Routenstatus | Sagt, was WowNav gerade tut: "Suche die Route zu Allison", "Unterwegs zu Allison, Wegpunkt 3 von 14", "Warte auf das andere Ende von das Portal", "Fahrt zum vorgemerkten Anleger Schiffsanleger nach Auberdine", "Am Anleger, warten", "Am Angelplatz" oder "Keine aktive Route". |
 | Neue WowNav-Route um eine versperrte Stelle | Benutze sie, wenn du an einer Verbindung festhängst (ein Zaun, eine geschlossene Tür, eine Rampe, die du nicht hochkommst). Die Verbindung, auf der du bist, wird im Plan gesperrt, und ab dem letzten Wegpunkt, den du erreicht hast, wird eine neue Route gesucht. Du hörst "Neue Route wird gesucht". Ohne Route hörst du "Keine aktive Route". |
+| WowNav-Logeintrag | Speichert eine Momentaufnahme, wo du stehst und was die Route gerade tut (siehe [Ein Routenproblem melden](#ein-routenproblem-melden)). Du hörst "WowNav-Logeintrag 1 gespeichert"; die Zahl zählt hoch. Dasselbe macht `/wv navlog`, gern mit einem Kommentar: `/wv navlog von der Treppe gefallen`. `/wv navlog clear` leert das Log. |
 
 ## Verkehrsmittel: Anleger, Schiffe, Zeppeline, Tiefenbahn, Portale und Aufzüge
 
@@ -226,6 +227,16 @@ Der Punkt im Wasser ist nur zum Ausrichten da. WowNav schickt dich nie ins Wasse
 1. Du folgst einer Route und läufst gegen einen Zaun, den die Daten nicht kennen. WowNav versucht, selbst zurückzufinden.
 2. Steckst du immer noch fest, drücke die Taste, die du auf Neue WowNav-Route um eine versperrte Stelle gelegt hast. Du hörst "Neue Route wird gesucht".
 3. Folge dem neuen Signal. Die versperrte Verbindung wird für den Rest dieser Route gemieden.
+
+### Ein Routenproblem melden
+
+WowVision zeichnet jede WowNav-Route auf, während du sie läufst, damit ein Problem hinterher angesehen werden kann, ohne dass du dir merken musst, wo es war: die Wegpunkte der Route beim Start, wo du warst (jede Viertelsekunde, solange du dich bewegst), jeden erreichten Wegpunkt, jeden Sturz (Anfang und Ende), jedes Feststecken und jeden Logeintrag, den du gespeichert hast. Nichts wird verschickt; es bleibt auf deinem Rechner.
+
+1. Wenn etwas schiefgeht (du bist gefallen, die Route führt in eine Wand), drücke die Taste, die du auf WowNav-Logeintrag gelegt hast, oder tippe `/wv navlog` und ein paar Worte dazu, was passiert ist.
+2. Tippe `/reload` oder logge dich aus. Erst dann wird die Aufzeichnung auf die Platte geschrieben.
+3. Schicke die Datei `WowVision.lua` aus `WTF\Account\<dein Account>\SavedVariables` in deinem Spielordner. Die Aufzeichnung steht darin unter `WowVisionDump`: `wownavWalk` (der Weg), `wownavBlockages` (Feststecken) und `wownavLog` (deine Logeinträge). Die Feldnamen sind die, die WowNavs eigenes Addon benutzt, so kann auch der Autor von WowNav sie lesen.
+
+Der Weg behält die letzten 2400 Einträge, etwa 10 Minuten Laufen; ältere fallen heraus.
 
 ## Verwandte Seiten
 
