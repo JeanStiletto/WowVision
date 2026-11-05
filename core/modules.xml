@@ -26,6 +26,8 @@
   <Script file="ttsCacheBustTests.lua" />
   <Script file="speechInterrupt.lua" />
   <Script file="speechInterruptTests.lua" />
+  <Script file="speechStall.lua" />
+  <Script file="speechStallTests.lua" />
   <Script file="speechSounds.lua" />
   <Script file="speechSoundsTests.lua" />
   <Include file="templates/modules.xml" />

@@ -23,6 +23,8 @@ local queueTag = nil
 -- After a stop the next line cuts a screen reader bridge voice (core/speechInterrupt.lua).
 local handOver = WowVision.speechInterrupt.handOver
 
+local guard -- (below: core/speechStall.lua)
+
 local function pollQueue()
     if module.speaking then
         return
@@ -35,8 +37,14 @@ local function pollQueue()
     -- does not dispatch a second utterance on top of this one.
     module.speaking = true
     module.current = item
+    guard:sent(item)
     oldSpeak(item.voice, handOver(item.text), item.rate, item.volume, true)
 end
+
+-- A stopped line never reports its end, and the queue waited for it until something called its
+-- stop (Escape): every stop frees it, and a line that never starts or ends frees it after a while.
+guard = WowVision.speechStall.new(module, pollQueue, GetTime)
+guard:watchStops()
 
 local function enqueue(voice, text, rate, volume)
     tinsert(module.queue, { voice = voice, text = text, rate = rate, volume = volume, tag = queueTag })
@@ -134,10 +142,13 @@ WowVision.speechSounds.attach(module, settings, L)
 
 local function frame_OnEvent(frame, event, utteranceID)
     if event == "VOICE_CHAT_TTS_PLAYBACK_STARTED" then
-        module.speaking = true
+        guard:started(utteranceID)
     elseif event == "VOICE_CHAT_TTS_PLAYBACK_FINISHED" or event == "VOICE_CHAT_TTS_PLAYBACK_FAILED" then
         -- FAILED fires instead of FINISHED for rejected utterances (too short,
         -- too long, internal error). Without handling it the queue stalls forever.
+        if not guard:ended(utteranceID) then
+            return
+        end
         module.speaking = false
         module.current = nil
         pollQueue()
@@ -158,6 +169,11 @@ end
 function module:onEnable()
     self:createFrame()
     applyQueueSetting(self.settings.speechQueue ~= false)
+    if not self.stallTicker then
+        self.stallTicker = C_Timer.NewTicker(1, function()
+            guard:check()
+        end)
+    end
     if not self.interruptFrame then
         self.interruptFrame = CreateFrame("Frame")
         self.interruptFrame:EnableKeyboard(true)
