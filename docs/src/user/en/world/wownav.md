@@ -130,12 +130,13 @@ If you get stuck, WowNav tries to re-enter the route and step back at gates, but
 
 ### Route status and new route
 
-Two bindings are unbound by default; bind them in the keybinding window (WowVision menu, UI, Bindings), see [Keybindings](../basics/keybindings.md):
+Three bindings are unbound by default; bind them in the keybinding window (WowVision menu, UI, Bindings), see [Keybindings](../basics/keybindings.md):
 
 | Binding | What it does |
 |---------|--------------|
 | WowNav Route Status | Says what WowNav is doing: "Searching the route to Allison", "En route to Allison, waypoint 3 of 14", "Waiting for the far end of the portal", "Riding to the noted dock Ship dock to Auberdine", "At a dock, waiting", "At a fishing spot" or "No active route". |
 | New WowNav Route Around a Blocked Spot | Use it when you are stuck on a link (a fence, a closed door, a ramp you cannot climb). The link you are on is blocked in the plan, and a new route is searched from the last waypoint you reached. You hear "Searching a new route". Without a route you hear "No active route". |
+| WowNav Log Entry | Saves a snapshot of where you stand and what the route does at that moment (see [Report a route problem](#report-a-route-problem)). You hear "WowNav log entry 1 saved"; the number counts up. The same is `/wv navlog`, which can take a comment: `/wv navlog fell off the stairs`. `/wv navlog clear` empties the log. |
 
 ## Transit: docks, boats, zeppelins, trams, portals and elevators
 
@@ -224,6 +225,16 @@ Open the WowVision menu (/wv), then Navigation, then WowNav Routes.
 1. You follow a route and walk into a fence the data does not know about. WowNav tries to find its way back by itself.
 2. If you are still stuck, press the key you bound to New WowNav Route Around a Blocked Spot. You hear "Searching a new route".
 3. Follow the new beacon. The blocked link is avoided for the rest of this route.
+
+### Report a route problem
+
+WowVision keeps a record of every WowNav route while you walk it, so a problem can be looked at afterwards without you remembering where it happened: the route's waypoints when it starts, where you were every quarter second while you moved, every waypoint reached, every fall (start and end), every time you got stuck, and every log entry you saved. Nothing is sent anywhere; it stays on your computer.
+
+1. When something goes wrong (you fell, the route leads into a wall), press the key you bound to WowNav Log Entry, or type `/wv navlog` and a few words about what happened.
+2. Type `/reload` or log out. Only then is the record written to disk.
+3. Send the file `WowVision.lua` from `WTF\Account\<your account>\SavedVariables` in your game folder. The record is in it under `WowVisionDump`: `wownavWalk` (the walk), `wownavBlockages` (getting stuck) and `wownavLog` (your log entries). The field names are the ones WowNav's own addon uses, so the WowNav author can read it too.
+
+The walk keeps the last 2400 entries, about 10 minutes of walking; older ones drop out.
 
 ## Related pages
 

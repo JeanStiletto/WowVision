@@ -4,6 +4,7 @@ local catalog = WowVision.wownavCatalog
 local text = WowVision.wownavText
 local dock = WowVision.wownavDock
 local fishing = WowVision.wownavFishing
+local trace = WowVision.wownavTrace
 
 -- WowNav routes on Broesel's real data: tools/headless-tests.lua loads the engine (camelot/wownav/engine) and the
 -- packed data of mapdata/WowNavPacked (run tools/wownav-pack.lua first). Without the data only the parts that need
@@ -438,6 +439,114 @@ if haveNetwork then
             end
         end
         t:assertNotNil(arrived, "the route ends at the target")
+    end
+
+    suite["the walk trace, his blockage telemetry and his log entry are saved with his field names"] = function(t)
+        setup()
+        local saved = WowVisionDump
+        WowVisionDump = {}
+        local game = newGame()
+        local function state()
+            return { timestamp = "2026-11-05 12:00:00", time = game.t, x = game.x, y = game.y, map = game.map,
+                facing = game.facing, moving = game.moving, speed = game.speed, falling = game.falling == true,
+                swimming = false }
+        end
+        game.env.telemetry = function(entry)
+            trace.blockage(entry, state())
+        end
+        local route = Route.new(game.env)
+        bindablePosition(STORMWIND, game, route)
+        local target = rowsWith(zoneRows(STORMWIND), "innkeeper")
+        local contract = catalog.contract(target, 0)
+        local outcome = runJob(N.Job(route.prepare, route, contract, { nativeMapId = 0 }))
+        if outcome.kind == "choose" then
+            contract.heightBand = 1
+            outcome = runJob(N.Job(route.prepare, route, contract, { nativeMapId = 0 }))
+        end
+        t:assertEqual(outcome.kind, "start", tostring(outcome.reason))
+        route:begin(outcome.plan, contract, outcome.result, target.n)
+        trace.routeStarted(route, state())
+        local walk = WowVisionDump.wownavWalk
+        t:assertEqual(walk[1].event, "route")
+        t:assertEqual(#walk[1].waypoints, #route.path, "every waypoint of the route is written at its start")
+        t:assertEqual(walk[1].navigationTarget, target.n)
+
+        -- two waypoints walked: samples while moving, an advance with the rule that decided it
+        for _ = 1, 2 do
+            game.t = game.t + 0.3
+            game.x, game.y = N.Position(route.path[route.pathIndex])
+            game.moving = true
+            local event = route:update(game.x, game.y)
+            if event then
+                trace.routeEvent(route, state(), event)
+            end
+            trace.sample(route, state())
+        end
+        local advance, sample
+        for _, e in ipairs(walk) do
+            if e.event == "route_event" and e.kind == "advance" then
+                advance = e
+            elseif e.event == "sample" then
+                sample = e
+            end
+        end
+        t:assertNotNil(advance, "an advance is traced")
+        t:assertEqual(advance.reachedBy, "radius")
+        t:assertNotNil(advance.reachedWaypointId)
+        t:assertNotNil(sample, "a sample while moving")
+        t:assertNotNil(sample.currentWaypointId)
+        t:assertNotNil(sample.distanceToWaypoint)
+        t:assertNotNil(sample.waypointRadius)
+        t:assertEqual(sample.isPlayerMoving, true)
+
+        -- standing still: no sample
+        local count = #walk
+        game.moving = false
+        game.t = game.t + 0.3
+        route:update(game.x, game.y)
+        trace.sample(route, state())
+        t:assertEqual(#walk, count, "standing still is left out")
+
+        -- a fall: its start and its end, with where it began
+        game.falling = true
+        trace.sample(route, state())
+        game.t = game.t + 1.2
+        game.falling = false
+        trace.sample(route, state())
+        local fallEnd = walk[#walk].event == "fall_end" and walk[#walk] or walk[#walk - 1]
+        t:assertEqual(fallEnd.event, "fall_end")
+        t:assertTrue(math.abs(fallEnd.fallSeconds - 1.2) < 1e-9)
+        t:assertEqual(fallEnd.fallFromIndex, route.pathIndex)
+
+        -- pressed against a wall (his frozen case): his telemetry entry
+        game.moving = true
+        for _ = 1, 12 do
+            game.t = game.t + 0.3
+            local event = route:update(game.x + 0.5, game.y + 0.5)
+            if event then
+                trace.routeEvent(route, state(), event)
+            end
+        end
+        local blockage = WowVisionDump.wownavBlockages and WowVisionDump.wownavBlockages[1]
+        t:assertNotNil(blockage, "a blockage is in his telemetry")
+        t:assertEqual(blockage.kind, "frozen")
+        t:assertNotNil(blockage.reaction)
+        t:assertNotNil(blockage.edgeTo)
+        t:assertNotNil(blockage.bearing)
+        t:assertNotNil(blockage.distanceToWaypoint)
+        t:assertNotNil(blockage.lateralDistance)
+        t:assertEqual(blockage.targetName, target.n)
+
+        -- his /vn log entry
+        local entry, n = trace.logEntry(route, state(), "at the stairs")
+        t:assertEqual(n, 1)
+        t:assertEqual(WowVisionDump.wownavLog[1].comment, "at the stairs")
+        t:assertEqual(entry.navigationActive, true)
+        t:assertNotNil(entry.currentWaypointZ)
+        t:assertNotNil(entry.waypointBaseCode)
+        trace.clearLog()
+        t:assertEqual(#WowVisionDump.wownavLog, 0)
+        WowVisionDump = saved
     end
 
     suite["automatic waypoints nearby: nearest first, named by height, routed to straight"] = function(t)
