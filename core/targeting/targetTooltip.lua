@@ -19,13 +19,15 @@ local settings = module:hasSettings()
 local tooltipLines = WowVision.tooltipLines
 local secrets = WowVision.secrets
 
-local CAPTURE_MAX = 30
+-- Enough for a whole dungeon run.
+local CAPTURE_MAX = 300
 
 local SWITCHES = {
     { kind = "level", key = "readLevel", label = L["Read Level and Type"] },
     { kind = "guild", key = "readGuild", label = L["Read Guild"] },
     { kind = "pvp", key = "readPvP", label = L["Read PvP and Faction"] },
     { kind = "quest", key = "readQuest", label = L["Read Quest Lines"] },
+    { kind = "threat", key = "readThreat", label = L["Read Threat"] },
     { kind = "owner", key = "readOwner", label = L["Read Pet Owner"] },
     { kind = "other", key = "readOther", label = L["Read Other Information"] },
 }
@@ -307,6 +309,49 @@ local function factsText(facts)
     )
 end
 
+-- What each unit call answered: "nil", "secret", or the plain value (only
+-- for values that are no names). Tells which facts a rule can still use
+-- when the tooltip text is hidden.
+local function answer(fn, unit, showValue)
+    if fn == nil then
+        return "n/a"
+    end
+    local ok, value = pcall(fn, unit)
+    if not ok then
+        return "error"
+    end
+    if value == nil then
+        return "nil"
+    end
+    if secrets.isSecret(value) then
+        return "secret"
+    end
+    if showValue then
+        return short(tostring(value))
+    end
+    return "plain"
+end
+
+local function callsText(unit)
+    local encounter = "n/a"
+    if IsEncounterInProgress ~= nil then
+        encounter = flag(IsEncounterInProgress())
+    end
+    return string.format(
+        "name %s, player %s, level %s, classification %s, creature type %s, class %s, pvp %s, guild %s, quest boss %s, encounter %s",
+        answer(UnitName, unit),
+        answer(UnitIsPlayer, unit, true),
+        answer(UnitLevel, unit, true),
+        answer(UnitClassification, unit, true),
+        answer(UnitCreatureType, unit),
+        answer(UnitClass, unit),
+        answer(UnitIsPVP, unit, true),
+        answer(GetGuildInfo, unit),
+        answer(UnitIsQuestBoss, unit, true),
+        encounter
+    )
+end
+
 -- One capture entry; only plain values go in (SavedVariables refuse
 -- secrets).
 function module:capture(tooltip, unit)
@@ -335,6 +380,7 @@ function module:capture(tooltip, unit)
         ),
         forced = forcedState(),
         facts = factsText(facts),
+        calls = callsText(unit),
         lines = {},
     }
     for index, line in ipairs(lines) do
@@ -399,6 +445,9 @@ module:registerCommand({
             print("forced: " .. entry.forced)
             if entry.facts ~= nil then
                 print("facts: " .. entry.facts)
+            end
+            if entry.calls ~= nil then
+                print("calls: " .. entry.calls)
             end
             for _, line in ipairs(entry.lines) do
                 print(line)
