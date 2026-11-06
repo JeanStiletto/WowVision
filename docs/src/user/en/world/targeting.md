@@ -85,7 +85,7 @@ The hard and soft target announcements read the whole tooltip. Under Targeting, 
 - Read PvP and Faction: the "PvP" line and the faction line such as "Alliance".
 - Read Quest Lines: the quest name and progress lines on a quest mob. (Retail and WoW: Forever. On classic versions the game does not mark these lines, so they count as other lines.)
 - Read Pet Owner: the owner line of a pet, minion or guardian, such as "Rexxar's Pet".
-- Read Other Lines: every line that fits none of the kinds above, for example "Skinnable" or lines added by other addons.
+- Read Other Information: every line that fits none of the kinds above, for example "Skinnable" or lines added by other addons.
 
 Always read: the name, an NPC's title such as "<Innkeeper>", and "Dead" or "Corpse". A line WowVision cannot recognise is also always read, so unchecking a box never drops something by guessing. On Retail and WoW: Forever the game hides some tooltip text from addons, mostly in dungeons and fights; such a line is still recognised when the game marks its kind, otherwise it stays in.
 

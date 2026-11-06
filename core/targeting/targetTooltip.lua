@@ -27,7 +27,7 @@ local SWITCHES = {
     { kind = "pvp", key = "readPvP", label = L["Read PvP and Faction"] },
     { kind = "quest", key = "readQuest", label = L["Read Quest Lines"] },
     { kind = "owner", key = "readOwner", label = L["Read Pet Owner"] },
-    { kind = "other", key = "readOther", label = L["Read Other Lines"] },
+    { kind = "other", key = "readOther", label = L["Read Other Information"] },
 }
 
 for _, switch in ipairs(SWITCHES) do
