@@ -16,7 +16,7 @@ tooltipLines.SECRET = {}
 
 -- Kinds a switch can leave out. "name" (line 1), "keep" and "blank" are not
 -- among them.
-tooltipLines.KINDS = { "level", "guild", "pvp", "quest", "owner", "other" }
+tooltipLines.KINDS = { "level", "guild", "pvp", "quest", "threat", "owner", "other" }
 
 -- Enum.TooltipDataLineType names to kinds; a typed line not listed here is
 -- "other", "None" goes to the text rules.
@@ -26,6 +26,7 @@ local TYPE_KINDS = {
     UnitType = "level",
     UnitDead = "keep",
     UnitOwner = "owner",
+    UnitThreat = "threat",
     QuestTitle = "quest",
     QuestObjective = "quest",
     QuestPlayer = "quest",
