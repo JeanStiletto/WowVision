@@ -33,6 +33,10 @@ local kinds = graph.kinds
 --
 -- Backspace on a destination always sets the direct point, checkbox or not
 -- (Enter routes, Backspace goes straight; user's wish 2026-11-06).
+--
+-- Shift-F10 on a destination offers its auto chains: Auto Direct and Auto
+-- Route lead on, one after the other, to every unvisited destination of
+-- its name (navigation/visited.lua).
 
 local function entryLabel(entry)
     local wp = entry.waypoint
@@ -284,6 +288,22 @@ local function destinationCursor(screen)
         -- Backspace: a direct point to the destination, whatever the checkbox says
         onSecondary = function()
             go(true)
+        end,
+        -- Shift-F10: the auto chains of the destination's name (navigation/visited.lua)
+        contextActions = function(add)
+            local list, index = clampedIndex()
+            local entry = list[index]
+            if entry == nil or visited == nil then
+                return
+            end
+            local function auto(mode)
+                return function()
+                    WowVision.UIHost:closeWindow("atlas")
+                    visited:startAuto(entry.waypoint, mode)
+                end
+            end
+            add({ label = L["Auto Direct"], onActivate = auto("direct") })
+            add({ label = L["Auto Route"], onActivate = auto("route") })
         end,
         bindings = {
             {
