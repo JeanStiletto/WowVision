@@ -46,33 +46,39 @@ settings:add({
     end,
 })
 
--- LOCAL PROBE (not for a PR): which sound settings the client has, to find a
--- volume for the Talking Head channel. Lists every console variable whose
--- name has sound, volume, dialog or talk in it with its value, prints them
--- and keeps them in WowVisionDump.soundCVars.
+-- LOCAL PROBE (not for a PR): the channel names Forever's ping and combat
+-- warning sliders answer to. Speaks each candidate name, then plays a
+-- WowVision sound on it a second later; with the Ping and Combat Warnings
+-- volumes at 0, the silent candidates are the right names. The results
+-- (name and whether the game accepted the channel) go to chat and to
+-- WowVisionDump.channelTest.
+local channelCandidates = {
+    "Ping", "Pings", "PingSystem", "Ping System",
+    "Encounter Warnings", "EncounterWarnings", "Encounter Warning", "Combat Warnings",
+    "Gameplay SFX", "NoSuchChannel",
+}
 module:registerCommand({
-    name = "soundcvars",
-    description = "List the game's sound and volume settings",
+    name = "channeltest",
+    description = "Play a WowVision sound on each candidate sound channel",
     func = function()
-        local commands = ConsoleGetAllCommands ~= nil and ConsoleGetAllCommands() or {}
-        local found = {}
-        for _, info in ipairs(commands) do
-            local name = info.command
-            local lower = name ~= nil and name:lower() or ""
-            if lower:find("sound") or lower:find("volume") or lower:find("dialog") or lower:find("talk") then
-                local value = C_CVar ~= nil and C_CVar.GetCVar(name) or GetCVar(name)
-                if value ~= nil then
-                    tinsert(found, name .. " = " .. tostring(value))
-                end
-            end
+        local source = WowVision.audio.directory:getPath("Sound/WowVision/alerts/success2.mp3")
+        if source == nil then
+            print("WowVision channel test: test sound not found")
+            return
         end
-        table.sort(found)
         WowVisionDump = WowVisionDump or {}
-        WowVisionDump.soundCVars = found
-        for _, line in ipairs(found) do
-            print(line)
+        WowVisionDump.channelTest = {}
+        for index, name in ipairs(channelCandidates) do
+            C_Timer.After((index - 1) * 3, function()
+                WowVision:speak(index .. ", " .. name)
+            end)
+            C_Timer.After((index - 1) * 3 + 1.2, function()
+                local ok, willPlay = pcall(PlaySoundFile, source:getValue(), name)
+                local line = index .. ": " .. name .. " = " .. (ok and tostring(willPlay) or "error")
+                tinsert(WowVisionDump.channelTest, line)
+                print(line)
+            end)
         end
-        print("WowVision: " .. #found .. " sound settings, saved in WowVisionDump.soundCVars")
     end,
 })
 
