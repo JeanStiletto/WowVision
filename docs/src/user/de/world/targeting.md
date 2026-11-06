@@ -78,6 +78,21 @@ Der Wechsel von einem freien Ziel zu einem anderen freien Ziel bleibt stumm; den
 
 Dieser Alarm ist auf Retail, WoW: Forever und Mists of Pandaria verfügbar. Auf The Burning Crusade Anniversary liefert das Spiel keine Informationen über CC, deshalb gibt es den Alarm dort nicht.
 
+## Kürzere Zielansagen: Ziel-Tooltip
+
+Die Ansagen für festes und weiches Ziel lesen den ganzen Tooltip. Unter Zielerfassung, Ziel-Tooltip lassen sechs Schalter Arten von Zeilen weg. Alle sind standardmäßig aus, es ändert sich also nichts, bis du einen einschaltest.
+
+- Stufe und Typ weglassen: die Zeile wie "Stufe 12 Humanoid" oder "Stufe 60 Orc Schamane (Spieler)".
+- Gilde weglassen: die Gildenzeile eines Spielers.
+- PvP und Fraktion weglassen: die Zeile "PvP" und die Fraktionszeile wie "Allianz".
+- Questzeilen weglassen: Questname und Fortschritt bei einem Questgegner. (Retail und WoW: Forever. In den Classic-Versionen kennzeichnet das Spiel diese Zeilen nicht, dort zählen sie als andere Zeilen.)
+- Besitzer von Begleitern weglassen: die Besitzerzeile eines Begleiters, Dieners oder Wächters.
+- Andere Zeilen weglassen: jede Zeile, die zu keiner der Arten oben passt, zum Beispiel "Kürschnerbar" oder Zeilen anderer Addons.
+
+Immer gelesen: der Name, der Titel eines NPCs wie "<Gastwirt>" und "Tot" oder "Leiche". Eine Zeile, die WowVision nicht erkennt, wird ebenfalls immer gelesen; ein Schalter lässt also nie etwas auf Verdacht weg. Auf Retail und WoW: Forever verbirgt das Spiel manchen Tooltiptext vor Addons, vor allem in Dungeons und Kämpfen; so eine Zeile wird trotzdem erkannt, wenn das Spiel ihre Art kennzeichnet, sonst bleibt sie drin.
+
+Zwei Befehle helfen beim Prüfen: /wv tooltipcheck schreibt in den Chat, wie die Zeilen des letzten Ziels einsortiert wurden (/wv tooltipcheck 5 für die letzten fünf; die letzten 30 Ziele stehen nach /reload auch in den gespeicherten Daten), und /wv secretforce map (oder combat, encounter, off, status) schaltet die Testeinstellungen des Spiels, die Dungeonregeln überall anwenden, wo das Spiel sie hat.
+
 ## Weiche Zielerfassung
 
 Die weiche Zielerfassung ist eine Spielfunktion, die für dich eine Einheit auswählt, ohne dass du ein echtes Ziel hast: den Feind vor dir, einen befreundeten Spieler oder etwas, womit du interagieren kannst (einen NPC, einen Briefkasten, eine Leiche zum Plündern). Die Interaktionstaste des Spiels wirkt auf das weiche Interaktionsziel. WowVision lässt dich die drei Arten per Taste ein- und ausschalten, sagt die Einheit an, wenn sie wechselt, und macht die versteckten Optionen der weichen Zielerfassung des Spiels zugänglich.

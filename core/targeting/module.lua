@@ -59,8 +59,9 @@ local hardTargetSpeak = hardTargetChange:addOutput({
             end
         end
         -- The tooltip text may be secret: concatenation carries it through
-        -- and speech accepts it as is.
-        targetString = targetString .. module.tooltips.hardTarget:getText()
+        -- and speech accepts it as is. Target Tooltip's switches may leave
+        -- kinds of lines out.
+        targetString = targetString .. module.targetTooltip:read(module.tooltips.hardTarget, "target")
         return targetString
     end,
 })
@@ -341,7 +342,7 @@ local function addSoftTarget(info)
         label = L["TTS Alert"],
         interrupt = true,
         buildMessage = function(self, message)
-            local text = info.tooltip:getText()
+            local text = module.targetTooltip:read(info.tooltip, info.unit)
             if secrets.isSecret(text) or (text and #text > 1) then
                 return text
             end
@@ -535,6 +536,7 @@ function module:updateHardTarget()
         -- the last target's.
         self.targetHealthInterval = nil
         module.tooltips.hardTarget:set(nil, { type = "Unit", unit = "target" })
+        module.targetTooltip:captureSafely(module.tooltips.hardTarget, "target")
         hardTargetChange:fire({ target = target })
     end
     if self.targetHealthRemoved then
