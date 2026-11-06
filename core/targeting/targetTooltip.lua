@@ -90,11 +90,11 @@ for _, format in ipairs({
     end
 end
 
-local function wordSet(words)
+local function wordSet(words, lower)
     local set = {}
-    for _, word in ipairs(words) do
+    for _, word in pairs(words) do
         if type(word) == "string" and word ~= "" then
-            set[word] = true
+            set[lower and word:lower() or word] = true
         end
     end
     return set
@@ -106,13 +106,21 @@ local function unitFacts(unit)
     local facts = {
         levelWord = type(LEVEL) == "string" and LEVEL or nil,
         keepWords = wordSet({ DEAD, CORPSE }),
-        pvpWords = wordSet({ PVP, FACTION_ALLIANCE, FACTION_HORDE }),
+        pvpWords = wordSet({ PVP, PVP_ENABLED, FACTION_ALLIANCE, FACTION_HORDE }, true),
         ownerPatterns = ownerPatterns,
     }
     local _, factionName = UnitFactionGroup(unit)
     factionName = plain(factionName)
     if factionName ~= nil and factionName ~= "" then
-        facts.pvpWords[factionName] = true
+        facts.pvpWords[factionName:lower()] = true
+    end
+    local level = plain(UnitLevel(unit))
+    if type(level) == "number" then
+        facts.level = level
+    end
+    local className = plain(UnitClass(unit))
+    if type(className) == "string" and className ~= "" then
+        facts.className = className
     end
     facts.isPlayer = plain(UnitIsPlayer(unit)) == true
     facts.playerControlled = plain(UnitPlayerControlled(unit)) == true
@@ -161,8 +169,9 @@ end
 function module:sortLines(tooltip, unit)
     local lines = tooltip:readLines()
     local hasData = attachLineTypes(tooltip.activeFrame, lines)
-    local kinds = tooltipLines.classify(lines, unitFacts(unit))
-    return lines, kinds, hasData
+    local facts = unitFacts(unit)
+    local kinds = tooltipLines.classify(lines, facts)
+    return lines, kinds, hasData, facts
 end
 
 -- The kinds switched off (left out), or nil when the full tooltip is read.
@@ -232,11 +241,32 @@ local function forcedState()
     return table.concat(parts, " ")
 end
 
+-- Shortened, with every byte outside plain ASCII written as \number, so
+-- a no-break space or an odd character shows in the saved file.
 local function short(text)
     if #text > 60 then
-        return text:sub(1, 57) .. "..."
+        text = text:sub(1, 57) .. "..."
     end
-    return text
+    return (text:gsub("[^\32-\126]", function(c)
+        return "\\" .. c:byte()
+    end))
+end
+
+-- The words and facts the text rules compared with.
+local function factsText(facts)
+    local pvp = {}
+    for word in pairs(facts.pvpWords) do
+        tinsert(pvp, short(word))
+    end
+    table.sort(pvp)
+    return string.format(
+        "level word %s, level %s, class %s, player %s, pvp words %s",
+        facts.levelWord and short(facts.levelWord) or "none",
+        tostring(facts.level),
+        facts.className and short(facts.className) or "none",
+        tostring(facts.isPlayer),
+        table.concat(pvp, " / ")
+    )
 end
 
 -- One capture entry; only plain values go in (SavedVariables refuse
@@ -245,7 +275,7 @@ function module:capture(tooltip, unit)
     if tooltip.activeFrame == nil then
         return
     end
-    local lines, kinds, hasData = self:sortLines(tooltip, unit)
+    local lines, kinds, hasData, facts = self:sortLines(tooltip, unit)
     local drop = self:dropSet() or {}
     local identity = "n/a"
     if C_Secrets ~= nil and C_Secrets.ShouldUnitIdentityBeSecret ~= nil then
@@ -264,6 +294,7 @@ function module:capture(tooltip, unit)
             flag(hasData)
         ),
         forced = forcedState(),
+        facts = factsText(facts),
         lines = {},
     }
     for index, line in ipairs(lines) do
@@ -325,6 +356,9 @@ module:registerCommand({
             print(string.format("Target tooltip %d of %d, %s", i, #list, entry.time))
             print(entry.state)
             print("forced: " .. entry.forced)
+            if entry.facts ~= nil then
+                print("facts: " .. entry.facts)
+            end
             for _, line in ipairs(entry.lines) do
                 print(line)
             end

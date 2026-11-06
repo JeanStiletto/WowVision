@@ -24,7 +24,7 @@ local function facts(extra)
     local result = {
         levelWord = "Level",
         keepWords = { Dead = true, Corpse = true },
-        pvpWords = { PvP = true, Alliance = true, Horde = true },
+        pvpWords = { pvp = true, alliance = true, horde = true },
         ownerPatterns = { tooltipLines.formatPattern("%s's Pet") },
     }
     for key, value in pairs(extra or {}) do
@@ -65,10 +65,51 @@ testRunner:addSuite("TargetTooltipLines", {
         t:assertEqual(kinds[4], "other")
     end,
 
+    -- From a WoW: Forever capture (2026-11-06): every line typed None, the
+    -- title without brackets, the level line without the level word.
+    ["a Forever NPC: title before the level, level by number, PvP"] = function(t)
+        local kinds = kindsOf({
+            { "Donaal Downbreeze" },
+            { "Gastwirt" },
+            { "Stufe 10" },
+            { "PvP" },
+        }, facts({ levelWord = "Niveau", level = 10 }))
+        t:assertEqual(kinds[2], "keep")
+        t:assertEqual(kinds[3], "level")
+        t:assertEqual(kinds[4], "pvp")
+    end,
+
+    ["a Forever player: class line counts as level, no title rule"] = function(t)
+        local kinds = kindsOf({
+            { "Xanthippe Petronas" },
+            { "Stufe 12 Himmelsgeborene des Hohen Ordens (Spieler)" },
+            { "Druidin" },
+            { "Allianz" },
+            { "Recent Allies" },
+        }, facts({ levelWord = "Stufe", level = 12, className = "Druidin", isPlayer = true }))
+        t:assertEqual(kinds[2], "level")
+        t:assertEqual(kinds[3], "level")
+        t:assertEqual(kinds[4], "other")
+        t:assertEqual(kinds[5], "other")
+    end,
+
+    ["without a level line an NPC's lines are not taken for a title"] = function(t)
+        local kinds = kindsOf({ { "Wisp" }, { "Something" }, { "<Vendor>" } })
+        t:assertEqual(kinds[2], "other")
+        t:assertEqual(kinds[3], "other")
+    end,
+
+    ["the level word ignores case and no-break spaces"] = function(t)
+        local kinds = kindsOf({ { "x" }, { "level\194\16030 Beast" }, { "PVP" } })
+        t:assertEqual(kinds[2], "level")
+        t:assertEqual(kinds[3], "pvp")
+    end,
+
     ["a pet's owner line needs a player-controlled non-player"] = function(t)
         local lines = { { "Wolf" }, { "Rexxar's Pet" }, { "Level 60 Beast" } }
         t:assertEqual(kindsOf(lines, facts({ playerControlled = true }))[2], "owner")
-        t:assertEqual(kindsOf(lines, facts())[2], "other")
+        -- On an NPC the same line, above the level, is its title.
+        t:assertEqual(kindsOf(lines, facts())[2], "keep")
     end,
 
     ["dead and blank lines"] = function(t)
