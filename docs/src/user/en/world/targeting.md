@@ -80,7 +80,7 @@ This alert is available on Retail, WoW: Forever and Mists of Pandaria. On The Bu
 
 The hard and soft target announcements read the whole tooltip. Under Targeting, Target Tooltip, six checkboxes say which kinds of lines are read. All of them are checked by default, so nothing changes until you uncheck one; an unchecked kind is left out.
 
-- Read Level and Type: the line like "Level 12 Humanoid" or "Level 60 Orc Shaman (Player)".
+- Read Level and Type: the line like "Level 12 Humanoid" or "Level 60 Orc Shaman (Player)", and on WoW: Forever the class line of a player.
 - Read Guild: a player's guild line.
 - Read PvP and Faction: the "PvP" line and the faction line such as "Alliance".
 - Read Quest Lines: the quest name and progress lines on a quest mob. (Retail and WoW: Forever. On classic versions the game does not mark these lines, so they count as other lines.)

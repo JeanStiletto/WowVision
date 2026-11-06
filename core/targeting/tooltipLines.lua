@@ -42,6 +42,8 @@ end
 function tooltipLines.strip(text)
     local stripped =
         text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|H.-|h", "")
+    -- A no-break space counts as a space.
+    stripped = stripped:gsub("\194\160", " ")
     return (stripped:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
@@ -53,8 +55,23 @@ function tooltipLines.formatPattern(format)
     return "^" .. escaped:gsub("\001", ".+") .. "$"
 end
 
--- facts: levelWord ("Level"), keepWords / pvpWords (sets of whole lines),
--- guild (the unit's guild name), ownerPatterns, isPlayer, playerControlled.
+-- facts: levelWord ("Level"), level (the unit's level number), className
+-- (its class, as the game names it), keepWords (set of whole lines),
+-- pvpWords (set of whole lines in lower case), guild (the unit's guild
+-- name), ownerPatterns, isPlayer, playerControlled.
+local function isLevelLine(index, text, facts)
+    local levelWord = facts.levelWord
+    if levelWord ~= nil and text:lower():sub(1, #levelWord + 1) == levelWord:lower() .. " " then
+        return true
+    end
+    -- The unit's level as a number of its own near the top ("Stufe 10").
+    local level = facts.level
+    if level ~= nil and level > 0 and index <= 4 then
+        return text:find("%f[%d]" .. level .. "%f[%D]") ~= nil
+    end
+    return false
+end
+
 local function classifyText(index, left, right, facts)
     if isSecret(left) or isSecret(right) then
         return "keep"
@@ -69,14 +86,17 @@ local function classifyText(index, left, right, facts)
     if facts.keepWords ~= nil and facts.keepWords[text] then
         return "keep"
     end
-    local levelWord = facts.levelWord
-    if levelWord ~= nil and text:sub(1, #levelWord + 1) == levelWord .. " " then
+    if isLevelLine(index, text, facts) then
+        return "level"
+    end
+    -- A player's class on a line of its own (WoW: Forever).
+    if facts.isPlayer and facts.className ~= nil and text == facts.className then
         return "level"
     end
     if facts.guild ~= nil and index <= 3 and text:find(facts.guild, 1, true) ~= nil then
         return "guild"
     end
-    if facts.pvpWords ~= nil and facts.pvpWords[text] then
+    if facts.pvpWords ~= nil and facts.pvpWords[text:lower()] then
         return "pvp"
     end
     if facts.ownerPatterns ~= nil and facts.playerControlled and not facts.isPlayer then
@@ -97,6 +117,7 @@ end
 -- Returns one kind per line.
 function tooltipLines.classify(lines, facts)
     local kinds = {}
+    local seenLevel = false
     for index, line in ipairs(lines) do
         local kind
         if index == 1 then
@@ -108,9 +129,25 @@ function tooltipLines.classify(lines, facts)
             end
             if kind == nil then
                 kind = classifyText(index, line[1], line[2], facts)
+                -- An NPC's line between its name and its level is its title
+                -- ("Gastwirt" on WoW: Forever, without the brackets).
+                if kind == "other" and not seenLevel and not facts.isPlayer and not facts.playerControlled then
+                    kind = "keep"
+                end
             end
         end
+        if kind == "level" then
+            seenLevel = true
+        end
         kinds[index] = kind
+    end
+    -- No level line found: the title rule had nothing to go by.
+    if not seenLevel then
+        for index, kind in ipairs(kinds) do
+            if kind == "keep" and index > 1 and not facts.isPlayer then
+                kinds[index] = classifyText(index, lines[index][1], lines[index][2], facts)
+            end
+        end
     end
     return kinds
 end
