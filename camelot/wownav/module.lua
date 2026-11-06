@@ -504,9 +504,18 @@ local function startRoute(self, request, outcome)
     -- a target picked as the start (not a waypoint) is the first waypoint itself; not after a transit, whose route
     -- goes on from the far end
     local start = request.start
-    if start ~= nil and start.nodeId == nil and route.path[1] == request.startOverride then
+    local fromStart = start ~= nil and route.path[1] == request.startOverride
+    if fromStart and start.nodeId == nil then
         route:prependStart(start.x, start.y, start.z)
     end
+    -- Ctrl-Shift-R: the way back was found; Ctrl-Shift-N goes there again. Once: a transit's continuation starts anew.
+    local reversed = request.reversed
+    request.reversed = nil
+    if reversed ~= nil then
+        maps.lastDestination = reversed.destination
+    end
+    -- start and target on the same spot: nothing to walk on the network
+    local sameSpot = fromStart and Route.sameSpot(start, request.contract) and route:dropToEnd()
     if request.dockTarget ~= nil and not trimmed then
         route.waitCheck = dock.waitAreaCheck(N, request.dockTarget)
     end
@@ -529,6 +538,10 @@ local function startRoute(self, request, outcome)
 
     local count = #route.path
     local yards = px ~= nil and routeLength(N, route.path, route.pathIndex, px, py) or 0
+    -- standing on it: the arrival of the first update says all there is
+    if sameSpot and yards <= route.G.EffectiveRadius(Route.ARRIVAL_TARGET_RADIUS) then
+        return
+    end
     local text = string.format("%d %s, %d %s", count, L["waypoints"], yards, L["yards"])
     local approx = approximateText(outcome.result)
     if approx ~= nil then
@@ -545,6 +558,9 @@ local function startRoute(self, request, outcome)
     local outpost = outcome.plan and outcome.plan.result and outcome.plan.result.outpost
     if outpost == "through" or outpost == "target" then
         text = text .. ". " .. WowVisionNavigationText("outpost_" .. outpost)
+    end
+    if reversed ~= nil then
+        text = reversed.text .. ". " .. text
     end
     say(text)
 end
@@ -615,7 +631,8 @@ function module:routeTo(target)
             say(L["No WowNav network here"])
             return true
         end
-        local request = { nodeId = target.data.nodeId, label = target.label, onArrive = target.onArrive, start = start }
+        local request = { nodeId = target.data.nodeId, label = target.label, onArrive = target.onArrive, start = start,
+            reversed = target.reversed }
         if bindStart(self, request) then
             self:stopRoute()
             search(self, request)
@@ -688,7 +705,8 @@ function module:routeTo(target)
     end
     local request = { contract = contract, label = target.label, onArrive = target.onArrive, dockTarget = dockTarget,
         activationTarget = activationTarget, approx = type(target.data) == "table" and target.data.approx == true,
-        lowestFloor = type(target.data) == "table" and target.data.lowestFloor == true, start = start }
+        lowestFloor = type(target.data) == "table" and target.data.lowestFloor == true, start = start,
+        reversed = target.reversed }
     if bindStart(self, request) then
         self:stopRoute()
         search(self, request)
@@ -732,10 +750,10 @@ function module:reverseRoute()
     if data.n == nil then
         data.n = label
     end
-    say(string.format(L["Route reversed, back to %s"], label))
-    -- Ctrl-Shift-N goes there again
-    maps.lastDestination = data
-    if maps:routeTo(x, y, label, nil, z, data, { nodeId = from, z = fromZ }) then
+    -- the search answers later: said and remembered when the route starts (startRoute), a failed one says why
+    local reversed = { text = string.format(L["Route reversed, back to %s"], label), destination = data }
+    if self:routeTo({ x = x, y = y, z = z, label = label, data = data, start = { nodeId = from, z = fromZ },
+        reversed = reversed }) then
         return true
     end
     say(L["No route found"])
@@ -908,7 +926,10 @@ function module:onRouteEvent(path, event)
                 self.dockPath = water
                 maps:pathfind(water)
             end
-        elseif result == nil or result.quality == "exact" then
+        elseif result == nil or result.quality == "exact" or (not result.normalizedWater
+            and (result.delta3D or result.deltaXY or 0) <= radius) then
+            -- an approximate result whose network ends at the target is an arrival too: on Forever the game gives no
+            -- height, so a target on its network point resolves "approximate" only for want of one ("0.0 yards")
             say(L["Arrived"] .. (label ~= nil and (" " .. label) or ""))
         elseif result.normalizedWater then
             -- his stop_water_net_ends / stop_net_ends: how far the network ends from the target

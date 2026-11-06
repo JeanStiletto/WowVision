@@ -55,7 +55,7 @@ With a gamepad on Retail and WoW: Forever, hold the right stick press and use th
 
 ## The default setup: the General group
 
-A new character starts with one group called General. It holds one buffer, also called General, which is a static buffer with these lines in this order:
+Your account starts with one group called General. It holds one buffer, also called General, which is a static buffer with these lines in this order:
 
 | Line | What it tells you | Example |
 |---|---|---|
@@ -114,6 +114,8 @@ Settings:
 | Enabled | On | The buffer's on/off switch (see [Turn something off for a while](#turn-something-off-for-a-while)) |
 | Label | "New Aura Buffer" when added from the menu | The name you hear when you switch to the buffer. If you clear it, the buffer is named after its source (for example "Target Debuffs") or "Auras" when it has several |
 | Sources | Player Debuffs, then Player Buffs | The list of sources, in the order they are listed in the buffer |
+| Speak Time Remaining | On | Whether an aura says how much time it has left |
+| Speak Description | On | Whether an aura says what it does |
 | Cast by Me, Castable or Dispellable by Me, Cancelable, Crowd Control, Dispellable by My Group, Dispellable, External Defensive, Big Defensive, Shown on Raid Frames in Combat, Important | Any | One filter each, see below |
 
 Each filter is a choice with up to three values. Any ignores the filter. Only keeps just the auras it describes. Not leaves those auras out. For example, Cast by Me set to Only lists only auras that you cast, and Crowd Control set to Not hides stuns, fears and the like. You can combine several filters; an aura must pass all of them. The filters also work on Retail in combat and in instances.
@@ -133,7 +135,7 @@ On Retail and WoW: Forever every filter offers Any, Only and Not. On Classic Era
 
 The available sources are Player Debuffs, Player Buffs, Target Debuffs, Target Buffs, Focus Debuffs, Focus Buffs, Pet Debuffs and Pet Buffs. You can mix them freely, and the order of the Sources list is the order you hear them in.
 
-What you hear for one aura: its name; its stack count when it has stacks; the time remaining and the total duration when it has a duration; and, for debuffs, its dispel type (Magic, Curse, Poison, Disease). For example: "Moonfire, 12 seconds remaining, of 18 seconds, Magic", or with stacks "Rejuvenation, 2 stacks, 9 seconds remaining, of 15 seconds".
+What you hear for one aura: its name; its stack count when it has stacks; the time remaining when it has a duration; for debuffs, its dispel type (Magic, Curse, Poison, Disease); and last its description, what the aura does. For example: "Moonfire, 12 seconds remaining, Magic, Burns the enemy for 4 Arcane damage every 3 seconds", or with stacks "Rejuvenation, 2 stacks, 9 seconds remaining, Heals 50 damage over 15 seconds". The description comes last, so you can stop the speech with Ctrl once you have heard enough. Speak Time Remaining and Speak Description leave those parts out. The tooltip keys still read them.
 
 When a source has nothing to list, the buffer says so instead of staying silent: "Target Debuffs, none", "Target Debuffs, no target", "Focus Buffs, no focus", "Pet Buffs, no pet", or "unavailable" when the game will not tell. An aura that vanishes while you are on it reads "Gone".
 
@@ -141,7 +143,7 @@ While you are on an aura, the tooltip keys read it line by line: Shift+Down and 
 
 The list updates by itself when auras come and go or when the unit changes (you target something else), and it keeps your position.
 
-On Retail, in combat and in instances, the game closes its aura list to addons. The aura buffer then reads each aura from the game's own tooltip: you still hear the name, the time remaining (or the description for an aura without a duration) and, for debuffs, the dispel type. The stack count is only read for your own auras, in a buffer with no filters set, and only for auras the game shows on its own buff and debuff bars.
+On Retail, in combat and in instances, the game closes its aura list to addons. The aura buffer then reads each aura from the game's own tooltip: you still hear the name, for debuffs the dispel type, and then the rest of the tooltip in the game's order: the description, then the time remaining. The two can't be told apart there, so with Speak Description off you hear the tooltip's last line while Speak Time Remaining is on, and with Speak Description on you can still hear the time remaining. The stack count is only read for your own auras, in a buffer with no filters set, and only for auras the game shows on its own buff and debuff bars.
 
 ### Chat tab buffer
 
@@ -294,7 +296,8 @@ Groups and buffers have an Enabled toggle. A group or buffer that is switched of
 
 WowVision stores settings in two places: once for your whole account ("Global") and once for each character.
 
-- New groups you add are stored account-wide by default, so every character sees them. The default General group is created separately for each character.
+- Groups are stored account-wide by default, so every character sees them and a change on one character is there on all of them. That includes the default General group.
+- When a character first logs in after buffers became account-wide, its groups join the account's. A group joins the account's group of the same name, which takes only the buffers it does not have yet, so a changed buffer sits beside the account's. Any other group moves as it is.
 - To change where a group lives, go to the groups list, move to the group, and press Shift+F10 (the context menu). Choose Scope, then Global (all characters) or your character's name (this character only). The buffers and items inside a group travel with it and have no scope choice of their own.
 - To change everything at once, open the WowVision menu, move to Buffers, press Shift+F10, choose Scope, and pick Global or your character.
 - The Invert Item Direction setting can also be given a scope with Shift+F10 on it. It is account-wide by default.
@@ -322,7 +325,7 @@ If you prefer a static buffer: add a Static Buffer, open Objects, Add, Health, t
 2. Set Label to "Target Debuffs".
 3. Press Enter on Sources (2). You see two rows, "Player Debuffs" and "Player Buffs", each with a choice and a Remove button, and an Add button at the end. Change the first row to Target Debuffs and press Remove on the second row, so that only one source is left. (Add appends a new row that starts as "Player Debuffs"; change it to any source you like.)
 4. Set Cast by Me to Only if you only care about your own debuffs.
-5. In the game, target an enemy and press Alt+Right until you hear "Target Debuffs". Then press Alt+Down to walk through the debuffs: "Moonfire, 12 seconds remaining, of 18 seconds".
+5. In the game, target an enemy and press Alt+Right until you hear "Target Debuffs". Then press Alt+Down to walk through the debuffs: "Moonfire, 12 seconds remaining, Magic, Burns the enemy for 4 Arcane damage every 3 seconds".
 
 ### Watch a power other than your main one
 
