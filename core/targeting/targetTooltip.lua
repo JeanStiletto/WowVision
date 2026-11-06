@@ -137,6 +137,39 @@ end
 -- tooltip data (Retail, WoW: Forever): Blizzard's handler keeps the data on
 -- the frame and notes each line's place as lineIndex. Returns whether there
 -- was data.
+-- A line's colour as the screen shows it (for the capture: whether colour
+-- tells a title from a level line, and whether it stays plain when the text
+-- is secret).
+local function colorText(color)
+    if color == nil then
+        return "none"
+    end
+    if secrets.isSecret(color) or (canaccesstable ~= nil and not canaccesstable(color)) then
+        return "secret"
+    end
+    local r, g, b = color.r, color.g, color.b
+    if secrets.isSecret(r) or secrets.isSecret(g) or secrets.isSecret(b) then
+        return "secret"
+    end
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+        return "none"
+    end
+    return string.format("%02x%02x%02x", r * 255 + 0.5, g * 255 + 0.5, b * 255 + 0.5)
+end
+
+-- Whether the unit has a guild line: "no", "yes", or "secret" (then only
+-- that a value came back is known).
+local function guildState(unit)
+    if GetGuildInfo == nil then
+        return "n/a"
+    end
+    local guild = GetGuildInfo(unit)
+    if secrets.isSecret(guild) then
+        return "secret"
+    end
+    return guild ~= nil and "yes" or "no"
+end
+
 local function attachLineTypes(frame, lines)
     if frame == nil or frame.GetPrimaryTooltipData == nil then
         return false
@@ -159,6 +192,7 @@ local function attachLineTypes(frame, lines)
             elseif lineType ~= nil then
                 line.typeName = lineTypeNames[lineType] or ("type " .. tostring(lineType))
             end
+            line.color = colorText(lineData.leftColor)
         end
     end
     return true
@@ -286,12 +320,14 @@ function module:capture(tooltip, unit)
         time = date("%Y-%m-%d %H:%M:%S"),
         unit = unit,
         state = string.format(
-            "identity secret %s, combat %s, instance %s, restrictions %s, tooltip data %s",
+            "identity secret %s, combat %s, instance %s, restrictions %s, tooltip data %s, pvp flag %s, guild %s",
             identity,
             flag(InCombatLockdown()),
             inInstance and tostring(instanceType) or "no",
             activeRestrictions(),
-            flag(hasData)
+            flag(hasData),
+            flag(UnitIsPVP(unit)),
+            guildState(unit)
         ),
         forced = forcedState(),
         facts = factsText(facts),
@@ -312,10 +348,11 @@ function module:capture(tooltip, unit)
         tinsert(
             entry.lines,
             string.format(
-                "%d %s, type %s, text %s, %s%s",
+                "%d %s, type %s, colour %s, text %s, %s%s",
                 index,
                 kinds[index],
                 tostring(typeName or "none"),
+                line.color or "none",
                 textSecret and "secret" or "plain",
                 kept and "read" or "left out",
                 text ~= "" and (": " .. text) or ""
