@@ -122,6 +122,10 @@ local function unitFacts(unit)
     if type(className) == "string" and className ~= "" then
         facts.className = className
     end
+    local creatureType = plain(UnitCreatureType(unit))
+    if type(creatureType) == "string" and creatureType ~= "" then
+        facts.creatureType = creatureType
+    end
     facts.isPlayer = plain(UnitIsPlayer(unit)) == true
     facts.playerControlled = plain(UnitPlayerControlled(unit)) == true
     if facts.isPlayer and GetGuildInfo ~= nil then
