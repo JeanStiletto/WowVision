@@ -59,20 +59,25 @@ end
 -- (its class, as the game names it), keepWords (set of whole lines),
 -- pvpWords (set of whole lines in lower case), guild (the unit's guild
 -- name), ownerPatterns, isPlayer, playerControlled.
-local function isLevelLine(index, text, facts)
+local function isLevelLine(index, text, facts, seenLevel)
     local levelWord = facts.levelWord
     if levelWord ~= nil and text:lower():sub(1, #levelWord + 1) == levelWord:lower() .. " " then
         return true
     end
-    -- The unit's level as a number of its own near the top ("Stufe 10").
+    -- The unit's level as the first number of the first line that could
+    -- hold it (name, title or guild, level: line 3 at most). Counts ("2/8"),
+    -- objectives ("Kobolde: 2") and percentages never are the level line.
     local level = facts.level
-    if level ~= nil and level > 0 and index <= 4 then
-        return text:find("%f[%d]" .. level .. "%f[%D]") ~= nil
+    if seenLevel or level == nil or level <= 0 or index > 3 then
+        return false
     end
-    return false
+    if text:find("[/:%%]") ~= nil then
+        return false
+    end
+    return text:match("%d+") == tostring(level)
 end
 
-local function classifyText(index, left, right, facts)
+local function classifyText(index, left, right, facts, seenLevel)
     if isSecret(left) or isSecret(right) then
         return "keep"
     end
@@ -86,7 +91,7 @@ local function classifyText(index, left, right, facts)
     if facts.keepWords ~= nil and facts.keepWords[text] then
         return "keep"
     end
-    if isLevelLine(index, text, facts) then
+    if isLevelLine(index, text, facts, seenLevel) then
         return "level"
     end
     -- A player's class on a line of its own (WoW: Forever).
@@ -128,7 +133,7 @@ function tooltipLines.classify(lines, facts)
                 kind = TYPE_KINDS[typeName] or "other"
             end
             if kind == nil then
-                kind = classifyText(index, line[1], line[2], facts)
+                kind = classifyText(index, line[1], line[2], facts, seenLevel)
                 -- An NPC's line between its name and its level is its title
                 -- ("Gastwirt" on WoW: Forever, without the brackets).
                 if kind == "other" and not seenLevel and not facts.isPlayer and not facts.playerControlled then

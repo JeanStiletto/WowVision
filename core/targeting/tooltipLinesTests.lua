@@ -93,6 +93,43 @@ testRunner:addSuite("TargetTooltipLines", {
         t:assertEqual(kinds[5], "other")
     end,
 
+    ["a level 2 kobold with 2 of 8 killed: only the level line is level"] = function(t)
+        local kinds = kindsOf({
+            { "Kobold-Arbeiter" },
+            { "Stufe 2" },
+            { "2 Kobolde zu viel" },
+            { "Kobold-Arbeiter getötet: 2/8" },
+            { "2/8 Kobold-Arbeiter" },
+            { "Fortschritt 2%" },
+        }, facts({ levelWord = "Niveau", level = 2 }))
+        t:assertEqual(kinds[2], "level")
+        t:assertEqual(kinds[3], "other")
+        t:assertEqual(kinds[4], "other")
+        t:assertEqual(kinds[5], "other")
+        t:assertEqual(kinds[6], "other")
+    end,
+
+    ["a count or objective near the top is never the level line"] = function(t)
+        local kinds = kindsOf({
+            { "Kobold-Arbeiter" },
+            { "2/8 Kobold-Arbeiter" },
+            { "Kobolde: 2" },
+        }, facts({ levelWord = "Niveau", level = 2 }))
+        t:assertEqual(kinds[2], "other")
+        t:assertEqual(kinds[3], "other")
+    end,
+
+    ["the level number must be the line's first number, within line 3"] = function(t)
+        local kinds = kindsOf({
+            { "Wolf" },
+            { "Rudel 3, Stufe 2" },
+            { "Elite" },
+            { "Stufe 2" },
+        }, facts({ levelWord = "Niveau", level = 2 }))
+        t:assertEqual(kinds[2], "other")
+        t:assertEqual(kinds[4], "other")
+    end,
+
     ["without a level line an NPC's lines are not taken for a title"] = function(t)
         local kinds = kindsOf({ { "Wisp" }, { "Something" }, { "<Vendor>" } })
         t:assertEqual(kinds[2], "other")
