@@ -1,7 +1,7 @@
--- Shorter target announcements: switches that leave kinds of tooltip lines
--- out of what the hard and soft target alerts say (sorted by
--- core/targeting/tooltipLines.lua). All switches default off, so the full
--- tooltip is read until the player turns one on. Lines that cannot be
+-- Shorter target announcements: one switch per kind of tooltip line, saying
+-- whether the hard and soft target alerts read it (sorted by
+-- core/targeting/tooltipLines.lua). All switches default on, so the full
+-- tooltip is read until the player turns one off. Lines that cannot be
 -- recognised (secret text without a line type, in instances and fights on
 -- WoW: Forever) are always read.
 --
@@ -22,12 +22,12 @@ local secrets = WowVision.secrets
 local CAPTURE_MAX = 30
 
 local SWITCHES = {
-    { kind = "level", key = "skipLevel", label = L["Leave Out Level and Type"] },
-    { kind = "guild", key = "skipGuild", label = L["Leave Out Guild"] },
-    { kind = "pvp", key = "skipPvP", label = L["Leave Out PvP and Faction"] },
-    { kind = "quest", key = "skipQuest", label = L["Leave Out Quest Lines"] },
-    { kind = "owner", key = "skipOwner", label = L["Leave Out Pet Owner"] },
-    { kind = "other", key = "skipOther", label = L["Leave Out Other Lines"] },
+    { kind = "level", key = "readLevel", label = L["Read Level and Type"] },
+    { kind = "guild", key = "readGuild", label = L["Read Guild"] },
+    { kind = "pvp", key = "readPvP", label = L["Read PvP and Faction"] },
+    { kind = "quest", key = "readQuest", label = L["Read Quest Lines"] },
+    { kind = "owner", key = "readOwner", label = L["Read Pet Owner"] },
+    { kind = "other", key = "readOther", label = L["Read Other Lines"] },
 }
 
 for _, switch in ipairs(SWITCHES) do
@@ -35,7 +35,7 @@ for _, switch in ipairs(SWITCHES) do
         type = "Bool",
         key = switch.key,
         label = switch.label,
-        default = false,
+        default = true,
     })
 end
 
@@ -165,14 +165,14 @@ function module:sortLines(tooltip, unit)
     return lines, kinds, hasData
 end
 
--- The kinds switched off, or nil when the full tooltip is read.
+-- The kinds switched off (left out), or nil when the full tooltip is read.
 function module:dropSet()
     if not self:getEnabled() then
         return nil
     end
     local drop
     for _, switch in ipairs(SWITCHES) do
-        if self.settings[switch.key] == true then
+        if self.settings[switch.key] == false then
             drop = drop or {}
             drop[switch.kind] = true
         end
