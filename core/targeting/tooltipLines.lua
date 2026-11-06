@@ -56,7 +56,7 @@ function tooltipLines.formatPattern(format)
 end
 
 -- facts: levelWord ("Level"), level (the unit's level number), className
--- (its class, as the game names it), keepWords (set of whole lines),
+-- (its class, as the game names it), creatureType, keepWords (set of whole lines),
 -- pvpWords (set of whole lines in lower case), guild (the unit's guild
 -- name), ownerPatterns, isPlayer, playerControlled.
 local function isLevelLine(index, text, facts, seenLevel)
@@ -96,6 +96,10 @@ local function classifyText(index, left, right, facts, seenLevel)
     end
     -- A player's class on a line of its own (WoW: Forever).
     if facts.isPlayer and facts.className ~= nil and text == facts.className then
+        return "level"
+    end
+    -- An NPC's creature type on a line of its own ("Wildtier", WoW: Forever).
+    if not facts.isPlayer and facts.creatureType ~= nil and text == facts.creatureType then
         return "level"
     end
     if facts.guild ~= nil and index <= 3 and text:find(facts.guild, 1, true) ~= nil then

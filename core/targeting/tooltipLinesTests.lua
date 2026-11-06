@@ -93,6 +93,19 @@ testRunner:addSuite("TargetTooltipLines", {
         t:assertEqual(kinds[5], "other")
     end,
 
+    -- From a WoW: Forever capture (2026-11-06 13:49): level word "St.".
+    ["a Forever beast: creature type line counts as level, threat is other"] = function(t)
+        local kinds = kindsOf({
+            { "Himmelshüpfer" },
+            { "Stufe 8" },
+            { "Wildtier" },
+            { "100% Bedrohung", typeName = "UnitThreat" },
+        }, facts({ levelWord = "St.", level = 8, creatureType = "Wildtier" }))
+        t:assertEqual(kinds[2], "level")
+        t:assertEqual(kinds[3], "level")
+        t:assertEqual(kinds[4], "other")
+    end,
+
     ["a level 2 kobold with 2 of 8 killed: only the level line is level"] = function(t)
         local kinds = kindsOf({
             { "Kobold-Arbeiter" },
