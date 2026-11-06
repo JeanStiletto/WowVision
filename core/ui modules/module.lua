@@ -48,6 +48,36 @@ settings:add({
     },
 })
 
+-- LOCAL PROBE (not for a PR): which sound settings the client has, to find a
+-- volume for the Talking Head channel. Lists every console variable whose
+-- name has sound, volume, dialog or talk in it with its value, prints them
+-- and keeps them in WowVisionDump.soundCVars.
+module:registerCommand({
+    name = "soundcvars",
+    description = "List the game's sound and volume settings",
+    func = function()
+        local commands = ConsoleGetAllCommands ~= nil and ConsoleGetAllCommands() or {}
+        local found = {}
+        for _, info in ipairs(commands) do
+            local name = info.command
+            local lower = name ~= nil and name:lower() or ""
+            if lower:find("sound") or lower:find("volume") or lower:find("dialog") or lower:find("talk") then
+                local value = C_CVar ~= nil and C_CVar.GetCVar(name) or GetCVar(name)
+                if value ~= nil then
+                    tinsert(found, name .. " = " .. tostring(value))
+                end
+            end
+        end
+        table.sort(found)
+        WowVisionDump = WowVisionDump or {}
+        WowVisionDump.soundCVars = found
+        for _, line in ipairs(found) do
+            print(line)
+        end
+        print("WowVision: " .. #found .. " sound settings, saved in WowVisionDump.soundCVars")
+    end,
+})
+
 -- Chasing stuck movement keys with testers: prints when windows take, wait
 -- for and release the navigation keys, and what the held check saw.
 module:registerCommand({
