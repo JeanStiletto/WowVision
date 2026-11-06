@@ -76,6 +76,9 @@ loadAddonFile("camelot/surroundings/storeTests.lua")
 loadAddonFile("camelot/surroundings/helperTests.lua")
 loadAddonFile("core/navigation/visitedStore.lua")
 loadAddonFile("core/navigation/visitedTests.lua")
+loadAddonFile("core/secrets.lua")
+loadAddonFile("core/targeting/tooltipLines.lua")
+loadAddonFile("core/targeting/tooltipLinesTests.lua")
 loadAddonFile("core/navigation/corpseFind.lua")
 loadAddonFile("core/navigation/corpseTests.lua")
 loadAddonFile("core/navigation/targetFind.lua")
@@ -1652,6 +1655,8 @@ local parseOnly = {
     "core/module/Module.lua",
     "core/alerts/alerts.lua",
     "retail/targeting.lua",
+    "core/targeting/module.lua",
+    "core/targeting/targetTooltip.lua",
 }
 for _, path in ipairs(parseOnly) do
     local chunk, err = loadfile(path)

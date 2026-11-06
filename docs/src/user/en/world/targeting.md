@@ -76,6 +76,21 @@ Switching from one free target to another is silent; you only hear the Free Soun
 
 This alert is available on Retail, WoW: Forever and Mists of Pandaria. On The Burning Crusade Anniversary the game gives no crowd control information, so the alert does not appear there.
 
+## Shorter target announcements: Target Tooltip
+
+The hard and soft target announcements read the whole tooltip. Under Targeting, Target Tooltip, six switches leave kinds of lines out. All of them are off by default, so nothing changes until you turn one on.
+
+- Leave Out Level and Type: the line like "Level 12 Humanoid" or "Level 60 Orc Shaman (Player)".
+- Leave Out Guild: a player's guild line.
+- Leave Out PvP and Faction: the "PvP" line and the faction line such as "Alliance".
+- Leave Out Quest Lines: the quest name and progress lines on a quest mob. (Retail and WoW: Forever. On classic versions the game does not mark these lines, so they count as other lines.)
+- Leave Out Pet Owner: the owner line of a pet, minion or guardian, such as "Rexxar's Pet".
+- Leave Out Other Lines: every line that fits none of the kinds above, for example "Skinnable" or lines added by other addons.
+
+Always read: the name, an NPC's title such as "<Innkeeper>", and "Dead" or "Corpse". A line WowVision cannot recognise is also always read, so a switch never drops something by guessing. On Retail and WoW: Forever the game hides some tooltip text from addons, mostly in dungeons and fights; such a line is still recognised when the game marks its kind, otherwise it stays in.
+
+Two commands help check this: /wv tooltipcheck prints how the last target's lines were sorted to chat (/wv tooltipcheck 5 for the last five; the last 30 targets are also saved after /reload), and /wv secretforce map (or combat, encounter, off, status) switches the game's own test settings that apply dungeon rules anywhere, where the game has them.
+
 ## Soft targeting
 
 Soft targeting is a game feature that picks a unit for you without a real target: the enemy in front of you, a friendly player, or something you can interact with (an NPC, a mailbox, a corpse to loot). The game's interact key acts on the soft interact target. WowVision lets you switch the three kinds on and off with a key, announces the unit when it changes, and exposes the game's hidden soft targeting options.
