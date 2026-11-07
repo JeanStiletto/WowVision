@@ -104,9 +104,12 @@ local function stampDistance(spawn, ctx)
     return spawn
 end
 
+-- As the Adapter's rank: only a spawn on the player's continent is the
+-- target's headline position (nearest); one on another continent has none.
 local function singleTarget(kind, id, name, spawn, ctx)
     stampDistance(spawn, ctx)
-    return { kind = kind, id = id, name = name, spawns = { spawn }, nearest = spawn, distance = spawn.distance }
+    local nearest = spawn.distance ~= nil and spawn or nil
+    return { kind = kind, id = id, name = name, spawns = { spawn }, nearest = nearest, distance = spawn.distance }
 end
 
 local function sortByDistance(list)
@@ -351,37 +354,20 @@ local function mapInfo(mapId)
     return mapId ~= nil and call(C_Map.GetMapInfo, mapId) or nil
 end
 
--- Whether the world map draws quest points on a map, as Blizzard's
--- MapUtil.ShouldMapTypeShowQuests decides: not on world, continent or
--- cosmic maps.
+-- Whether the world map draws quest points on a map: Blizzard's own rule
+-- (not on world, continent or cosmic maps).
 local function mapShowsQuests(mapId)
     local info = mapInfo(mapId)
-    if info == nil or Enum == nil or Enum.UIMapType == nil then
-        return false
-    end
-    local mapType = info.mapType
-    return mapType ~= Enum.UIMapType.World
-        and mapType ~= Enum.UIMapType.Continent
-        and mapType ~= Enum.UIMapType.Cosmic
+    return info ~= nil and MapUtil.ShouldMapTypeShowQuests(info.mapType) == true
 end
 
--- The continent map above a map, walking its parents.
+-- The continent map above a map (or the map itself), as Blizzard finds it.
 local function continentOf(mapId)
-    local current = mapId
-    for _ = 1, 8 do
-        local info = mapInfo(current)
-        if info == nil or Enum == nil or Enum.UIMapType == nil then
-            return nil
-        end
-        if info.mapType == Enum.UIMapType.Continent then
-            return current
-        end
-        current = info.parentMapID
-        if current == nil or current == 0 then
-            return nil
-        end
+    if mapId == nil then
+        return nil
     end
-    return nil
+    local info = call(MapUtil.GetMapParentInfo, mapId, Enum.UIMapType.Continent)
+    return info ~= nil and info.mapID or nil
 end
 
 -- The map the quest log opens for a quest (QuestMapFrame does the same
@@ -685,7 +671,7 @@ function Native:_debugLogLines(lines, ctx)
             tinsert(maps, tostring(mapId))
         end
         local target = self:_questTarget(questId, ctx)
-        local spawn = target ~= nil and target.nearest or nil
+        local spawn = target ~= nil and (target.nearest or target.spawns[1]) or nil
         tinsert(lines, string.format(
             "  %s, id %s: quest map %s, %s; point on player map %s; zones with a point %s; target %s",
             tostring(entry.title),

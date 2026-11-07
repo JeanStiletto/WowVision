@@ -277,8 +277,9 @@ do
             end,
         },
     }
-    -- module.lua only parses headless; the stand-in log answers instead
-    WowVision.quests.gameQuestEntry = function(questId)
+    -- module.lua only parses headless; the stand-in log answers instead, put
+    -- in place by each live test and taken out after it
+    harness.gameQuestEntry = function(questId)
         return harness.log[questId]
     end
     loadAddonFile("core/quests/scanner.lua")
@@ -1540,6 +1541,7 @@ local parseOnly = {
     "core/ui/WindowManager.lua",
     "core/windows/GameMenu.lua",
     "core/errors/module.lua",
+    "core/quests/module.lua",
     "core/ui modules/graphBindings.lua",
     "core/buffers/module.lua",
     "core/windows/options/ui.lua",
@@ -1599,6 +1601,7 @@ local parseOnly = {
     "core/navigation/maps/module.lua",
     "core/navigation/maps/ui.lua",
     "core/navigation/visited.lua",
+    "camelot/wownav/module.lua",
     "core/navigation/corpse.lua",
     "core/navigation/targetRoute.lua",
     "core/windows/Macros.lua",

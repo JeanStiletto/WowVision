@@ -30,6 +30,7 @@ local GLOBALS = {
     "UnitPosition",
     "UnitLevel",
     "GetQuestUiMapID",
+    "MapUtil",
 }
 
 -- world: { pois = { [mapId] = { QuestPOIMapInfo... } }, uiMaps = { [questId] = mapId },
@@ -42,6 +43,23 @@ local function withWorld(world, body)
     local savedLog = WowVision.quests.gameQuestLog
     world.calls = {}
     Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3 } }
+    -- Blizzard's two helpers the source calls, as the game has them
+    MapUtil = {
+        ShouldMapTypeShowQuests = function(mapType)
+            return mapType ~= Enum.UIMapType.World and mapType ~= Enum.UIMapType.Continent
+                and mapType ~= Enum.UIMapType.Cosmic
+        end,
+        GetMapParentInfo = function(mapId, mapType)
+            local info = C_Map.GetMapInfo(mapId)
+            while info do
+                if info.mapType == mapType then
+                    return info
+                end
+                info = C_Map.GetMapInfo(info.parentMapID)
+            end
+            return nil
+        end,
+    }
     CreateVector2D = function(x, y)
         return { x = x, y = y }
     end
@@ -209,6 +227,7 @@ testRunner:addSuite("NativeQuestTargets", {
             local target = source:targets(503, "objectives")[1]
             t:assertNotNil(target, "the world map still shows it")
             t:assertNil(target.distance, "no distance across continents")
+            t:assertNil(target.nearest, "no headline position across continents, as the Adapter's rank")
             local node = inProgressNodes(source)["quest:503"]
             t:assertNil(node.x)
             t:assertNil(node.y)
