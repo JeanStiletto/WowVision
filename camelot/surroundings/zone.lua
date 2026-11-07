@@ -920,7 +920,7 @@ function logic.unpack(zone, locale)
 
     ix.places = {}
     for id, p in pairs(zone.places) do
-        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of, plain = p.plain }
+        ix.places[id] = { kind = p[1], label = p[2], road = p[3], deadEnd = p.deadEnd or false, of = p.of, plain = p.plain, dir = p.dir }
     end
     -- a climb's name said from its top (zone.climbDown: its place, the place of that name; the
     -- export's climb_names): "stairs to the cellar" from the kitchen the stairs lead up to
@@ -1401,7 +1401,9 @@ function logic.directionText(zone, value)
     if logic.CLIMBS[logic.kindOf(zone, value)] then
         return logic.axisWords(zone, code % 1000 % 180)
     end
-    local template = logic.dirTemplate(zone, math.floor(code / 1000))
+    -- a place's own template for its building direction (a cave's "cave to the north", export PLACE_DIR)
+    local place = zone._index.places and zone._index.places[math.floor(value / logic.CODE)]
+    local template = logic.dirTemplate(zone, place and place.dir or math.floor(code / 1000))
     if template then
         return string.format(template, logic.dirWord(zone, code % 1000))
     end

@@ -138,4 +138,22 @@ testRunner:addSuite("Surroundings stored data", {
         t:assertEqual(opened, 4)
         logic.inflate, logic.BANDS_KEPT = inflate, kept
     end,
+    ["a place's own direction template (placeDirs) is said instead of its cells' building template"] = function(t)
+        -- a cave beside the player says "cave to the north", never "building to the north" (bug 99 trial, the user
+        -- 2026-11-07); the cell keeps template 6, the place carries its own (export PLACE_DIR)
+        local decode = logic.decodeJson
+        logic.decodeJson = function(text)
+            local data = decode(text)
+            data.placeDirs = { ["2"] = 10 }
+            return data
+        end
+        local zone = loadStored()
+        logic.unpack(zone, "enUS")
+        logic.decodeJson = decode
+        t:assertEqual(zone.places[2].dir, 10)
+        t:assertNil(zone.places[1].dir)
+        zone.dirs[10] = "cave to the %s"
+        t:assertEqual(logic.directionText(zone, 2 * logic.CODE + 6000), "cave to the north")
+        t:assertEqual(logic.directionText(zone, 1 * logic.CODE + 6000), "building to the north")
+    end,
 })

@@ -95,6 +95,14 @@ local roomByDoor = false -- ... entered through one of its doorways: it holds ov
 local lastRoom = nil -- the last announced room, for the interior name
 local roomWaySaid = nil -- the way the last said room runs ("north to south"), for its next section
 local layerMode = false -- in one of the big halls of the indoor layer: its places, not the room
+-- the building's name for the first place line on its floors after coming in (from outside or another building), as the
+-- room line says it (bug 99 trial, the user 2026-11-07: a cave's or a crypt's floors said no name of it)
+local layerName = nil
+-- the last entrance line and when: a name it said just before is not said again at the start of the room or place line
+-- inside (the user 2026-11-07: fewer double lines, no information lost; "entrance of cave of Shadowgale Forest, ..."
+-- and 6 s later "cave of Shadowgale Forest, cave southwest, ...")
+local entrancesSaid = {} -- {text, time} of the entrance lines of the last NAME_HEARD seconds
+local NAME_HEARD = 15 -- seconds an entrance line's name counts as just heard
 -- the doorway the player came into the room by, left out of the doorway guidance until they were
 -- once beyond the guidance reach from it (it said "at the way outside" right after coming in)
 local entryRoom, entryDoor, entryAway = nil, nil, false
@@ -789,7 +797,24 @@ end
 
 local helperArrival -- (below: ends the helper's route on a place or room line)
 
+-- `text` without the building name `name` at its start when an entrance line said that name just before
+-- (lastEntrance, NAME_HEARD), else as it is.
+local function nameOnce(name, text)
+    if name and text and text:sub(1, #name + 2) == name .. ", " then
+        for _, e in ipairs(entrancesSaid) do
+            if GetTime() - e[2] <= NAME_HEARD and e[1]:find(name, 1, true) then
+                return text:sub(#name + 3)
+            end
+        end
+    end
+    return text
+end
+
 local function say(text, kind, x, y, walked, extra)
+    if kind == "place" and layerName and text then
+        text = nameOnce(layerName, layerName .. ", " .. text)
+        layerName = nil
+    end
     local raw = text
     text = logic.finishText(text)
     if zone then
@@ -797,6 +822,17 @@ local function say(text, kind, x, y, walked, extra)
     end
     if text and text ~= "" then
         speakLine(text, kind)
+        if kind == "entrance" then
+            -- (each entrance line of the last seconds: "in to the east" right after "entrance of building of
+            -- Valanaar, ..." kept the name from counting)
+            local now, kept = GetTime(), { { raw, GetTime() } }
+            for _, e in ipairs(entrancesSaid) do
+                if now - e[2] <= NAME_HEARD then
+                    kept[#kept + 1] = e
+                end
+            end
+            entrancesSaid = kept
+        end
     else
         -- nothing to say (the next piece of the same way, no direction): logged, but nothing heard changes: the
         -- names of the last line, the turn key's target and the helper's route stay (bug 32, review 2026-10-29)
@@ -1481,6 +1517,24 @@ local function updateLayer(z, layer, x, y, px, py, here)
         layerMode = true
         forgetWays()
         notePassed(z, x, y)
+        -- come in from outside or another building: its first place line says the building, as a room line does
+        -- (logic.describeRoom; never a city's own complex)
+        -- (the room not known yet, stepping straight onto a staircase from the door: the one interior every room
+        -- the player may be in belongs to, the Shadow Grave crypt's)
+        local ix = z._index
+        local interior
+        for id in pairs(room and { [room] = true } or here or {}) do
+            local r = ix.rooms[id]
+            if r == nil or (interior ~= nil and interior ~= r.interior) then
+                interior = false
+                break
+            end
+            interior = r.interior
+        end
+        local it = interior and ix.interiors[interior]
+        local prev = lastRoom and ix.rooms[lastRoom]
+        layerName = it and not it.city and it.name and it.name ~= "" and (prev == nil or prev.interior ~= interior)
+            and it.name or nil
     end
     lastRoom = room or lastRoom
     local down = downHere(layer, x, y)
@@ -1679,6 +1733,7 @@ local function updateIndoors(z, x, y, px, py)
     end
     if layerMode then
         layerMode = false
+        layerName = nil
         forgetWays()
         notePassed(z, x, y)
     end
@@ -1710,7 +1765,9 @@ local function updateIndoors(z, x, y, px, py)
                     { walked = round1(indoor.walked), same = true })
             end
         else
-            say(logic.roomText(z, room, lastRoom, true, x, y), "room", x, y, indoor.walked)
+            local r = room and z._index.rooms[room]
+            local it = r and z._index.interiors[r.interior]
+            say(nameOnce(it and it.name, logic.roomText(z, room, lastRoom, true, x, y)), "room", x, y, indoor.walked)
             roomWaySaid = room and logic.roomWay(z, room)
         end
         lastRoom = room

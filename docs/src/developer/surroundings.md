@@ -115,6 +115,9 @@ The JSON object:
 
 - `format`: 4. `palette`: the grid's cell values; a row of a grid is palette index, count pairs.
 - `places`: the kind of every place id (its names are in `names`).
+- `placeDirs` (optional): `{"index": template}` for the places that have their own direction
+  template (the same in every language): a cave's or a mine's cells say it instead of their cell's
+  template. Written only where a place has one.
 - `words`: per client language (`enUS`, `deDE`, `frFR`) the model's `dirs`, `dirsClock`,
   `compass`, `axes`, `floors`, `ofTemplate`. They stay in the data: a grid value's direction code
   is the index of its template here.
@@ -178,15 +181,18 @@ of the model has:
   the compass module's Directions setting the 12 hours of a north-up clock (`logic.clock`,
   `logic.dirWord`, `logic.axisWords`, `logic.finishText` for the "o'clock"). Data of another
   format is left alone and said once.
-- `dirs`: the 9 direction templates, in this order: "water to the %s", "deep water to the %s",
+- `dirs`: the 13 direction templates, in this order: "water to the %s", "deep water to the %s",
   "land to the %s", "drop to the %s", "rock wall to the %s", "building to the %s", "to the %s",
   "running %s", "up to the %s" (a ramp's or stairs' way up; the module says a climb by its axis
-  instead, `logic.directionText`, and keys each flight by its rise, `logic.outdoorKey`);
-  `dirsClock`: the same 9 for the hours ("water at %s", "at %s", "up at %s"); `compass`: the 8
+  instead, `logic.directionText`, and keys each flight by its rise, `logic.outdoorKey`), "cave to
+  the %s", "mine to the %s", "crypt to the %s", "tunnel to the %s" (a place's own template, `dir`:
+  a cell holds templates 1 to 9 only); `dirsClock`: the same 13 for the hours ("water at %s", "at %s", "up at %s"); `compass`: the 8
   compass words; `axes`: the 4 axis words ("north-south"). A place label may carry directions as
   angles, `<d45,135>` ("fork, Goldshire road <d45,135>"): said with the "to the %s" template in
   the player's words.
-- `places`: `{kind, label, nearest road (optional), of = structure (optional)}` per place id.
+- `places`: `{kind, label, nearest road (optional), of = structure (optional), dir = template
+  (optional)}` per place id. `dir` is the direction template the place's cells are said with instead
+  of their own ("cave to the north" beside a cave, never "building"; `logic.directionText`).
   `of` names the structure a place belongs to (a tower's platform, its stairs); it is said
   through `ofTemplate` ("%s of %s") where the player is not on that structure already.
 - `floors` (optional): per named floor of a building `{word, its own room's name, the stairs up

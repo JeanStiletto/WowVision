@@ -297,7 +297,7 @@ function logic.expand(zone, data, locale)
     zone.places = {}
     for i, kind in ipairs(data.places) do
         local n = en.places[i]
-        zone.places[i] = { kind, n[1], some(n[2]), of = some(n[3]) }
+        zone.places[i] = { kind, n[1], some(n[2]), of = some(n[3]), dir = data.placeDirs and data.placeDirs[tostring(i)] }
     end
     local b = data.buildings
     local walls = unsparse(en.interiorWalls, #b.interiors)
