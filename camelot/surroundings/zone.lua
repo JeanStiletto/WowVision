@@ -703,7 +703,7 @@ local function prepareWords(zone, locale)
             end
         end
     end
-    for _, key in ipairs({ "structs", "objectNames" }) do
+    for _, key in ipairs({ "structs" }) do
         for i, name in ipairs(t[key] or {}) do
             if zone[key] and zone[key][i] then
                 zone[key][i] = name
@@ -1131,15 +1131,7 @@ function logic.unpack(zone, locale)
         ix.noContact[b * cells + a] = true
     end)
 
-    -- objects, in the buckets of the blocks of every cell their footprint's circle touches (addToBlocks)
-    ix.objects = {}
-    eachRecord(zone.objects, 7, function(x, y, halfLength, halfWidth, angle, name, room)
-        local o = {
-            x = x, y = y, halfLength = halfLength / 10, halfWidth = halfWidth / 10, angle = math.rad(angle),
-            name = zone.objectNames and zone.objectNames[name], room = room,
-        }
-        addToBlocks(zone, ix.objects, x, x, y, y, math.sqrt(halfLength ^ 2 + halfWidth ^ 2) / 10, o)
-    end)
+    -- (the objects: the bump layer's index, core/navigation/bumpLogic.lua; none here)
 
     -- centre line stretches, in the buckets of the blocks of every cell within LANE_REACH of them (addToBlocks; a
     -- cell's stretches: logic.lanesAt)

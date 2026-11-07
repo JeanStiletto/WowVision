@@ -5,41 +5,20 @@
 local logic = WowVision.surroundingsLogic
 local L = WowVision:getLocale()
 
--- A world position in a building's frame {ox, oy, scale, m00, m01, m10, m11}: world x = ox -
--- scale * (m00 vx + m01 vy), world y = oy - scale * (m10 vx + m11 vy). Room boxes are stored in
--- that frame, so they stay exact for rotated buildings.
-function logic.toBuilding(frame, x, y)
-    local a, b, c, d = frame.m00, frame.m01, frame.m10, frame.m11
-    local r0, r1 = (frame.ox - x) / frame.scale, (frame.oy - y) / frame.scale
-    local det = a * d - b * c
-    return (d * r0 - b * r1) / det, (-c * r0 + a * r1) / det
-end
+-- The building frames, the room floors under a position, the room outlines and the doorway crossing are the bump
+-- layer's (core/navigation/bumpLogic.lua, which names what the player bumps into from data cut out of these zones):
+-- the rooms and buildings here carry the same fields (a room's interior, boxes, outline; a building's ox, oy,
+-- scale, m00 to m11; a doorway's a, b, interior, x, y, nx, ny, side, half). One set of rules for both.
+local bumpLogic = WowVision.bumpLogic
 
--- A building-frame position in world yards (the inverse of toBuilding).
-function logic.toWorld(frame, vx, vy)
-    return frame.ox - frame.scale * (frame.m00 * vx + frame.m01 * vy), frame.oy - frame.scale * (frame.m10 * vx + frame.m11 * vy)
-end
+-- A world position in a building's frame {ox, oy, scale, m00, m01, m10, m11}: world x = ox - scale * (m00 vx +
+-- m01 vy), world y = oy - scale * (m10 vx + m11 vy). Room boxes are stored in that frame, so they stay exact for
+-- rotated buildings. toWorld is its inverse.
+logic.toBuilding = bumpLogic.toBuilding
+logic.toWorld = bumpLogic.toWorld
+logic.DOOR_REACH = bumpLogic.DOOR_REACH -- yards from a doorway's plane (or centre) within which a crossing counts
 
-logic.DOOR_REACH = 3.0 -- yards from a doorway's plane (or centre, without its width) within which a crossing counts
-logic.DOOR_SIDE = 1.0 -- yards past the edges of the opening that still count as through it
-logic.DOOR_HOLD = 4.0 -- ... within which the room entered through it holds (resolveRoom)
-
--- Is the building-frame position (vx, vy) in the box at index i of a flat box list {x0, y0, x1,
--- y1, ...}, widened by `margin` yards?
-local function inBox(b, i, vx, vy, margin)
-    return vx >= b[i] - margin and vx <= b[i + 2] + margin and vy >= b[i + 1] - margin and vy <= b[i + 3] + margin
-end
-
--- Is the building-frame position in one of the room's floor boxes (widened by `margin`)?
-local function onFloor(room, vx, vy, margin)
-    local b = room.boxes
-    for i = 1, #b - 3, 4 do
-        if inBox(b, i, vx, vy, margin) then
-            return true
-        end
-    end
-    return false
-end
+logic.DOOR_HOLD = 4.0 -- yards from a doorway of the room entered through it within which that room holds (resolveRoom)
 
 -- Did the player walk through a doorway of the current room between the previous position and
 -- this one? A door {a, b (rooms, 0 = outside), interior, x, y (centre), nx, ny (its plane's
@@ -48,75 +27,21 @@ end
 -- is passed over (a doorway has no height: the Trade Quarter's doorway into its shop lies 0.8 yd
 -- from the canal tunnel's 17 yd below it, one step crossed both and the tunnel's came first, walk
 -- 2026-10-13 16:59).
+local ANY = function()
+    return true
+end
 function logic.crossedDoor(zone, current, px, py, x, y, fits)
-    if current == nil or px == nil then
-        return nil
-    end
-    local ix = zone._index
-    for _, door in ipairs(ix.doorsOf[current] or {}) do
-        if door.side ~= 0 and (door.nx ~= 0 or door.ny ~= 0) then
-            local interior = ix.interiors[door.interior]
-            local ax, ay = logic.toBuilding(interior, px, py)
-            local bx, by = logic.toBuilding(interior, x, y)
-            -- across the whole opening (its width known), else within DOOR_REACH of its centre: the
-            -- Ruins of Lordaeron's sewer openings are 12 to 15 yd wide, and walking out at their
-            -- sides went unnoticed (walk 2026-10-07 23:43)
-            local near = function(u, v)
-                if door.half > 0 then
-                    local along = math.abs((u - door.x) * -door.ny + (v - door.y) * door.nx)
-                    local off = math.abs((u - door.x) * door.nx + (v - door.y) * door.ny)
-                    return along <= door.half + logic.DOOR_SIDE and off <= logic.DOOR_REACH
-                end
-                return logic.dist2(u, v, door.x, door.y) <= logic.DOOR_REACH * logic.DOOR_REACH
-            end
-            if near(ax, ay) or near(bx, by) then
-                local mine = current == door.a and door.side or -door.side
-                local before = ((ax - door.x) * door.nx + (ay - door.y) * door.ny) * mine
-                local after = ((bx - door.x) * door.nx + (by - door.y) * door.ny) * mine
-                local behind = current == door.a and door.b or door.a
-                if before > 0 and after < 0 and (fits == nil or fits(behind)) then
-                    return behind
-                end
-            end
-        end
-    end
-    return nil
+    return bumpLogic.crossedDoor(zone, current, px, py, x, y, fits or ANY)
 end
 
 -- The first room whose outline (the box of its walls) holds the position, or nil: where the floor
 -- boxes leave gaps (under counters, a raised platform).
-function logic.roomOutlineAt(zone, x, y)
-    local ix = zone._index
-    for id, room in ipairs(ix.rooms) do
-        local o = room.outline
-        if o then
-            local vx, vy = logic.toBuilding(ix.interiors[room.interior], x, y)
-            if inBox(o, 1, vx, vy, 0) then
-                return id
-            end
-        end
-    end
-    return nil
-end
+logic.roomOutlineAt = bumpLogic.roomOutlineAt
 
 -- The rooms whose floor boxes contain the position (within `margin` yards). `rooms` (optional): a
 -- list of room ids to look at instead of all.
 function logic.roomCandidates(zone, x, y, margin, rooms)
-    margin = margin or 0.5
-    local ix = zone._index
-    local found, inFrame = {}, {}
-    for _, id in ipairs(rooms or ix.roomIds) do
-        local room = ix.rooms[id]
-        local pos = inFrame[room.interior]
-        if pos == nil then
-            pos = { logic.toBuilding(ix.interiors[room.interior], x, y) }
-            inFrame[room.interior] = pos
-        end
-        if onFloor(room, pos[1], pos[2], margin) then
-            found[#found + 1] = id
-        end
-    end
-    return found
+    return bumpLogic.roomsAt(zone, x, y, margin or 0.5, nil, rooms)
 end
 
 -- Is the room's floor (within `margin`) under the position?

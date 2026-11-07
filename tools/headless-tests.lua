@@ -56,6 +56,21 @@ loadAddonFile("core/navigation/atlas/MapDataset.lua")
 loadAddonFile("core/navigation/atlas/datasetTests.lua")
 loadAddonFile("core/navigation/stuckMath.lua")
 loadAddonFile("core/navigation/stuckTests.lua")
+-- What the player bumps into: the logic, then the bump data of every client (mapdata/bumps, tools/bumps/pack.lua);
+-- before the surroundings, which use the bump layer's rooms and doorways (as the game loads core first).
+loadAddonFile("core/navigation/bumpLogic.lua")
+for _, client in ipairs({ "era", "tbc", "forever" }) do
+    local base = "mapdata/bumps/" .. client .. "/"
+    local xml = io.open(base .. "data.xml", "r")
+    if xml ~= nil then
+        local text = xml:read("*a")
+        xml:close()
+        for name in text:gmatch('<Script file="([^"]+)"') do
+            loadAddonFile(base .. name)
+        end
+    end
+end
+loadAddonFile("core/navigation/bumpTests.lua")
 loadAddonFile("camelot/surroundings/zone.lua")
 loadAddonFile("camelot/surroundings/store.lua")
 -- the game decodes a zone's JSON text (C_EncodingUtil.DeserializeJSON); here the plain Lua reader
@@ -80,21 +95,6 @@ loadAddonFile("core/navigation/corpseFind.lua")
 loadAddonFile("core/navigation/corpseTests.lua")
 loadAddonFile("core/navigation/targetFind.lua")
 loadAddonFile("core/navigation/targetTests.lua")
-
--- What the player bumps into: the logic, then the bump data of every client (mapdata/bumps, tools/bumps/pack.lua).
-loadAddonFile("core/navigation/bumpLogic.lua")
-for _, client in ipairs({ "era", "tbc", "forever" }) do
-    local base = "mapdata/bumps/" .. client .. "/"
-    local xml = io.open(base .. "data.xml", "r")
-    if xml ~= nil then
-        local text = xml:read("*a")
-        xml:close()
-        for name in text:gmatch('<Script file="([^"]+)"') do
-            loadAddonFile(base .. name)
-        end
-    end
-end
-loadAddonFile("core/navigation/bumpTests.lua")
 
 -- WowNav routes: Broesel's engine (camelot/wownav/engine) on his real data, packed into mapdata/WowNavPacked by
 -- tools/wownav-pack.lua (its data.xml); without the packed data only the parts that need no network run.

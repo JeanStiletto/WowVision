@@ -45,7 +45,12 @@ tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testd
 - `places.lua`: the places list (Alt-F10, "Places list" below; the window is `placesUi.lua`).
 - `squares.lua`: the region of a square (flood fill), what borders it (mouths), where ways
   begin on it, items around a place, cliffs and water near an outdoor place.
-- `objects.lua`: objects one bumps into, whose wall it is.
+- `objects.lua`: whose wall one bumps into outside (`logic.wallOwner`). What one bumps into is named by the bump
+  module (`core/navigation/bumps.lua`); `module.lua` hands it this module's room and wall text
+  (`bumps:setRoomSource`). The building frames, the room floors under a position (`logic.roomCandidates`), the room
+  outlines and the doorway crossing (`logic.crossedDoor`) are the bump layer's (`core/navigation/bumpLogic.lua`,
+  since 2026-11-07: one set of rules for both; the rooms, buildings and doorways here carry its fields). The
+  objects are only in its index.
 - `texts.lua`: every spoken text: places, squares, rooms, drop edges, guidance targets.
 - `stops.lua`: where one waits for a ship, zeppelin, lift or tram, and which way it will be.
 - `helper.lua`: the building helper (Alt plus the turn key) and the climbs' routes: a beacon route to the next
@@ -60,7 +65,7 @@ tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testd
 `module.lua` is the WoW side: settings, the alert, the update loop, the walk log, `/wv surr`,
 `/wv surr around` and the describe key (both run `describeAround`). Every 0.2 s the loop pauses
 on a flight (`UnitOnTaxi`), then runs `updateHall` (the halls the game calls outdoors),
-`checkBump`, and `updateIndoors` (with `updateLayer` for the indoor layer's halls) or
+and `updateIndoors` (with `updateLayer` for the indoor layer's halls) or
 `updateOutdoors`. `keepHere` stores the room and the floor pieces per character in
 `WowVisionDB.surroundingsHere`; `restoreHere` takes them back after a reload or login, only on
 the same spot (within 1.5 yd), and finds a floor piece again by the place it carries there,

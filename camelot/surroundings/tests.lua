@@ -1530,30 +1530,6 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(math.floor(vy + 0.5), -1)
     end,
 
-    ["pushing against an object names it; only objects of the room, the way one pushes"] = function(t)
-        local z = newSquareZone()
-        -- a barrel outdoors at 78, 30 (1 yd across); a crate 4 yd long along north-south at 70, 35
-        -- (angle 0) in room 1; a counter outdoors east of the crate at 70, 31 (angle 90: its long
-        -- axis runs east-west, 2 yd long)
-        z.objectNames = { "barrel", "crate", "counter" }
-        z.objects = { 78, 30, 5, 5, 0, 1, 0, 70, 35, 20, 5, 0, 2, 1, 70, 31, 10, 3, 90, 3, 0 }
-        logic.unpack(z)
-        -- at 78, 31.5 pushing east (y falls): the barrel, 1 yd away
-        local o, d = logic.objectAhead(z, 78, 31.5, 0, -1, 1.5, 0)
-        t:assertEqual(o.name, "barrel")
-        t:assertEqual(d, 1)
-        t:assertNil(logic.objectAhead(z, 78, 31.5, 0, 1, 1.5, 0))        -- pushing west: nothing
-        t:assertNil(logic.objectAhead(z, 78, 31.5, 0, -1, 0.5, 0))       -- too far
-        -- beside the crate's long side (x 70, 1 yd west of it), pushing east: the crate, but only
-        -- for its room
-        t:assertNil(logic.objectAhead(z, 71, 36.5, 0, -1, 1.5, 0))
-        o = logic.objectAhead(z, 71, 36.5, 0, -1, 1.5, 1)
-        t:assertEqual(o.name, "crate")
-        -- the counter's short end is 1 yd from y 31 along its axis: at 70, 29 pushing west
-        o = logic.objectAhead(z, 70, 29, 0, 1, 1.5, 0)
-        t:assertEqual(o.name, "counter")
-    end,
-
     ["whose wall: the room ahead, by its floor or its outline; a structure's floor"] = function(t)
         local z = newZone()
         -- the barn (room 4, floor x 30 to 40, y 0 to 10) gets an outline a yard wider
