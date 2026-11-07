@@ -327,6 +327,8 @@ function logic.expand(zone, data, locale)
             zone.doorVia[2 * i - 1], zone.doorVia[2 * i] = d[10], d[11]
         end
     end
+    -- (the objects: this module reads none since 2026-11-07, the bump layer has its own; the tools read them, and the
+    -- game drops them with the other flat lists after the unpack)
     local shapes, list, objects = data.objects.shapes, data.objects.list, {}
     for i = 1, #list, 5 do
         local s = 3 * (list[i + 3] - 1)

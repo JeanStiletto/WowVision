@@ -1252,17 +1252,36 @@ if bumps and bumps.setRoomSource then
         end
         return nil
     end
+    -- per bump zone whether this module's zone numbers rooms, buildings and doorways alike (checked once per pair)
+    local same = setmetatable({}, { __mode = "k" })
+    -- the bump lines are spoken under this module's tag, so a new place or room drops one still waiting (speakLine)
+    local tag = { owner = module, kind = "bump" }
     bumps:setRoomSource(function(bumpZone)
+        -- (switched off this module looks no more: its room is an old one)
+        if not module:getEnabled() then
+            return false
+        end
         local z = zone
         local ix, bx = z and z._index, bumpZone._index
-        if ix == nil or bx == nil or z.key ~= bumpZone.key
-            or #ix.rooms ~= #bx.rooms or #ix.interiors ~= #bx.interiors then
+        if ix == nil or bx == nil or z.key ~= bumpZone.key then
+            return false
+        end
+        local check = same[bx]
+        if check == nil or check.ix ~= ix then
+            check = { ix = ix, ok = WowVision.bumpLogic.sameRooms(z, bumpZone) }
+            same[bx] = check
+            -- (kept for a look after a walk: refused, the bump module tracks rooms itself, without the floors)
+            WowVisionDump = WowVisionDump or {}
+            WowVisionDump.bumpsHandover = WowVisionDump.bumpsHandover or {}
+            WowVisionDump.bumpsHandover[z.key] = check.ok and "same rooms" or "rooms differ: handover refused"
+        end
+        if not check.ok then
             return false
         end
         if not isInside() then
-            return 0, false, wallAhead
+            return 0, false, wallAhead, tag
         end
-        return room, hallGap ~= nil, wallAhead
+        return room, hallGap ~= nil, wallAhead, tag
     end)
 end
 
