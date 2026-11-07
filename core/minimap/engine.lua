@@ -23,6 +23,9 @@ Scan.engine = Engine
 
 local SHRUNK_SIZE = 15
 
+-- The task the frame runner is stepping right now (see Engine.run).
+local current = nil
+
 function Engine.available()
     return C_TooltipInfo ~= nil
         and C_TooltipInfo.GetMinimapMouseover ~= nil
@@ -84,6 +87,7 @@ end
 -- towns and two indoor NPCs, the same frame's point read also a herb and
 -- a mailbox).
 function Engine.askCentre()
+    Engine.quietIcons()
     local cx, cy = Minimap:GetCenter()
     if cx == nil then
         return false
@@ -186,6 +190,7 @@ function Engine.shrink(cursorX, cursorY)
     Minimap:SetSize(SHRUNK_SIZE, SHRUNK_SIZE)
     Minimap:ClearAllPoints()
     Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cursorX / scale, cursorY / scale)
+    Engine.quietIcons()
 end
 
 -- Forever's minimap (the build of 2026-10-16 on) names the dots under the
@@ -211,6 +216,56 @@ function Engine.fullSize(state, cursorX, cursorY)
     Minimap:SetSize(state.width, state.height)
     Minimap:ClearAllPoints()
     Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cursorX / scale, cursorY / scale)
+    Engine.quietIcons()
+end
+
+-- Other addons' minimap icons (Questie's pins, LibDBIcon buttons) are
+-- children of the minimap that take the mouse. On the shrunk minimap they
+-- all gather on the cursor, and one of them under it leaves the minimap's
+-- mouseover empty (measured 2026-11-07: mouse focus QuestieFrame334, 15
+-- such children, every read empty). Inside a running task: every child
+-- taking the mouse stops until the task ends, then gets back exactly what
+-- it had. Called again before each read, for icons added meanwhile.
+-- Returns how many are quiet.
+function Engine.quietIcons()
+    local task = current
+    if task == nil then
+        return 0
+    end
+    if task.quietIcons == nil then
+        task.quietIcons = { frames = {}, count = 0 }
+        local quiet = task.quietIcons
+        Engine.onCleanup(function()
+            for frame, was in pairs(quiet.frames) do
+                if frame.SetMouseClickEnabled ~= nil then
+                    pcall(frame.SetMouseClickEnabled, frame, was.click)
+                    pcall(frame.SetMouseMotionEnabled, frame, was.motion)
+                else
+                    pcall(frame.EnableMouse, frame, true)
+                end
+            end
+            task.quietIcons = nil
+        end)
+    end
+    local quiet = task.quietIcons
+    for _, child in ipairs({ Minimap:GetChildren() }) do
+        if quiet.frames[child] == nil then
+            if child.IsMouseClickEnabled ~= nil and child.SetMouseClickEnabled ~= nil then
+                local click, motion = child:IsMouseClickEnabled(), child:IsMouseMotionEnabled()
+                if click or motion then
+                    quiet.frames[child] = { click = click, motion = motion }
+                    quiet.count = quiet.count + 1
+                    pcall(child.SetMouseClickEnabled, child, false)
+                    pcall(child.SetMouseMotionEnabled, child, false)
+                end
+            elseif child.IsMouseEnabled ~= nil and child:IsMouseEnabled() then
+                quiet.frames[child] = {}
+                quiet.count = quiet.count + 1
+                pcall(child.EnableMouse, child, false)
+            end
+        end
+    end
+    return quiet.count
 end
 
 -- ---- asking at a point ----
@@ -222,6 +277,7 @@ end
 -- A reader for the minimap as it lies now: offset (units from its
 -- centre) -> dots there.
 function Engine.pointReader()
+    Engine.quietIcons()
     local cx, cy = Minimap:GetCenter()
     local scale = Minimap:GetEffectiveScale()
     return function(ox, oy)
@@ -305,7 +361,7 @@ end
 -- task.finish(ok, abortReason, err). Cleanups registered with
 -- Engine.onCleanup run first, newest first, however the task ends (WoW's
 -- Lua cannot yield inside pcall, so a task cannot guard its own waits).
-local current = nil
+-- The running task (`current`) is declared at the top of this file.
 
 function Engine.onCleanup(fn)
     tinsert(current.cleanups, fn)

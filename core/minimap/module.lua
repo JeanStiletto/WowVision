@@ -1420,9 +1420,10 @@ function module:rawRead()
             end
         end
         task.mouse = string.format(
-            "Mouse focus: %s; shown minimap children taking the mouse: %d",
+            "Mouse focus: %s; shown minimap children still taking the mouse: %d; quieted for the read: %d",
             #foci > 0 and table.concat(foci, ", ") or "none",
-            icons
+            icons,
+            Engine.quietIcons()
         )
         -- The scan's baseline: every tracking filter off, spells as they
         -- are (town arrows, vendors and the like gone).
