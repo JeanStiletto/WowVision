@@ -9,5 +9,8 @@
   <Script file="tooltip.lua" />
   <Script file="tooltipQuality.lua" />
   <Script file="tooltipCompare.lua" />
+  <Script file="gameDefaults.lua" />
+  <Script file="gameDefaultsTests.lua" />
+  <Script file="gameDefaultsMenu.lua" />
 
 </Ui>
