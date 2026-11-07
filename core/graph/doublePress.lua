@@ -11,21 +11,24 @@ graph.doublePress = doublePress
 
 doublePress.WINDOW = 0.25 -- seconds between the two presses (Sku's tested value)
 
+-- The screen of the last press is held weakly: a closed screen is not kept alive until the next arrow press.
 function doublePress.newState()
-    return { key = nil, at = nil, screen = nil, focus = nil }
+    return { key = nil, at = nil, screen = setmetatable({}, { __mode = "v" }), focus = nil }
 end
 
 -- A press of key at time now, on screen with focus (a ControlId key) before the move. True when it doubles the
--- previous press.
+-- previous press. A press older than the previous one (dispatched late, after a speech stop delay) never doubles.
 function doublePress.press(state, key, now, screen, focus)
+    local elapsed = state.at ~= nil and now - state.at or nil
     local double = state.key == key
-        and state.at ~= nil
-        and now - state.at < doublePress.WINDOW
-        and state.screen == screen
+        and elapsed ~= nil
+        and elapsed >= 0
+        and elapsed < doublePress.WINDOW
+        and state.screen[1] == screen
         and state.focus == focus
     state.key = key
     state.at = now
-    state.screen = screen
+    state.screen[1] = screen
     state.focus = nil
     return double
 end
