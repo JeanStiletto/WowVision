@@ -25,7 +25,6 @@ settings:add({ key = "turnHints", type = "Bool", label = L["Turn Hints on Roads 
 settings:add({ key = "wallSide", type = "Bool", label = L["Guide Up Stairs on Their Wall Side"], default = true })
 -- while a beacon leads the way: entrances and street beginnings only by name, no turn hints
 settings:add({ key = "beaconQuiet", type = "Bool", label = L["Quieter While a Beacon Guides"], default = true })
-settings:add({ key = "bumps", type = "Bool", label = L["Name What I Bump Into"], default = true })
 -- the places list (Alt-F10, placesUi.lua) names only the subzones the character has explored,
 -- as the game's map does; off by default (user 2026-10-16: experienced players and tests)
 settings:add({ key = "discovery", type = "Bool", label = L["Discovery Mode: Places List Names Only Explored Subzones"], default = false })
@@ -70,10 +69,7 @@ local GUIDE_MISS = 2
 -- replayed at running speed 2026-10-15, a third of the guidance lines were a target said again
 -- that way, a door in Deathknell six times in 20 s at the edge of its reach)
 local GUIDE_FORGET = 6
-local BUMP_TICKS = 2 -- looks in a row hard against something (0.4 s) before naming it
-local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (it stops while disabled)
-local BUMP_FREE = 1.0 -- moving freely before the same thing is named again
-local BUMP_MOVING = 0.2 -- moved in one look that counts as moving freely
+local BUMP_FRESH = 0.5 -- the wall detection's grading counts this long (pushing: no way of moving to look along)
 local WALL_REACH = 2.5 -- a building's wall is looked for this far ahead
 local BEND_LOOK = 10 -- where a road leads is taken this far ahead
 local BEND_THRESHOLD = 15 -- degrees a road turns before a gentle bend is said
@@ -134,7 +130,6 @@ local LINE_KINDS_SAID = { place = true, room = true, ahead = true, bend = true }
 local heardLines = {}
 local HEARD_STARTS = { place = true, room = true, around = true }
 local HEARD_ADDS = { ahead = true, near = true }
-local bump = { ticks = 0, key = nil, free = 0, time = nil }
 local stopSaid, stopOut = nil, 0 -- the stop last said, and how far the player walked off stops since
 -- In a hall the game calls outdoors (Ironforge's, the Undercity's): yards walked since its floor
 -- was last near; nil = not in such a hall
@@ -1240,87 +1235,35 @@ local function checkApproach(z, x, y)
     end
 end
 
--- The movement keys held (f forward, b back, l and r strafe, a autorun), for the log.
-local function movementKeys(flags)
-    return (flags.moveForward and "f" or "") .. (flags.moveBackward and "b" or "")
-        .. (flags.strafeLeft and "l" or "") .. (flags.strafeRight and "r" or "") .. (flags.autorun and "a" or "")
-end
-
--- The way the player pushes from the movement keys held and the facing, as a unit vector.
-local function pushDirection()
-    local facing = GetPlayerFacing()
-    local flags = WowVision.movement.flags
-    if facing == nil then
-        return nil
-    end
-    local ahead = ((flags.moveForward or flags.autorun) and 1 or 0) - (flags.moveBackward and 1 or 0)
-    local side = (flags.strafeLeft and 1 or 0) - (flags.strafeRight and 1 or 0)
-    local vx = ahead * math.cos(facing) + side * math.cos(facing + math.pi / 2)
-    local vy = ahead * math.sin(facing) + side * math.sin(facing + math.pi / 2)
-    local len = math.sqrt(vx * vx + vy * vy)
-    if len < 0.1 then
-        return nil
-    end
-    return vx / len, vy / len
-end
-
--- Naming what the player bumps into: when they push against something (the wall detection's
--- "blocked", held for a moment; nothing while wall detection is disabled), the object in the way
--- they push (a barrel, a cart, a fence), or the wall of the building ahead ("wall of auction
--- house"), or indoors a wall. Once per bump; the same thing again only after moving freely.
-local function checkBump(z, x, y, px, py, isIndoors)
-    local now = GetTime()
-    local dt = bump.time and now - bump.time or nil
-    bump.time = now
-    if not module.settings.bumps or px == nil or dt == nil or IsSwimming() then
-        bump.ticks = 0
-        return
-    end
-    local moved = logic.dist(x, y, px, py)
-    local walls = WowVision.base.navigation.walls
-    if walls.severity ~= 1 or now - walls.severityAt > BUMP_FRESH then
-        bump.ticks = 0
-        if moved > BUMP_MOVING then
-            bump.free = bump.free + dt
-            if bump.free >= BUMP_FREE then
-                bump.key = nil
-            end
-        end
-        return
-    end
-    bump.ticks = bump.ticks + 1
-    bump.free = 0
-    if bump.ticks < BUMP_TICKS then
-        return
-    end
-    local vx, vy = pushDirection()
-    if vx == nil then
-        return
-    end
-    -- indoors the room's objects, any room's while the room is unknown (stacked floors); outdoors the outdoor ones
-    -- (not `isIndoors and room or 0`: with the room unknown that gave the outdoor objects)
-    local objectRoom = 0
-    if isIndoors then
-        objectRoom = room
-    end
-    local o = logic.objectAhead(z, x, y, vx, vy, logic.BUMP_REACH, objectRoom)
-    local text, key
-    if o then
-        text, key = o.name, o
-    elseif isIndoors then
-        text, key = L["wall"], "wall"
-    else
+-- What the player bumps into is named by the bump module (core/navigation/bumps.lua, its own data packed from the same
+-- zone files: mapdata/bumps). It takes the room from here (the floor layers know which floor; its own tracker has
+-- none), and outside the wall ahead as said here (a ramp's or stairs' side needs the place grid: "Stormwind, side").
+-- Only while both read the same rooms: the same zone, as many rooms and buildings (else its own tracker counts).
+local bumps = WowVision.base.navigation.bumps
+if bumps and bumps.setRoomSource then
+    local function wallAhead(x, y, vx, vy)
+        local z = zone
         local owner, what = logic.wallOwner(z, x, y, vx, vy, WALL_REACH)
         if owner and what == "place" then
-            text, key = string.format(z.ofTemplate or "%s of %s", L["wall"], owner), owner
+            return logic.spokenText(z, string.format(z.ofTemplate or "%s of %s", L["wall"], owner)), owner
         elseif owner then
-            text, key = string.format(what == "side" and L["%s, side"] or L["wall of %s"], owner), owner
+            local text = string.format(what == "side" and L["%s, side"] or L["wall of %s"], owner)
+            return logic.spokenText(z, text), owner
         end
+        return nil
     end
-    if text and key ~= bump.key then
-        say(text, "bump", x, y, nil, { keys = movementKeys(WowVision.movement.flags) })
-    end
-    bump.key = key or bump.key
+    bumps:setRoomSource(function(bumpZone)
+        local z = zone
+        local ix, bx = z and z._index, bumpZone._index
+        if ix == nil or bx == nil or z.key ~= bumpZone.key
+            or #ix.rooms ~= #bx.rooms or #ix.interiors ~= #bx.interiors then
+            return false
+        end
+        if not isInside() then
+            return 0, false, wallAhead
+        end
+        return room, hallGap ~= nil, wallAhead
+    end)
 end
 
 -- Gentle bends: on a way, once the way ahead has turned BEND_THRESHOLD degrees from where it led
@@ -1859,7 +1802,6 @@ module:hasUpdate(function(self)
         end
     end
     hallEntryFloor = nil
-    checkBump(z, x, y, px, py, isIndoors)
     if isIndoors then
         updateIndoors(z, x, y, px, py)
     else
