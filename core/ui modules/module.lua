@@ -30,21 +30,21 @@ settings:add({
 })
 
 -- The game sound channel every WowVision sound and beacon plays on
--- (core/audio/AudioDataSource.lua): its volume is that channel's game slider,
+-- (core/audio/channels.lua): its volume is that channel's game slider,
 -- so a channel the player keeps for WowVision alone gives WowVision a volume of
 -- its own. The list and the default live in WowVision.audio (a version adds
 -- the channels its sound options have a slider for).
-settings:add({
+local soundChannel = settings:add({
     type = "Choice",
     key = "soundChannel",
     label = L["WowVision Sound Channel"],
-    default = function()
-        return WowVision.audio.defaultChannel
-    end,
-    choices = function()
-        return WowVision.audio.channels
-    end,
+    default = WowVision.audio.defaultChannel,
+    choices = WowVision.audio.channels,
+    validate = WowVision.audio.validateChannel,
 })
+soundChannel.events.valueChange:subscribe(module, function(_, _, _, _, value)
+    WowVision.audio.selectedChannel = value
+end)
 
 -- LOCAL PROBE (not for a PR): the channel names Forever's ping and combat
 -- warning sliders answer to. Speaks each candidate name, then plays a
