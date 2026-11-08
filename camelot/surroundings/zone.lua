@@ -1301,7 +1301,7 @@ function logic.unpackLayer(zone, src, suffix)
         top = own and src.top or zone.top, left = own and src.left or zone.left,
         cell = own and src.cell or zone.cell, rows = own and src.rows or zone.rows, cols = own and src.cols or zone.cols, dirs = zone.dirs, dirsClock = zone.dirsClock,
         compass = zone.compass, axes = zone.axes, spokenAxes = zone.spokenAxes, floors = zone.floors, places = zone.places, grid = src.grid or {},
-        spoken = zone.spoken,
+        spoken = zone.spoken, teleports = zone.teleports,
         lanes = src.lanes, laneHeadings = src.laneHeadings, lineFloors = src.lineFloors, pathLines = src.pathLines, noContact = src.noContact, structs = src.structs, waterStructs = src.waterStructs,
         structCells = src.structCells, edges = src.edges, exits = src.exits, exitFloors = src.exitFloors, exitGroups = src.exitGroups,
         interiors = zone.interiors, rooms = zone.rooms,

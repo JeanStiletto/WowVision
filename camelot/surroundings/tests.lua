@@ -333,6 +333,54 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(walk(logic.tracker.RISE), 0)
     end,
 
+    ["the walk-graph tracker starts afresh at a portal's landing, also with looks between, not from another floor"] = function(t)
+        -- rows = x - 60, cols = y - 40. The ground (piece 0) at 0 on x 70 to 100; a tower floor (piece 2) at 40 over
+        -- x 70 to 82. A portal (zone.teleports, TELEPORT) with its trigger on the ground at x 90 (radius 2) lands on
+        -- the tower floor at x 78: 12 yd sideways, under RESET, and the ground runs on under the landing, so without
+        -- the rule the ground's steps explain the move (the Wizard's Sanctum's basement portal, 2026-11-08)
+        local recs = {}
+        for x = 70, 100 do
+            for y = 44, 56 do
+                recs[#recs + 1] = { r = x - 60, c = y - 40, z = 0, piece = 0 }
+                if x <= 82 then
+                    recs[#recs + 1] = { r = x - 60, c = y - 40, z = 40, piece = 2 }
+                end
+            end
+        end
+        local rows = surfaceRows(recs)
+        local function walk(teleport, path, triggerZ)
+            local was = logic.tracker.TELEPORT
+            logic.tracker.TELEPORT = teleport
+            local z = newWalkZone()
+            z.places = { { "square", "square of Test" }, { "floor", "tower" } }
+            z.grid = { "10000*7", "10000*7", "10000*7", "10000*7" }
+            z.floorCells = {}
+            z.noGround = {}
+            z.joins = {}
+            z.teleports = { 90.5, 50.5, triggerZ or 0, 2, 78.5, 50.5, 40 }
+            logic.unpack(z)
+            z.surf = { x0 = 60, y0 = 40, rows = rows }
+            logic.setFloor(z, 0)
+            local floor
+            for _, x in ipairs(path) do
+                floor = logic.updateFloor(z, x, 50.5, false)
+            end
+            logic.tracker.TELEPORT = was
+            logic.tracker.landing = nil
+            return floor
+        end
+        local through = { 99.5, 97.5, 95.5, 93.5, 91.5, 90.5, 78.5 }
+        t:assertEqual(walk(0, through), 0, "without the rule the ground's steps explain the move")
+        t:assertEqual(walk(1, through), 2, "the landing's floor")
+        -- the walk replays step a yard at a time between two logged positions
+        t:assertEqual(walk(1, { 99.5, 95.5, 90.5, 88.5, 86.5, 84.5, 82.5, 80.5, 78.5 }), 2, "looks between wait")
+        -- a trigger on the tower floor: the ground under it is no way in
+        t:assertEqual(walk(1, through, 40), 0, "held on another floor than the trigger's")
+        -- past the trigger and on, away from the landing: the landing goes
+        t:assertEqual(walk(1, { 91.5, 90.5, 93.5, 96.5, 99.5 }), 0)
+        t:assertNil(logic.tracker.landing)
+    end,
+
     ["a block bucket gives a cell the items a bucket per cell gave it, the keys past the first column too"] = function(t)
         -- a grid of 10 columns; an item's box rows 2 to 3, columns -1 to 1: per cell it was keyed r * 10 + c, so
         -- its cells in column -1 had the keys of the last column one row up (19, 29)

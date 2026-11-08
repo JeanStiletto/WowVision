@@ -89,6 +89,14 @@ tracker.THROUGH = 1        -- 1: a fall lands on the first dry floor under it, n
                            -- bell tower, walk 2026-10-30 17:47:28, bug 142: a hop 2 to 4 yd down off the platform onto the
                            -- tower floor, and the Main Hall's floor 35 yd under both cost FALL alike; the hall won for 37 s).
                            -- 0 = off
+tracker.TELEPORT = 1       -- walk-in teleports (zone.teleports, the export's reach.PORTAL_LAND, 2026-11-08): a floor held
+                           -- inside a portal's trigger means the game moves the player to its landing at once; the next
+                           -- look there starts afresh with the landing's height as the prior. A portal moves the player up
+                           -- or down a tower, often less than RESET sideways (the Wizard's Sanctum's: the basement floor
+                           -- was carried down the tower and out into the Mage Quarter, trial p1). 0 = off
+tracker.TELEPORT_IN = 1.5  -- yd beyond a trigger's radius a floor held still counts as in it (a look a stride before the
+                           -- game's contact)
+tracker.TELEPORT_LAND = 3.0 -- yd sideways from a portal's landing the next look must lie
 tracker.PERSIST = true     -- the decoded columns and each surface's steps kept per layer from look to look, not decoded
                            -- afresh per look; the same floors (the data does not change; offline since 2026-10-21 night
                            -- for the replays of a million looks, tools/walklog/vtrack.lua; in the game since 2026-10-30,
@@ -364,6 +372,32 @@ function look(zone, x, y, swimming)
     if prev and (#prev == 0 or moved > tracker.RESET) then
         prev = nil
     end
+    -- through a portal (TELEPORT): the last look held a floor inside its trigger and this one is at its landing
+    -- (every layer looked at on one position: the landing holds for each look at the trigger's position, where it was
+    -- noted, and at the landing's; looks between the two wait (the walk replays step a yard at a time from one logged
+    -- position to the next, where the game moves the player at once); it goes with a look farther from the trigger's
+    -- position than the landing lies, or with the first look after the landing's)
+    local landed = tracker.landing
+    if landed then
+        if x == landed.fromX and y == landed.fromY then
+            landed = nil
+        elseif landed.atX == nil then
+            if logic.dist(landed.x, landed.y, x, y) <= tracker.TELEPORT_LAND then
+                landed.atX, landed.atY = x, y
+            else
+                if logic.dist(landed.fromX, landed.fromY, x, y)
+                        > logic.dist(landed.fromX, landed.fromY, landed.x, landed.y) + tracker.TELEPORT_LAND then
+                    tracker.landing = nil
+                end
+                landed = nil
+            end
+        elseif x ~= landed.atX or y ~= landed.atY then
+            tracker.landing, landed = nil, nil
+        end
+    end
+    if landed then
+        prev = nil
+    end
     -- the way followed since the last cold start (none: a reset, a layer's setFloor): a hole is believed only
     -- on a floor followed for HOLE_ANCHOR
     ix.sinceCold = prev and ((ix.sinceCold or 0) + moved) or 0
@@ -465,6 +499,9 @@ function look(zone, x, y, swimming)
     if prev == nil and tracker.PRIOR ~= 0 and carried and carried.zone ~= zone
             and logic.dist(carried.x, carried.y, x, y) <= tracker.RESET then
         priorZ = carried.z
+    end
+    if landed then
+        priorZ = landed.z
     end
     -- per surface the nearest dry floor over it in its own 1 yd column, a level or more up (THROUGH: a fall from
     -- higher than that lands on that floor first)
@@ -657,6 +694,18 @@ function look(zone, x, y, swimming)
     end
     ix.lookZ, ix.lookCost = best.s.z, best.cost
     tracker.held = { zone = zone, x = x, y = y, z = best.s.z }   -- (the floor held, for a layer entered next)
+    -- the floor held inside a portal's trigger (TELEPORT): its landing, for the next look (on any layer)
+    local T = tracker.TELEPORT ~= 0 and zone.teleports
+    if T and not (tracker.landing and tracker.landing.atX == x and tracker.landing.atY == y) then
+        for k = 1, #T - 6, 7 do
+            local dz = best.s.z - T[k + 2]
+            local d = logic.dist(T[k], T[k + 1], x, y)
+            if math.sqrt(d * d + dz * dz) <= T[k + 3] + tracker.TELEPORT_IN then
+                tracker.landing = { x = T[k + 4], y = T[k + 5], z = T[k + 6], fromX = x, fromY = y }
+                break
+            end
+        end
+    end
     -- normalised and pruned
     local kept = {}
     local min = best.cost
