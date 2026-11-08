@@ -522,7 +522,7 @@ function module:logTargeting(text)
 end
 
 function module:onEvent(event, a, b)
-    if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_SOFT_ENEMY_CHANGED" then
+    if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_SOFT_ENEMY_CHANGED" or event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         self:logTargeting(event)
     end
     -- Cache hard target GUID on event (avoids UnitGUID call every frame)
