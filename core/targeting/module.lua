@@ -509,9 +509,53 @@ function module:onEvent(event, a, b)
     -- copes with the GUID being secret on Forever and Retail).
     for _, v in ipairs(softTargets) do
         if event == v.event then
-            module:updateSoftTarget(v, soft.identity(identityApi, v.unit))
+            local identity = soft.identity(identityApi, v.unit)
+            local fired = module:updateSoftTarget(v, identity)
+            module:logSoftTargetEvent(event, v.unit, identity, fired)
         end
     end
+end
+
+-- Local diagnostic (local-play only): every soft target event, what the
+-- unit's identity read as and whether the alert fired, newest last, in
+-- WowVisionDump.softTargetLog after /reload.
+local SOFT_LOG_MAX = 300
+
+local function identityText(identity)
+    if identity == nil then
+        return "none"
+    elseif type(identity) == "table" then
+        local ok, name = pcall(identity.GetName, identity)
+        return "plate " .. tostring(ok and name or identity)
+    end
+    return tostring(identity)
+end
+
+function module:logSoftTargetEvent(event, unit, identity, fired)
+    if type(WowVisionDump) ~= "table" then
+        return
+    end
+    local list = WowVisionDump.softTargetLog
+    if type(list) ~= "table" then
+        list = {}
+        WowVisionDump.softTargetLog = list
+    end
+    if #list >= SOFT_LOG_MAX then
+        table.remove(list, 1)
+    end
+    local guid = UnitGUID(unit)
+    local name = UnitName(unit)
+    list[#list + 1] = string.format(
+        "%s %.2f %s identity=%s guid=%s name=%s exists=%s fired=%s",
+        date("%H:%M:%S"),
+        GetTime(),
+        event,
+        identityText(identity),
+        secrets.isSecret(guid) and "secret" or tostring(guid),
+        secrets.isSecret(name) and "secret" or tostring(name),
+        tostring(UnitExists(unit)),
+        tostring(fired == true)
+    )
 end
 
 function module:updateHardTarget()
@@ -577,6 +621,7 @@ function module:updateSoftTarget(target, identity)
             target.tooltip:reset()
         end
         target.identity = identity
+        return identity ~= nil
     end
 end
 
