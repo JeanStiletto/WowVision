@@ -375,6 +375,17 @@ local function objectivesFor(questId, index)
     return objectives
 end
 
+-- The title of the log header at one index (the zone, a class or a
+-- profession the quests below it belong to), nil for a quest row.
+local function questLogHeader(index)
+    if C_QuestLog ~= nil and C_QuestLog.GetInfo ~= nil then
+        local info = C_QuestLog.GetInfo(index)
+        return info ~= nil and info.isHeader and info.title or nil
+    end
+    local title, _, _, isHeader = GetQuestLogTitle(index)
+    return isHeader and title or nil
+end
+
 -- The log entry at one index, nil for headers and empty rows.
 local function questLogEntry(index)
     if C_QuestLog ~= nil and C_QuestLog.GetInfo ~= nil then
@@ -410,10 +421,19 @@ function WowVision.quests.gameQuestLog()
     local count = C_QuestLog ~= nil and C_QuestLog.GetNumQuestLogEntries ~= nil and C_QuestLog.GetNumQuestLogEntries()
         or (GetNumQuestLogEntries ~= nil and GetNumQuestLogEntries())
         or 0
+    -- zone: the quest log header the quest sits under (Elwynn Forest,
+    -- Westfall, a class or a profession)
+    local zone = nil
     for index = 1, count do
-        local entry = questLogEntry(index)
-        if entry ~= nil then
-            tinsert(entries, entry)
+        local header = questLogHeader(index)
+        if header ~= nil then
+            zone = header
+        else
+            local entry = questLogEntry(index)
+            if entry ~= nil then
+                entry.zone = zone
+                tinsert(entries, entry)
+            end
         end
     end
     return entries

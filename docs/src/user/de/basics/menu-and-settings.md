@@ -64,7 +64,7 @@ Die Einträge stehen in der alphabetischen Reihenfolge, in der du sie auf einem 
 | Navigation | Alle | Atlas, Beacon-Einstellungen, Kompass, Fallerkennung, Folgen, Neigungssperre, Besuchte Wegpunkte, Wanderkennung und mehr. | [Bewegung und Orientierung](../world/movement.md), [Navigation und Routen](../world/navigation.md) |
 | Puffer (Buffers) | Alle | Deine Puffergruppen und Puffer und die Einstellung Elementrichtung umkehren. | [Puffer](../information/buffers.md) |
 | Quests | Alle | Werkzeuge für das Questlog, Alarme für Questgebiete. | [Quests](../world/quests.md) |
-| Scanner | Alle | Der Scanner (F9). | [Scanner](../world/scanner.md) |
+| Scanner | Alle | Der Scanner (F9): Scan-Radius, Einträge pro Kategorie und Scanner als Baum, um zwischen Baum und Menü zu wählen. | [Scanner](../world/scanner.md) |
 | Sprache (Speech) | Alle | Stimme, Geschwindigkeit, Lautstärke und Sprachverhalten. | [Sprache und Ton](./speech.md) |
 | Zielerfassung (Targeting) | Alle | Zielansagen, weiche Zielerfassung, Fokusziele. | [Zielerfassung](../world/targeting.md) |
 
@@ -81,6 +81,7 @@ Drücke im Hauptmenü B, dann Eingabe. Es enthält:
 | Tooltip, dann Qualität | | Welche Farben der Gegenstandsqualität gesprochen werden, siehe [Tooltips](./tooltips.md#gegenstandsqualität-in-namen). |
 | Tastenbelegung | | Der Tastenbelegungs-Bildschirm, siehe [Tastenbelegung](./keybindings.md). |
 | Sprache beim Schließen des Fensters unterbrechen | Aus | Die Sprache abschneiden, sobald sich ein Fenster schließt. |
+| Töne beim Öffnen und Schließen von WowVision-Menüs | An | Einen kurzen Ton spielen, wenn sich ein WowVision-Fenster öffnet, und einen anderen, wenn es sich schließt: das WowVision-Menü, der Scanner, das Navigationsfenster, die Aktionsleisten und der Chat. Die Fenster des Spiels machen ihre eigenen Töne und bekommen keine von WowVision. |
 | Buchstaben-Navigation in Menüs | An | Buchstabentasten zu Einträgen in Menüs springen lassen. Schalte sie aus, wenn deine Buchstabentasten auch bei geöffnetem Menü weiter funktionieren sollen. |
 | WowVision-Soundkanal | Gameplay-Soundeffekte in Retail und WoW: Forever, sonst Soundeffekte | Der Soundkanal des Spiels, auf dem jeder WowVision-Sound spielt: Alarmsounds, Stimmenpakete, das Beacon und die Beispiele in den Sound-Browsern. Die Einträge heißen wie die Lautstärkeregler in den Soundoptionen des Spiels, dieser Regler ist dann die Lautstärke von WowVision. Ein Kanal, den du sonst kaum nutzt, gibt WowVision eine eigene Lautstärke. |
 

@@ -128,9 +128,12 @@ loadAddonFile("camelot/wownav/tests.lua")
 -- suite can play the game's side.
 do
     local hooks, eventFrame = {}, nil
-    local game = { moving = false, falling = false, now = 0 }
+    local game = { moving = false, falling = false, combat = false, now = 0 }
     function GetTime()
         return game.now
+    end
+    function UnitAffectingCombat(unit)
+        return unit == "player" and game.combat
     end
     function IsPlayerMoving()
         return game.moving
@@ -171,7 +174,8 @@ do
         for key in pairs(movement.flags) do
             movement.flags[key] = false
         end
-        game.moving, game.falling = false, false
+        game.moving, game.falling, game.combat = false, false, false
+        movement.attacking = false
     end
 
     WowVision.testing.testRunner:addSuite("Movement", {
@@ -234,6 +238,23 @@ do
             call("TurnLeftStart")
             t:assertEqual(movement.lastCommandAt, 7)
             call("TurnLeftStop")
+        end,
+
+        ["in combat, auto-attack with no key held is the game chasing the enemy"] = function(t)
+            reset()
+            t:assertFalse(movement:isChasing())
+            event("PLAYER_ENTER_COMBAT")
+            -- The walk up to the enemy, before the fight: obstacles count.
+            t:assertFalse(movement:isChasing())
+            game.combat = true
+            t:assertTrue(movement:isChasing())
+            -- A held key makes the movement yours again: walls still count.
+            call("MoveForwardStart")
+            t:assertFalse(movement:isChasing())
+            call("MoveForwardStop")
+            t:assertTrue(movement:isChasing())
+            event("PLAYER_LEAVE_COMBAT")
+            t:assertFalse(movement:isChasing())
         end,
 
         ["a stale key flag does not count while the game says standing"] = function(t)
@@ -302,6 +323,10 @@ do
     loadAddonFile("core/quests/scannerLiveTests.lua")
     WowVision.base = savedBase
 end
+loadAddonFile("core/quests/tooltip.lua")
+loadAddonFile("core/quests/tooltipTests.lua")
+loadAddonFile("core/quests/zones.lua")
+loadAddonFile("core/quests/zonesTests.lua")
 loadAddonFile("core/minimap/logic.lua")
 loadAddonFile("core/minimap/gatheringNames.lua")
 loadAddonFile("core/minimap/tests.lua")
@@ -350,6 +375,9 @@ loadAddonFile("core/errors/tests.lua")
 
 -- The component registry and the systems above it, all on the class library.
 loadAddonFile("core/Registry.lua")
+loadAddonFile("core/ui/WindowManager.lua")
+loadAddonFile("core/ui/Window.lua")
+loadAddonFile("core/ui/windowTests.lua")
 loadAddonFile("core/templates/templates.lua")
 loadAddonFile("core/templates/tests.lua")
 loadAddonFile("core/components/components.lua")
@@ -1479,6 +1507,22 @@ loadAddonFile("core/graph/fieldControls.lua")
 loadAddonFile("core/graph/tests.lua")
 loadAddonFile("core/graph/doublePressTests.lua")
 loadAddonFile("core/graph/controlTests.lua")
+-- The graph host itself, with its frame stubbed (its announcer words saved and
+-- restored so the graph suites keep their own), then the scanner window on it.
+do
+    local announcer = WowVision.graph.announcer
+    local savedCreateFrame = CreateFrame
+    local savedPosition, savedExpanded = announcer.positionText, announcer.expandedStateText
+    CreateFrame = function()
+        return { RegisterEvent = function() end, SetScript = function() end }
+    end
+    loadAddonFile("core/graph/Screen.lua")
+    loadAddonFile("core/graph/Host.lua")
+    CreateFrame = savedCreateFrame
+    announcer.positionText, announcer.expandedStateText = savedPosition, savedExpanded
+    WowVision.graphHost = nil
+end
+loadAddonFile("core/scanner/menuTests.lua")
 loadAddonFile("core/targeting/targetNames.lua")
 loadAddonFile("core/targeting/targetNamesTests.lua")
 
@@ -1647,6 +1691,7 @@ local parseOnly = {
     "core/chat/module.lua",
     "core/chat/ui.lua",
     "core/ui/tooltip/types/HyperlinkTooltip.lua",
+    "core/ui/tooltip/types/LinesTooltip.lua",
     "core/ui/tooltip/types/AuraTooltip.lua",
     "mists/auction.lua",
     "tbc/QuestLog.lua",

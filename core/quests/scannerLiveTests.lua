@@ -60,7 +60,8 @@ local function questNode()
     harness.log = { [7] = logEntry(2, 0) }
     local tree = harness.providers.quests.build({ maxEntries = 10, radius = 500 })
     local inProgress = tree[2]
-    return inProgress.children()[1]
+    -- In Progress lists the log's zones, the quest under its own
+    return inProgress.children()[1].children[1]
 end
 
 testRunner:addSuite("QuestScannerLive", {
