@@ -284,7 +284,7 @@ local function addSoftTarget(info)
     end
     enabled.events.valueChange:subscribe(nil, function(event, obj, key, value)
         if value ~= true then
-            info.identity = nil
+            info.state = {}
         end
         if module.softTargetingReady then
             -- 3 = keyboard and gamepad
@@ -504,20 +504,20 @@ function module:onEvent(event, a, b)
         return
     end
 
-    -- The events repeat while the same unit stays soft targeted, so only a
-    -- different identity is a change (softTargeting.lua: soft.identity
-    -- copes with the GUID being secret on Forever and Retail).
+    -- Only a different unit is a change: the soft enemy flickers (the same
+    -- unit lost and back every frame), and the GUID can be secret on
+    -- Forever and Retail (softTargeting.lua: soft.identity, soft.track).
     for _, v in ipairs(softTargets) do
         if event == v.event then
             local identity = soft.identity(identityApi, v.unit)
-            local fired = module:updateSoftTarget(v, identity)
-            module:logSoftTargetEvent(event, v.unit, identity, fired)
+            local result = module:updateSoftTarget(v, identity)
+            module:logSoftTargetEvent(event, v.unit, identity, result)
         end
     end
 end
 
 -- Local diagnostic (local-play only): every soft target event, what the
--- unit's identity read as and whether the alert fired, newest last, in
+-- unit's identity read as and what soft.track made of it (new = announced), newest last, in
 -- WowVisionDump.softTargetLog after /reload.
 local SOFT_LOG_MAX = 300
 
@@ -531,7 +531,7 @@ local function identityText(identity)
     return tostring(identity)
 end
 
-function module:logSoftTargetEvent(event, unit, identity, fired)
+function module:logSoftTargetEvent(event, unit, identity, result)
     if type(WowVisionDump) ~= "table" then
         return
     end
@@ -546,7 +546,7 @@ function module:logSoftTargetEvent(event, unit, identity, fired)
     local guid = UnitGUID(unit)
     local name = UnitName(unit)
     list[#list + 1] = string.format(
-        "%s %.2f %s identity=%s guid=%s name=%s exists=%s fired=%s",
+        "%s %.2f %s identity=%s guid=%s name=%s exists=%s result=%s",
         date("%H:%M:%S"),
         GetTime(),
         event,
@@ -554,7 +554,7 @@ function module:logSoftTargetEvent(event, unit, identity, fired)
         secrets.isSecret(guid) and "secret" or tostring(guid),
         secrets.isSecret(name) and "secret" or tostring(name),
         tostring(UnitExists(unit)),
-        tostring(fired == true)
+        tostring(result)
     )
 end
 
@@ -609,20 +609,22 @@ function module:updateHardTarget()
     end
 end
 
+-- Returns what soft.track made of the event.
 function module:updateSoftTarget(target, identity)
     if not target.alert:getEnabled() then
-        return
+        return nil
     end
-    if identity ~= target.identity then
-        if identity ~= nil then
-            target.tooltip:set(nil, { type = "Unit", unit = target.unit })
+    target.state = target.state or {}
+    local result = soft.track(target.state, identity, GetTime())
+    if result == "new" or result == "back" then
+        target.tooltip:set(nil, { type = "Unit", unit = target.unit })
+        if result == "new" then
             target.alert:fire({ name = UnitName(target.unit) })
-        else
-            target.tooltip:reset()
         end
-        target.identity = identity
-        return identity ~= nil
+    elseif result == "lost" then
+        target.tooltip:reset()
     end
+    return result
 end
 
 function module:onEnable()
