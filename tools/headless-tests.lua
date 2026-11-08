@@ -333,6 +333,9 @@ loadAddonFile("core/minimap/tests.lua")
 loadAddonFile("retail/groupHealth/logic.lua")
 loadAddonFile("retail/groupHealth/voices.lua")
 loadAddonFile("retail/groupHealth/tests.lua")
+loadAddonFile("retail/auction/prices.lua")
+loadAddonFile("retail/auction/ReplicateScanner.lua")
+loadAddonFile("retail/auction/tests.lua")
 loadAddonFile("core/colors/names.lua")
 loadAddonFile("core/colors/colors.lua")
 loadAddonFile("core/colors/tests.lua")
@@ -1694,6 +1697,7 @@ local parseOnly = {
     "core/ui/tooltip/types/LinesTooltip.lua",
     "core/ui/tooltip/types/AuraTooltip.lua",
     "mists/auction.lua",
+    "retail/auction/module.lua",
     "tbc/QuestLog.lua",
     "tbc/socketing.lua",
     "tbc/spellbook.lua",
