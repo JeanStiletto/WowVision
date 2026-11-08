@@ -183,7 +183,7 @@ local function turnToPoint(x, y)
     local facing = GetPlayerFacing()
     if px == nil or facing == nil then
         -- Retail hides the player's facing and position in instances.
-        WowVision:speak(L["Turning is not available here"])
+        WowVision:notify(L["Turning is not available here"])
         return false
     end
     local frameTime = turnMath.frameTime(GetFramerate())
@@ -274,7 +274,7 @@ function module:turnToWaypoint()
         if facing ~= nil then
             return self:turnToFacing(facing)
         end
-        WowVision:speak(L["No active waypoint"])
+        WowVision:notify(L["No active waypoint"])
         return false
     end
     -- (a listener for every press, the surroundings' walk log)
@@ -288,7 +288,7 @@ end
 function module:turnToFacing(facing)
     local px, py = UnitPosition("player")
     if px == nil then
-        WowVision:speak(L["Turning is not available here"])
+        WowVision:notify(L["Turning is not available here"])
         return false
     end
     return turnToPoint(px + math.cos(facing) * FACING_REACH, py + math.sin(facing) * FACING_REACH)

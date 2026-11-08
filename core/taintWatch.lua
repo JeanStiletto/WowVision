@@ -174,7 +174,7 @@ local function record(event, addon, func)
     end
     local ours = addon == nil or addon == "WowVision"
     if ours and WowVision.base ~= nil and WowVision.base.speech ~= nil then
-        WowVision:speak("Blocked: " .. tostring(func))
+        WowVision:notify("Blocked: " .. tostring(func))
     end
 end
 
