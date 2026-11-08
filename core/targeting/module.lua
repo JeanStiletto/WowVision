@@ -471,11 +471,54 @@ function module:updateSoftTargetLock()
         return
     end
     self.lockWanted = withLocked
+    self:logTargeting("lock write WithLocked=" .. tostring(withLocked))
     writer:write("SoftTargetWithLocked", withLocked)
     writer:write("SoftTargetMatchLocked", matchLocked)
 end
 
+-- Local diagnostic (local-play only, remove after the test): target and
+-- soft target events, lock writes and hard target announcements with the
+-- two lock variables, newest last, in WowVisionDump.targetingLog after
+-- /reload.
+local TARGETING_LOG_MAX = 400
+
+local function readable(value)
+    if secrets.isSecret(value) then
+        return "secret"
+    end
+    return tostring(value)
+end
+
+function module:logTargeting(text)
+    if type(WowVisionDump) ~= "table" then
+        return
+    end
+    local list = WowVisionDump.targetingLog
+    if type(list) ~= "table" then
+        list = {}
+        WowVisionDump.targetingLog = list
+    end
+    if #list >= TARGETING_LOG_MAX then
+        table.remove(list, 1)
+    end
+    local loose = IsTargetLoose ~= nil and IsTargetLoose() or nil
+    list[#list + 1] = string.format(
+        "%s %.2f %s | target=%s loose=%s soft=%s | WithLocked=%s Force=%s",
+        date("%H:%M:%S"),
+        GetTime(),
+        text,
+        readable(UnitGUID("target")),
+        readable(loose),
+        readable(UnitGUID("softenemy")),
+        tostring(getCVar("SoftTargetWithLocked")),
+        tostring(getCVar("SoftTargetForce"))
+    )
+end
+
 function module:onEvent(event, a, b)
+    if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_SOFT_ENEMY_CHANGED" then
+        self:logTargeting(event)
+    end
     -- Cache hard target GUID on event (avoids UnitGUID call every frame)
     if event == "PLAYER_TARGET_CHANGED" then
         self._cachedTargetGuid = UnitGUID("target")
@@ -526,6 +569,7 @@ function module:updateHardTarget()
         -- the last target's.
         self.targetHealthInterval = nil
         module.tooltips.hardTarget:set(nil, { type = "Unit", unit = "target" })
+        self:logTargeting("hard target announced")
         hardTargetChange:fire({ target = target })
     end
     if self.targetHealthRemoved then
