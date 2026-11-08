@@ -4,7 +4,8 @@
 --   WowVisionDump.wownavBlockages   his blockage telemetry (HandleBlockage, WowVisionNavigationDB.blockageTelemetry)
 --   WowVisionDump.wownavWalk        WowVision's own walk trace: the route's waypoints when it starts, then one sample per
 --                                   guidance update while the player moves (his log fields), and every route event
--- His z note (10.6b) holds here too: the game gives no height on Forever, so estimatedHeight is the route's estimate.
+-- His z note (10.6b) holds here too: the game gives no height on Forever, so estimatedHeight is the route's estimate,
+-- or the floor height another module knows (maps.floorHeight, the surroundings' tracker); heightSource says which.
 -- WowVision's own field: isFalling (IsFalling), and a fall_start / fall_end event; a fall is what a walk trace looks for.
 --
 -- Pure apart from WowVisionDump: the module (or a test) gives the game state as a table (see trace.sample).
@@ -111,7 +112,7 @@ end
 -- falls or the current waypoint changed; standing still is left out. A fall gets its start and its end.
 function trace.sample(route, game)
     if game.falling and not trace.fallStart then
-        trace.fallStart = { time = game.time, x = game.x, y = game.y, height = route.anchor.height,
+        trace.fallStart = { time = game.time, x = game.x, y = game.y, height = route:estimatedHeight(),
             pathIndex = route.pathIndex, waypointId = route.path and route.path[route.pathIndex] }
         trace.event("fall_start", route, game)
     elseif not game.falling and trace.fallStart then

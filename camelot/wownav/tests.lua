@@ -40,6 +40,10 @@ local function newGame()
         speed = function()
             return game.speed
         end,
+        -- the floor height another module knows (maps.floorHeight); nil: none
+        floorHeight = function()
+            return game.floor
+        end,
     }
     return game
 end
@@ -1734,6 +1738,56 @@ if haveNetwork then
         t:assertNil(route:update(game.x, game.y), "not there yet")
         game.x, game.t = deputy.x, game.t + 1
         t:assertEqual(route:update(game.x, game.y).kind, "arrived")
+    end
+
+    -- maps.floorHeight (the surroundings' floor tracker, 2026-11-08): a start over stacked floors that asks without a
+    -- height binds to the floor the height names
+    suite["a known floor height answers the start's floor question"] = function(t)
+        setup()
+        N.LoadZone(STORMWIND)
+        local game = newGame()
+        local found
+        for i = 0, 20000 do
+            local x, y, z = N.Position(STORMWIND * N.ZONE_BASE + i)
+            if x == nil then
+                break
+            end
+            local route = Route.new(game.env)
+            if select(2, route:startBinding(x, y)) == "ambiguous" then
+                found = { x = x, y = y, z = z }
+                break
+            end
+        end
+        t:assertNotNil(found, "Stormwind has a waypoint over stacked floors")
+        local route = Route.new(game.env)
+        game.floor = found.z
+        local id = route:startBinding(found.x, found.y)
+        t:assertNotNil(id, "the floor height decides")
+        local _, _, bz = N.Position(id)
+        t:assertTrue(math.abs(bz - found.z) <= 2 * N.HEIGHT_TOLERANCE, "bound on that floor: " .. tostring(bz))
+        -- the height is also the last known one: a moment without it (the tracker unsure) keeps that floor
+        game.floor = nil
+        t:assertEqual(route:startBinding(found.x, found.y), id, "the last known floor height")
+        t:assertEqual(select(2, Route.new(game.env):startBinding(found.x, found.y)), "ambiguous", "a fresh route asks")
+    end
+
+    suite["a known floor height goes before the route's estimate, never while swimming"] = function(t)
+        local game = newGame()
+        local route = Route.new(game.env)
+        t:assertNil(route:estimatedHeight())
+        t:assertNil(route:heightSource())
+        route:setHeightAnchor(100)
+        t:assertEqual(route:estimatedHeight(), 100)
+        t:assertEqual(route:heightSource(), "route")
+        -- a fall the route's estimate does not know: the floor's height wins
+        game.floor = 88
+        t:assertEqual(route:estimatedHeight(), 88)
+        t:assertEqual(route:heightSource(), "floor")
+        t:assertEqual(route:logFields(1, 2).heightSource, "floor", "the trace says where the height came from")
+        t:assertEqual(route:logFields(1, 2).estimatedHeight, 88)
+        game.swimming = true
+        t:assertNil(route:estimatedHeight())
+        t:assertNil(route:heightSource())
     end
 end
 

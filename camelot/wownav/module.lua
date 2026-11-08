@@ -166,6 +166,10 @@ local function ready(self)
                 return x, y, map
             end,
             swimming = inWater,
+            -- the player's floor height where another module knows it (maps.floorHeight: the surroundings)
+            floorHeight = function()
+                return maps.floorHeight ~= nil and maps.floorHeight() or nil
+            end,
             now = GetTime,
             facing = playerFacing,
             moving = function()

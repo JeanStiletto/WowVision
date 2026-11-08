@@ -110,11 +110,29 @@ function Route:setRouteState(previousId, waypointId)
     end
 end
 
+-- The player's height: the floor height another module knows (env.floorHeight, the surroundings' floor tracker where
+-- it is sure, 2026-11-08) before the route's estimate along its link; it is also the last known height.
 function Route:estimatedHeight()
     if self.env.swimming() then
         return nil
     end
+    local known = self.env.floorHeight ~= nil and self.env.floorHeight() or nil
+    if known ~= nil then
+        self.anchor.last = known
+        return known
+    end
     return self.anchor.height
+end
+
+-- Where the height comes from, for the trace: "floor" (env.floorHeight), "route" (the estimate along the link) or nil.
+function Route:heightSource()
+    if self.env.swimming() then
+        return nil
+    end
+    if self.env.floorHeight ~= nil and self.env.floorHeight() ~= nil then
+        return "floor"
+    end
+    return self.anchor.height ~= nil and "route" or nil
 end
 
 function Route:startOptions()
@@ -284,7 +302,8 @@ function Route:blockageTelemetry(x, y, kind, fromId, toId, count)
         kind = kind or "frozen",
         worldX = x,
         worldY = y,
-        estimatedHeight = self.anchor.height,
+        estimatedHeight = self:estimatedHeight(),
+        heightSource = self:heightSource(),
         edgeFrom = fromId,
         edgeTo = toId,
         blockagesOnEdge = count,
@@ -337,7 +356,9 @@ function Route:logFields(x, y, entry)
     entry = entry or {}
     entry.navigationActive = self.active == true
     entry.navigationTarget = self.targetName
-    entry.estimatedHeight = self.anchor.height
+    -- (the height the route works with, and WowVision's own field: where it came from)
+    entry.estimatedHeight = self:estimatedHeight()
+    entry.heightSource = self:heightSource()
     entry.blockageCheckX, entry.blockageCheckY = self.blockageCheckX, self.blockageCheckY
     if not self.active or not self.path then
         return entry

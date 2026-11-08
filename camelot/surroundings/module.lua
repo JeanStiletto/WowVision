@@ -2198,6 +2198,28 @@ WowVision.base.navigation.maps.floorName = function(x, y, height)
     updateWords()
     return logic.floorNameAt(zone, x, y, height)
 end
+-- WowNav's height of the player (maps.floorHeight, 2026-11-08, user: the surroundings answer WowNav's "where am I"
+-- with the floor tracker's height): the height of the floor held on its grid, only while the tracker is sure (every
+-- candidate within its margin at that height) and its last look lies within FLOOR_HEIGHT_NEAR yd of the player; nil
+-- elsewhere (no data here, unsure, an old look), and WowNav keeps its own estimate or asks.
+local FLOOR_HEIGHT_NEAR = 3.0
+WowVision.base.navigation.maps.floorHeight = function()
+    if not module:getEnabled() or zone == nil then
+        return nil
+    end
+    local x, y, _z, map = UnitPosition("player")
+    -- (the zone's own check, not findZone: asking for a height switches no zone)
+    if x == nil or zone.map ~= map or not logic.covers(zone, x, y) then
+        return nil
+    end
+    local g = heldGrid()
+    local ix = g and g._index
+    if ix == nil or ix.floorSure ~= true or ix.lastX == nil
+        or logic.dist(ix.lastX, ix.lastY, x, y) > FLOOR_HEIGHT_NEAR then
+        return nil
+    end
+    return logic.tracker.heldZ(g)
+end
 -- (the route's beacon: maps' turnToWaypoint calls this with the waypoint before it turns)
 WowVision.base.navigation.maps.onTurnToWaypoint = function(wx, wy)
     local x, y = UnitPosition("player")
