@@ -103,11 +103,30 @@ tracker.PERSIST = true     -- the decoded columns and each surface's steps kept 
                            -- the user: game performance). WV_TRACKER_PERSIST=0 offline: decoded afresh per look
 tracker.SPAN = 48.0        -- yd: the kept columns are let go and kept afresh once the player is this far from where they
                            -- began (the memory stays that of the ground around the player; offline WV_TRACKER_SPAN)
+tracker.FORK = 1           -- 1 (2: also the place held, below): the fork rule (2026-11-08, reviews/fork-rule-design.md in the
+                           -- tools): a pass along a climb's foot or top (zone.climbFeet, zone.climbTops) on the floor held,
+                           -- within FORK_NEAR and FORK_ANGLE of its bearing, arms that climb for ARM yd walked: of
+                           -- candidates that tie (same cost, both continuing the chain or neither, the same nearest
+                           -- column), one on the armed climb's place wins. Open stairs over a floor (Theramore's mage
+                           -- tower) and stacked turns (Thendal's tower) tie from the fork on and the piece held won: the
+                           -- floor at a foot, a gallery at a head. The arm ends after ARM yd, once the floor held leaves
+                           -- the climb's place after being on it, at a U-turn and in the air. 0 = off. Virtual walks of
+                           -- the four TBC zones: 1295 points wrong -> right, 207 right -> wrong (most: walks along a floor
+                           -- under stairs, where the next bump or step puts it right); the real walks: none right -> wrong
+tracker.ARM = 30.0         -- yd walked a pass keeps its climb armed (a climb's length; the end records hold no length)
+tracker.FORK_NEAR = 2.5    -- yd from an end record that count as passing it (1.5 missed Theramore's wide stairs: 1.6 to 2.3)
+tracker.FORK_ANGLE = 45.0  -- degrees off the record's bearing the move may be
+tracker.FORK_BASE = 2.0    -- yd: the move's heading is taken over at least this much walking
+tracker.UTURN_ANGLE = 135.0   -- degrees: a heading reversed by more than this against an earlier one is a U-turn
+tracker.UTURN_SPAN = 5.0   -- yd walked within which the earlier heading lies (Thendal's spiral turns about 12 degrees a yd)
+tracker.FORK_TOPS = 1      -- 0: only a climb's foot arms, never its top (a walk along a walkway beside a flight going down
+                           -- was put down it: Ironforge -4812 -1002, 4 points; 0 lost about 590 points fixed in Dun
+                           -- Morogh, walks down stairs held on the floor above; the user kept 1, 2026-11-08)
 -- (offline only: WV_TRACKER_<NAME>=<number> overrides a number above for a sweep against the truth, e.g.
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
     tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") ~= "0"
-    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH", "RISE" }) do
+    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH", "RISE", "FORK", "ARM", "FORK_NEAR", "FORK_ANGLE", "FORK_BASE", "UTURN_ANGLE", "UTURN_SPAN", "FORK_TOPS" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -184,9 +203,33 @@ tracker.column = column
 
 -- Whether the candidate `cand` is a better floor than `best` (nil: none yet), `was` the floor piece held: the cheaper;
 -- of one cost the one reached from the floor held (CHAIN), then the nearest column's, then the piece held.
+-- (FORK: the place of the climb armed this look, and the layer it lies on; nil: none)
+local armedPlace, armedZone = nil, nil
+
+-- The place of the floor piece of surface `s` at its own cell on the layer `zone` (FORK); kept on the surface.
+local function placeOfSurface(zone, s)
+    local p = s.pl
+    if p == nil then
+        local r, c = logic.cellOf(zone, s.x, s.y)
+        p = logic.placeOf(logic.valueOfFloor(zone, r, c, s.piece))
+        s.pl = p
+    end
+    return p
+end
+
 local function better(cand, best, was)
     if best == nil or cand.cost < best.cost then
         return true
+    end
+    -- (FORK: last, in place of "the piece held" only: the nearest column still wins first. Beside stairs the floor's
+    -- surface is nearer and stays; over or under them both lie in one column. The Mage Quarter's stairs, virtual walks
+    -- 2026-11-08: a walk along the floor past their foot was put on the stairs while the arm came before the column)
+    if armedPlace ~= nil and cand.cost == best.cost and cand.cont == best.cont
+        and cand.off <= best.off + 0.01 and cand.off >= best.off - 0.01 then
+        local a = placeOfSurface(armedZone, cand.s) == armedPlace
+        if a ~= (placeOfSurface(armedZone, best.s) == armedPlace) then
+            return a
+        end
     end
     return cand.cost == best.cost and ((cand.cont and not best.cont)
         or (cand.cont == best.cont and (cand.off < best.off - 0.01
@@ -368,6 +411,110 @@ function look(zone, x, y, swimming)
     local lx, ly = ix.lastX or x, ix.lastY or y
     local moved = logic.dist(lx, ly, x, y)
     ix.lastX, ix.lastY = x, y
+    -- FORK: a pass along a climb's end record on the floor held arms that climb (the move's heading over FORK_BASE yd)
+    armedPlace, armedZone = nil, nil
+    if tracker.FORK ~= 0 then
+        local arm = ix.forkArm
+        if arm then
+            arm.left = arm.left - moved
+            if arm.left <= 0 or moved > tracker.RESET then
+                arm = nil
+            end
+        end
+        -- the arm ends in the air (the game's IsFalling: `swimming` nil): a fall leaves the stairs, a jump on them
+        -- gives today's choice back (the Cenarion Enclave's spiral, walk 2026-11-04 10:15:49: the trail's falling flag
+        -- where the truth drops from the stairs to the floor, and the arm held the stairs 15 s after)
+        if arm and swimming == nil then
+            if DEBUG then
+                io.stderr:write(string.format("fork: in the air at %.1f %.1f, the arm of place %d ends\n", x, y, arm.place))
+            end
+            arm = nil
+        end
+        -- the arm ends at a U-turn: the heading over the last FORK_BASE yd reversed by more than UTURN_ANGLE against one
+        -- taken within the last UTURN_SPAN yd walked (a spiral turns far slower; a step back shorter than FORK_BASE
+        -- gives no reversed heading; the Cenarion Enclave's spiral, walk 2026-11-04 10:15:49: up a few steps and back
+        -- down, the arm held the stairs 15 s)
+        if arm and moved > 0 then
+            arm.w = (arm.w or 0) + moved
+            local pts, heads = arm.pts, arm.heads
+            pts[#pts + 1] = { arm.w, x, y }
+            local from = nil
+            for i = #pts - 1, 1, -1 do
+                if logic.dist(pts[i][2], pts[i][3], x, y) >= tracker.FORK_BASE then
+                    from = pts[i]
+                    break
+                end
+            end
+            while #pts > 1 and pts[1][1] < arm.w - 3 * tracker.FORK_BASE do
+                table.remove(pts, 1)
+            end
+            if from then
+                local h = math.deg(math.atan2(-(y - from[3]), x - from[2])) % 360
+                for i = #heads, 1, -1 do
+                    if heads[i][1] < arm.w - tracker.UTURN_SPAN then
+                        break
+                    end
+                    if math.abs((h - heads[i][2] + 180) % 360 - 180) > tracker.UTURN_ANGLE then
+                        if DEBUG then
+                            io.stderr:write(string.format("fork: U-turn at %.1f %.1f, the arm of place %d ends (heading %.0f, was %.0f)\n",
+                                x, y, arm.place, h, heads[i][2]))
+                        end
+                        arm = nil
+                        break
+                    end
+                end
+                if arm then
+                    heads[#heads + 1] = { arm.w, h }
+                    while #heads > 1 and heads[1][1] < arm.w - tracker.UTURN_SPAN do
+                        table.remove(heads, 1)
+                    end
+                end
+            end
+        end
+        -- a record passed within FORK_NEAR on the floor held is pending until the player is FORK_BASE yd on from where
+        -- it was passed: the way from there decides, not the way before (the stairs are turned onto at their foot;
+        -- the way there is the approach, Theramore's tower 2026-11-08: 71 to 121 degrees off at its two records)
+        local hr, hc = logic.cellOf(zone, x, y)
+        local heldPlace = was ~= 0 and logic.placeOf(logic.valueOfFloor(zone, hr, hc, was)) or nil
+        local pend = ix.forkPend
+        if pend == nil or moved > tracker.RESET then
+            pend = {}
+            ix.forkPend = pend
+        end
+        for _, list in ipairs({ ix.climbFeet or {}, tracker.FORK_TOPS ~= 0 and ix.climbTops or {} }) do
+            for _, f in ipairs(list) do
+                local p = pend[f]
+                -- (held: the record's floor, or the climb itself, stepped onto before its end record)
+                if p == nil and f.bearing and logic.dist(x, y, f.x, f.y) <= tracker.FORK_NEAR
+                    and ((f.floor or 0) == was or heldPlace == logic.placeOf(f.value)) then
+                    pend[f] = { x, y }
+                elseif p and logic.dist(p[1], p[2], x, y) >= tracker.FORK_BASE then
+                    pend[f] = nil
+                    local heading = math.deg(math.atan2(-(y - p[2]), x - p[1])) % 360   -- 0 north (+x), clockwise (east -y)
+                    local along = math.abs((heading - f.bearing + 180) % 360 - 180) <= tracker.FORK_ANGLE
+                    if along then
+                        -- (the pass's own heading is the first one held: a turn back right after it is a U-turn too;
+                        -- Elwynn -9000 400, virtual walk: up past a foot, straight back down, the arm held 30 yd)
+                        arm = { place = logic.placeOf(f.value), left = tracker.ARM, pts = { { 0, x, y } },
+                            heads = { { 0, heading } }, w = 0 }
+                    end
+                    if DEBUG then
+                        io.stderr:write(string.format("fork: %s place %d at %.1f %.1f (%s, bearing %d, heading %.0f)\n",
+                            along and "armed" or "passed, not along", logic.placeOf(f.value),
+                            x, y, f.top and "top" or "foot", f.bearing, heading))
+                    end
+                end
+            end
+        end
+        ix.forkArm = arm
+        if arm then
+            armedPlace, armedZone = arm.place, zone
+        elseif tracker.FORK == 2 and heldPlace ~= nil and heldPlace ~= 0 then
+            -- FORK 2: with no climb armed, of candidates that tie the one on the place held wins (a climb cut into many
+            -- pieces is one place: "the piece held" kept only one small piece, the floor beside took the next step)
+            armedPlace, armedZone = heldPlace, zone
+        end
+    end
     ix.inHole = false
     if prev and (#prev == 0 or moved > tracker.RESET) then
         prev = nil
@@ -720,6 +867,15 @@ function look(zone, x, y, swimming)
     -- sure: every candidate within the margin lies at the best one's height (one level; another piece at the
     -- same height is a question of names, not of floors, and the nearest column's piece answers it)
     local floor_ = best.s.piece
+    -- FORK: the arm ends once the floor held leaves the climb's place after being on it (its landing reached)
+    local arm = ix.forkArm
+    if arm then
+        if placeOfSurface(zone, best.s) == arm.place then
+            arm.on = true
+        elseif arm.on then
+            ix.forkArm = nil
+        end
+    end
     local sure = true
     local bz = best.s.z
     for i = 1, #kept do
@@ -736,7 +892,7 @@ function look(zone, x, y, swimming)
         -- (offline, WV_TRACKER_DEBUG=2: every look with its candidates, to trace a wrong stretch)
         local parts = {}
         for i = 1, #kept do
-            parts[#parts + 1] = string.format("%.1f/%d/%.1f%s", kept[i].s.z, kept[i].s.piece, kept[i].cost, kept[i].fell and "F" or "")
+            parts[#parts + 1] = string.format("%.1f/%d/%.1f%s", kept[i].s.z, kept[i].s.piece, kept[i].cost, (kept[i].fell and "F" or "") .. (kept[i].cont and "C" or "") .. string.format("@%.1f", kept[i].off or -1))
         end
         io.stderr:write(string.format("look %s %.1f %.1f floor %d %s hops %d: %s\n", tostring(zone.key), x, y, floor_,
             sure and "sure" or "UNSURE", hops, table.concat(parts, " ")))

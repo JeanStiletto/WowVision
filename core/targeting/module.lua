@@ -195,18 +195,6 @@ end
 
 local softTargets = {}
 
--- The game reads behind soft.identity. A nameplate frame is never secret.
-local identityApi = {
-    UnitExists = UnitExists,
-    UnitGUID = UnitGUID,
-    UnitName = UnitName,
-    isSecret = secrets.isSecret,
-    nameplate = C_NamePlate ~= nil and C_NamePlate.GetNamePlateForUnit ~= nil and function(unit)
-        local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, unit)
-        return ok and plate or nil
-    end or nil,
-}
-
 -- The soft targeting console variables go through one writer that reads each
 -- write back and holds the secure ones (the on/off switches, Force, measured
 -- on Forever) until combat ends. See softTargeting.lua.
@@ -284,7 +272,7 @@ local function addSoftTarget(info)
     end
     enabled.events.valueChange:subscribe(nil, function(event, obj, key, value)
         if value ~= true then
-            info.identity = nil
+            info.guid = nil
         end
         if module.softTargetingReady then
             -- 3 = keyboard and gamepad
@@ -470,14 +458,16 @@ function module:applySoftTargeting()
     self:updateSoftTargetLock()
 end
 
--- Runs on every target change and death, in combat too: the lock variables
--- are not secure. Writes only when the wanted value changes.
+-- Runs on every target change and death, and when the target stops or
+-- starts being one the game set (watchLooseTarget), in combat too: the
+-- lock variables are not secure. Writes only when the wanted value changes.
 function module:updateSoftTargetLock()
     local withLocked, matchLocked = soft.lockValues(
         self.settings.softTargetLock,
         UnitExists("target"),
         UnitCanAttack("player", "target"),
-        UnitIsDead("target")
+        UnitIsDead("target"),
+        IsTargetLoose ~= nil and IsTargetLoose()
     )
     if withLocked == nil or withLocked == self.lockWanted then
         return
@@ -504,12 +494,18 @@ function module:onEvent(event, a, b)
         return
     end
 
-    -- The events repeat while the same unit stays soft targeted, so only a
-    -- different identity is a change (softTargeting.lua: soft.identity
-    -- copes with the GUID being secret on Forever and Retail).
+    -- The payload GUIDs can be secret (hidden identities on Forever and
+    -- Retail): then they cannot be compared, and the event itself is the
+    -- change.
     for _, v in ipairs(softTargets) do
         if event == v.event then
-            module:updateSoftTarget(v, soft.identity(identityApi, v.unit))
+            local newGuid
+            if (a or b) and secrets.changed(a, b) then
+                newGuid = b
+            else
+                newGuid = UnitGUID(v.unit)
+            end
+            module:updateSoftTarget(v, newGuid)
         end
     end
 end
@@ -565,18 +561,30 @@ function module:updateHardTarget()
     end
 end
 
-function module:updateSoftTarget(target, identity)
+function module:updateSoftTarget(target, newGuid)
     if not target.alert:getEnabled() then
         return
     end
-    if identity ~= target.identity then
-        if identity ~= nil then
+    if secrets.changed(newGuid, target.guid) then
+        if newGuid then
             target.tooltip:set(nil, { type = "Unit", unit = target.unit })
             target.alert:fire({ name = UnitName(target.unit) })
         else
             target.tooltip:reset()
         end
-        target.identity = identity
+        target.guid = newGuid
+    end
+end
+
+-- Choosing the target the game set (Tab or a click on it, or attacking it
+-- where the game locks it then) keeps the same unit, so no target change
+-- event comes; the game has no event for the flag either. Read every tick,
+-- the lock follows when it flips.
+function module:watchLooseTarget()
+    local loose = IsTargetLoose ~= nil and IsTargetLoose()
+    if loose ~= self._targetLoose then
+        self._targetLoose = loose
+        self:updateSoftTargetLock()
     end
 end
 
@@ -585,6 +593,7 @@ function module:onEnable()
     self._cachedTargetGuid = UnitGUID("target")
     self:hasUpdate(function(self)
         self:updateHardTarget()
+        self:watchLooseTarget()
     end)
 end
 
