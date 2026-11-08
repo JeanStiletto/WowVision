@@ -480,7 +480,7 @@ end
 -- soft target events, lock writes and hard target announcements with the
 -- two lock variables, newest last, in WowVisionDump.targetingLog after
 -- /reload.
-local TARGETING_LOG_MAX = 400
+local TARGETING_LOG_MAX = 2000
 
 local function readable(value)
     if secrets.isSecret(value) then
