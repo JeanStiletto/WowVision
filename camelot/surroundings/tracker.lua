@@ -78,12 +78,15 @@ tracker.KEEP = 1.5         -- yd: of two pieces meeting at one height the one he
 tracker.STEEP = 0          -- yd: a move up along ONE piece no steps explain costs MISSING up to this height (a steep ramp
                            -- zigzags on the 1 yd grid, the Abbey bell tower ramp: 9 steps for a 2 yd move, the hop budget
                            -- 7, and a fall onto the ramp below at 2 beat the jump at 8; 0 = off; swept 2026-10-19)
-tracker.CHAIN = 1          -- 1: of candidates of one cost, the one reached from the floor held wins before the nearest
+tracker.CHAIN = 2          -- 1: of candidates of one cost, the one reached from the floor held wins before the nearest
                            -- column: a U-ramp split into its flights (data trial K3) kept its upper flight over the ground
                            -- under it while the lower flight was held (the Lion's Pride Inn, walk 2026-10-19 17:08:13); the
                            -- piece held alone did that while the U was one piece. 0 = off; swept 2026-10-19 late on J2 and
                            -- K3, the whole set: Elwynn 155 -> 144 on K3 (J2 144 either way), Undercity 388 -> 389 (one point
-                           -- in Brill's common room), Dun Morogh 38 either way
+                           -- in Brill's common room), Dun Morogh 38 either way. 2 (2026-11-08, Valanaar's hall, bug 166): also
+                           -- when another way to the candidate of the same cost starts on the floor held (which of two
+                           -- equally cheap ways is met first is the list's order: the upper flight, reached from the held
+                           -- flight at no cost, counted as from elsewhere, and the lower flight under it won)
 tracker.THROUGH = 1        -- 1: a fall lands on the first dry floor under it, never through one: a lower surface with another
                            -- dry floor in its 1 yd column between it and the fall's start costs JUMP, not FALL (the Abbey
                            -- bell tower, walk 2026-10-30 17:47:28, bug 142: a hop 2 to 4 yd down off the platform onto the
@@ -119,6 +122,11 @@ tracker.FORK_ANGLE = 45.0  -- degrees off the record's bearing the move may be
 tracker.FORK_BASE = 2.0    -- yd: the move's heading is taken over at least this much walking
 tracker.UTURN_ANGLE = 135.0   -- degrees: a heading reversed by more than this against an earlier one is a U-turn
 tracker.UTURN_SPAN = 5.0   -- yd walked within which the earlier heading lies (Thendal's spiral turns about 12 degrees a yd)
+tracker.FORK_RAW = 2       -- 1: the fork rule's tie compares the columns' true distances, not the piece held's KEEP (a held floor
+                           -- within KEEP counts as distance 0, so the floor under open stairs, held at their foot, always
+                           -- beat the armed stairs over it in the same column: Valanaar's hall, bug 166, walk 2026-11-08
+                           -- 10:22). 2: only for a climb armed at its foot (a top armed going down beside a spiral's
+                           -- lower turn kept the turn above: Dun Morogh -5602 -548, virtual walks). 0 = as before
 tracker.FORK_TOPS = 1      -- 0: only a climb's foot arms, never its top (a walk along a walkway beside a flight going down
                            -- was put down it: Ironforge -4812 -1002, 4 points; 0 lost about 590 points fixed in Dun
                            -- Morogh, walks down stairs held on the floor above; the user kept 1, 2026-11-08)
@@ -126,7 +134,7 @@ tracker.FORK_TOPS = 1      -- 0: only a climb's foot arms, never its top (a walk
 -- WV_TRACKER_STEP_DZ=2.5; the process asks that a number be swept before it is used, 2026-10-18)
 if os and os.getenv then
     tracker.PERSIST = os.getenv("WV_TRACKER_PERSIST") ~= "0"
-    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH", "RISE", "FORK", "ARM", "FORK_NEAR", "FORK_ANGLE", "FORK_BASE", "UTURN_ANGLE", "UTURN_SPAN", "FORK_TOPS" }) do
+    for _, name in ipairs({ "SPAN", "REACH", "STEP_DZ", "EXTRA_HOPS", "MAX_HOPS", "FALL", "MISSING", "JUMP", "PRUNE", "MARGIN", "LEVEL", "NEAR", "RESET", "KEEP", "STEEP", "HOLES", "HOLE_ANCHOR", "HOLE_MAX", "HOLE_DZ", "PRIOR", "DETOUR", "CHAIN", "THROUGH", "RISE", "FORK", "ARM", "FORK_NEAR", "FORK_ANGLE", "FORK_BASE", "UTURN_ANGLE", "UTURN_SPAN", "FORK_TOPS", "FORK_RAW" }) do
         local v = tonumber(os.getenv("WV_TRACKER_" .. name) or "")
         if v then tracker[name] = v end
     end
@@ -205,6 +213,7 @@ tracker.column = column
 -- of one cost the one reached from the floor held (CHAIN), then the nearest column's, then the piece held.
 -- (FORK: the place of the climb armed this look, and the layer it lies on; nil: none)
 local armedPlace, armedZone = nil, nil
+local armedFoot = false   -- (FORK_RAW 2: the arm came from a climb's foot)
 
 -- The place of the floor piece of surface `s` at its own cell on the layer `zone` (FORK); kept on the surface.
 local function placeOfSurface(zone, s)
@@ -224,8 +233,12 @@ local function better(cand, best, was)
     -- (FORK: last, in place of "the piece held" only: the nearest column still wins first. Beside stairs the floor's
     -- surface is nearer and stays; over or under them both lie in one column. The Mage Quarter's stairs, virtual walks
     -- 2026-11-08: a walk along the floor past their foot was put on the stairs while the arm came before the column)
+    local co, bo = cand.off, best.off
+    if tracker.FORK_RAW == 1 or (tracker.FORK_RAW == 2 and armedFoot) then
+        co, bo = cand.raw, best.raw
+    end
     if armedPlace ~= nil and cand.cost == best.cost and cand.cont == best.cont
-        and cand.off <= best.off + 0.01 and cand.off >= best.off - 0.01 then
+        and co <= bo + 0.01 and co >= bo - 0.01 then
         local a = placeOfSurface(armedZone, cand.s) == armedPlace
         if a ~= (placeOfSurface(armedZone, best.s) == armedPlace) then
             return a
@@ -412,7 +425,7 @@ function look(zone, x, y, swimming)
     local moved = logic.dist(lx, ly, x, y)
     ix.lastX, ix.lastY = x, y
     -- FORK: a pass along a climb's end record on the floor held arms that climb (the move's heading over FORK_BASE yd)
-    armedPlace, armedZone = nil, nil
+    armedPlace, armedZone, armedFoot = nil, nil, false
     if tracker.FORK ~= 0 then
         local arm = ix.forkArm
         if arm then
@@ -495,7 +508,7 @@ function look(zone, x, y, swimming)
                     if along then
                         -- (the pass's own heading is the first one held: a turn back right after it is a U-turn too;
                         -- Elwynn -9000 400, virtual walk: up past a foot, straight back down, the arm held 30 yd)
-                        arm = { place = logic.placeOf(f.value), left = tracker.ARM, pts = { { 0, x, y } },
+                        arm = { place = logic.placeOf(f.value), foot = not f.top, left = tracker.ARM, pts = { { 0, x, y } },
                             heads = { { 0, heading } }, w = 0 }
                     end
                     if DEBUG then
@@ -508,11 +521,11 @@ function look(zone, x, y, swimming)
         end
         ix.forkArm = arm
         if arm then
-            armedPlace, armedZone = arm.place, zone
+            armedPlace, armedZone, armedFoot = arm.place, zone, arm.foot == true
         elseif tracker.FORK == 2 and heldPlace ~= nil and heldPlace ~= 0 then
             -- FORK 2: with no climb armed, of candidates that tie the one on the place held wins (a climb cut into many
             -- pieces is one place: "the piece held" kept only one small piece, the floor beside took the next step)
-            armedPlace, armedZone = heldPlace, zone
+            armedPlace, armedZone, armedFoot = heldPlace, zone, false
         end
     end
     ix.inHole = false
@@ -677,6 +690,7 @@ function look(zone, x, y, swimming)
         if priorZ and (b.z > priorZ + tracker.LEVEL or b.z < priorZ - tracker.LEVEL) then
             cost = tracker.PRIOR
         end
+        local wasCost = nil   -- (CHAIN 2: the cheapest way here from a candidate on the floor held)
         if prev then
             cost = nil
             local kb = keyOf(b)
@@ -712,6 +726,9 @@ function look(zone, x, y, swimming)
                 -- (a rise over RISE, or a walk on from a candidate that rose so: kept apart, any other way here is
                 -- taken first; the chain of a rise stays one, so a fall the real chain pays never makes it the best)
                 local high = tracker.RISE ~= 0 and ((t >= tracker.JUMP and dz > tracker.RISE) or a.risen == true)
+                if a.s.piece == was and not high and (wasCost == nil or v < wasCost) then
+                    wasCost = v
+                end
                 -- (of two ways equally cheap, a fall from the floor held explains more than a walk on a
                 -- floor long left: the guidance back onto a climb needs the floor fallen from)
                 if cost == nil or (risen and not high) or (high == risen and (v < cost
@@ -732,11 +749,15 @@ function look(zone, x, y, swimming)
         -- tracker needed a join crossing to switch)
         local dx, dy = b.x - x, b.y - y
         local off = dx * dx + dy * dy
+        local raw = off
         if b.piece == was and off <= tracker.KEEP * tracker.KEEP then
             off = 0
         end
-        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off, step = step, risen = risen }
-        cand.cont = tracker.CHAIN == 1 and from == was
+        local cand = { s = b, cost = cost, x = x, y = y, fell = fell, from = from, off = off, raw = raw, step = step, risen = risen }
+        -- (CHAIN 2: also when another way here of the same cost starts on the floor held; which of two equally cheap
+        -- old candidates is met first is the order of the list, no evidence)
+        cand.cont = (tracker.CHAIN == 1 and from == was)
+            or (tracker.CHAIN == 2 and (from == was or (wasCost ~= nil and not risen and wasCost <= cost - local_)))
         new[#new + 1] = cand
         if better(cand, best, was) then
             best = cand
