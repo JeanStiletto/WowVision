@@ -43,6 +43,10 @@ Keep this list current; everything else is his text, line for line (line endings
 - `NavNetwork.lua`, time slices: `N.Job(fn, ...)` runs any work that searches routes in a coroutine; the A* loop of
   `Pass` yields every 64 expansions once the frame's budget is used. `N.RouteJob` is `N.Job(N.Route, ...)`. No
   `pcall` may stand between a job and the search (Lua 5.1 cannot yield across it).
+- `NavNetwork.lua`, edge cost: a link step in `Pass` adds `zone.lextra[k]` when the zone has it. WowVision's
+  `../edgecost.lua` fills it after decoding (hook `N.onZoneLoaded`) for the links that run beside a drop
+  (`tools/wownav-edgecost.lua`, written by the pack step), so a route goes along such a link only when the way around
+  costs more. Partial links, seams, actions and the same-link route carry none.
 - `Guidance.lua`: `G.MinArrivalRadius` reads `G.arrivalMin` (WowVision's arrival distance, set by the module)
   instead of his saved variable `arrivalMin`; the wownav module writes the radius Alt-P picks there (0.1 to 20 yd,
   default 1; his default 0 = the data's radius alone).

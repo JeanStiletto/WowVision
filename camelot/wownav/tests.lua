@@ -1906,4 +1906,51 @@ if haveNetwork then
     end
 end
 
+-- Edge cost (edgecost.lua): links beside a drop are dearer in the search, from the pack step's WVN7EdgeCost.
+suite["edge cost: a zone takes the packed links only with its own fingerprint"] = function(t)
+    local edgeCost = WowVision.wownavEdgeCost
+    local saved = _G.WVN7EdgeCost
+    -- a zone of three waypoints: link 1 joins 0 and 1, link 2 joins 1 and 2 (adj: neighbour, link number, ...)
+    local zone = { id = 990, fingerprint = "F1", adj = { { 1, 1 }, { 0, 1, 2, 2 }, { 1, 2 } } }
+    _G.WVN7EdgeCost = { [990] = { fingerprint = "F1", links = { 1, 2, 3 } } }
+    t:assertEqual(edgeCost.apply(zone), 1)
+    t:assertEqual(zone.lextra[2], 3 * edgeCost.PER_YARD, "the link 1 - 2, 3 yd beside a drop")
+    t:assertNil(zone.lextra[1])
+    _G.WVN7EdgeCost = { [990] = { fingerprint = "OTHER", links = { 1, 2, 3 } } }
+    t:assertEqual(edgeCost.apply(zone), 0, "the data of another export")
+    t:assertNil(zone.lextra)
+    _G.WVN7EdgeCost = saved
+end
+
+if haveNetwork and type(_G.WVN7EdgeCost) == "table" and _G.WVN7EdgeCost[87] then
+    -- The walk of 2026-11-10 16:37 from Buliwyf Stonehand to the heirlooms under Ironforge went up a lava ramp on its
+    -- one long link and slid off at the top, 1.3 yd from the lava edge; the ramp's own waypoints are linked beside it.
+    suite["edge cost: the route under Ironforge keeps off the ramp's lava side"] = function(t)
+        setup()
+        local zone = N.LoadZone(87)
+        t:assertNotNil(zone.lextra, "Ironforge has links beside a drop")
+        local function nearest(x, y, z)
+            local best, bestDistance
+            for i = 1, zone.n do
+                local d = (zone.x[i] - x) ^ 2 + (zone.y[i] - y) ^ 2 + (zone.z[i] - z) ^ 2
+                if not bestDistance or d < bestDistance then best, bestDistance = i - 1, d end
+            end
+            return best, math.sqrt(bestDistance)
+        end
+        local foot, footDistance = nearest(-4815.9, -1034.0, 438.8)
+        local top, topDistance = nearest(-4833.8, -1024.7, 449.0)
+        local s = N.Bind(-5037.7, -1205.4, 508.9)
+        local g = N.Bind(-4804.0, -968.0, 400.0)
+        t:assertNotNil(s, "Buliwyf binds")
+        t:assertNotNil(g, "the target binds")
+        local result = runJob(N.Job(N.Route, s, g))
+        t:assertNotNil(result, "a route")
+        for i = 1, #result.path - 1 do
+            local a, b = result.path[i] - zone.base, result.path[i + 1] - zone.base
+            t:assertFalse(footDistance < 0.5 and topDistance < 0.5 and ((a == foot and b == top) or (a == top and b == foot)),
+                "the long link up the ramp's lava side")
+        end
+    end
+end
+
 testRunner:addSuite("WowNav routes", suite)

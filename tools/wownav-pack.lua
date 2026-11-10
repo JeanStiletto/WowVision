@@ -14,10 +14,16 @@
 --
 --   luajit tools/wownav-pack.lua            (from the repo root)
 --   luajit tools/wownav-pack.lua --check    (only report; exit code 1 when the output is stale)
+--
+-- It also writes <zone>/edgecost.lua for every zone the surroundings data's floor model covers (SURROUNDINGS, the
+-- Forever zones of WowVision_Surroundings; skipped when the folder is missing): the links that run beside a drop, which
+-- the route search makes dearer (tools/wownav-edgecost.lua, camelot/wownav/edgecost.lua). Run it again after an update
+-- of either data.
 
 local SOURCE = "mapdata/WoW_NavigationData/Forever"
 local TARGET = "mapdata/WowNavPacked"
 local MARKER = "-- WVN7 packed"
+local SURROUNDINGS = "mapdata/WowVision_Surroundings/forever/zones"
 
 local check = false
 for _, a in ipairs(arg or {}) do
@@ -137,6 +143,43 @@ local xml = {
     "       zone files of WowNav's navigation data. Not in git; run the tool after updating the submodule. -->",
 }
 local changed, files = 0, 0
+
+-- Edge cost: the floor models and the engine's decoder, only when there is a model at all.
+local EdgeCost = dofile("tools/wownav-edgecost.lua")
+local models = EdgeCost.loadModels(SURROUNDINGS)
+local N
+if next(models) ~= nil then
+    WowVisionNavigationNavNetwork = nil
+    assert(loadfile("camelot/wownav/engine/NavNetwork.lua"))()
+    N = WowVisionNavigationNavNetwork
+    -- every continent index, so that the decoder knows each zone
+    WVN7Index = {}
+    for _, continent in ipairs(listDirs(SOURCE)) do
+        local chunk = loadfile(SOURCE .. "/" .. continent .. "/index.lua")
+        if chunk then chunk() end
+    end
+    N.LoadIndex()
+else
+    print("no surroundings floor model in " .. SURROUNDINGS .. ": no edge cost")
+end
+local edgeZones, edgeLinks = 0, 0
+
+-- The edge cost file text of a zone (index entry `zone`, its navdata text), or nil.
+local function edgeCostText(zone, navText)
+    if not N then return nil end
+    local list = EdgeCost.modelsFor(models, zone)
+    if #list == 0 then return nil end
+    WVN7Src = WVN7Src or {}
+    WVN7Src[zone.zoneId] = navText
+    local decoded = assert(N.LoadZone(zone.zoneId))
+    local text, count = EdgeCost.zoneText(decoded, list, zone.name)
+    N.UnloadZone(zone.zoneId)
+    WVN7Src[zone.zoneId] = nil
+    if text then
+        edgeZones, edgeLinks = edgeZones + 1, edgeLinks + count
+    end
+    return text
+end
 for _, continent in ipairs(listDirs(SOURCE)) do
     local indexPath = SOURCE .. "/" .. continent .. "/index.lua"
     local indexText = read(indexPath)
@@ -164,6 +207,24 @@ for _, continent in ipairs(listDirs(SOURCE)) do
                     end
                 end
                 xml[#xml + 1] = '  <Script file="' .. rel:gsub("/", "\\") .. '" />'
+                if kind == "navdata.lua" then
+                    local edgeText = edgeCostText(zone, text)
+                    local edgeRel = continent .. "/" .. zone.dir .. "/edgecost.lua"
+                    if edgeText then
+                        if read(TARGET .. "/" .. edgeRel) ~= edgeText then
+                            changed = changed + 1
+                            if not check then
+                                write(TARGET .. "/" .. edgeRel, edgeText)
+                            end
+                        end
+                        xml[#xml + 1] = '  <Script file="' .. edgeRel:gsub("/", "\\") .. '" />'
+                    elseif read(TARGET .. "/" .. edgeRel) ~= nil then
+                        changed = changed + 1
+                        if not check then
+                            os.remove(TARGET .. "/" .. edgeRel)
+                        end
+                    end
+                end
             end
         end
     end
@@ -176,7 +237,8 @@ if read(TARGET .. "/data.xml") ~= xmlText then
         write(TARGET .. "/data.xml", xmlText)
     end
 end
-print(string.format("%d zone files; %d file(s) %s", files, changed, check and "stale" or "written"))
+print(string.format("%d zone files, edge cost for %d links in %d zones; %d file(s) %s", files, edgeLinks, edgeZones, changed,
+    check and "stale" or "written"))
 if check and changed > 0 then
     os.exit(1)
 end
