@@ -38,6 +38,8 @@
   <!-- Developer tool: checks what an enemy count from nameplates rests on
        (/wv plates). -->
   <Script file="nameplateProbe.lua" />
+  <!-- LOCAL (not for a PR): the enemy count's measurement, /wv eclog -->
+  <Script file="enemyCountLog.lua" />
   <!-- Developer tool: records game walks with no key held for wall
        detection (WowVisionDump.walkProbe). Off since 2026-10-15 (its
        questions are answered); the file stays, add back
