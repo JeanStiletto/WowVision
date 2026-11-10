@@ -17,7 +17,9 @@ edgeCost.PER_YARD = 30
 
 local N = _G.WowVisionNavigationNavNetwork
 
--- Sets zone.lextra (link number -> extra cost) from WVN7EdgeCost, or clears it. Returns the number of links.
+-- Sets zone.lextra (link number -> extra cost) from WVN7EdgeCost, or clears it. Returns the number of links. Two
+-- waypoints can be joined by two links (the data has such twins); the list names each, so each entry takes the next
+-- link of its pair that has no cost yet.
 function edgeCost.apply(zone)
     zone.lextra = nil
     local data = _G.WVN7EdgeCost and _G.WVN7EdgeCost[zone.id]
@@ -30,7 +32,7 @@ function edgeCost.apply(zone)
         local u, v, yards = links[i], links[i + 1], links[i + 2]
         local adj = zone.adj[u + 1]
         for j = 1, adj and #adj or 0, 2 do
-            if adj[j] == v then
+            if adj[j] == v and extra[adj[j + 1]] == nil then
                 extra[adj[j + 1]] = edgeCost.PER_YARD * yards
                 count = count + 1
                 break

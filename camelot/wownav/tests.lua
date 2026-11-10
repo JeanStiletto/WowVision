@@ -1916,6 +1916,12 @@ suite["edge cost: a zone takes the packed links only with its own fingerprint"] 
     t:assertEqual(edgeCost.apply(zone), 1)
     t:assertEqual(zone.lextra[2], 3 * edgeCost.PER_YARD, "the link 1 - 2, 3 yd beside a drop")
     t:assertNil(zone.lextra[1])
+    -- twin links: waypoints 0 and 1 joined by links 1 and 3, both listed, both cost
+    local twins = { id = 990, fingerprint = "F1", adj = { { 1, 1, 1, 3 }, { 0, 1, 0, 3, 2, 2 }, { 1, 2 } } }
+    _G.WVN7EdgeCost = { [990] = { fingerprint = "F1", links = { 0, 1, 2, 0, 1, 2 } } }
+    t:assertEqual(edgeCost.apply(twins), 2)
+    t:assertEqual(twins.lextra[1], 2 * edgeCost.PER_YARD, "the first link of the pair")
+    t:assertEqual(twins.lextra[3], 2 * edgeCost.PER_YARD, "its twin")
     _G.WVN7EdgeCost = { [990] = { fingerprint = "OTHER", links = { 1, 2, 3 } } }
     t:assertEqual(edgeCost.apply(zone), 0, "the data of another export")
     t:assertNil(zone.lextra)
