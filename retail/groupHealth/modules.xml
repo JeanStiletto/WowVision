@@ -4,6 +4,8 @@
   <Script file="logic.lua" />
   <Script file="voices.lua" />
   <Script file="module.lua" />
+  <!-- LOCAL (not for a PR): the measurement, /wv ghlog -->
+  <Script file="log.lua" />
   <Script file="tests.lua" />
 
 </Ui>
