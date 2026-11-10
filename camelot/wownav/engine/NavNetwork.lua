@@ -1801,7 +1801,6 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid)
                 for j = 1, #adj, 2 do
                     local v, k = adj[j], adj[j + 1]
                     local new = cost + (zone.llen[k] + N.HOP_COST) * LinkFactor(zone.lflag[k], road)
-                    if zone.lextra and zone.lextra[k] then new = new + zone.lextra[k] end   -- WowVision: edge cost
                     local vid = zone.base + v
                     if penalties then
                         local row = penalties[id]
