@@ -37,6 +37,8 @@ Open the quest log with the game's own key (L by default). WowVision reads the w
 
 In the quest list, Up and Down move between headers and quests. Press Enter on a quest to select it, which fills the details. Press Enter on a header to collapse or expand it. Press the tooltip key to hear the quest's tooltip; see [Tooltips](../basics/tooltips.md).
 
+Normally the focus starts on the selected quest. Turn on Always Start at Top in the WowVision menu under Windows, Quest Log, and it starts on the top entry of the list instead. It is off by default. If the quest log opens on a quest's details, you stay there.
+
 ### The Burning Crusade
 
 (The Burning Crusade only.)
@@ -135,13 +137,47 @@ The alert is the Quest Area Alert in the Quests module. See [Alerts](../basics/a
 
 ## Quest progress alerts
 
-The game shows quest progress as a message in the middle of the screen. WowVision speaks those messages as the game words them, with three alerts of their own:
+The game shows quest progress as a message in the middle of the screen. WowVision speaks those messages as the game words them, and plays a sound for what happened, with three alerts of their own:
 
-- Quest Progress Alert: a count moves, for example "Kobold Vermin slain: 3/8" or "Linen Cloth: 2/6", the last one ("8/8") too. Its sound is glass1.
-- Objective Complete Alert: the game's message naming an objective done, for example "Explore the Mine (Complete)". Its sound is success1.
-- Quest Complete Alert: the game's "Objective Complete." message, which names no objective. Its sound is Tutorial_Success_01.
+- Quest Progress Alert: a count moves, for example "Kobold Vermin slain: 3/8" or "Linen Cloth: 2/6". Its sound is success1, the one Sku plays.
+- Objective Complete Alert: an objective is done, for example "Explore the Mine (Complete)", or the game's "Objective Complete." message, which names no objective. Its sound is objective_complete.
+- Quest Complete Alert: every objective of a quest is done, so it is ready to hand in. Its sound is success2, the one Sku plays, and it plays in place of the objective's sound. The game sends no message for this, so WowVision reads it from your quest log. Its speech, the quest's title and "Complete", starts switched off, because you already hear the game's line for the last objective.
 
-Each message is spoken by its own alert, with that alert's settings: with the last kill you hear the "8/8" from the Quest Progress Alert and the completion from the alert it belongs to. Each alert has TTS (on) and Sound (on) and can be switched off on its own. They work whatever the Errors module does, also with it switched off, and these messages do not appear in its Per-Error Filter. If you had muted one of these messages there, or switched Announce Errors off, its alert starts switched off. See [Alerts](../basics/alerts.md).
+The game's line is spoken at once. When an objective is done, its sound waits a moment, less than half a second, to learn whether that finished the quest. Each alert has TTS and Sound and can be switched off on its own. They work whatever the Errors module does, also with it switched off, and these messages do not appear in its Per-Error Filter. If you had muted one of these messages there, or switched Announce Errors off, its alert starts switched off. See [Alerts](../basics/alerts.md).
+
+## Nearby quest sounds
+
+While you walk around, you hear the quests near you. Each quest sound is a short ping that comes from the direction of the place, like the Beacon. It is quieter the farther away the place is, and you only hear it when the place is in front of you. Turn toward a ping you have missed and you hear it again. The sounds need Questie, so they are for Classic Era, The Burning Crusade, Mists of Pandaria and WoW: Forever with Questie loaded. Without Questie they stay silent.
+
+There are three sounds:
+
+- Available Quest Sound: a quest you can accept has its giver near you. It is the soft notification sound, the one Sku plays.
+- Turn-In Quest Sound: a quest in your log is complete and the person to hand it in to is near you. It is the steel gong, the one Sku plays.
+- Quest Objective Sound: a quest in your log has an open objective near you, such as creatures to kill or an item to find. It is a deep probe sound. Sku has no sound for this.
+
+A place pings for the first time a moment after you come into its range, sooner when it is close and later when it is far. Several quests at the same giver give one ping. After the ping the place stays quiet until you enter another zone. If the giver gets a new quest to offer, you hear it again. With the Play Once setting off, the place pings again and again for as long as you stay in range. Objectives are quiet again after you have walked well away from them, and ping again when you come back. Standing close to a place, nearer than the Silence Distance, makes it quiet. You hear nothing while you ride a flight path, are dead, or are fighting, and the pings come again after the fight.
+
+Quests of a holiday only count while the holiday is on. The Nearby Level Range and Include Repeatable Quests settings, below, apply to the quests you can accept. Switch the whole feature off with Enabled in the Nearby menu.
+
+Open the WowVision menu, then Quests, then Nearby.
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| Enabled | On | Switches all nearby quest sounds on or off. |
+| Available Quest Sound, Enabled | On | Switches the sound for quests you can accept on or off. |
+| Available Quest Sound, Beacon Sound, Enabled | On | Plays the ping. |
+| Available Quest Sound, Beacon Sound, Beacon Sound | Notification soft 100 | Which sound to play. |
+| Available Quest Sound, Beacon Sound, Quest Sound Volume | 30 | How loud the ping is, from 10 to 100. |
+| Available Quest Sound, TTS Alert, Enabled | Off | Says the quest, its name and the distance, for example "Quest available: A Threat Within, 30 yards". |
+| Turn-In Quest Sound | the same settings | Volume 40, sound steel gong, and it says "Quest to turn in" before the name. |
+| Quest Objective Sound | the same settings | Volume 30, sound probe deep 1, and it says "Quest objective" before the name. |
+| Available Quest Range | 40 | Distance in yards from which quests you can accept ping. From 5 to 200. |
+| Turn-In Quest Range | 60 | Distance from which quests to hand in ping. |
+| Quest Objective Range | 50 | Distance from which open objectives ping. |
+| Play Available Quests Once | On | Each place pings once, instead of again and again. |
+| Play Turn-In Quests Once | On | The same for quests to hand in. |
+| Play Quest Objectives Once | On | The same for objectives. |
+| Silence Distance | 5 | Closer than this many yards a place is quiet. From 1 to 30. |
 
 ## Finding quests and objectives
 
@@ -163,6 +199,7 @@ Open the WowVision menu, then Quests. See [Menu and Settings](../basics/menu-and
 |---------|---------|--------------|
 | Nearby Level Range | 5 | The Nearby list hides quests that are more than this many levels below your level. From 0 to 60. Set 60 to see every quest, or 0 to see only quests at or above your level. |
 | Include Repeatable Quests | On | Whether repeatable and daily quests appear in the Nearby list. |
+| Sort Quests by Proximity | On | Whether each zone of the In Progress list is nearest first, by the place Enter on each quest would take you to (the next open objective, or the turn-in once a quest is complete). Quests with no place to walk to follow, in the order of your log. Turn it off to keep the order of the log inside each zone. |
 | Quest Area Alert | see above | Announcements when entering or leaving an objective area. |
 | Quest Progress Alert, Objective Complete Alert, Quest Complete Alert | see above | Announcements of quest progress. |
 

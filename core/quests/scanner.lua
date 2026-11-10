@@ -422,10 +422,21 @@ local function objectiveNodes(entry, allDone)
     end
 end
 
+-- The title of a quest in the log with its level: "A Threat Within, Level 5".
+-- The log's level is the quest's own and can be a scaled one, so it is
+-- approximate; a quest with no level in the log reads its bare title.
+local function questTitle(entry)
+    local title = entry.title or unknown()
+    if type(entry.level) == "number" and entry.level > 0 then
+        return string.format("%s, %s %d", title, L["Level"], entry.level)
+    end
+    return title
+end
+
 local function inProgressNode(entry)
     local node = {
         key = "quest:" .. entry.questId,
-        label = entry.title or unknown(),
+        label = questTitle(entry),
         details = questDetails(entry.questId),
         tooltip = questTooltip(entry, "inProgress"),
     }
@@ -494,7 +505,7 @@ function quests:questNavigationTarget(questId)
             return {
                 x = node.x,
                 y = node.y,
-                label = node.targetName or node.label,
+                label = node.targetName or entry.title or node.label,
                 onArrive = node.onArrive,
                 match = node.match,
             }
@@ -562,7 +573,15 @@ scanner:registerProvider({
                 -- one level per quest log zone, each zone's quests
                 -- nearest first
                 children = function()
-                    return WowVision.quests.zoneGroups(quests:inProgress(), inProgressNode, nodeDistance)
+                    -- nearest first inside a zone, unless Sort Quests by Proximity is off
+                    -- (then the log's order)
+                    local distanceOf = nodeDistance
+                    if not quests.settings.sortByProximity then
+                        distanceOf = function()
+                            return nil
+                        end
+                    end
+                    return WowVision.quests.zoneGroups(quests:inProgress(), inProgressNode, distanceOf)
                 end,
             },
         }

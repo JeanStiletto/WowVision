@@ -109,7 +109,7 @@ A waypoint counts as reached when you are within the arrival distance of it (see
 
 ### Beacon sounds
 
-All beacon sounds are one alert called Beacon in the Beacon Settings module (WowVision menu, Navigation, Beacon Settings, Beacon). The alert and each of its four sounds has its own Enabled switch and its own sound, so each cue can be turned off or changed on its own. See [Alerts](../basics/alerts.md) for how alerts work.
+All beacon sounds are one alert called Beacon in the Beacon and Routes module (WowVision menu, Navigation, Beacon and Routes, Beacon). The alert and each of its four sounds has its own Enabled switch and its own sound, so each cue can be turned off or changed on its own. See [Alerts](../basics/alerts.md) for how alerts work.
 
 | Sound | Default | When it plays |
 |-------|---------|---------------|
@@ -182,7 +182,7 @@ If you have strayed far from the route, press Ctrl+Shift+N. WowVision plans the 
 
 ### Reverse the route
 
-Halfway along a route you may remember that you have to go back. Press Ctrl+Shift+R. The route turns around: the waypoint the beacon leads to now becomes the start of a new route, and its destination is where the previous route started, the entry point you chose in the navigation window. You hear "Route reversed, back to" and the name of that place, then the summary of the new route. For example, on the way from Priestess Anetta to Marshal Dughan you press Ctrl+Shift+R and hear "Route reversed, back to Priestess Anetta". If the start has no name, you hear "back to the start of the previous route".
+Halfway along a route you may remember that you have to go back. Press Ctrl+Shift+R. The route turns around: the new route begins at the destination of the previous one, and its destination is where the previous route started, the entry point you chose in the navigation window. The waypoint the beacon was leading to stays active, so you walk back from where you are and do not go to the old destination first. You hear "Route reversed, back to" and the name of that place, then the summary of the new route with the waypoints and yards still ahead of you. For example, on the way from Priestess Anetta to Marshal Dughan you press Ctrl+Shift+R and hear "Route reversed, back to Priestess Anetta". If the start has no name, you hear "back to the start of the previous route".
 
 This works on classic routes and WowNav routes alike. Afterwards, Ctrl+Shift+N goes to that start again. Without a running route you hear "No route to reverse".
 
@@ -274,11 +274,11 @@ When a destination is not on the link network (most creatures and objects are no
 
 ## Settings
 
-Open the WowVision menu (/wv), then Navigation, then Beacon Settings. Settings are shared by all your characters unless you change that in the module's context menu; see [Menu and settings](../basics/menu-and-settings.md).
+Open the WowVision menu (/wv), then Navigation, then Beacon and Routes. Settings are shared by all your characters unless you change that in the module's context menu; see [Menu and settings](../basics/menu-and-settings.md).
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
-| Enabled | On | Turns the whole Beacon Settings module off: not only the beacon but also routes, the keys and /beacon. |
+| Enabled | On | Turns the whole Beacon and Routes module off: not only the beacon but also routes, the keys and /beacon. |
 | Arrival Radius | Medium Range | Which arrival distance is active. Alt+P changes it too. |
 | Short Range | 0.3 yards | The short arrival distance (0.1 to 20 yards). |
 | Medium Range | 1 yard | The medium arrival distance (0.1 to 20 yards). |
@@ -291,6 +291,8 @@ The Visited Waypoints module (under Navigation) has one setting:
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | Visited For (Minutes) | 15 | How long a reached destination counts as visited (1 to 1440 minutes). |
+
+Close All Windows When a Route Starts (Navigation module, on by default) closes every open window as soon as you start a route or a beacon, so your keys are free for walking; the legs an Auto chain starts by itself leave your windows alone.
 
 Three settings of the Navigation module are related: Announce Remaining Waypoints (on by default) says how many waypoints are left after each one you reach, Automatically Navigate to Corpse (on by default) starts a route to your body as soon as you are a ghost, and Auto-move to Interact Target is explained with the movement features. See [Movement](./movement.md) for those, for the compass and for following a player.
 

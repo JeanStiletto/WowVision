@@ -116,14 +116,12 @@ local function anyTabShown(frame)
 end
 
 local function renderTabs(builder, frame)
-    -- A row cannot be empty.
+    -- No stop without a tab to stand on.
     if not anyTabShown(frame) then
         return
     end
     builder:beginStop("tabs")
     builder:pushContext("tabs", L["Tabs"])
-    -- A row like every tab bar, though the game stacks these on the side.
-    builder:startRow()
     for _, tab in ipairs(frame.TabButtons or {}) do
         if tab:IsShown() then
             local captured = tab
@@ -158,7 +156,6 @@ local function renderTabs(builder, frame)
             })
         end
     end
-    builder:endRow()
     builder:popContext()
 end
 

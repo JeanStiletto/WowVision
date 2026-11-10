@@ -58,25 +58,6 @@ local function gameApi()
         inCombat = InCombatLockdown,
         getCVar = C_CVar ~= nil and C_CVar.GetCVar or GetCVar,
         setCVar = C_CVar ~= nil and C_CVar.SetCVar or SetCVar,
-        bindingAction = function(key)
-            return GetBindingAction(key)
-        end,
-        setBinding = function(key, action)
-            return SetBinding(key, action) and true or false
-        end,
-        saveBindings = function()
-            SaveBindings(GetCurrentBindingSet())
-        end,
-        actionLabel = function(action)
-            return _G["BINDING_NAME_" .. action] or action
-        end,
-        keyLabel = function(key)
-            local ok, text = pcall(GetBindingText, key)
-            if ok and text ~= nil and text ~= "" then
-                return text
-            end
-            return key
-        end,
         actionBarToggles = actionBarToggles,
         setActionBarToggles = function(list)
             SetActionBarToggles(unpack(list))
@@ -86,7 +67,7 @@ local function gameApi()
 end
 
 local function announce(lines)
-    WowVision:speak(table.concat(lines, ". "))
+    WowVision:notify(table.concat(lines, ". "))
     for _, line in ipairs(lines) do
         print(line)
     end
@@ -95,7 +76,7 @@ end
 function gameDefaults.run()
     local report = gameDefaults.apply(gameApi(), L)
     if report.refused then
-        WowVision:speak(L["Not in combat: try again after the fight"])
+        WowVision:notify(L["Not in combat: try again after the fight"])
         return
     end
     local lines = gameDefaults.reportLines(report, L)

@@ -128,8 +128,8 @@ function scanner:buildTree()
             key = "player",
             label = "Player",
             children = {
-                { key = "self", label = "Anna", detail = "Level 12", unit = "player" },
-                { key = "unit:party1", label = "Bert", unit = "party1", x = 3, y = 4 },
+                { key = "self", label = "Anna", nameDetail = "Elwynn Forest, Level 12", unit = "player" },
+                { key = "unit:party1", label = "Bert", x = 3, y = 4, routeData = { unit = "party1" } },
             },
         },
     }
@@ -171,7 +171,7 @@ local function list(n)
 end
 
 testRunner:addSuite("ListEnds", {
-    ["down past the last entry reads it again"] = function(t)
+    ["up and down past a list's end stay silent"] = function(t)
         withHost(function(host)
             host:open(list(3))
             press(host, "down")
@@ -180,27 +180,13 @@ testRunner:addSuite("ListEnds", {
             local count = #host.spoken
             press(host, "down")
             t:assertEqual((focused(host)), "C")
-            t:assertEqual(#host.spoken, count + 1)
-            t:assertEqual(lastSpoken(host), "C")
+            t:assertEqual(#host.spoken, count)
         end)
-    end,
-
-    ["up past the first entry reads it again"] = function(t)
         withHost(function(host)
             host:open(list(3))
             press(host, "up")
             t:assertEqual((focused(host)), "A")
-            t:assertEqual(lastSpoken(host), "A")
-        end)
-    end,
-
-    ["a single entry reads again both ways"] = function(t)
-        withHost(function(host)
-            host:open(list(1))
-            press(host, "down")
-            press(host, "up")
-            t:assertEqual(#host.spoken, 2)
-            t:assertEqual(lastSpoken(host), "A")
+            t:assertEqual(#host.spoken, 0)
         end)
     end,
 
@@ -385,7 +371,7 @@ testRunner:addSuite("ScannerMenu", {
         end)
     end,
 
-    ["a unit entry targets on Enter, one with a place routes on Backspace"] = function(t)
+    ["your own entry targets on Enter, a group member with a place routes"] = function(t)
         withHost(function(host)
             local stack = openScanner(host, false)
             scanner:openMenuPath(stack, { "player", "self" })
@@ -399,8 +385,21 @@ testRunner:addSuite("ScannerMenu", {
             press(host, "down")
             label, node = focused(host)
             t:assertEqual(label, "Bert")
-            t:assertEqual(node.vtable.bindings[1].unit, "party1")
-            t:assertTrue(node.vtable.onSecondary ~= nil)
+            t:assertEqual(node.vtable.bindings, nil)
+            t:assertTrue(node.vtable.onActivate ~= nil)
+            t:assertEqual(node.vtable.onSecondary, nil)
+        end)
+    end,
+
+    ["the place and description read right after the name, before the role"] = function(t)
+        withHost(function(host)
+            local stack = openScanner(host, false)
+            scanner:openMenuPath(stack, { "player", "self" })
+            local _, node = focused(host)
+            local parts = graph.announcer.effectiveAnnouncements(node)
+            t:assertEqual(parts[1].text, "Anna")
+            t:assertEqual(parts[2].text, "Elwynn Forest, Level 12")
+            t:assertEqual(parts[3].kind, graph.kinds.role)
         end)
     end,
 
@@ -515,10 +514,66 @@ testRunner:addSuite("ScannerUnits", {
         t:assertEqual(text, "Level 60, Warrior")
     end,
 
-    ["Player lists you first, then the rest"] = function(t)
+    ["you are in the zone you stand in"] = function(t)
+        t:assertEqual(scanner.unitPlace("player", {
+            GetRealZoneText = function()
+                return "Elwynn Forest"
+            end,
+        }), "Elwynn Forest")
+    end,
+
+    ["a party member is on the map the game names"] = function(t)
+        t:assertEqual(scanner.unitPlace("party1", {
+            C_Map = {
+                GetBestMapForUnit = function(unit)
+                    return unit == "party1" and 37 or nil
+                end,
+                GetMapInfo = function(id)
+                    return id == 37 and { name = "Westfall" } or nil
+                end,
+            },
+        }), "Westfall")
+    end,
+
+    ["a raid member's zone comes from the roster, the map is the fallback"] = function(t)
+        local map = {
+            GetBestMapForUnit = function()
+                return 37
+            end,
+            GetMapInfo = function()
+                return { name = "Westfall" }
+            end,
+        }
+        local function roster(zone)
+            return function(index)
+                if index == 3 then
+                    return "Bert", 0, 1, 60, "Warrior", "WARRIOR", zone
+                end
+            end
+        end
+        t:assertEqual(scanner.unitPlace("raid3", { GetRaidRosterInfo = roster("Duskwood"), C_Map = map }), "Duskwood")
+        t:assertEqual(scanner.unitPlace("raid3", { GetRaidRosterInfo = roster(nil), C_Map = map }), "Westfall")
+    end,
+
+    ["a place the game does not give is no place"] = function(t)
+        t:assertEqual(scanner.unitPlace("party1", {}), nil)
+        t:assertEqual(scanner.unitPlace("party1", {
+            C_Map = {
+                GetBestMapForUnit = function()
+                    error("no map")
+                end,
+                GetMapInfo = function() end,
+            },
+        }), nil)
+    end,
+
+    ["Player lists you first; alive, you alone"] = function(t)
         withGame({
             UnitName = function()
                 return "Anna"
+            end,
+            GetRealZoneText = function()
+                return "Elwynn Forest"
             end,
             C_Map = {
                 GetBestMapForUnit = function()
@@ -536,7 +591,8 @@ testRunner:addSuite("ScannerUnits", {
             local out = scanner.providers.player.build({})
             t:assertEqual(out[1].label, "Anna")
             t:assertEqual(out[1].unit, "player")
-            t:assertEqual(out[2].key, "alive")
+            t:assertEqual(out[1].nameDetail(), "Elwynn Forest")
+            t:assertNil(out[2], "alive: nothing to point at")
         end)
     end,
 
@@ -563,14 +619,30 @@ testRunner:addSuite("ScannerUnits", {
                 end
                 return nil
             end,
+            UnitLevel = function()
+                return 60
+            end,
+            C_Map = {
+                GetBestMapForUnit = function()
+                    return 37
+                end,
+                GetMapInfo = function()
+                    return { name = "Westfall" }
+                end,
+            },
         }, function()
             local out = scanner.providers.group.build({})
             t:assertEqual(#out, 2)
             t:assertEqual(out[1].label, "Bert")
-            t:assertEqual(out[1].unit, "party1")
+            t:assertEqual(out[1].nameDetail(), "Westfall, Level 60")
+            -- Enter routes (the position), it never targets (no unit)
+            t:assertEqual(out[1].unit, nil)
             t:assertEqual(out[1].x, 10)
+            t:assertEqual(out[1].routeData.unit, "party1")
             t:assertEqual(out[2].label, "Cleo")
+            t:assertEqual(out[2].unit, nil)
             t:assertEqual(out[2].x, nil)
+            t:assertTrue(out[2].onActivate ~= nil)
         end)
     end,
 

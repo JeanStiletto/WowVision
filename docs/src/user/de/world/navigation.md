@@ -111,7 +111,7 @@ Ein Wegpunkt gilt als erreicht, wenn du innerhalb der Ankunftsdistanz von ihm bi
 
 ### Beacon-Töne
 
-Alle Beacon-Töne sind ein einziger Alarm namens Beacon im Modul Beacon-Einstellungen (WowVision-Menü, Navigation, Beacon-Einstellungen, Beacon). Der Alarm und jeder seiner vier Töne haben einen eigenen Schalter Aktiviert und einen eigenen Sound, sodass sich jedes Beacon einzeln ausschalten oder ändern lässt. Wie Alarme funktionieren, steht auf der Seite [Alarme](../basics/alerts.md).
+Alle Beacon-Töne sind ein einziger Alarm namens Beacon im Modul Beacon und Routen (WowVision-Menü, Navigation, Beacon und Routen, Beacon). Der Alarm und jeder seiner vier Töne haben einen eigenen Schalter Aktiviert und einen eigenen Sound, sodass sich jedes Beacon einzeln ausschalten oder ändern lässt. Wie Alarme funktionieren, steht auf der Seite [Alarme](../basics/alerts.md).
 
 | Ton | Standard | Wann er spielt |
 |-----|----------|----------------|
@@ -183,7 +183,7 @@ Bist du weit von der Route abgekommen, drücke Strg+Umschalt+N. WowVision plant 
 
 ### Die Route umkehren
 
-Auf halber Strecke fällt dir ein, dass du noch einmal zurückmusst. Drücke Strg+Umschalt+R. Die Route kehrt sich um: Der Wegpunkt, zu dem das Beacon gerade führt, wird zum Start einer neuen Route, und ihr Ziel ist der Ort, an dem die vorherige Route begann, also der Einstiegspunkt, den du im Navigationsfenster gewählt hast. Du hörst "Route umgekehrt, zurück zu" und den Namen dieses Ortes, danach die Zusammenfassung der neuen Route. Ein Beispiel: Auf dem Weg von Priesterin Anetta zu Marschall Dughan drückst du Strg+Umschalt+R und hörst "Route umgekehrt, zurück zu Priesterin Anetta". Hat der Start keinen Namen, hörst du "zurück zu dem Start der vorherigen Route".
+Auf halber Strecke fällt dir ein, dass du noch einmal zurückmusst. Drücke Strg+Umschalt+R. Die Route kehrt sich um: Die neue Route beginnt am Ziel der vorherigen, und ihr Ziel ist der Ort, an dem die vorherige Route begann, also der Einstiegspunkt, den du im Navigationsfenster gewählt hast. Der Wegpunkt, zu dem das Beacon gerade geführt hat, bleibt aktiv, du läufst also von deinem Standort aus zurück und musst nicht erst zum alten Ziel. Du hörst "Route umgekehrt, zurück zu" und den Namen dieses Ortes, danach die Zusammenfassung der neuen Route mit den Wegpunkten und Metern, die noch vor dir liegen. Ein Beispiel: Auf dem Weg von Priesterin Anetta zu Marschall Dughan drückst du Strg+Umschalt+R und hörst "Route umgekehrt, zurück zu Priesterin Anetta". Hat der Start keinen Namen, hörst du "zurück zu dem Start der vorherigen Route".
 
 Das gilt für klassische Routen und WowNav-Routen gleichermaßen. Danach führt Strg+Umschalt+N wieder zu diesem Start. Ohne laufende Route hörst du "Keine Route zum Umkehren".
 
@@ -275,11 +275,11 @@ Liegt ein Ziel nicht im Verbindungsnetz (die meisten Kreaturen und Objekte tun d
 
 ## Einstellungen
 
-Öffne das WowVision-Menü (/wv), dann Navigation, dann Beacon-Einstellungen. Die Einstellungen gelten für alle deine Charaktere, solange du das nicht im Kontextmenü des Moduls änderst; siehe [Das WowVision-Menü und die Einstellungen](../basics/menu-and-settings.md).
+Öffne das WowVision-Menü (/wv), dann Navigation, dann Beacon und Routen. Die Einstellungen gelten für alle deine Charaktere, solange du das nicht im Kontextmenü des Moduls änderst; siehe [Das WowVision-Menü und die Einstellungen](../basics/menu-and-settings.md).
 
 | Einstellung | Standard | Was sie tut |
 |-------------|----------|-------------|
-| Aktiviert | An | Schaltet das ganze Modul Beacon-Einstellungen aus: nicht nur das Beacon, sondern auch Routen, die Tasten und /beacon. |
+| Aktiviert | An | Schaltet das ganze Modul Beacon und Routen aus: nicht nur das Beacon, sondern auch Routen, die Tasten und /beacon. |
 | Ankunftsradius (Arrival Radius) | Mittlere Distanz | Welche Ankunftsdistanz aktiv ist. Alt+P ändert sie auch. |
 | Kurze Distanz | 0,3 Meter | Die kurze Ankunftsdistanz (0,1 bis 20 Meter). |
 | Mittlere Distanz | 1 Meter | Die mittlere Ankunftsdistanz (0,1 bis 20 Meter). |
@@ -292,6 +292,8 @@ Das Modul Besuchte Wegpunkte (unter Navigation) hat eine Einstellung:
 | Einstellung | Standard | Was sie tut |
 |-------------|----------|-------------|
 | Gilt als besucht für (Minuten) | 15 | Wie lange ein erreichtes Ziel als besucht gilt (1 bis 1440 Minuten). |
+
+Beim Start einer Route alle Fenster schließen (Modul Navigation, standardmäßig an) schließt jedes offene Fenster, sobald du eine Route oder ein Beacon startest, damit deine Tasten zum Laufen frei sind; die Etappen, die eine Auto-Kette von selbst startet, lassen deine Fenster in Ruhe.
 
 Drei Einstellungen des Moduls Navigation hängen damit zusammen: Verbleibende Wegpunkte ansagen (standardmäßig an) sagt nach jedem erreichten Wegpunkt, wie viele noch übrig sind, Automatisch zur Leiche navigieren (standardmäßig an) startet eine Route zu deinem Körper, sobald du ein Geist bist, und Automatisch zum Interaktionsziel bewegen wird bei den Bewegungsfunktionen erklärt. Dazu, zum Kompass und zum Folgen eines Spielers siehe [Bewegung und Orientierung](./movement.md).
 

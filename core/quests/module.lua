@@ -33,6 +33,15 @@ settings:add({
     label = L["Include Repeatable Quests"],
     default = true,
 })
+-- The scanner's In Progress list nearest first (by the place Enter would
+-- take you to: the next open objective, or the turn-in once a quest is
+-- complete) instead of in the order of the log.
+settings:add({
+    key = "sortByProximity",
+    type = "Bool",
+    label = L["Sort Quests by Proximity"],
+    default = true,
+})
 
 -- Quest areas: the game tells us when the player enters or leaves the
 -- shaded objective area of a tracked quest (PLAYER_INSIDE_QUEST_BLOB_STATE_CHANGED,
@@ -58,16 +67,25 @@ areaAlert:addOutput({
 settings:addRef("questAreaAlert", areaAlert.parameters)
 
 -- Quest progress: the game's own progress messages ("Kobold Vermin slain:
--- 3/8", "Objective Complete."), spoken as the game words them. The module
--- listens to the game's info messages itself, so these alerts work whatever
--- the errors module does; the errors module leaves the claimed names to it
--- and lists no filter entry for them.
-local function addProgressAlert(key, label, sound)
+-- 3/8", "Explore the Mine (Complete)"), spoken as the game words them, and
+-- a sound for what happened. The module listens to the game's info messages
+-- itself, so these alerts work whatever the errors module does; the errors
+-- module leaves the claimed names to it and lists no filter entry for them.
+--
+-- Three sounds, as Sku has them plus one: progress on an objective (Sku's),
+-- an objective done, and the whole quest done (Sku's), in place of the
+-- objective's sound. The game sends no message for a finished quest, so that
+-- one comes from the log's complete flag (completion.lua). Speech and sound
+-- are separate outputs, fired by action: the line is spoken at once, and an
+-- objective's sound waits a moment to learn whether it finished the quest.
+local function addProgressAlert(key, label, sound, speech)
     local progressAlert = module:addAlert({ key = key, label = label })
     progressAlert:addOutput({
         type = "TTS",
         key = "tts",
+        action = "speak",
         label = L["TTS Alert"],
+        enabled = speech ~= false,
         buildMessage = function(self, message)
             return message.text
         end,
@@ -75,6 +93,7 @@ local function addProgressAlert(key, label, sound)
     progressAlert:addOutput({
         type = "Sound",
         key = "sound",
+        action = "sound",
         label = L["Sound Alert"],
         path = sound,
     })
@@ -82,22 +101,80 @@ local function addProgressAlert(key, label, sound)
     return progressAlert
 end
 
-local progressAlert = addProgressAlert("questProgress", L["Quest Progress Alert"], "Sound/WowVision/alerts/glass1.mp3")
-local objectiveAlert =
-    addProgressAlert("objectiveComplete", L["Objective Complete Alert"], "Sound/WowVision/alerts/success1.mp3")
+local progressAlert = addProgressAlert("questProgress", L["Quest Progress Alert"], "Sound/WowVision/alerts/success1.mp3")
+local objectiveAlert = addProgressAlert(
+    "objectiveComplete",
+    L["Objective Complete Alert"],
+    "Sound/WowVision/alerts/objective_complete.mp3"
+)
+-- Its speech (the quest's title and Complete) starts off: the game's line
+-- for the last objective is spoken already.
 local completeAlert =
-    addProgressAlert("questComplete", L["Quest Complete Alert"], "Sound/WowVision/alerts/Tutorial_Success_01.mp3")
+    addProgressAlert("questComplete", L["Quest Complete Alert"], "Sound/WowVision/alerts/success2.mp3", false)
 
--- One alert per kind of game message, nothing read into the text. Each
--- message is spoken by its own alert, with that alert's settings.
-local messageAlerts = {
-    ERR_QUEST_ADD_KILL_SII = progressAlert,
-    ERR_QUEST_ADD_ITEM_SII = progressAlert,
-    ERR_QUEST_ADD_FOUND_SII = progressAlert,
-    ERR_QUEST_ADD_PLAYER_KILL_SII = progressAlert,
-    ERR_QUEST_OBJECTIVE_COMPLETE_S = objectiveAlert,
-    ERR_QUEST_UNKNOWN_COMPLETE = completeAlert,
+-- The kind of each game message, nothing read into the text. "Objective
+-- Complete." names no objective (an exploration or event objective).
+local messageKinds = {
+    ERR_QUEST_ADD_KILL_SII = "progress",
+    ERR_QUEST_ADD_ITEM_SII = "progress",
+    ERR_QUEST_ADD_FOUND_SII = "progress",
+    ERR_QUEST_ADD_PLAYER_KILL_SII = "progress",
+    ERR_QUEST_OBJECTIVE_COMPLETE_S = "objective",
+    ERR_QUEST_UNKNOWN_COMPLETE = "objective",
 }
+
+-- How long an objective's sound waits for the log to show its quest complete.
+local OBJECTIVE_SETTLE = 0.3
+-- After a count moves, the log is read again a little later: the last item
+-- of a quest can finish it with no objective message, and the client can
+-- take the new count in after its last event.
+local LATE_READS = { 0.3, 1.0 }
+
+-- Each quest's complete flag as the log holds it now (no objectives read).
+local function completeStates()
+    local states = {}
+    local count = C_QuestLog ~= nil and C_QuestLog.GetNumQuestLogEntries ~= nil and C_QuestLog.GetNumQuestLogEntries()
+        or (GetNumQuestLogEntries ~= nil and GetNumQuestLogEntries())
+        or 0
+    for index = 1, count do
+        if C_QuestLog ~= nil and C_QuestLog.GetInfo ~= nil then
+            local info = C_QuestLog.GetInfo(index)
+            if info ~= nil and not info.isHeader and info.questID ~= nil and info.questID > 0 then
+                states[info.questID] = {
+                    title = info.title,
+                    complete = C_QuestLog.IsComplete ~= nil and C_QuestLog.IsComplete(info.questID) == true,
+                }
+            end
+        else
+            local title, _, _, isHeader, _, isComplete, _, questId = GetQuestLogTitle(index)
+            if not isHeader and questId ~= nil and questId > 0 then
+                states[questId] = { title = title, complete = isComplete == 1 or isComplete == true }
+            end
+        end
+    end
+    return states
+end
+
+local completion = WowVision.quests.Completion.new()
+-- The objective whose sound waits (a token per message): a quest turning
+-- complete meanwhile plays the quest's sound instead.
+local pendingObjective = nil
+
+-- Reads the log: each quest that turned complete says its title (when that
+-- speech is on) and the quest complete sound plays, once. True when one did.
+local function checkCompletion()
+    local turned = completion:update(completeStates())
+    if #turned == 0 then
+        return false
+    end
+    pendingObjective = nil
+    for _, quest in ipairs(turned) do
+        completeAlert:fire({ action = "speak", text = (quest.title or "") .. ", " .. L["Complete"] })
+    end
+    completeAlert:fire({ action = "sound" })
+    return true
+end
+module.checkCompletion = checkCompletion
 
 -- The same text arriving twice in one frame is spoken once.
 local repeats = WowVision.errors.utils.newFrameDedupe()
@@ -107,19 +184,43 @@ function module.onInfoMessage(messageType, message)
         return
     end
     local errorName = WowVision.errors.lookupMessageInfo(messageType)
-    local messageAlert = errorName ~= nil and messageAlerts[errorName] or nil
-    if messageAlert == nil then
+    local kind = errorName ~= nil and messageKinds[errorName] or nil
+    if kind == nil then
         return
     end
     -- A secret text cannot be compared, only spoken.
     if not WowVision.isSecret(message) and not repeats:first(message, GetTime()) then
         return
     end
-    messageAlert:fire({ text = message })
+    local messageAlert = kind == "objective" and objectiveAlert or progressAlert
+    messageAlert:fire({ action = "speak", text = message })
+    -- the log may already show the quest done
+    if checkCompletion() then
+        return
+    end
+    if kind == "progress" then
+        progressAlert:fire({ action = "sound" })
+        for _, delay in ipairs(LATE_READS) do
+            C_Timer.After(delay, checkCompletion)
+        end
+        return
+    end
+    local token = {}
+    pendingObjective = token
+    C_Timer.After(OBJECTIVE_SETTLE, function()
+        if pendingObjective ~= token then
+            return
+        end
+        if checkCompletion() then
+            return
+        end
+        pendingObjective = nil
+        objectiveAlert:fire({ action = "sound" })
+    end)
 end
 
 local function claimMessages(claimed)
-    for name in pairs(messageAlerts) do
+    for name in pairs(messageKinds) do
         WowVision.errors.claimed[name] = claimed or nil
     end
 end
@@ -198,6 +299,15 @@ function module:nearbyQuests(opts)
         opts.includeRepeatable = self.settings.includeRepeatable
     end
     return self.adapter:nearbyQuests(opts)
+end
+
+-- Where the player stands, for ranking things by distance; nil without a
+-- data source (no coordinates then either).
+function module:playerContext()
+    if self.adapter == nil then
+        return nil
+    end
+    return self.adapter:playerContext()
 end
 
 function module:inProgress()
@@ -375,18 +485,8 @@ local function objectivesFor(questId, index)
     return objectives
 end
 
--- The title of the log header at one index (the zone, a class or a
--- profession the quests below it belong to), nil for a quest row.
-local function questLogHeader(index)
-    if C_QuestLog ~= nil and C_QuestLog.GetInfo ~= nil then
-        local info = C_QuestLog.GetInfo(index)
-        return info ~= nil and info.isHeader and info.title or nil
-    end
-    local title, _, _, isHeader = GetQuestLogTitle(index)
-    return isHeader and title or nil
-end
-
--- The log entry at one index, nil for headers and empty rows.
+-- The log entry at one index, nil for headers and empty rows; for a header
+-- its title comes second (the zone of the quests below it).
 local function questLogEntry(index)
     if C_QuestLog ~= nil and C_QuestLog.GetInfo ~= nil then
         local info = C_QuestLog.GetInfo(index)
@@ -400,7 +500,7 @@ local function questLogEntry(index)
                 objectives = objectivesFor(info.questID, index),
             }
         end
-        return nil
+        return nil, info ~= nil and info.isHeader and info.title or nil
     end
     local title, level, _, isHeader, _, isComplete, _, questId = GetQuestLogTitle(index)
     if not isHeader and questId ~= nil and questId > 0 then
@@ -413,7 +513,7 @@ local function questLogEntry(index)
             objectives = objectivesFor(questId, index),
         }
     end
-    return nil
+    return nil, isHeader and title or nil
 end
 
 function WowVision.quests.gameQuestLog()
@@ -425,15 +525,12 @@ function WowVision.quests.gameQuestLog()
     -- Westfall, a class or a profession)
     local zone = nil
     for index = 1, count do
-        local header = questLogHeader(index)
+        local entry, header = questLogEntry(index)
         if header ~= nil then
             zone = header
-        else
-            local entry = questLogEntry(index)
-            if entry ~= nil then
-                entry.zone = zone
-                tinsert(entries, entry)
-            end
+        elseif entry ~= nil then
+            entry.zone = zone
+            tinsert(entries, entry)
         end
     end
     return entries
@@ -536,6 +633,11 @@ function module:onEvent(event, arg1, arg2)
     if event == "UI_INFO_MESSAGE" then
         module.onInfoMessage(arg1, arg2)
         return
+    end
+    -- a quest that turned complete plays its sound (the first reading after
+    -- login is the baseline)
+    if event == "QUEST_LOG_UPDATE" then
+        checkCompletion()
     end
     local adapter = self.adapter
     if adapter == nil then

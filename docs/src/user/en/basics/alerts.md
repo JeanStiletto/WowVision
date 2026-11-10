@@ -87,7 +87,7 @@ Menu paths read from the first level of the WowVision menu. The state in bracket
 | Diving Alert | Navigation, Compass | You go under water. Says "diving". | TTS, Sound Alert (off) |
 | Fall Detection | Navigation, Fall Detection | You fall. The announcement is said once when the falling sounds start. | Falling Sound (a rising series of sounds; the longer the fall, the higher the sound), Falling Announcement (TTS "Falling") |
 | Wall Detection | Navigation, Wall Detection | You are moving but something holds you back. | Five sounds for five degrees of blocking: Blocked, Mostly Blocked, Impeded, Slowed and Slightly Slowed. |
-| Beacon | Navigation, Beacon Settings | A route or beacon is active. | Beacon Sound (a directional ping that speeds up as you turn towards the target), Beacon Aligned (a click when you face it), Beacon Off Course (when you turn away), Waypoint Reached (when you arrive) |
+| Beacon | Navigation, Beacon and Routes | A route or beacon is active. | Beacon Sound (a directional ping that speeds up as you turn towards the target), Beacon Aligned (a click when you face it), Beacon Off Course (when you turn away), Waypoint Reached (when you arrive) |
 
 Inside instances the game does not report which way you face, so Speak Compass Direction stays silent there while the other compass alerts keep working. The settings of Fall Detection (Delay (milliseconds), Ignore Jumps) are in the module's screen, see [Movement](../world/movement.md). The arrival settings of Beacon are in [Navigation](../world/navigation.md).
 
@@ -130,8 +130,11 @@ The Per-Error Filter lists each message with its state read after its name: "Spe
 | New Minimap Dot Alert | Minimap Scanner | While you walk, a named dot comes onto the minimap. Speaks its name, level, whether it is indoors, and its kind. Needs Announce Tracked Dots While Walking (on). | TTS (spoken by the game's voice 0 unless you choose another voice), Sound Alert (off) |
 | Quest Area Alert | Quests | You enter or leave the area of a quest. Says "Entering area: " or "Leaving area: " followed by the quest title. | TTS, Sound Alert (off) |
 | Quest Progress Alert | Quests | The game shows a quest count moving. Says the game's message, for example "Kobold Vermin slain: 3/8". | TTS, Sound Alert (on) |
-| Objective Complete Alert | Quests | The game shows an objective done as "... (Complete)". Says the game's message. | TTS, Sound Alert (on) |
-| Quest Complete Alert | Quests | The game shows "Objective Complete." without naming the objective. Says the game's message. | TTS, Sound Alert (on) |
+| Objective Complete Alert | Quests | The game shows an objective done, as "... (Complete)" or "Objective Complete.". Says the game's message. | TTS, Sound Alert (on) |
+| Quest Complete Alert | Quests | Every objective of a quest is done, read from your quest log. Plays in place of the objective's sound; its speech says the quest's title and "Complete". | TTS (off), Sound Alert (on) |
+| Available Quest Sound | Quests, Nearby | A quest you can accept has its giver near you. Plays a directional ping and says, for example, "Quest available: A Threat Within, 30 yards". Needs Questie. | Beacon Sound (on), TTS Alert (off) |
+| Turn-In Quest Sound | Quests, Nearby | A complete quest in your log has the person to hand it in to near you. Plays a directional ping and says "Quest to turn in: " and the quest. Needs Questie. | Beacon Sound (on), TTS Alert (off) |
+| Quest Objective Sound | Quests, Nearby | A quest in your log has an open objective near you. Plays a directional ping and says "Quest objective: " and the quest. Needs Questie. | Beacon Sound (on), TTS Alert (off) |
 | Item Selected | Windows, Auction House | You select an auction in the browse list. Says "Selected: " and the item's name. (The Burning Crusade only.) | TTS |
 
 See [Minimap](../world/minimap.md) and [Quests](../world/quests.md).

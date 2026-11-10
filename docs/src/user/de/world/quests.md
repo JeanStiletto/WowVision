@@ -39,6 +39,8 @@ Auf WoW: Forever liefert Questie eine Version, die auf Classic-Era-Daten aufbaut
 
 In der Questliste bewegen Pfeil hoch und Pfeil runter zwischen Überschriften und Quests. Drücke Eingabe auf einer Quest, um sie auszuwählen, wodurch die Details gefüllt werden. Drücke Eingabe auf einer Überschrift, um sie ein- oder auszuklappen. Drücke die Tooltip-Taste, um den Tooltip der Quest zu hören; siehe [Tooltips](../basics/tooltips.md).
 
+Normalerweise steht der Fokus beim Öffnen auf der ausgewählten Quest. Schalte im WowVision-Menü unter Fenster, Questlog die Einstellung Immer oben beginnen ein, dann steht er beim Öffnen auf dem obersten Eintrag der Liste. Standardmäßig ist sie aus. Öffnet sich das Questlog in den Details einer Quest, bleibst du dort.
+
 ### The Burning Crusade
 
 (Nur The Burning Crusade.)
@@ -124,13 +126,47 @@ Der Alarm heißt Questgebiet (Quest Area Alert) und gehört zum Modul Quests. Wi
 
 ## Alarme für den Questfortschritt
 
-Das Spiel zeigt den Questfortschritt als Meldung in der Bildschirmmitte. WowVision spricht diese Meldungen so, wie das Spiel sie formuliert, mit drei eigenen Alarmen:
+Das Spiel zeigt den Questfortschritt als Meldung in der Bildschirmmitte. WowVision spricht diese Meldungen so, wie das Spiel sie formuliert, und spielt einen Ton für das, was passiert ist, mit drei eigenen Alarmen:
 
-- Questfortschritt (Quest Progress Alert): ein Zähler ändert sich, etwa "Kobold Vermin getötet: 3/8" oder "Leinenstoff: 2/6", auch der letzte ("8/8"). Sein Ton ist glass1.
-- Ziel erreicht (Objective Complete Alert): die Meldung des Spiels, die ein erledigtes Ziel nennt, etwa "Erkundet die Mine (Abgeschlossen)". Sein Ton ist success1.
-- Quest abgeschlossen (Quest Complete Alert): die Meldung "Aufgabe abgeschlossen." des Spiels, die kein Ziel nennt. Sein Ton ist Tutorial_Success_01.
+- Questfortschritt (Quest Progress Alert): ein Zähler ändert sich, etwa "Kobold Vermin getötet: 3/8" oder "Leinenstoff: 2/6". Sein Ton ist success1, der Ton von Sku.
+- Ziel erreicht (Objective Complete Alert): ein Ziel ist erledigt, etwa "Erkundet die Mine (Abgeschlossen)", oder die Meldung "Aufgabe abgeschlossen." des Spiels, die kein Ziel nennt. Sein Ton ist objective_complete.
+- Quest abgeschlossen (Quest Complete Alert): alle Ziele einer Quest sind erledigt, du kannst sie abgeben. Sein Ton ist success2, der Ton von Sku, und er spielt statt des Tons für das Ziel. Das Spiel schickt dafür keine Meldung, deshalb liest WowVision es aus deinem Questlog. Seine Sprachausgabe, der Questtitel und "Abgeschlossen", startet ausgeschaltet, denn die Meldung des Spiels zum letzten Ziel hörst du schon.
 
-Jede Meldung spricht ihr eigener Alarm, mit dessen Einstellungen: beim letzten Kill hörst du das "8/8" vom Alarm Questfortschritt und den Abschluss von dem Alarm, zu dem er gehört. Jeder Alarm hat TTS (an) und Sound (an) und lässt sich einzeln ausschalten. Sie arbeiten unabhängig vom Modul Fehler, auch wenn es ausgeschaltet ist, und diese Meldungen erscheinen nicht in seinem Filter pro Fehler. Hattest du eine dieser Meldungen dort stummgeschaltet oder Fehler ansagen ausgeschaltet, startet ihr Alarm ausgeschaltet. Siehe [Alarme](../basics/alerts.md).
+Die Meldung des Spiels wird sofort gesprochen. Ist ein Ziel erledigt, wartet sein Ton einen Moment, weniger als eine halbe Sekunde, um zu erfahren, ob damit die Quest fertig ist. Jeder Alarm hat TTS und Sound und lässt sich einzeln ausschalten. Sie arbeiten unabhängig vom Modul Fehler, auch wenn es ausgeschaltet ist, und diese Meldungen erscheinen nicht in seinem Filter pro Fehler. Hattest du eine dieser Meldungen dort stummgeschaltet oder Fehler ansagen ausgeschaltet, startet ihr Alarm ausgeschaltet. Siehe [Alarme](../basics/alerts.md).
+
+## Quest-Töne in der Nähe
+
+Beim Laufen hörst du die Quests in deiner Nähe. Jeder Quest-Ton ist ein kurzer Ping, der aus der Richtung des Ortes kommt, wie das Beacon. Er ist leiser, je weiter der Ort entfernt ist, und du hörst ihn nur, wenn der Ort vor dir liegt. Drehst du dich zu einem Ping, den du verpasst hast, hörst du ihn noch einmal. Die Töne brauchen Questie, gelten also für Classic Era, The Burning Crusade, Mists of Pandaria und WoW: Forever mit geladenem Questie. Ohne Questie bleiben sie stumm.
+
+Es gibt drei Töne:
+
+- Ton für annehmbare Quests: Der Questgeber einer Quest, die du annehmen kannst, ist in deiner Nähe. Es ist der weiche Benachrichtigungston, den auch Sku spielt.
+- Ton für abgebbare Quests: Eine Quest in deinem Log ist abgeschlossen und die Person, bei der du sie abgibst, ist in deiner Nähe. Es ist der Stahlgong, den auch Sku spielt.
+- Ton für Questziele: Eine Quest in deinem Log hat ein offenes Ziel in deiner Nähe, etwa Kreaturen zum Töten oder einen Gegenstand zum Finden. Es ist ein tiefer Sondierungston. Sku hat dafür keinen Ton.
+
+Ein Ort pingt zum ersten Mal einen Moment, nachdem du in seine Reichweite gekommen bist, früher, wenn er nah ist, und später, wenn er weit weg ist. Mehrere Quests beim selben Questgeber ergeben einen Ping. Nach dem Ping bleibt der Ort still, bis du ein anderes Gebiet betrittst. Bekommt der Questgeber eine neue Quest zum Anbieten, hörst du ihn wieder. Ist die Einstellung zum einmaligen Spielen aus, pingt der Ort immer wieder, solange du in Reichweite bleibst. Questziele sind wieder still, wenn du dich weit von ihnen entfernt hast, und pingen wieder, wenn du zurückkommst. Stehst du nah an einem Ort, näher als die Entfernung für Stumm, ist er still. Du hörst nichts, solange du auf einer Flugroute reist, tot bist oder kämpfst. Nach dem Kampf kommen die Pings wieder.
+
+Quests eines Feiertags zählen nur, solange der Feiertag läuft. Für annehmbare Quests gelten die Einstellungen Stufenbereich für Quests in der Nähe und Wiederholbare Quests einbeziehen, siehe unten. Schalte das Ganze mit Aktiviert im Menü In der Nähe aus.
+
+Öffne das WowVision-Menü, dann Quests, dann In der Nähe.
+
+| Einstellung | Standard | Was sie tut |
+|-------------|----------|-------------|
+| Aktiviert | An | Schaltet alle Quest-Töne in der Nähe an oder aus. |
+| Ton für annehmbare Quests, Aktiviert | An | Schaltet den Ton für annehmbare Quests an oder aus. |
+| Ton für annehmbare Quests, Beacon-Ton, Aktiviert | An | Spielt den Ping. |
+| Ton für annehmbare Quests, Beacon-Ton, Beacon-Ton | Notification soft 100 | Welcher Ton gespielt wird. |
+| Ton für annehmbare Quests, Beacon-Ton, Lautstärke | 30 | Wie laut der Ping ist, von 10 bis 100. |
+| Ton für annehmbare Quests, TTS-Alarm, Aktiviert | Aus | Sagt die Quest, ihren Namen und die Entfernung, zum Beispiel "Quest verfügbar: A Threat Within, 30 yards". |
+| Ton für abgebbare Quests | dieselben Einstellungen | Lautstärke 40, Ton steel gong, und es sagt "Quest abgeben" vor dem Namen. |
+| Ton für Questziele | dieselben Einstellungen | Lautstärke 30, Ton probe deep 1, und es sagt "Questziel" vor dem Namen. |
+| Reichweite für annehmbare Quests | 40 | Entfernung in Yards, ab der annehmbare Quests pingen. Von 5 bis 200. |
+| Reichweite für abgebbare Quests | 60 | Entfernung, ab der abgebbare Quests pingen. |
+| Reichweite für Questziele | 50 | Entfernung, ab der offene Ziele pingen. |
+| Annehmbare Quests nur einmal | An | Jeder Ort pingt einmal, statt immer wieder. |
+| Abgebbare Quests nur einmal | An | Dasselbe für abzugebende Quests. |
+| Questziele nur einmal | An | Dasselbe für Ziele. |
+| Stumm ab Entfernung | 5 | Näher als so viele Yards ist ein Ort still. Von 1 bis 30. |
 
 ## Quests und Questziele finden
 
@@ -152,6 +188,7 @@ So werden Orte in den Listen beschrieben: Ein Fundort liest sich mit seinem Gebi
 |-------------|----------|-------------|
 | Stufenbereich für Quests in der Nähe | 5 | Die Liste In der Nähe blendet Quests aus, die um mehr als so viele Stufen unter deiner Stufe liegen. Von 0 bis 60. Stelle 60 ein, um jede Quest zu sehen, oder 0, um nur Quests auf deiner Stufe oder darüber zu sehen. |
 | Wiederholbare Quests einbeziehen | An | Ob wiederholbare und tägliche Quests in der Liste In der Nähe erscheinen. |
+| Quests nach Entfernung sortieren | An | Ob jede Zone der Liste Laufend nach Entfernung sortiert ist, die nächste zuerst, und zwar nach dem Ort, zu dem dich Eingabe auf der jeweiligen Quest führen würde (das nächste offene Ziel, oder die Abgabe, sobald eine Quest abgeschlossen ist). Quests ohne Ort, zu dem du gehen kannst, folgen in der Reihenfolge deines Questlogs. Schalte die Einstellung aus, um in jeder Zone die Reihenfolge des Questlogs zu behalten. |
 | Questgebiet | siehe oben | Ansagen beim Betreten oder Verlassen eines Zielgebiets. |
 | Questfortschritt, Ziel erreicht, Quest abgeschlossen | siehe oben | Ansagen zum Questfortschritt. |
 

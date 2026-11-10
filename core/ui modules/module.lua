@@ -31,14 +31,6 @@ settings:add({
     default = true,
 })
 
--- The same arrow pressed twice quickly skips the empty slots of a bag or action bar (graph/doublePress.lua).
-settings:add({
-    type = "Bool",
-    key = "skipEmptySlots",
-    label = L["Skip Empty Slots on Double Arrow"],
-    default = true,
-})
-
 -- The game sound channel every WowVision sound and beacon plays on
 -- (core/audio/channels.lua): its volume is that channel's game slider,
 -- so a channel the player keeps for WowVision alone gives WowVision a volume of
@@ -90,6 +82,14 @@ module:registerCommand({
             end)
         end
     end,
+})
+
+-- The same arrow pressed twice quickly skips the empty slots of a bag or action bar (graph/doublePress.lua).
+settings:add({
+    type = "Bool",
+    key = "skipEmptySlots",
+    label = L["Skip Empty Slots on Double Arrow"],
+    default = false,
 })
 
 -- Chasing stuck movement keys with testers: prints when windows take, wait
@@ -419,6 +419,19 @@ module:registerBindings({
         interruptSpeech = true,
         func = function()
             WowVision.graph.settings.openMenu()
+        end,
+    },
+    -- Closes every WowVision window and every window of the game at once.
+    {
+        type = "Function",
+        key = "wowvision/closeAll",
+        label = L["Close All Windows"],
+        inputs = { "SHIFT-ESCAPE" },
+        interruptSpeech = true,
+        func = function()
+            if WowVision.UIHost:closeAllWindows() then
+                WowVision:notify(L["All windows closed"])
+            end
         end,
     },
 })

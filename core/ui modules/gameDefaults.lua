@@ -2,29 +2,11 @@
 -- User Interface menu (gameDefaultsMenu.lua). Kept free of frames so the
 -- rules run in the headless tests.
 --
--- Everything goes through the game's own settings: console variables, key
--- bindings, the action bar toggles and Blizzard's Audio Assist. Nothing
--- WowVision-only. Camera, soft targeting and sound volumes stay as they are.
+-- Everything goes through the game's own settings: console variables, the
+-- action bar toggles and Blizzard's Audio Assist. Nothing WowVision-only.
+-- Key bindings, camera, soft targeting and sound volumes stay as they are.
 local gameDefaults = {}
 WowVision.gameDefaults = gameDefaults
-
--- Key, then the game binding it gets. Follow and assist keep any other key
--- they have; the bag keys swap: B opens all bags, Shift-B the backpack.
-gameDefaults.BINDINGS = {
-    { key = "F", action = "FOLLOWTARGET" },
-    { key = "NUMPAD0", action = "FOLLOWTARGET" },
-    { key = "R", action = "ASSISTTARGET" },
-    { key = "NUMPADDECIMAL", action = "ASSISTTARGET" },
-    { key = "NUMPAD1", action = "TARGETSELF" },
-    { key = "NUMPAD2", action = "TARGETPARTYMEMBER1" },
-    { key = "NUMPAD3", action = "TARGETPARTYMEMBER2" },
-    { key = "NUMPAD4", action = "TARGETPARTYMEMBER3" },
-    { key = "NUMPAD5", action = "TARGETPARTYMEMBER4" },
-    { key = "H", action = "TARGETLASTTARGET" },
-    { key = "G", action = "INTERACTTARGET" },
-    { key = "B", action = "OPENALLBAGS" },
-    { key = "SHIFT-B", action = "TOGGLEBACKPACK" },
-}
 
 gameDefaults.CVARS = {
     { name = "autoLootDefault", value = "1", label = "Auto Loot" },
@@ -66,9 +48,6 @@ end
 -- api, the game calls this needs:
 --   inCombat()
 --   getCVar(name), setCVar(name, value)           setCVar errors when refused
---   bindingAction(key)                           "" for none
---   setBinding(key, action) -> ok, saveBindings()
---   actionLabel(action), keyLabel(key)            the game's own names
 --   actionBarToggles() -> list or nil, setActionBarToggles(list)
 --   audioAssist                                   nil where the game has none:
 --     getFormat(unit, alertType), setFormat(unit, alertType, value)
@@ -117,27 +96,6 @@ function gameDefaults.apply(api, L)
         else
             tinsert(report.failed, L["All Action Bars"])
         end
-    end
-
-    local bindingsChanged = false
-    for _, binding in ipairs(gameDefaults.BINDINGS) do
-        local keyName = api.keyLabel(binding.key)
-        local before = api.bindingAction(binding.key) or ""
-        if before == binding.action then
-            tinsert(report.unchanged, keyName)
-        elseif api.setBinding(binding.key, binding.action) then
-            bindingsChanged = true
-            local beforeName = before == "" and L["nothing"] or api.actionLabel(before)
-            tinsert(
-                report.changed,
-                string.format(L["%s: %s, before %s"], keyName, api.actionLabel(binding.action), beforeName)
-            )
-        else
-            tinsert(report.failed, keyName)
-        end
-    end
-    if bindingsChanged then
-        api.saveBindings()
     end
 
     local audio = api.audioAssist

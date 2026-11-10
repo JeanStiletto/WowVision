@@ -99,6 +99,22 @@ end
 -- route each).
 local AUTO_CANDIDATES = 8
 
+-- The saved trail of the chains (WowVisionDump.autoMode, on disk after /reload; the newest last): each leg's search
+-- with its time.
+local LOG_SIZE = 60
+local function logLine(line)
+    WowVisionDump = WowVisionDump or {}
+    local trail = WowVisionDump.autoMode
+    if type(trail) ~= "table" then
+        trail = {}
+        WowVisionDump.autoMode = trail
+    end
+    trail[#trail + 1] = date("%H:%M:%S") .. " " .. line
+    while #trail > LOG_SIZE do
+        table.remove(trail, 1)
+    end
+end
+
 -- Where the next leg after `last` may go: the nearest unvisited one of its name (direct), or the AUTO_CANDIDATES
 -- nearest for the walk to decide, as { waypoint, distance }; none that is `last` or in seen ({ [key] = true }). Then
 -- the waypoints and engine they came from (maps:destinationsNamed).
@@ -108,12 +124,19 @@ local function nextCandidates(self, last, direct, seen)
         local key = keyOf(wp)
         return key == lastKey or seen[key] or self:isVisited(wp)
     end
+    local started = debugprofilestop()
     local found, waypoints, engine = maps:destinationsNamed(last.n, direct)
+    local searched = debugprofilestop()
+    local candidates
     if direct then
         local best = store.nearest(found, skip)
-        return best ~= nil and { best } or {}, waypoints, engine
+        candidates = best ~= nil and { best } or {}
+    else
+        candidates = store.nearestN(found, skip, AUTO_CANDIDATES)
     end
-    return store.nearestN(found, skip, AUTO_CANDIDATES), waypoints, engine
+    logLine(string.format("next %s after %s: %d found, search %.1f ms, pick %.1f ms", direct and "direct" or "route",
+        tostring(last.n), #found, searched - started, debugprofilestop() - searched))
+    return candidates, waypoints, engine
 end
 
 local function sayNoneLeft(last)
@@ -197,7 +220,9 @@ function module:startAuto(wp, mode, start)
     local auto = { mode = mode, history = {}, index = 0, seen = {} }
     setCurrent(auto, wp)
     self.auto = auto
+    logLine(string.format("start %s %s", mode, tostring(wp.n)))
     WowVision:notify(mode == "route" and L["Auto Route"] or L["Auto Direct"])
+    maps:closeWindowsForGuidance(true)
     return lead(function()
         return maps:goToDestination(wp, mode == "direct", start)
     end)
@@ -209,6 +234,7 @@ function module:endAuto()
         return
     end
     self.auto = nil
+    logLine("end")
 end
 
 -- Whether wp is where the running chain's leg leads (Ctrl-Shift-N keeps the chain then).

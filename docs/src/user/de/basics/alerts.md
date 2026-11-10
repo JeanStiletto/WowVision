@@ -87,7 +87,7 @@ Die Menüpfade beginnen bei der ersten Ebene des WowVision-Menüs. Der Zustand i
 | Tauch-Alarm | Navigation, Kompass | Du tauchst unter Wasser. Sagt „tauchen“. | TTS, Soundalarm (aus) |
 | Fallerkennung | Navigation, Fallerkennung | Du fällst. Die Ansage wird einmal gesprochen, wenn die Fallsounds beginnen. | Fallgeräusch (eine aufsteigende Reihe von Sounds; je länger der Fall, desto höher der Sound), Fallansage (TTS „Fallen“) |
 | Wanderkennung | Navigation, Wanderkennung | Du bewegst dich, aber etwas hält dich zurück. | Fünf Sounds für fünf Grade der Behinderung: Blockiert, Größtenteils blockiert, Behindert, Verlangsamt und Leicht verlangsamt. |
-| Beacon | Navigation, Beacon-Einstellungen | Eine Route oder ein Beacon ist aktiv. | Beacon-Ton (ein Richtungs-Ping, der schneller wird, wenn du dich dem Ziel zuwendest), Beacon ausgerichtet (ein Klick, wenn du ihm zugewandt bist), Beacon abseits des Kurses (wenn du dich abwendest), Wegpunkt erreicht (wenn du ankommst) |
+| Beacon | Navigation, Beacon und Routen | Eine Route oder ein Beacon ist aktiv. | Beacon-Ton (ein Richtungs-Ping, der schneller wird, wenn du dich dem Ziel zuwendest), Beacon ausgerichtet (ein Klick, wenn du ihm zugewandt bist), Beacon abseits des Kurses (wenn du dich abwendest), Wegpunkt erreicht (wenn du ankommst) |
 
 In Instanzen meldet das Spiel nicht, in welche Richtung du blickst, daher bleibt Kompassrichtung ansagen dort stumm, während die übrigen Kompassalarme weiter funktionieren. Die Einstellungen der Fallerkennung (Verzögerung (Millisekunden), Sprünge ignorieren) stehen auf dem Bildschirm des Moduls, siehe [Bewegung und Orientierung](../world/movement.md). Die Ankunftseinstellungen von Beacon stehen unter [Navigation und Routen](../world/navigation.md).
 
@@ -130,8 +130,11 @@ Der Filter pro Fehler listet jede Meldung mit ihrem Zustand hinter dem Namen: �
 | Neuer Minikarten-Punkt | Minikarten-Scanner | Beim Laufen kommt ein benannter Punkt auf die Minikarte. Spricht seinen Namen, seine Stufe, ob er drinnen liegt, und seine Art. Braucht Verfolgte Punkte beim Laufen ansagen (an). | TTS (gesprochen von der Spielstimme 0, außer du wählst eine andere Stimme), Soundalarm (aus) |
 | Questgebiet (Quest Area Alert) | Quests | Du betrittst das Gebiet einer Quest oder verlässt es. Sagt „Betrete Gebiet: “ oder „Verlasse Gebiet: “, gefolgt vom Questtitel. | TTS, Soundalarm (aus) |
 | Questfortschritt (Quest Progress Alert) | Quests | Das Spiel zeigt, dass ein Questzähler sich ändert. Sagt die Meldung des Spiels, etwa „Kobold Vermin getötet: 3/8“. | TTS, Soundalarm (an) |
-| Ziel erreicht (Objective Complete Alert) | Quests | Das Spiel zeigt ein erledigtes Ziel als „… (Abgeschlossen)“. Sagt die Meldung des Spiels. | TTS, Soundalarm (an) |
-| Quest abgeschlossen (Quest Complete Alert) | Quests | Das Spiel zeigt „Aufgabe abgeschlossen.“, ohne ein Ziel zu nennen. Sagt die Meldung des Spiels. | TTS, Soundalarm (an) |
+| Ziel erreicht (Objective Complete Alert) | Quests | Das Spiel zeigt ein erledigtes Ziel, als „… (Abgeschlossen)“ oder „Aufgabe abgeschlossen.“. Sagt die Meldung des Spiels. | TTS, Soundalarm (an) |
+| Quest abgeschlossen (Quest Complete Alert) | Quests | Alle Ziele einer Quest sind erledigt, gelesen aus deinem Questlog. Spielt statt des Tons für das Ziel; seine Sprachausgabe sagt den Questtitel und „Abgeschlossen“. | TTS (aus), Soundalarm (an) |
+| Ton für annehmbare Quests (Available Quest Sound) | Quests, In der Nähe | Der Questgeber einer Quest, die du annehmen kannst, ist in deiner Nähe. Spielt einen Ping aus seiner Richtung und sagt zum Beispiel „Quest verfügbar: A Threat Within, 30 yards“. Braucht Questie. | Beacon-Ton (an), TTS-Alarm (aus) |
+| Ton für abgebbare Quests (Turn-In Quest Sound) | Quests, In der Nähe | Für eine abgeschlossene Quest in deinem Log ist die Person zum Abgeben in deiner Nähe. Spielt einen Ping aus ihrer Richtung und sagt „Quest abgeben: “ und die Quest. Braucht Questie. | Beacon-Ton (an), TTS-Alarm (aus) |
+| Ton für Questziele (Quest Objective Sound) | Quests, In der Nähe | Eine Quest in deinem Log hat ein offenes Ziel in deiner Nähe. Spielt einen Ping aus seiner Richtung und sagt „Questziel: “ und die Quest. Braucht Questie. | Beacon-Ton (an), TTS-Alarm (aus) |
 | Gegenstand ausgewählt (Item Selected) | Fenster, Auktionshaus | Du wählst in der Durchsuchen-Liste eine Auktion aus. Sagt „Ausgewählt: “ und den Namen des Gegenstands. (Nur The Burning Crusade.) | TTS |
 
 Siehe [Minikarte](../world/minimap.md) und [Quests](../world/quests.md).

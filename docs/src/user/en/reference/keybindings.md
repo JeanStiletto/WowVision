@@ -56,6 +56,7 @@ See [Tooltips](../basics/tooltips.md).
 | Action | Default key | Page |
 |---|---|---|
 | WowVision Menu | Shift+F1 (or type `/wv`) | [The WowVision Menu and Settings](../basics/menu-and-settings.md) |
+| Close All Windows | Shift+Escape | Closes every open WowVision window and every window of the game |
 | Chat | Shift+F3 | [Chat](../windows/chat.md) |
 | Action Bars | Shift+F4 | [Action Bars](../windows/action-bars.md) |
 | Scanner | F9 | [Scanner](../world/scanner.md) |
@@ -92,7 +93,7 @@ See [Chat](../windows/chat.md).
 | Next Waypoint | Ctrl+W | Skip ahead to the next waypoint. You hear how many waypoints remain, for example "12 remaining" |
 | Previous Waypoint | Ctrl+S | Go back to the previous waypoint, with the same count |
 | Start the Route Again From Here | Ctrl+Shift+N | Plans the route to your last destination again, starting from where you stand. You hear "No route to start again" if you have not chosen a destination yet |
-| Reverse Route | Ctrl+Shift+R | Turns the running route around: from the waypoint the beacon leads to now back to where the route started |
+| Reverse Route | Ctrl+Shift+R | Turns the running route around: from its destination back to its start, going on at the waypoint the beacon leads to now |
 | Cancel Navigation | Shift+F12 | Stops the active route or beacon |
 | Cycle Arrival Distance | Alt+P | Changes how close you must come before a waypoint counts as reached |
 | Announce Distance | Unbound | Speaks the distance to the waypoint. Alt Gr (or Ctrl+Alt) does the same out of the box |
@@ -103,7 +104,7 @@ See [Chat](../windows/chat.md).
 | New WowNav Route Around a Blocked Spot | Unbound | (WoW: Forever) Plans a new route that avoids the spot where you are stuck |
 | WowNav Log Entry | Unbound | (WoW: Forever) Saves where you stand and what the route does, for a problem report |
 
-Alt Gr is not a binding: it is read directly, stays silent while you type in an edit box, and can be turned off with the Announce Distance with Alt Gr setting in the Beacon Settings module (Navigation). See [Navigation and Routes](../world/navigation.md) and [WowNav](../world/wownav.md).
+Alt Gr is not a binding: it is read directly, stays silent while you type in an edit box, and can be turned off with the Announce Distance with Alt Gr setting in the Beacon and Routes module (Navigation). See [Navigation and Routes](../world/navigation.md) and [WowNav](../world/wownav.md).
 
 ## Minimap
 

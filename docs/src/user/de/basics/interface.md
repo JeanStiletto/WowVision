@@ -82,11 +82,11 @@ Solange ein Steuerelement den Fokus hat, behält WowVision es im Blick. Ändert 
 
 Pfeil hoch und Pfeil runter gehen in der Reihenfolge durch die Steuerelemente, in der sie erscheinen. Wo Steuerelemente nebeneinander in einer Zeile stehen, gehen Pfeil links und Pfeil rechts an der Zeile entlang. Wenn du aus einer Zeile nach oben oder unten gehst, landest du auf dem ersten Steuerelement der nächsten Zeile. Ausnahme sind Raster und Tabellen, die in Spalten angeordnet sind: Dort bleibst du in derselben Spalte.
 
-Drückst du auf dem ersten Eintrag einer Liste Pfeil hoch oder auf dem letzten Pfeil runter, bleibst du dort und hörst diesen Eintrag noch einmal. So weißt du, dass du am Ende bist und die Liste nicht leer ist. Pfeil links und Pfeil rechts am Ende einer Zeile bleiben still. Die Pfeiltasten springen in Fenstern nicht von hinten nach vorn.
+Drückst du am Rand einer Liste eine Pfeiltaste, passiert nichts und es wird nichts gesagt. Die Pfeiltasten springen in Fenstern nicht von hinten nach vorn.
 
 ### Leere Plätze überspringen
 
-In deinen Taschen, der Bank und den Aktionsleisten drückst du dieselbe Pfeiltaste zweimal schnell hintereinander (innerhalb einer Viertelsekunde), um die leeren Plätze zu überspringen: Du landest auf dem nächsten Platz, in dem etwas liegt. Tippst du weiter schnell, springst du von Gegenstand zu Gegenstand. Folgt in dieser Richtung nichts mehr, landest du auf dem letzten Platz, der „Leer“ sagt. Zwei verschiedene Pfeiltasten hintereinander zählen nie als Doppeldruck. Abschalten kannst du das mit der Einstellung „Leere Plätze beim doppelten Pfeildruck überspringen“ (Menü Benutzeroberfläche, standardmäßig an).
+Ist die Einstellung „Leere Plätze beim doppelten Pfeildruck überspringen“ eingeschaltet (Menü Benutzeroberfläche, standardmäßig aus), kannst du in deinen Taschen, der Bank und den Aktionsleisten dieselbe Pfeiltaste zweimal schnell hintereinander drücken (innerhalb einer Viertelsekunde), um die leeren Plätze zu überspringen: Du landest auf dem nächsten Platz, in dem etwas liegt. Tippst du weiter schnell, springst du von Gegenstand zu Gegenstand. Folgt in dieser Richtung nichts mehr, landest du auf dem letzten Platz, der „Leer“ sagt. Zwei verschiedene Pfeiltasten hintereinander zählen nie als Doppeldruck.
 
 ### Tabstopps
 
@@ -180,17 +180,18 @@ In Listen, die die Tastatur für sich haben, kannst du einen Buchstaben drücken
 - Kontextmenüs,
 - den Dropdown-Menüs des Spiels.
 
-In Fenstern, in denen du spielst, funktioniert es nicht, zum Beispiel im Navigationsfenster.
+Jedes andere Fenster hat einen eigenen Schalter Buchstaben-Navigation, standardmäßig aus: das Navigationsfenster im Menü Navigation, der Scanner im Menü Scanner und jedes Spielfenster in seinem eigenen Eintrag im Menü Fenster. Eingeschaltet funktioniert jede Liste in diesem Fenster genauso.
 
 So verhält es sich:
 
 - Drücke einen Buchstaben, um zum nächsten Eintrag zu gehen, der damit beginnt. Drückst du denselben Buchstaben noch einmal, geht es zum übernächsten, am Ende wieder von vorn.
-- Tippe mehrere Buchstaben schnell hintereinander (innerhalb einer halben Sekunde), um nach einem längeren Anfang zu suchen: G und dann O findet „Goldhain“.
-- Akzente werden ignoriert, also findet U auch „Übersicht“. Zahlen und Satzzeichen am Anfang eines Namens werden übersprungen.
-- Beginnt nichts mit dem, was du getippt hast, hörst du „Keine Ergebnisse“.
+- Tippe zwei verschiedene Buchstaben schnell hintereinander (innerhalb einer halben Sekunde), um die Liste zu filtern. Du landest auf einer Zeile, die Filter und das Getippte sagt; darunter stehen nur noch die Einträge, die diese Buchstaben irgendwo im Namen enthalten. Jeder weitere Buchstabe grenzt die Liste weiter ein, egal wie langsam du ihn tippst.
+- Solange eine Liste gefiltert ist, holt Rücktaste oder Pfeil links die ganze Liste zurück. Eingabe auf einem Eintrag oder der Wechsel eine Ebene tiefer beendet den Filter ebenfalls.
+- Akzente werden ignoriert, also findet U auch „Übersicht“. Eine Umlaut-Taste findet nur Einträge mit genau diesem Umlaut: Ü findet „Übersicht“, aber nicht „Ultra“. Zahlen und Satzzeichen am Anfang eines Namens werden übersprungen.
+- Passt nichts zu dem, was du getippt hast, hörst du „Keine Ergebnisse“.
 - Drückst du denselben einzelnen Buchstaben noch einmal und der Eintrag, auf dem du stehst, ist der einzige, der damit beginnt, wird dieser Eintrag noch einmal gelesen.
 
-Solange so eine Liste offen ist, bewegen die Buchstabentasten deinen Charakter nicht. Du kannst das mit der Einstellung Buchstaben-Navigation in Menüs abschalten (Menü Benutzeroberfläche, standardmäßig an). Die Tasten werden außerdem freigegeben, sobald du in den Kampf kommst oder die Liste schließt.
+Solange so eine Liste offen ist, gehört ihr jede Buchstabentaste: W, A, S und D bewegen deinen Charakter nicht, und Buchstabentasten des Spiels wie B für die Taschen tun nichts. Für die Menüs kannst du das mit der Einstellung Buchstaben-Navigation in Menüs abschalten (Menü Benutzeroberfläche, standardmäßig an). Die Tasten werden außerdem freigegeben, sobald du in den Kampf kommst oder die Liste schließt.
 
 Beispiel: Ganz oben im WowVision-Menü drückst du einmal S, um zu Scanner zu kommen, noch einmal S für Sprache, dann Z für Zielerfassung.
 

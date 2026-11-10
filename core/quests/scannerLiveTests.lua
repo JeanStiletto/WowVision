@@ -60,7 +60,7 @@ local function questNode()
     harness.log = { [7] = logEntry(2, 0) }
     local tree = harness.providers.quests.build({ maxEntries = 10, radius = 500 })
     local inProgress = tree[2]
-    -- In Progress lists the log's zones, the quest under its own
+    -- one level per quest log zone, then the zone's quests
     return inProgress.children()[1].children[1]
 end
 

@@ -55,6 +55,12 @@ settings:add({
 })
 settings:add({ key = "targetTolerance", type = "Number", label = L["Height Tolerance of a Floor (Yards)"], default = 3,
     min = 0, max = 20 })
+-- creatures and objects named in the game language from Questie's database where it knows them (text.lua); the
+-- catalogues themselves only have English and German
+settings:add({ key = "localNames", type = "Bool", label = L["Names in Your Language"], default = true })
+function WowVision.wownavText.localNamesEnabled()
+    return module.settings.localNames ~= false
+end
 -- his /vn rueckfall: one step back at a gate when the player drifted sideways
 settings:add({ key = "chokeFallback", type = "Bool", label = L["Step Back at Gates"], default = true })
 -- his preload: the player's zone and its neighbours are decoded ahead
@@ -537,6 +543,10 @@ local function startRoute(self, request, outcome)
     end
     -- start and target on the same spot: nothing to walk on the network
     local sameSpot = fromStart and Route.sameSpot(start, request.contract) and route:dropToEnd()
+    -- Ctrl-Shift-R: walked back from where the player is, at the waypoint the previous route led to
+    if reversed ~= nil then
+        route:resumeAt(reversed.resume)
+    end
     if request.dockTarget ~= nil and not trimmed then
         route.waitCheck = dock.waitAreaCheck(N, request.dockTarget)
     end
@@ -556,8 +566,16 @@ local function startRoute(self, request, outcome)
     self.request = request
     maps:pathfind(path)
     trace.routeStarted(route, gameState())
+    -- once per request: a transit's continuation comes back here with the same one
+    if not request.windowsClosed and not request.chainLeg then
+        maps:closeWindowsForGuidance(true)
+    end
+    request.windowsClosed = true
 
     local count = #route.path
+    if reversed ~= nil then
+        count = count - route.pathIndex + 1
+    end
     local yards = px ~= nil and routeLength(N, route.path, route.pathIndex, px, py) or 0
     -- standing on it: the arrival of the first update says all there is
     if sameSpot and yards <= route.G.EffectiveRadius(Route.ARRIVAL_TARGET_RADIUS) then
@@ -752,6 +770,8 @@ function module:routeTo(target)
     end
     if bindStart(self, request) then
         self:stopRoute()
+        -- the search answers later, outside the chain's own call
+        request.chainLeg = maps.chainLeg
         search(self, request)
     end
     return true
@@ -789,6 +809,7 @@ function module:routeToNearest(targets)
         local candidate = targetRequest(N, target, px, py, map)
         if candidate ~= nil then
             candidate.onChosen = target.onChosen
+            candidate.chainLeg = maps.chainLeg
             tinsert(candidates, candidate)
         end
     end
@@ -844,9 +865,10 @@ function module:routeToNearest(targets)
     return true
 end
 
--- Ctrl-Shift-R: the running route turned around. The new route starts at the waypoint the beacon leads to now (the
--- next real network point when that one is virtual: a picked target before its network point) and leads back to
--- where the previous route started: the target or waypoint picked as its entry point in F10, else its start node.
+-- Ctrl-Shift-R: the running route turned around. The new route starts at the previous route's destination (its last
+-- real network point: a logical target stands behind it) and leads back to where the previous route started: the
+-- target or waypoint picked as its entry point in F10, else its start node. It goes on at the waypoint the beacon
+-- leads to now (startRoute, Route:resumeAt), so the player walks back from where they are.
 -- Nil when no WowNav route runs; true when the request was made.
 function module:reverseRoute()
     local request, path = self.request, self.path
@@ -856,7 +878,7 @@ function module:reverseRoute()
         return nil
     end
     local from
-    for i = route.pathIndex or 1, #route.path do
+    for i = #route.path, 1, -1 do
         local id = route.path[i]
         if N.virt[id] == nil then
             from = id
@@ -866,7 +888,11 @@ function module:reverseRoute()
     if from == nil then
         return nil
     end
-    local _, _, fromZ = N.Position(from)
+    local fromX, fromY, fromZ = N.Position(from)
+    -- read now: the search below ends the running route, and with it its virtual points
+    local active = route.path[route.pathIndex or 1]
+    local activeX, activeY, activeZ = N.Position(active)
+    local resume = { id = N.virt[active] == nil and active or nil, x = activeX, y = activeY, z = activeZ }
     local start = request.start
     local data, x, y, z
     if type(start) == "table" and (start.tid ~= nil or start.nodeId ~= nil) and start.x ~= nil then
@@ -881,9 +907,11 @@ function module:reverseRoute()
         data.n = label
     end
     -- the search answers later: said and remembered when the route starts (startRoute), a failed one says why
-    local reversed = { text = string.format(L["Route reversed, back to %s"], label), destination = data }
-    if self:routeTo({ x = x, y = y, z = z, label = label, data = data, start = { nodeId = from, z = fromZ },
-        reversed = reversed }) then
+    local reversed = { text = string.format(L["Route reversed, back to %s"], label), destination = data,
+        resume = resume }
+    -- named and placed like a picked waypoint: turned around once more, this route leads back to it by name
+    local newStart = { nodeId = from, x = fromX, y = fromY, z = fromZ, n = request.label }
+    if self:routeTo({ x = x, y = y, z = z, label = label, data = data, start = newStart, reversed = reversed }) then
         return true
     end
     say(L["No route found"])

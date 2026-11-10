@@ -17,6 +17,7 @@
   <Script file="engine\FishingNavigation.lua" />
   <Script file="edgecost.lua" />
   <Script file="text.lua" />
+  <Script file="textTests.lua" />
   <Script file="catalog.lua" />
   <Script file="route.lua" />
   <Script file="path.lua" />

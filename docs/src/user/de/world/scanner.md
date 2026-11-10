@@ -19,8 +19,8 @@ Standardmäßig ist der Scanner ein einziger Baum. Die oberste Ebene enthält Ka
 | Pfeil runter und Pfeil hoch | Zum nächsten oder vorherigen Eintrag gehen. |
 | Pfeil rechts | Eine eingeklappte Gruppe öffnen oder in eine offene hineingehen. |
 | Pfeil links | Eine offene Gruppe schließen oder zu ihrem übergeordneten Eintrag zurückgehen. |
-| Eingabe | Auf einem Eintrag mit Ort: dich dorthin führen (siehe unten). Auf einer Gruppe ohne Ort: öffnen oder schließen. Auf deinem eigenen Namen oder dem Namen eines Gruppenmitglieds: diesen Charakter ins Ziel nehmen. Auf einem Kontrollkästchen in der Kategorie Verfolgung: ein- oder ausschalten. |
-| Rücktaste | Auf Einträgen mit Zusatztext (Quests): eine kleine schreibgeschützte Liste mit diesem Text öffnen. Auf einem Gruppenmitglied mit Ort: dich dorthin führen. |
+| Eingabe | Auf einem Eintrag mit Ort: dich dorthin führen (siehe unten). Auf einer Gruppe ohne Ort: öffnen oder schließen. Auf deinem eigenen Namen: dich selbst ins Ziel nehmen. Auf einem Kontrollkästchen in der Kategorie Verfolgung: ein- oder ausschalten. |
+| Rücktaste | Auf Einträgen mit Zusatztext (Quests): eine kleine schreibgeschützte Liste mit diesem Text öffnen. |
 | Tab | Vom Baum zur Schaltfläche Aktualisieren springen und zurück. |
 | Esc | Den Scanner schließen. |
 
@@ -33,7 +33,7 @@ Wenn du den Scanner lieber wie das WowVision-Menü durchgehst, eine Ebene nach d
 | Taste | Was sie tut |
 |-------|-------------|
 | Pfeil runter und Pfeil hoch | Zum nächsten oder vorherigen Eintrag gehen. |
-| Eingabe | Auf einem Eintrag, der weitere Einträge enthält: seine Liste öffnen, eine Ebene tiefer. Ein Eintrag ohne Inhalt sagt "Leer" und öffnet sich nicht. Auf deinem eigenen Namen oder dem Namen eines Gruppenmitglieds: diesen Charakter ins Ziel nehmen. Auf der letzten Ebene öffnet ein Eintrag mit Ort das Navigationsfenster, um dorthin eine Route zu starten (siehe [Was Eingabe tut](#was-eingabe-tut)). Auf einem Kontrollkästchen in der Kategorie Verfolgung: ein- oder ausschalten. |
+| Eingabe | Auf einem Eintrag, der weitere Einträge enthält: seine Liste öffnen, eine Ebene tiefer. Ein Eintrag ohne Inhalt sagt "Leer" und öffnet sich nicht. Auf deinem eigenen Namen: dich selbst ins Ziel nehmen. Auf der letzten Ebene öffnet ein Eintrag mit Ort das Navigationsfenster, um dorthin eine Route zu starten (siehe [Was Eingabe tut](#was-eingabe-tut)). Auf einem Kontrollkästchen in der Kategorie Verfolgung: ein- oder ausschalten. |
 | Pfeil rechts | Wie Eingabe auf einem Eintrag, der weitere Einträge enthält. |
 | Pfeil links oder Esc | Eine Ebene zurück, zu dem Eintrag, den du geöffnet hast. Esc auf der ersten Ebene schließt den Scanner. |
 | Ein Buchstabe | Zum nächsten Eintrag springen, der damit beginnt, wie im WowVision-Menü. |
@@ -59,14 +59,13 @@ Die Kategorien sind immer da, in dieser Reihenfolge, auch wenn eine gerade nicht
 
 ### Spieler
 
-- Du selbst: zuerst der Name deines Charakters, dann Stufe, Volk, Klasse und Gilde, zum Beispiel "Anna, Stufe 12, Mensch, Krieger, Gilde: Orden des Lichts". Drücke Eingabe, um dich selbst ins Ziel zu nehmen.
+- Du selbst: zuerst der Name deines Charakters, dann die Zone, in der du bist, dann Stufe, Volk, Klasse und Gilde, zum Beispiel "Anna, Wald von Elwynn, Stufe 12, Mensch, Krieger, Gilde: Orden des Lichts". Drücke Eingabe, um dich selbst ins Ziel zu nehmen.
 - Leiche: solange du tot oder ein Geist bist, der Ort, an dem dein Körper liegt, sofern das Spiel ihn auf der aktuellen Karte meldet. Drücke Eingabe, um dorthin geführt zu werden, der übliche Weg, die Leiche bei einem Leichenlauf zu finden.
-- Nicht tot: wird stattdessen angezeigt, solange du lebst.
 - Friedhöfe: die Friedhöfe der Karte, auf der du bist, jeweils mit ihrer Entfernung. Öffne die Gruppe, um sie zu sehen.
 
 ### Gruppe
 
-Die Mitglieder deiner Gruppe oder deines Schlachtzugs. Jedes ist mit Namen aufgelistet, dann Stufe, Volk, Klasse und Gilde. Drücke Eingabe, um das Mitglied ins Ziel zu nehmen. Das Spiel gibt nur für Gruppenmitglieder auf deiner Karte eine Position an; bei ihnen hörst du auch Entfernung und Richtung. Drücke Rücktaste auf so einem Mitglied, um dorthin geführt zu werden: Das Navigationsfenster richtet sich auf die Position des Mitglieds in diesem Moment aus. Mit WowNav in WoW: Forever wird WowNav mitgeteilt, welches Mitglied du gewählt hast, sodass eine neue Route oder Strg+Umschalt+N die Position des Mitglieds neu liest, statt die alte zu benutzen; siehe [WowNav (WoW: Forever)](wownav.md). Ist das Mitglied nicht mehr auf deiner Karte, hörst du "Keine Position des Gruppenmitglieds verfügbar". Solange du in keiner Gruppe bist, sagt Gruppe "Leer".
+Die Mitglieder deiner Gruppe oder deines Schlachtzugs. Jedes ist mit Namen aufgelistet, dann die Zone, in der das Mitglied ist, dann Stufe, Volk, Klasse und Gilde. Das Spiel gibt nur für Gruppenmitglieder auf deiner Karte eine Position an; bei ihnen hörst du auch Entfernung und Richtung. Drücke Eingabe auf so einem Mitglied, um dorthin geführt zu werden: Das Navigationsfenster richtet sich auf die Position des Mitglieds in diesem Moment aus. Auf einem Mitglied ohne Position sagt Eingabe "Position nicht verfügbar". Mit WowNav in WoW: Forever wird WowNav mitgeteilt, welches Mitglied du gewählt hast, sodass eine neue Route oder Strg+Umschalt+N die Position des Mitglieds neu liest, statt die alte zu benutzen; siehe [WowNav (WoW: Forever)](wownav.md). Ist das Mitglied nicht mehr auf deiner Karte, hörst du "Keine Position des Gruppenmitglieds verfügbar". Solange du in keiner Gruppe bist, sagt Gruppe "Leer".
 
 ### Quests
 
@@ -76,7 +75,7 @@ In der Nähe listet Quests, die du in deiner Umgebung annehmen könntest, der n�
 
 Startet die Datenquelle noch, hörst du "Lädt". Ohne jede Datenquelle enthält die ganze Kategorie Quests nur die eine Zeile "Keine Questdatenquelle".
 
-Laufend listet dein Questlog, nach Zonen geordnet wie im Questlog: zuerst die Zonen (etwa Wald von Elwynn oder Westfall, oder eine Klasse oder ein Beruf) mit der Zahl ihrer Quests, und unter jeder Zone ihre Quests, die nächste zuerst. Am nächsten heißt: der Ort, zu dem dich die Quest führt, ist am nächsten. So steht die Quest oben, an der du mit dem kürzesten Weg weiterkommst. Quests ohne Ort kommen danach. Jede Quest zeigt den Questtitel und seinen Zustand: "Abgeschlossen", "Fehlgeschlagen" oder "2 von 3" dafür, wie viele Ziele erledigt sind. Drücke Rücktaste, um den Zieltext zu lesen, oder Umschalt+Pfeil runter und Umschalt+Pfeil hoch, um ihren Tooltip Zeile für Zeile zu lesen: den Titel, die Stufe mit der Questfarbe, die Art der Quest, wie viele Ziele erledigt sind, jedes Ziel mit seinem Fortschritt, bei einer abgeschlossenen Quest, wo du sie abgibst, und den Questtext. Der Fortschritt wird jedes Mal frisch gelesen. Öffne eine Quest, um ihre Ziele zu sehen:
+Laufend listet dein Questlog, nach Zonen geordnet wie im Questlog: zuerst die Zonen (etwa Wald von Elwynn oder Westfall, oder eine Klasse oder ein Beruf) mit der Zahl ihrer Quests, und unter jeder Zone ihre Quests, die nächste zuerst. Am nächsten heißt: der Ort, zu dem dich die Quest führt, ist am nächsten. So steht die Quest oben, an der du mit dem kürzesten Weg weiterkommst. Quests ohne Ort kommen danach. Die Einstellung Quests nach Entfernung sortieren schaltet das aus und behält in jeder Zone die Reihenfolge des Questlogs bei; siehe [Quests](quests.md). Jede Quest zeigt den Questtitel mit seiner Stufe ("Eine Bedrohung von innen, Stufe 5"; es ist die Stufe aus dem Questlog, bei einer skalierenden Quest kann sie leicht abweichen) und seinen Zustand: "Abgeschlossen", "Fehlgeschlagen" oder "2 von 3" dafür, wie viele Ziele erledigt sind. Drücke Rücktaste, um den Zieltext zu lesen, oder Umschalt+Pfeil runter und Umschalt+Pfeil hoch, um ihren Tooltip Zeile für Zeile zu lesen: den Titel, die Stufe mit der Questfarbe, die Art der Quest, wie viele Ziele erledigt sind, jedes Ziel mit seinem Fortschritt, bei einer abgeschlossenen Quest, wo du sie abgibst, und den Questtext. Der Fortschritt wird jedes Mal frisch gelesen. Öffne eine Quest, um ihre Ziele zu sehen:
 
 1. Eine laufende Quest klappt zu ihren Zielen auf (nur wenn die Datenquelle die Quest kennt; eine Quest, die sie nicht kennt, zeigt nur ihren Zustand), zum Beispiel "Kobold Vermin slain: 3/10". Ein erledigtes Ziel ist mit "Abgeschlossen" markiert.
 2. Ein Ziel klappt zu dem auf, worum es geht: den Kreaturen, Objekten oder Gegenstandsquellen, die dafür zählen. Eine Gegenstandsquelle heißt etwa "Linen Cloth von Defias Thug". Jede davon zeigt einen Hinweis: ihren Titel, "gesehen", wenn der Minikarten-Scanner sie gefunden hat, "drinnen", die Zahl der Fundorte und, wenn es nur einen Fundort gibt, wo er ist.

@@ -8,18 +8,16 @@ local L = setmetatable({}, {
     end,
 })
 
--- A game stand-in: console variables, bindings, bar toggles and, unless
+-- A game stand-in: console variables, bar toggles and, unless
 -- options.noAudioAssist, Audio Assist.
 local function fakeGame(options)
     options = options or {}
     local game = {
         combat = options.combat or false,
         cvars = options.cvars or {},
-        bindings = options.bindings or {},
         toggles = options.toggles,
         formats = options.formats or { Player = 1, Target = 3 },
         spec = options.spec or { Resource1Percent = 0, SayIfTargeted = 1 },
-        saves = 0,
     }
     local api = {
         inCombat = function()
@@ -33,22 +31,6 @@ local function fakeGame(options)
                 error("refused")
             end
             game.cvars[name] = value
-        end,
-        bindingAction = function(key)
-            return game.bindings[key] or ""
-        end,
-        setBinding = function(key, action)
-            game.bindings[key] = action
-            return true
-        end,
-        saveBindings = function()
-            game.saves = game.saves + 1
-        end,
-        actionLabel = function(action)
-            return action
-        end,
-        keyLabel = function(key)
-            return key
         end,
         actionBarToggles = function()
             return game.toggles
@@ -90,13 +72,12 @@ testRunner:addSuite("GameDefaults", {
         local report = gameDefaults.apply(api, L)
         t:assertTrue(report.refused)
         t:assertEqual(game.cvars.autoLootDefault, "0")
-        t:assertEqual(game.saves, 0)
+        t:assertNil(game.toggles)
     end,
 
     ["a fresh game gets every setting"] = function(t)
         local game, api = fakeGame({
             cvars = allCVars("0"),
-            bindings = { F = "ASSISTTARGET", B = "TOGGLEBACKPACK", ["SHIFT-B"] = "OPENALLBAGS" },
             toggles = { true, false, false, true },
         })
         local report = gameDefaults.apply(api, L)
@@ -105,15 +86,6 @@ testRunner:addSuite("GameDefaults", {
         t:assertEqual(game.cvars.CAASayTargetName, "0")
         t:assertEqual(game.cvars.CAAPlayerHealthPercent, "2")
         t:assertEqual(game.cvars.CAATargetHealthPercent, "2")
-        t:assertEqual(game.bindings.F, "FOLLOWTARGET")
-        t:assertEqual(game.bindings.NUMPAD0, "FOLLOWTARGET")
-        t:assertEqual(game.bindings.R, "ASSISTTARGET")
-        t:assertEqual(game.bindings.NUMPADDECIMAL, "ASSISTTARGET")
-        t:assertEqual(game.bindings.B, "OPENALLBAGS")
-        t:assertEqual(game.bindings["SHIFT-B"], "TOGGLEBACKPACK")
-        t:assertEqual(game.bindings.G, "INTERACTTARGET")
-        t:assertEqual(game.bindings.H, "TARGETLASTTARGET")
-        t:assertEqual(game.saves, 1)
         t:assertEqual(#game.toggles, 4)
         for _, shown in ipairs(game.toggles) do
             t:assertTrue(shown)
@@ -125,23 +97,7 @@ testRunner:addSuite("GameDefaults", {
         t:assertEqual(#report.failed, 0)
     end,
 
-    ["a key names what it did before"] = function(t)
-        local _, api = fakeGame({ bindings = { F = "ASSISTTARGET" } })
-        local report = gameDefaults.apply(api, L)
-        local found = false
-        for _, line in ipairs(report.changed) do
-            if line == "F: FOLLOWTARGET, before ASSISTTARGET" then
-                found = true
-            end
-        end
-        t:assertTrue(found)
-    end,
-
     ["settings already right are not written again"] = function(t)
-        local bindings = {}
-        for _, binding in ipairs(gameDefaults.BINDINGS) do
-            bindings[binding.key] = binding.action
-        end
         local cvars = allCVars("0")
         cvars.autoLootDefault = "1"
         for _, cvar in ipairs(gameDefaults.AUDIO_ASSIST_CVARS) do
@@ -149,14 +105,13 @@ testRunner:addSuite("GameDefaults", {
         end
         local game, api = fakeGame({
             cvars = cvars,
-            bindings = bindings,
             toggles = { true, true, true, true, true, true, true },
             formats = { Player = 4, Target = 4 },
             spec = { Resource1Percent = 2, SayIfTargeted = 2 },
         })
         local report = gameDefaults.apply(api, L)
         t:assertEqual(#report.changed, 0)
-        t:assertEqual(game.saves, 0)
+        t:assertEqual(#game.toggles, 7)
         local lines = gameDefaults.reportLines(report, L)
         t:assertEqual(lines[1], "Game settings: nothing to change")
     end,

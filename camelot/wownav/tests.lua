@@ -978,6 +978,59 @@ if haveNetwork then
         t:assertNil(route:handleBlockage(px, py), "the same waypoint is locked for 20 s")
     end
 
+    suite["a reversed route runs from the old target to the old start and goes on at the old active waypoint"] = function(t)
+        setup()
+        local game = newGame()
+        local route = Route.new(game.env)
+        N.LoadZone(STORMWIND)
+        local nodes = {}
+        for i = 0, 20000 do
+            local id = STORMWIND * N.ZONE_BASE + i
+            if not N.Exists(id) then
+                break
+            end
+            nodes[#nodes + 1] = id
+        end
+        local there
+        for _, startIndex in ipairs({ 1, 50, 100, 200 }) do
+            local a, b = nodes[startIndex], nodes[#nodes - startIndex]
+            there = runJob(N.Job(route.prepareNode, route, b, a))
+            if there.kind == "start" and #there.plan.path >= 5 and there.plan.pendingAction == nil then
+                break
+            end
+            there = nil
+        end
+        t:assertNotNil(there, "a walkable route through Stormwind")
+        route:begin(there.plan, nil, there.result, "there")
+        local oldStart, oldEnd = route.path[1], route.path[#route.path]
+        local activeIndex = math.floor(#route.path / 2) + 1
+        local active = route.path[activeIndex]
+        local ax, ay, az = N.Position(active)
+
+        local back = runJob(N.Job(route.prepareNode, route, oldStart, oldEnd))
+        t:assertEqual(back.kind, "start", tostring(back.reason))
+        route:begin(back.plan, nil, back.result, "back")
+        t:assertEqual(route.path[1], oldEnd, "starts at the old target")
+        t:assertEqual(route.path[#route.path], oldStart, "ends at the old start")
+
+        local index = route:resumeAt({ id = active, x = ax, y = ay, z = az })
+        t:assertEqual(route.pathIndex, index)
+        local hasIt = false
+        for _, id in ipairs(route.path) do
+            hasIt = hasIt or id == active
+        end
+        if hasIt then
+            t:assertEqual(route.path[route.pathIndex], active, "the same waypoint stays active")
+        end
+        local rx, ry = N.Position(route.path[route.pathIndex])
+        t:assertTrue(Route.distance(rx, ry, ax, ay) < 150, "the active waypoint stays near the old one")
+        t:assertTrue(route.pathIndex > 1, "not back at the old target")
+
+        -- a virtual waypoint's id is not looked for: its position decides
+        route:resumeAt({ x = rx + 0.5, y = ry, z = az })
+        t:assertEqual(N.Position(route.path[route.pathIndex]), rx)
+    end
+
     suite["a route over an Undercity lift ends at the lift and continues from its far end"] = function(t)
         setup()
         local game = newGame()
@@ -1012,27 +1065,28 @@ if haveNetwork then
         t:assertEqual(outcome.kind, "start", tostring(outcome.reason))
     end
 
-    -- The Deeprun Tram (map 369): two lines, each with a dock in Stormwind (y about 2490) and in Ironforge (y about 9).
-    local TRAM_MAP = 369
-    local function tramDocks()
-        N.LoadZone(499)      -- in the game the player's zone is decoded ahead (module.lua, his PreloadNeighbours)
+    -- The boat line of Feralas (map 1): a dock at Feathermoon (y about 3280) and one on the coast (y about 2429). The
+    -- Deeprun Tram has no docks since data e781479: its stations are plain waypoints.
+    local DOCK_MAP = 1
+    local FERALAS = 1444
+    local BOAT = "the ship"
+    local function lineDocks()
+        N.LoadZone(FERALAS)  -- in the game the player's zone is decoded ahead (module.lua, his PreloadNeighbours)
         local found = {}
-        local rows = catalog.search(N, C, TRAM_MAP, "", 0, 1250, { german = false })
+        local rows = catalog.search(N, C, DOCK_MAP, "", -4280, 2850, { german = false })
         for _, r in ipairs(rows) do
-            if dock.isDockRow(r) then
-                local line = r.tid:match("animation%%3A(%d+)")
-                local side = r.y > 1000 and "stormwind" or "ironforge"
-                found[side .. line] = r
+            if dock.isDockRow(r) and r.tid:find("TaxiPath%3A303:", 1, true) then
+                found[r.y > 2850 and "feathermoon" or "coast"] = r
             end
         end
         return found
     end
 
-    -- his dock module asks the client for the player's map (UnitPosition); the test stands on the tram map
-    local function onTramMap(fn)
+    -- his dock module asks the client for the player's map (UnitPosition); the test stands on the docks' map
+    local function onDockMap(fn)
         local saved = _G.UnitPosition
         _G.UnitPosition = function()
-            return 0, 0, 0, TRAM_MAP
+            return 0, 0, 0, DOCK_MAP
         end
         local ok, err = pcall(fn)
         _G.UnitPosition = saved
@@ -1043,20 +1097,19 @@ if haveNetwork then
         end
     end
 
-    suite["at a tram dock the other dock of the line is noted, not walked to (his passive mode)"] = function(t)
+    suite["at a dock the other dock of the line is noted, not walked to (his passive mode)"] = function(t)
         setup()
-        N.activeMapId = TRAM_MAP
-        onTramMap(function()
-            local docks = tramDocks()
-            local from, to, other = docks.stormwind176080, docks.ironforge176080, docks.ironforge176082
-            t:assertNotNil(from, "the Stormwind dock of line 176080")
-            t:assertNotNil(to, "the Ironforge dock of line 176080")
-            t:assertNotNil(other, "the Ironforge dock of line 176082")
+        N.activeMapId = DOCK_MAP
+        onDockMap(function()
+            local docks = lineDocks()
+            local from, to = docks.feathermoon, docks.coast
+            t:assertNotNil(from, "the dock at Feathermoon")
+            t:assertNotNil(to, "the dock on the coast")
             local said = {}
             text.say = function(message)
                 said[#said + 1] = message
             end
-            -- standing at the Stormwind dock counts as having reached it
+            -- standing at the Feathermoon dock counts as having reached it
             local outcome, target = dock.choose(N, to, from.x, from.y)
             t:assertEqual(outcome, "passive")
             t:assertEqual(target.id, to.tid)
@@ -1069,30 +1122,17 @@ if haveNetwork then
             t:assertNotNil(px, "the turn key has a point")
             t:assertTrue(math.abs(px - to.x) < 0.01 and math.abs(py - to.y) < 0.01)
             t:assertTrue(id:find("^dock%-passive:") ~= nil)
-            -- the Ironforge dock of the other line is taken as this line's own
-            Dock:Reset(false)
-            local outcome2, target2 = dock.choose(N, other, from.x, from.y)
-            t:assertEqual(outcome2, "passive")
-            t:assertEqual(target2.id, to.tid, "the dock of the line the player stands at")
-            -- choosing the dock the player is near ("toward Ironforge", in Stormwind) walks to it, no ride is noted
+            -- choosing the dock the player is near walks to it, no ride is noted
             Dock:Reset(false)
             local outcome3, target3 = dock.choose(N, from, from.x + 20, from.y)
             t:assertEqual(outcome3, "route")
             t:assertEqual(target3.id, from.tid)
-            -- the dock of the other line in the same station is walked to as well, not swapped for a far one
-            local beside = docks.stormwind176082
-            if beside ~= nil then
-                Dock:Reset(false)
-                local outcome4, target4 = dock.choose(N, beside, from.x, from.y)
-                t:assertEqual(outcome4, "route")
-                t:assertEqual(target4.id, beside.tid)
-            end
             t:assertNil(Dock.passive, "nothing noted")
             -- the ride text names where the noted dock's line goes
             Dock:Reset(false)
             local _, noted, _, at = dock.choose(N, to, from.x, from.y)
             local ride = dock.passiveText(at, noted)
-            t:assertNotNil(ride:find("the Deeprun Tram", 1, true), ride)
+            t:assertNotNil(ride:find(BOAT, 1, true), ride)
             -- anywhere on the platform (within 30 yd) counts as standing at the dock; far away it does not
             Dock:Reset(false)
             t:assertEqual(dock.choose(N, to, from.x + 20, from.y), "passive")
@@ -1103,12 +1143,12 @@ if haveNetwork then
             t:assertNotNil(byPosition, "the dock by its position")
             t:assertEqual(byPosition.tid, to.tid)
             t:assertNil(dock.rowAt(N, to.x + 50, to.y))
-            -- the route data's own tram point at the Ironforge end (walk test 2026-10-22), chosen in Stormwind: a ride
+            -- a target beside the far dock, chosen at this one: a ride
             Dock:Reset(false)
-            local ride = dock.rideFor(N, 10.7, 2488.2, 15.1, 8.2)
+            local ride = dock.rideFor(N, from.x, from.y, to.x + 15, to.y)
             t:assertNotNil(ride, "a target at the far end is a ride")
-            t:assertEqual(dock.choose(N, ride, 10.7, 2488.2), "passive")
-            t:assertNil(dock.rideFor(N, from.x, from.y - 300, 15.1, 8.2), "not from outside a station")
+            t:assertEqual(dock.choose(N, ride, from.x, from.y), "passive")
+            t:assertNil(dock.rideFor(N, from.x, from.y - 300, to.x + 15, to.y), "not from outside a station")
             t:assertNil(dock.rideFor(N, from.x, from.y, from.x + 20, from.y),
                 "not for a target in the player's station")
         end)
@@ -1116,48 +1156,46 @@ if haveNetwork then
 
     suite["a dock is walked to; at its waiting node the dock is reached, then the other dock is noted"] = function(t)
         setup()
-        N.activeMapId = TRAM_MAP
-        onTramMap(function()
-            local docks = tramDocks()
-            local to, far = docks.stormwind176080, docks.ironforge176080
+        N.activeMapId = DOCK_MAP
+        onDockMap(function()
+            local docks = lineDocks()
+            local to, far = docks.feathermoon, docks.coast
+            t:assertNotNil(to, "the dock at Feathermoon")
             local game = newGame()
-            game.map = TRAM_MAP
+            game.map = DOCK_MAP
             local route = Route.new(game.env)
-            -- from a platform waypoint of the Stormwind station, away from the dock
+            -- from a waypoint near the pier, away from the dock
             local x, y
-            for i = 0, 2000 do
-                local nx, ny, nz = N.Position(499 * N.ZONE_BASE + i)
-                if nx and ny > 2400 and nz > -6 then
-                    route.anchor.last = nz
-                    if route:startBinding(nx, ny) and (nx - to.x) ^ 2 + (ny - to.y) ^ 2 > 400 then
-                        x, y = nx, ny
-                        break
+            for i = 0, 60000 do
+                local nx, ny, nz = N.Position(FERALAS * N.ZONE_BASE + i)
+                if nx then
+                    local d2 = (nx - to.x) ^ 2 + (ny - to.y) ^ 2
+                    if d2 > 400 and d2 < 8100 then
+                        route.anchor.last = nz
+                        if route:startBinding(nx, ny) then
+                            x, y = nx, ny
+                            break
+                        end
                     end
                 end
             end
-            t:assertNotNil(x, "a platform waypoint away from the dock")
+            t:assertNotNil(x, "a waypoint away from the dock")
             game.x, game.y = x, y
             -- (inside the station a dock choice rides; the route to the dock is what the scanner or a far start gets)
             local target = dock.target(N, to)
             t:assertNotNil(target, "the dock's full target")
-            local contract = catalog.contract(to, TRAM_MAP)
-            local result = runJob(N.Job(route.prepare, route, contract, { nativeMapId = TRAM_MAP }))
+            local contract = catalog.contract(to, DOCK_MAP)
+            local result = runJob(N.Job(route.prepare, route, contract, { nativeMapId = DOCK_MAP }))
             t:assertEqual(result.kind, "start", tostring(result.reason))
             t:assertEqual(result.plan.path[#result.plan.path], target.nodeId,
                 "the route ends at the dock's waiting node")
-            -- data 9423773 had that node down in the track bed (the route was cut before the drop); since 5b8b5f2 it
-            -- stands on the platform: either way the route ends up there (platform -4 to -5, track bed -11 to -14)
-            local cut = dock.trimDrop(N, result.plan.path)
-            local walked = cut or result.plan.path
-            local _, _, endZ = N.Position(walked[#walked])
-            t:assertTrue(endZ > -6, "the route ends on the platform, height " .. tostring(endZ))
             route:begin(result.plan, contract, result.result, to.n)
             t:assertNil(route.logicalTarget, "no logical end point behind a dock's waiting node")
             local nx, ny = N.Position(target.nodeId)
             local inside = (nx - target.x) ^ 2 + (ny - target.y) ^ 2 <= target.waitingRadius ^ 2
             route.waitCheck = dock.waitAreaCheck(N, target)
-            -- data 9423773: the waiting point at track level, the node on the platform 7 yd away, so no circle rule
-            -- that could never be met; where the node lies in the circle, his circle rule ends the route
+            -- a waiting node outside the circle gets no circle rule that could never be met; where the node lies in the
+            -- circle, his circle rule ends the route
             if inside then
                 t:assertNotNil(route.waitCheck, "his circle rule where the waiting node lies in it")
             else
@@ -1189,12 +1227,8 @@ if haveNetwork then
             if stand then
                 dock.boardingPath = nil
             end
-            if inside then
-                t:assertNotNil(boarding, "the boarding beacon at the waiting point")
-            else
-                t:assertNil(boarding, "no boarding beacon 7 yd from the waiting point")
-            end
-            t:assertNotNil(said[1] and said[1]:find("the Deeprun Tram", 1, true), tostring(said[1]))
+            t:assertNotNil(boarding, "the boarding beacon where his rule gives a point")
+            t:assertNotNil(said[1] and said[1]:find(BOAT, 1, true), tostring(said[1]))
             local Dock = _G.WowVisionNavigationDockNavigation
             t:assertNotNil(Dock.reached, "the dock stays reached")
             -- at the waiting point itself the turn key faces the boarding point a few yards ahead
@@ -1203,7 +1237,7 @@ if haveNetwork then
             t:assertTrue(id:find("^dock%-boarding:") ~= nil)
             local ahead = math.sqrt((px - target.x) ^ 2 + (py - target.y) ^ 2)
             t:assertTrue(math.abs(ahead - target.boardingPreviewDistance) < 0.01)
-            -- from the waiting node the Ironforge dock is noted, not walked to
+            -- from the waiting node the dock on the coast is noted, not walked to
             local next = dock.choose(N, far, nx, ny)
             t:assertEqual(next, "passive")
             -- and standing at the waiting node without the route counts as well
@@ -1317,31 +1351,43 @@ if haveNetwork then
 
     suite["the boarding points of the docks are list entries"] = function(t)
         setup()
-        N.activeMapId = TRAM_MAP
-        onTramMap(function()
-            local docks = tramDocks()
-            local from = docks.stormwind176080
-            local rows = dock.boardingRows(N, from.x, from.y)
-            t:assertEqual(#rows, 4, "one per tram dock")
-            for _, r in ipairs(rows) do
-                t:assertEqual(r.n, "At the vehicle")
-                t:assertNotNil(r.boardingTargetId)
+        N.activeMapId = DOCK_MAP
+        onDockMap(function()
+            local docks = lineDocks()
+            local from = docks.feathermoon
+            t:assertNotNil(from, "the dock at Feathermoon")
+            -- the coast dock lies where Feralas and the Barrens overlap: its boarding point needs both decoded, which
+            -- earlier tests may or may not have done (the game decodes the zones around the player)
+            for _, d in pairs(docks) do
+                for _, zoneId in ipairs(N.ZonesForPoint(d.x, d.y)) do
+                    N.LoadZone(zoneId)
+                end
             end
-            local hits = catalog.search(N, C, TRAM_MAP, "at the vehicle", from.x, from.y,
+            local rows = dock.boardingRows(N, from.x, from.y)
+            local ofLine = 0
+            for _, r in ipairs(rows) do
+                t:assertNotNil(r.boardingTargetId)
+                if r.boardingTargetId == from.tid or r.boardingTargetId == docks.coast.tid then
+                    ofLine = ofLine + 1
+                    t:assertEqual(r.n, "On the ship")
+                end
+            end
+            t:assertEqual(ofLine, 2, "one per dock of the line")
+            local hits = catalog.search(N, C, DOCK_MAP, "on the ship", from.x, from.y,
                 { german = false, extra = rows })
-            t:assertEqual(#hits, 4)
+            t:assertTrue(#hits >= 2)
             t:assertTrue(hits[1].distance <= hits[2].distance)
             -- picked as a route's destination, a boarding point is routed to like any place (from a waypoint nearby)
             local game = newGame()
-            game.map = TRAM_MAP
+            game.map = DOCK_MAP
             local route = Route.new(game.env)
             local point = hits[1]
             local start = catalog.autoPoints(N, from.x, from.y, nil, 1)[1]
             t:assertNotNil(start, "a waypoint at the dock")
-            local contract = { id = "wowvision:boarding", kind = "live", nameEn = point.n, nativeMapId = TRAM_MAP,
+            local contract = { id = "wowvision:boarding", kind = "live", nameEn = point.n, nativeMapId = DOCK_MAP,
                 coordinateSpace = "world", x = point.x, y = point.y, z = point.z,
                 zStatus = point.z == nil and "unknown" or "known" }
-            local outcome = runJob(N.Job(route.prepare, route, contract, { nativeMapId = TRAM_MAP }, start.nodeId))
+            local outcome = runJob(N.Job(route.prepare, route, contract, { nativeMapId = DOCK_MAP }, start.nodeId))
             t:assertTrue(outcome.kind == "start" or outcome.kind == "choose", tostring(outcome.reason))
         end)
     end

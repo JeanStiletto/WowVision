@@ -145,7 +145,7 @@ local function navigateNearest(node)
         return m:distanceTo(x, y)
     end, resolveChildren)
     if nearest == nil then
-        WowVision:speak(L["Nothing to navigate to"])
+        WowVision:notify(L["Nothing to navigate to"])
         return
     end
     local text = labelText(nearest) or ""
@@ -153,7 +153,7 @@ local function navigateNearest(node)
     if where ~= nil then
         text = text .. ", " .. where
     end
-    WowVision:speak(text)
+    WowVision:notify(text)
     beaconTo(nearest)
 end
 
@@ -193,6 +193,10 @@ local function vtableFor(node, screen, id)
         return vtable
     end
     local announcements = { { text = node.label, kind = kinds.label } }
+    if node.nameDetail ~= nil then
+        -- A label part: it reads right after the name, before the role word.
+        tinsert(announcements, { text = node.nameDetail, kind = kinds.label })
+    end
     if node.detail ~= nil then
         tinsert(announcements, { text = node.detail, kind = kinds.value })
     end
@@ -226,14 +230,8 @@ local function vtableFor(node, screen, id)
     end
     if node.unit ~= nil then
         -- Enter targets the unit; targeting is protected, so it is the
-        -- game's own secure target action bound to Enter. A unit with a
-        -- position routes on Backspace instead.
+        -- game's own secure target action bound to Enter.
         vtable.bindings = { { binding = "leftClick", type = "Target", unit = node.unit } }
-        if node.x ~= nil then
-            vtable.onSecondary = function()
-                beaconTo(node)
-            end
-        end
     elseif node.onActivate ~= nil then
         vtable.onActivate = node.onActivate
     elseif node.x ~= nil then

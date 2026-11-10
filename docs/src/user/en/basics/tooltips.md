@@ -43,19 +43,41 @@ When the tooltip belongs to an item, WowVision adds two lines the game does not 
 
 Money in a tooltip is read with its coins. The game shows gold, silver and copper as small coin pictures, which speech would leave out. WowVision reads the sell price and other amounts as "Sell Price: 1 Gold, 23 Silver, 45 Copper". An item worth only a few coins reads, for example, "Sell Price: 7 Copper".
 
+## Pawn's upgrades
+
+If the Pawn addon is installed and says an item is an upgrade, WowVision adds one line per Pawn scale it upgrades at the end of the tooltip: "Pawn: Hunter: Marksmanship, upgrade of 12 percent, over Rusty Helm". "Big upgrade" replaces the percentage when Pawn gives none (an empty slot, a huge gain). Nothing is said when Pawn sees no upgrade. These lines replace the upgrade lines Pawn writes into the tooltip itself, so you do not hear each upgrade twice; Pawn's other lines stay. Space reads them with the rest of the tooltip.
+
+To switch them off, open the [WowVision menu](./menu-and-settings.md) with Shift+F1, then UI, Tooltip, Compare, and uncheck Pawn Summary. It is on by default.
+
 ## Comparing with what you wear
 
-When the tooltip shows an item you could wear, and you already wear something in that slot, the tooltip goes on after the item with what you have on. This is the comparison a sighted player gets by holding Shift over an item (or always, with the game's "Always compare items" option), and the game decides what it compares:
+When the tooltip shows an item you could wear, the tooltip goes on after the item with a comparison with what you have on. The setting Compare With Equipped Item, under UI, Tooltip, Compare in the [WowVision menu](./menu-and-settings.md), picks which one: Game (the default), WowVision or None. The Enabled checkbox at the top of that screen switches the comparison and Pawn's lines off together.
+
+Space reads only the item itself. Press Shift+Down past the item's last line to walk into the comparison, or Ctrl+Shift+Down to jump straight to the next block; Ctrl+Shift+Up jumps back a block, up to the item's first line.
+
+### Game
+
+This is the comparison a sighted player gets by holding Shift over an item (or always, with the game's "Always compare items" option), and the game decides what it compares:
 
 - One block for each item you wear there: two for rings, trinkets and one-handed weapons, both hands when you hold a two-handed weapon.
 - Each block starts with the game's own header ("Currently Equipped" or "Equipped"), then the lines of the item you wear.
 - On WoW: Forever and Retail the first block ends with the stat changes: "If you replace this item, the following stat changes will occur:", then one line per stat, for example "+12 Stamina". On the classic versions you hear whatever the game puts into its comparison box.
 
-Space reads only the item itself. Press Shift+Down past the item's last line to walk into the comparison, or Ctrl+Shift+Down to jump straight to the next block: each item you wear starts one, and so does the game's heading over the stat changes; Ctrl+Shift+Up jumps back a block, up to the item's first line.
+Each item you wear starts a block, and so does the game's heading over the stat changes.
 
 Example: you are on a pair of boots in your bags. Space reads the boots. Shift+Down line by line goes through the boots, then "Equipped", the boots you wear, and the stat changes.
 
-To switch it off, open the [WowVision menu](./menu-and-settings.md) with Shift+F1, then UI, Tooltip, Compare with Equipped, and uncheck Enabled. It is on by default.
+### WowVision
+
+WowVision's own comparison says only what differs, in one block: "Compared to equipped: Rusty Helm", then the item level difference, then every stat that differs: armor and damage first, then the main stats, then the others by name. For example "Item level: 5 more", "Armor: 10 more", "Intellect: 4 less".
+
+- Rings and trinkets are compared with both slots ("Slot 1 of 2: ...").
+- A one-hand weapon is compared with the off hand only when that holds a weapon.
+- A two-hander adds "Also takes off the off hand: ...".
+- An empty slot says "Nothing equipped in this slot".
+- The item you already wear is not compared with itself.
+
+Amounts are spelled out ("5 more", "3 less") rather than "+5" and "-3", which speech engines read inconsistently. The stats come from the item itself, its suffix and bonuses included, and do not count gems or enchantments.
 
 ## Item quality in names
 
