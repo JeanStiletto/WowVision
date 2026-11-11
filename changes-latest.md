@@ -1,3 +1,8 @@
+### Summary
+The minimap scanner works again on WoW: Forever after the game update of 7 November. Also new: a Scanner you can use as a menu, quest sounds while you walk, letter filters in lists, tooltips that compare gear and show auction prices, rebuilt WowNav data for the capital cities, and many fixes.
+
+The full manual is online, in English and German: [WowVision documentation](https://wow-vision.github.io/WowVision/).
+
 ### All Versions
 * Scanner: switch off the new Scanner as Tree setting (Scanner menu, on by default) to use the scanner as a menu like the WowVision menu: Enter or Right goes one level deeper, Left or Escape goes back, letters jump to entries.
 * Scanner: Shift+Down on a quest in Nearby or In Progress reads a full tooltip: the level with the quest colour, the kind of quest, the giver or your progress per objective, and the quest text.
@@ -17,6 +22,7 @@
 * New key Close All Windows (Shift+Escape): closes every WowVision window and every game window. A popup waiting for an answer stays open, and so do protected windows in combat. Starting a route or beacon does the same; the new setting for it in the Navigation menu is on by default.
 * Scanner: quest progress in Quests, In Progress stays current while the Scanner is open. Backspace on a category, or Navigate to Nearest in its context menu, goes to the nearest entry in it.
 * Navigation window (F10): Shift+F10 on a destination offers Auto Direct and Auto Route, which lead you to every unvisited destination of that name in turn. They need Visited Waypoints switched on.
+* Visited waypoints: the key Route to the Nearest Unvisited of the Same Name now takes the one with the shortest walk among the nearest, as Auto Route does. Both next-spot keys remember the spots they already led you to, so they no longer send you back to one you left before reaching it. Pressed while Auto Direct or Auto Route is running, they move that chain on to its next spot.
 * Navigation: Reverse Route (Ctrl+Shift+R) now walks back from where you are, along the route from its destination to its start.
 * Buffers: new settings Always Start at Top (off by default) and Sounds When Opening and Closing (on by default).
 * Quest log: new setting Always Start at Top (off by default), which opens the quest log on its first entry instead of the selected quest.
@@ -42,6 +48,7 @@
 * Auction house: the scan result and the full scan cooldown times are now fully translated.
 
 ### Modern
+* Minimap scanner (WoW: Forever): works again. Since the game update of 7 November (build 1.60.1.70862) the scan said "Nothing new nearby" and walking announced nothing, because the game function it asked (Minimap:UpdateMouseoverAtPoint) does nothing any more. The scanner now moves the minimap under the resting cursor and reads what the game names there, the way Sku does. A scan takes up to about six seconds when much is new. Walking announcements tell several dots of one name apart (mailboxes, herbs) and stay quiet when you only step into or out of a building or a covered street. Quest titles from your quest log are no longer listed as quest givers. While the scanner reads the minimap, it takes no clicks and shows no tooltip, and nothing starts while you place a spell on the ground.
 * Auction house: a Full Scan records the prices of the whole auction house. It is off by default; turn on Full Scan under Windows, Auction House, and the button is the last stop on the Buy tab. The game allows one scan every 15 minutes.
 * Item tooltips: with Full Scan on, tooltips end with the minimum, average and maximum auction price over up to 30 days, the vendor price per item, and what a vendor charges. The Tooltip Prices checkbox turns the lines off.
 * Trainer: Train works as soon as the window opens, and pressing it again and again learns everything in turn.
