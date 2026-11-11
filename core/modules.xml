@@ -64,5 +64,6 @@
   <Include file="quests/modules.xml" />
   <Include file="minimap/modules.xml" />
   <Include file="targeting/modules.xml" />
+  <Script file="selfTest.lua" />
 
 </Ui>
