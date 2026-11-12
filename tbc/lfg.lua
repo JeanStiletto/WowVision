@@ -508,9 +508,10 @@ module:registerWindow({
     graphScreen = { render = render },
 })
 
--- The play style and voice chat menus open from addon code (proxyDropdown:
--- these dropdowns open only on a real mouse press), so the game counts
--- their picks as WowVision's. After a post the game's own handler reads
+-- Menus opened from addon code (proxyDropdown: these dropdowns open only
+-- on a real mouse press) make their picks WowVision's. On WoW: Forever the
+-- play style and voice chat open by the player's real mouse click instead
+-- (camelot/lfg.lua); opened any other way, their picks are WowVision's. After a post the game's own handler reads
 -- them and its follow-up search (C_LFGList.Search, restricted) is blocked;
 -- the browse frame then believes a search is still running and keeps its
 -- Search button disabled until a reload. The block itself is only "Blocked:

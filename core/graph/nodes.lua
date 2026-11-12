@@ -572,9 +572,136 @@ function nodes.proxyDropdown(config)
             },
         },
         onActivate = function()
-            nodes.openDropdown(target)
+            if config.mouseClick then
+                nodes.openDropdownByMouse(target)
+            else
+                nodes.openDropdown(target)
+            end
         end,
     }, target)
+end
+
+-- Opening a dropdown with a real mouse click. Modern dropdown buttons open
+-- only on a real mouse press (OnMouseDown; a secure click does not open
+-- them), and a menu opened from addon code makes every pick WowVision's:
+-- the game builds the menu in our stack. Where a pick feeds a restricted
+-- call (the group finder's play style: the post's follow-up search is
+-- blocked), proxyDropdown's mouseClick moves the dropdown under the mouse
+-- pointer and keeps it there, and the player's own mouse click (the
+-- screen reader's click key: NVDA numpad slash, laptop NVDA+[) presses
+-- it. That press is the game's own: the menu opens from Blizzard's code,
+-- and a row picked with Enter (a secure click) stays clean. Only the
+-- frame's position and strata change (geometry, no Lua field the menu
+-- reads). The dropdown goes back to its place when the menu closes, when
+-- it hides, or after MOUSE_CLICK_SECONDS without a click.
+--
+-- Escape on such a menu would close it from addon code: the dropdown's
+-- own menu field would then be WowVision's until a reload and taint every
+-- later open. So the first Escape only says how to close it cleanly, and
+-- a second one within MOUSE_CLICK_ESCAPE_SECONDS closes it anyway.
+local MOUSE_CLICK_SECONDS = 20
+local MOUSE_CLICK_ESCAPE_SECONDS = 3
+local mouseClick = nil
+local mouseClickFrame = nil
+
+local function restoreMouseClick()
+    local state = mouseClick
+    if state == nil then
+        return
+    end
+    mouseClick = nil
+    mouseClickFrame:SetScript("OnUpdate", nil)
+    local target = state.target
+    target:ClearAllPoints()
+    for _, point in ipairs(state.points) do
+        target:SetPoint(point[1], point[2], point[3], point[4], point[5])
+    end
+    target:SetFrameStrata(state.strata)
+    target:SetFrameLevel(state.level)
+end
+
+local function followCursor(target)
+    local x, y = GetCursorPosition()
+    local scale = target:GetEffectiveScale()
+    target:ClearAllPoints()
+    target:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+end
+
+local function pointerInWindow()
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    x, y = x / scale, y / scale
+    return x >= 0 and y >= 0 and x <= UIParent:GetWidth() and y <= UIParent:GetHeight()
+end
+
+local function mouseClickUpdate()
+    local state = mouseClick
+    if state == nil then
+        return
+    end
+    local target = state.target
+    if not target:IsVisible() then
+        restoreMouseClick()
+        return
+    end
+    if target.IsMenuOpen ~= nil and target:IsMenuOpen() then
+        state.opened = true
+        return
+    end
+    if state.opened or GetTime() > state.deadline then
+        restoreMouseClick()
+        return
+    end
+    followCursor(target)
+end
+
+function nodes.openDropdownByMouse(target)
+    if target.IsEnabled ~= nil and not target:IsEnabled() then
+        return
+    end
+    if mouseClick ~= nil and mouseClick.target ~= target then
+        restoreMouseClick()
+    end
+    if mouseClick == nil then
+        local points = {}
+        for i = 1, target:GetNumPoints() do
+            points[i] = { target:GetPoint(i) }
+        end
+        mouseClick = {
+            target = target,
+            points = points,
+            strata = target:GetFrameStrata(),
+            level = target:GetFrameLevel(),
+        }
+        target:SetFrameStrata("FULLSCREEN_DIALOG")
+    end
+    mouseClick.deadline = GetTime() + MOUSE_CLICK_SECONDS
+    mouseClick.opened = false
+    mouseClickFrame = mouseClickFrame or CreateFrame("Frame")
+    mouseClickFrame:SetScript("OnUpdate", mouseClickUpdate)
+    followCursor(target)
+    if pointerInWindow() then
+        WowVision:speak(L["Click the mouse to open"])
+    else
+        WowVision:speak(L["Mouse pointer outside the game window"])
+    end
+end
+
+-- The open game menu came from a mouse click armed above: Escape asks
+-- first (see above). Returns true when the caller should not close it.
+function nodes.mouseClickHoldsEscape()
+    local state = mouseClick
+    if state == nil or not state.opened then
+        return false
+    end
+    local now = GetTime()
+    if state.escapeAt ~= nil and now - state.escapeAt <= MOUSE_CLICK_ESCAPE_SECONDS then
+        state.escapeAt = nil
+        return false
+    end
+    state.escapeAt = now
+    WowVision:speak(L["Pick or click the mouse to close, Escape again forces it"])
+    return true
 end
 
 -- Opens a Blizzard dropdown button's menu: OpenMenu where the frame has it

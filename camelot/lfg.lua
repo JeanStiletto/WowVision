@@ -66,6 +66,9 @@ end
 -- The listing controls only this build has: the play style a listing must
 -- name before it can post, the level range filter of the activity list,
 -- and the voice chat the group uses.
+-- The play style and voice chat open by the player's real mouse click
+-- (nodes.openDropdownByMouse): the post reads both, and a pick made in a
+-- menu opened from addon code gets the post's follow-up search blocked.
 function module.renderListingOptions(builder)
     local view = LFGListingFrameActivityView
     if view == nil or not view:IsShown() then
@@ -80,6 +83,7 @@ function module.renderListingOptions(builder)
             ControlId.forObject(playStyle),
             nodes.proxyDropdown({
                 target = playStyle,
+                mouseClick = true,
                 label = function()
                     return nodes.joinLabel(L["Play Style"], plainText(current()))
                 end,
@@ -105,6 +109,7 @@ function module.renderListingOptions(builder)
             ControlId.forObject(voiceChat),
             nodes.proxyDropdown({
                 target = voiceChat,
+                mouseClick = true,
                 label = function()
                     return nodes.joinLabel(name(), plainText(current()))
                 end,
