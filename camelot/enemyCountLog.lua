@@ -106,6 +106,10 @@ local api = {
     inCombat = UnitAffectingCombat,
     classification = UnitClassification,
     threat = UnitThreatSituation,
+    inGroup = function()
+        return IsInGroup()
+    end,
+    tapDenied = UnitIsTapDenied,
     isSecret = secrets.isSecret,
 }
 
@@ -129,8 +133,10 @@ local function plateState(unit)
     local hostile = reaction ~= nil and not secrets.isSecret(reaction) and reaction <= 4
     local inCombat = plain(UnitAffectingCombat(unit))
     local isTarget = plain(UnitIsUnit(unit, "target"))
+    local tapped = plain(UnitIsTapDenied(unit))
     return (hostile and "hostile" or "not hostile")
         .. (inCombat == nil and ", combat secret" or inCombat and ", in combat" or ", idle")
+        .. (tapped == nil and ", tap secret" or tapped and ", tapped by others" or "")
         .. (isTarget and ", your target" or "")
 end
 
