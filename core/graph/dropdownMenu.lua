@@ -894,6 +894,12 @@ function dropdown.update()
             -- an open dropdown menu takes letters (letter navigation, Host.lua)
             letterNavigation = true,
             onRequestClose = function()
+                -- A menu opened by a real mouse click closes cleanly only
+                -- by a pick or another click (nodes.openDropdownByMouse).
+                if graph.nodes ~= nil and graph.nodes.mouseClickHoldsEscape ~= nil
+                    and graph.nodes.mouseClickHoldsEscape() then
+                    return
+                end
                 closeMenuFrame(dropdown.frame)
             end,
             render = renderLevel(1),
