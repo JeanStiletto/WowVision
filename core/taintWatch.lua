@@ -61,14 +61,24 @@ local watched = {}
 
 WowVision.taintWatch = {}
 
+local watchedGlobals = {}
+
 -- Every watched field addon code wrote: { [ "Table.key" ] = addon }.
+-- Number keys count too (tables keyed by ID, such as the group finder's
+-- selected activities); globals are listed as _G.name.
 local function scanTainted()
     local found = {}
+    for _, name in ipairs(watchedGlobals) do
+        local okCheck, secure, taintedBy = pcall(issecurevariable, name)
+        if okCheck and not secure then
+            found["_G." .. name] = tostring(taintedBy)
+        end
+    end
     for _, entry in ipairs(watched) do
         local ok, tbl = pcall(entry.get)
         if ok and type(tbl) == "table" then
             for key in pairs(tbl) do
-                if type(key) == "string" then
+                if type(key) == "string" or type(key) == "number" then
                     local okCheck, secure, taintedBy = pcall(issecurevariable, tbl, key)
                     if okCheck and not secure then
                         found[entry.name .. "." .. key] = tostring(taintedBy)
@@ -89,7 +99,7 @@ local function taintedFields()
         tinsert(found, field .. " (" .. addon .. ")")
     end
     if #found == 0 then
-        return #watched > 0 and "none" or nil
+        return (#watched > 0 or #watchedGlobals > 0) and "none" or nil
     end
     table.sort(found)
     return table.concat(found, ", ")
@@ -152,6 +162,72 @@ end
 function WowVision.taintWatch.watch(name, get)
     tinsert(watched, { name = name, get = get })
     startTimeline()
+end
+
+-- A global variable (by name), checked the same way.
+function WowVision.taintWatch.watchGlobal(name)
+    tinsert(watchedGlobals, name)
+    startTimeline()
+end
+
+-- The group finder (WoW: Forever, TBC): which value the post or the
+-- follow-up browse search read was written by addon code. The listing's
+-- post reads its dirty flag, selected activities, play style and voice
+-- mode; Blizzard's handler for the listing update reads
+-- PENDING_LISTING_UPDATE and then runs the browse search, which reads the
+-- browse frame and its dropdowns. The activity list's scroll box is here
+-- because focus scrolls it from addon code. Every get returns nil until
+-- the load-on-demand group finder is loaded.
+do
+    local watch = WowVision.taintWatch.watch
+    WowVision.taintWatch.watchGlobal("PENDING_LISTING_UPDATE")
+    local function listing()
+        return LFGListingFrame
+    end
+    local function activityView()
+        local frame = listing()
+        return frame ~= nil and frame.ActivityView or nil
+    end
+    local function activityScrollBox()
+        local view = activityView()
+        return view ~= nil and view.ScrollBox or nil
+    end
+    local function browse()
+        return LFGBrowseFrame
+    end
+    watch("LFGListingFrame", listing)
+    watch("LFGListingFrame.activities", function()
+        local frame = listing()
+        return frame ~= nil and frame.activities or nil
+    end)
+    watch("LFGListingFrame.ActivityView", activityView)
+    watch("ActivityView.ScrollBox", activityScrollBox)
+    watch("ActivityView.ScrollBox.view", function()
+        local box = activityScrollBox()
+        return box ~= nil and box.GetView ~= nil and box:GetView() or nil
+    end)
+    watch("ActivityView.PlayStyleDropdown", function()
+        local view = activityView()
+        return view ~= nil and view.PlayStyleDropdown or nil
+    end)
+    watch("ActivityView.VoiceChatDropdown", function()
+        local view = activityView()
+        return view ~= nil and view.VoiceChatDropdown or nil
+    end)
+    watch("LFGBrowseFrame", browse)
+    watch("LFGBrowseFrame.CategoryDropdown", function()
+        local frame = browse()
+        return frame ~= nil and frame.CategoryDropdown or nil
+    end)
+    watch("LFGBrowseFrame.ActivityDropdown", function()
+        local frame = browse()
+        return frame ~= nil and frame.ActivityDropdown or nil
+    end)
+    watch("LFGBrowseFrame.ActivityDropdown.selectedValues", function()
+        local frame = browse()
+        local dropdown = frame ~= nil and frame.ActivityDropdown or nil
+        return dropdown ~= nil and dropdown.selectedValues or nil
+    end)
 end
 
 local function record(event, addon, func)
