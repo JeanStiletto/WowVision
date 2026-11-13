@@ -10,7 +10,7 @@ local settings = module:hasSettings()
 -- (its key and /wv mscan) only says so and the walking check never starts. The diagnostic reads (/wv mscan raw and
 -- sku) still run, to see whether the game answers again. Set it to false to switch the scanner back on; if Blizzard
 -- does not bring the reads back, the scanner goes altogether.
-module.BLOCKED = true
+module.BLOCKED = false -- LOCAL (local-play): the user keeps the scanner on for testing
 
 -- The minimap scanner: every named dot on the minimap within its range
 -- (233 yards outdoors, 150 indoors), sorted by kind and placed to a few
