@@ -182,12 +182,14 @@ end
 
 -- Fork and crossing labels (and a place's nearest road) carry their directions as angles in the
 -- data ("<d45,135>"): said in the player's words ("to the northeast and southeast", "at 2 and 4").
+-- A bare arm ("<b45,135>", logic.bareArms) says its directions alone, without the template.
 function logic.expandDirs(zone, text)
-    if text == nil or not text:find("<d", 1, true) then
+    if text == nil or not (text:find("<d", 1, true) or text:find("<b", 1, true)) then
         return text
     end
-    local template = logic.dirTemplate(zone, zone._toward) or "%s"
-    return (text:gsub("<d([%d,]+)>", function(list)
+    local toward = logic.dirTemplate(zone, zone._toward) or "%s"
+    return (text:gsub("<([db])([%d,]+)>", function(mark, list)
+        local template = mark == "b" and "%s" or toward
         -- clockwise from north ("12, 2, 4 and 7"), not in the data's order
         local angles = {}
         for a in list:gmatch("%d+") do
@@ -206,8 +208,52 @@ function logic.expandDirs(zone, text)
         if #words > 1 and words[#words] == words[1] then
             words[#words] = nil
         end
+        -- bare hours get their "o'clock" in place: "crossing, 2, ..." sounded like a count
+        if mark == "b" then
+            words[#words] = words[#words]:gsub(HOUR, HOUR_SAID)
+        end
         return string.format(template, logic.joinWords(words))
     end))
+end
+
+-- The kinds whose labels list their arms ("fork, street of Old Town <d76,225>, bridge <d322>").
+logic.ARMED = { fork = true, crossing = true }
+
+-- A label without its direction marks ("street of Old Town <d76>" -> "street of Old Town").
+function logic.bareName(label)
+    return label and (label:gsub("%s*<[db][%d,]+>", ""))
+end
+
+-- A fork's or crossing's label as said by a player coming off the way `came` (that way's label):
+-- the arm of the same name says its directions alone, right after the place word, before the
+-- other arms ("fork, northeast and southwest, street of The Canals to the northwest"; user
+-- 2026-11-14: the name was just said, a bare direction means "the way you came on goes on there";
+-- first, so it is never heard as one more direction of the arm before it). Returns the label and
+-- whether an arm was the way come from. The names may hold commas themselves ("Straße, Der
+-- Handelsdistrikt"): an arm is matched as a whole, between ", " and its direction mark.
+function logic.bareArms(label, came)
+    came = logic.bareName(came)
+    if label == nil or came == nil or came == "" then
+        return label, false
+    end
+    local head = label:find(", ", 1, true)
+    if head == nil then
+        return label, false
+    end
+    -- (an arm begins after the place word or after the arm before it, "...>, ": "Nordhaintal" is
+    -- no arm of "fork, Straße, Nordhaintal <d29>")
+    local needle = ", " .. came .. " <d"
+    local a, b = label:find(needle, 1, true)
+    while a and a ~= head and label:sub(a - 1, a - 1) ~= ">" do
+        a, b = label:find(needle, a + 1, true)
+    end
+    if a == nil then
+        return label, false
+    end
+    local close = label:find(">", b, true)
+    local list = label:sub(b + 1, close - 1)
+    local rest = label:sub(1, a - 1) .. label:sub(close + 1)
+    return rest:sub(1, head - 1) .. ", <b" .. list .. ">" .. rest:sub(head), true
 end
 
 -- Signed degrees from angle b to angle a (both radians, counter-clockwise), -180 to 180.
@@ -1515,14 +1561,20 @@ end
 -- The text of a cell value: the place label, and with `withDirection` its direction and its
 -- nearest road ("Goldshire road to the north"; left out with `noNearRoad`, when the caller says
 -- where the road is itself). `floor` (optional): the named floor the player is on or comes from,
--- whose name the label leaves out (floorLabel).
-function logic.describe(zone, value, withDirection, noNearRoad, floor, here)
+-- whose name the label leaves out (floorLabel). `came` (optional): the label of the way the player
+-- comes off (announcements): a fork's or crossing's arm of that name says its directions alone
+-- (logic.bareArms).
+function logic.describe(zone, value, withDirection, noNearRoad, floor, here, came)
     local p = zone._index.places[logic.placeOf(value)]
     if p == nil then
         return nil
     end
     local down = logic.downPlace(zone, logic.placeOf(value))
-    local text = logic.expandDirs(zone, logic.floorLabel(zone, logic.spokenName(zone, (down or p).label), floor))
+    local label = logic.spokenName(zone, (down or p).label)
+    if came and logic.ARMED[(down or p).kind] then
+        label = logic.bareArms(label, came)
+    end
+    local text = logic.expandDirs(zone, logic.floorLabel(zone, label, floor))
     -- a place of a structure (a tower's platform, its stairs) says the structure's name where the
     -- player is not on it yet: `here`, the structure of the place the player is on or comes from
     -- (nil: none, or the name is always said, as Alt-L says a room's building); inside the

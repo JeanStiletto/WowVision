@@ -469,6 +469,22 @@ function logic.nearestEntrance(zone, x, y, reach, prefer, onFloor)
     return logic.nearestPoint(logic.entrances(zone), x, y, reach, prefer, opts)
 end
 
+-- A room's name without the last part (", first floor") it shares with the room the player is in
+-- (`here`, its name as said), in one building: said there already (user 2026-11-14: in "hall
+-- northwest, floor 1" the doorways to "hall south, floor 1" say "hall south"). The floors the zone
+-- names (logic.floorOf) are left out before; this covers the floor words that are only part of the
+-- rooms' names (Stormwind Keep). A name that would be nothing but that part keeps it.
+function logic.sharedTailOff(name, here)
+    if name == nil or here == nil then
+        return name
+    end
+    local tail = name:match(".*(, .+)$")
+    if tail == nil or #tail >= #name or #here <= #tail or here:sub(-#tail) ~= tail then
+        return name
+    end
+    return name:sub(1, -#tail - 1)
+end
+
 -- The text of a room: the interior's name when it changes, then the room; a city complex's district
 -- only when it is not the one of `previousRoomId` (the room one comes from, or for a doorway the
 -- room one stands in; user 2026-10-07, the Undercity's "canal, Trade Quarter 4" said from inside
@@ -495,6 +511,7 @@ function logic.describeRoom(zone, roomId, previousRoomId)
             name = room.atB
         else
             name = logic.floorLabel(zone, name, (logic.floorOf(zone, previous.name)))
+            name = logic.sharedTailOff(name, logic.spokenName(zone, previous.name))
         end
     end
     -- a city's own complex (Ironforge) is named after the zone the player knows: never said

@@ -121,6 +121,9 @@ local bendWalked = 0 -- walked on the way since the last announcement or bend hi
 -- away from it forgets it
 local aheadSaid = {}
 local wayNamed = nil -- the place last said by name (on entering it or ahead): its next pieces say only their direction
+-- on a fork or crossing: the name of the way the player came by, when the fork said it as its bare directions
+-- (logic.bareArms); stepping on onto a way of that name says only its direction
+local forkCame = nil
 -- Guidance: the target last said (key and position), the direction said, whether it was "at"
 -- it, when, the target last said by name, and whether it was said briefly (a beacon led)
 local guide = { key = nil, x = nil, y = nil, dir = nil, at = false, time = 0, named = nil, brief = nil, said = {} } -- on foot
@@ -282,7 +285,7 @@ local function forgetWays()
     outdoor:reset()
     indoor:reset()
     region, saidMouths, saidLabels = nil, {}, {}
-    bendFrom, leftWay, wayNamed = nil, nil, nil
+    bendFrom, leftWay, wayNamed, forkCame = nil, nil, nil, nil
     aheadSaid = {}
 end
 
@@ -1401,7 +1404,10 @@ local function checkAhead(z, x, y, px, py)
         if logic.sameWay(value, key, wayNamed, z) then
             text = logic.directionText(z, value)
         else
-            text = logic.describe(z, value, true, nil, nil, logic.ownerOfPlace(z, logic.keyPlace(key)))
+            -- (a fork ahead: the arm of the way the player is on says its directions alone)
+            local came = logic.keyLabel(z, key)
+            text = logic.describe(z, value, true, nil, nil, logic.ownerOfPlace(z, logic.keyPlace(key)),
+                came and logic.spokenName(z, came))
             named = logic.placeOf(value)
         end
         if text and text ~= "" then
@@ -1480,7 +1486,15 @@ local function checkPlace(z, x, y, forced)
         end
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways,
-                from = { outdoor.fromX or x, outdoor.fromY or y } })
+                from = { outdoor.fromX or x, outdoor.fromY or y }, through = forkCame })
+        forkCame = nil
+        local onFork = logic.place(z, logic.placeOf(value))
+        if onFork and logic.ARMED[onFork.kind] then
+            local came = logic.keyLabel(z, previous)
+            came = came and logic.spokenName(z, came)
+            local _, hit = logic.bareArms(logic.spokenName(z, onFork.label), came)
+            forkCame = hit and logic.bareName(came) or nil
+        end
         if not logic.sameWay(value, previous, wayNamed, z) then
             wayNamed = logic.placeOf(value)
         end

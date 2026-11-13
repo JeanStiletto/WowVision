@@ -85,6 +85,22 @@ function logic.joinWords(words)
     return text
 end
 
+-- Does a name end in the compass word `word` (as the zone's compass says it: "northwest", "Nordwesten",
+-- "au nord-ouest")? The names say the side alone ("hall northwest", "Halle Nordwest", "salle
+-- nord-ouest"). Never in clock mode: an hour is no side.
+function logic.nameSaysDir(name, word)
+    if logic.clock or name == nil or word == nil then
+        return false
+    end
+    local last = name:match("(%S+)$")
+    if last == nil or #last == #name then
+        return false
+    end
+    last, word = last:lower(), word:lower()
+    return word == last or word == last .. "en" or word:sub(-#last - 1) == " " .. last
+        or word:sub(-#last - 1) == "'" .. last
+end
+
 -- "street of Old Town to the northwest and south, water to the east, entrance of the bank here"
 function logic.itemsText(zone, items, floor)
     local parts = {}
@@ -100,6 +116,10 @@ function logic.itemsText(zone, items, floor)
         end
         if #item.dirs == 0 then
             parts[#parts + 1] = string.format(L["%s here"], name)
+        elseif #item.dirs == 1 and logic.nameSaysDir(name, logic.dirWord(zone, item.dirs[1])) then
+            -- a part named by its side that lies the way it is said: the name alone ("hall northwest", not
+            -- "hall northwest to the northwest"; user 2026-11-14); one that lies another way keeps both
+            parts[#parts + 1] = name
         else
             local words = {}
             for _, dir in ipairs(item.dirs) do
@@ -877,12 +897,28 @@ local function spotBody(zone, x, y, value, previous, opts)
     if opts.cut and logic.sameWay(value, previous, opts.named, zone) then
         return logic.directionText(zone, value)
     end
+    -- on along the way come by, through a fork or crossing that said it as its bare directions
+    -- (`opts.through`: that way's name, logic.bareArms): its direction only, as on the next piece
+    -- of a way (user 2026-11-14)
+    if opts.cut and opts.through and logic.ARMED[logic.kind(zone, logic.keyPlace(previous))] then
+        local p = logic.place(zone, logic.placeOf(value))
+        local direction = p and logic.bareName(logic.spokenName(zone, p.label)) == opts.through
+            and logic.directionText(zone, value)
+        if direction then
+            return direction
+        end
+    end
+    -- the way come off: a fork's or crossing's arm of its name says its directions alone
+    local came = opts.cut and logic.keyLabel(zone, previous) or nil
+    if came then
+        came = logic.spokenName(zone, came)
+    end
     -- a named floor said once: not again coming from a place on it (logic.floorOf)
     local from = opts.cut and logic.floorOf(zone, logic.keyLabel(zone, previous)) or nil
     -- a structure's name only coming onto it (an announcement from a place of the same structure
     -- leaves it out; the around key says it)
     local here = opts.cut and logic.ownerOfPlace(zone, logic.keyPlace(previous)) or nil
-    local text = logic.describe(zone, value, true, nil, from, here)
+    local text = logic.describe(zone, value, true, nil, from, here, came)
     if text == nil then
         return nil
     end
@@ -903,7 +939,7 @@ local function spotBody(zone, x, y, value, previous, opts)
     local parts, beside = radiusParts(zone, x, y, kind, previous, opts)
     if beside then
         -- (the way beside said instead of the place's stored nearest road, which may be another one)
-        text = logic.describe(zone, value, true, true, from, here)
+        text = logic.describe(zone, value, true, true, from, here, came)
     end
     for _, part in ipairs(parts) do
         text = text .. ", " .. part
@@ -972,8 +1008,14 @@ function logic.sectionText(zone, id, previous, lastWay, x, y)
     local items = logic.roomDoorways(zone, id, { dirs = logic.ITEM_DIRS, x = x, y = y, max = ITEMS_MAX,
         cameFrom = previous, section = true })
     local base = logic.spokenName(zone, zone._index.rooms[id].name):gsub("%s+%d+$", "")
+    -- (the next section's name may have lost the floor part both share: logic.sharedTailOff)
+    local short = base:match("^(.*), .+$")
+    local function same(label)
+        label = label:gsub("%s+%d+$", "")
+        return label == base or label == short
+    end
     if #items == 1 and #items[1].dirs < 2 and (items[1].through
-            or (items[1].class == "room" and items[1].label:gsub("%s+%d+$", "") == base)) then
+            or (items[1].class == "room" and same(items[1].label))) then
         items = {}
     end
     if #items > 0 then

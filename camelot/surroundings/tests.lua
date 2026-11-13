@@ -3233,6 +3233,33 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.finishText(logic.turnText(1)), "left")
         t:assertEqual(logic.expandDirs(z, "fork, Test road <d120,45>"), "fork, Test road to the northeast and southeast")
         t:assertEqual(logic.finishText("no hours"), "no hours")
+        -- the arm of the way come by: its directions alone, first after the place word (user 2026-11-14);
+        -- names with commas match whole, a name inside another arm's is no arm
+        local label = "Gabelung, Kanalweg <d318,137>, Straße, Der Handelsdistrikt <d225>"
+        local bare, hit = logic.bareArms(label, "Straße, Der Handelsdistrikt")
+        t:assertEqual(hit, true)
+        t:assertEqual(bare, "Gabelung, <b225>, Kanalweg <d318,137>")
+        t:assertEqual(logic.expandDirs(z, logic.bareArms("fork, street of Trade <d59,206>, street of Canals <d321>",
+            "street of Trade <d45>")), "fork, northeast and southwest, street of Canals to the northwest")
+        t:assertEqual(logic.expandDirs(z, logic.bareArms("fork, stairs <d212,320>", "stairs")), "fork, southwest and northwest")
+        t:assertEqual(select(2, logic.bareArms("fork, Straße, Nordhaintal <d29>, Brücke <d90>", "Nordhaintal")), false)
+        t:assertEqual(select(2, logic.bareArms("fork, bridge <d90>", "street of Trade")), false)
+        t:assertEqual(select(2, logic.bareArms("crossing", "street of Trade")), false)
+        -- a room's name without the floor part shared with the room the player is in
+        t:assertEqual(logic.sharedTailOff("Halle Süd, erster Stock", "Halle Nordwest, erster Stock"), "Halle Süd")
+        t:assertEqual(logic.sharedTailOff("Halle Süd, erster Stock", "Halle, zweiter Stock"), "Halle Süd, erster Stock")
+        t:assertEqual(logic.sharedTailOff("Halle Süd", "Halle Nordwest, erster Stock"), "Halle Süd")
+        -- a part named by its side, said that way: the name alone; another way: both
+        t:assertEqual(logic.itemsText(z, { { label = "hall northwest", class = "room", dirs = { 315 } } }), "hall northwest")
+        t:assertEqual(logic.itemsText(z, { { label = "hall south", class = "room", dirs = { 90 } } }), "hall south to the east")
+        t:assertEqual(logic.itemsText(z, { { label = "hall south", class = "room", dirs = { 180, 90 } } }),
+            "hall south to the south and east")
+        t:assertEqual(logic.nameSaysDir("Halle Nordwest", "Nordwesten"), true)
+        t:assertEqual(logic.nameSaysDir("Halle Süd", "Süden"), true)
+        t:assertEqual(logic.nameSaysDir("salle nord-ouest", "au nord-ouest"), true)
+        t:assertEqual(logic.nameSaysDir("salle ouest", "à l'ouest"), true)
+        t:assertEqual(logic.nameSaysDir("hall east", "southeast"), false)
+        t:assertEqual(logic.nameSaysDir("Nordwest", "Nordwesten"), false)
         if not ok then
             error(err, 0)
         end
