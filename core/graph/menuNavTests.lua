@@ -426,6 +426,61 @@ testRunner:addSuite("MenuNavigation", {
         end)
     end,
 
+    ["a window naming a way back has the close key click it; with none the key stays with the game"] = function(t)
+        withHost(function(host)
+            local savedActivator = WowVision.inputActivator
+            local specs, released = {}, 0
+            WowVision.inputActivator = {
+                anyInputHeld = function()
+                    return false
+                end,
+                activate = function(_, spec)
+                    tinsert(specs, spec)
+                    return {
+                        release = function()
+                            released = released + 1
+                        end,
+                    }
+                end,
+            }
+            local ok, err = pcall(function()
+                local back = nil
+                host:open({
+                    key = "log",
+                    render = list({ "One" }),
+                    closeClick = function()
+                        return back
+                    end,
+                })
+                host:_syncCloseKey()
+                t:assertEqual(host._closeHandle, nil, "no view to leave: Escape is the game's")
+                t:assertEqual(specs[#specs].binding, "gameClose")
+
+                back = { name = "Back" }
+                host:_syncCloseKey()
+                local spec = specs[#specs]
+                t:assertEqual(spec.binding, "close")
+                t:assertEqual(spec.type, "Click")
+                t:assertEqual(spec.target, back)
+                t:assertEqual(spec.emulatedKey, "LeftButton")
+                t:assertEqual(host._gameCloseHandle, nil, "the controller's button is the click too")
+
+                local count = #specs
+                host:_syncCloseKey()
+                t:assertEqual(#specs, count, "taken once")
+
+                back = nil
+                host:_syncCloseKey()
+                t:assertEqual(host._closeHandle, nil, "back on the list the key is let go")
+                t:assertEqual(specs[#specs].binding, "gameClose")
+            end)
+            WowVision.inputActivator = savedActivator
+            if not ok then
+                error(err, 0)
+            end
+        end)
+    end,
+
     ["closing all closes every stack and the game's windows; in combat the game's stay"] = function(t)
         withHost(function(host)
             local savedClose = CloseAllWindows
@@ -463,6 +518,58 @@ testRunner:addSuite("MenuNavigation", {
             manager:closeAll()
             t:assertEqual(gameCloses, 0, "the game's protected windows cannot close in combat")
             CloseAllWindows = savedClose
+        end)
+    end,
+})
+
+-- Up or Down on the first or last entry: Sku's list-edge sound and the entry read again.
+local function withPlaySound(fn)
+    local saved = PlaySound
+    local played = {}
+    PlaySound = function(kit)
+        tinsert(played, kit)
+    end
+    local ok, err = pcall(fn, played)
+    PlaySound = saved
+    if not ok then
+        error(err, 0)
+    end
+end
+
+testRunner:addSuite("ListEdgeSound", {
+    ["Down on the last entry and Up on the first sound and read the entry again"] = function(t)
+        withHost(function(host)
+            withPlaySound(function(played)
+                host:open({ key = "list", render = list({ "Alpha", "Beta", "Gamma" }) })
+                press(host, "up")
+                t:assertEqual(#played, 1, "Up on the first entry sounds")
+                t:assertEqual(played[1], 681, "Sku's boundary sound")
+                t:assertEqual(lastSpoken(host), "Alpha", "the entry is read again")
+                press(host, "down")
+                t:assertEqual(#played, 1, "a step that moves does not sound")
+                t:assertEqual(lastSpoken(host), "Beta")
+                press(host, "down")
+                press(host, "down")
+                t:assertEqual(focusedKey(host), "Gamma")
+                t:assertEqual(#played, 2, "Down on the last entry sounds")
+                t:assertEqual(lastSpoken(host), "Gamma")
+            end)
+        end)
+    end,
+
+    ["the setting switches it off, Left and Right bumps stay silent"] = function(t)
+        withHost(function(host)
+            withPlaySound(function(played)
+                host:open({ key = "list", render = list({ "Alpha", "Beta" }) })
+                WowVision.base.ui.settings.edgeSound = false
+                press(host, "up")
+                t:assertEqual(#played, 0, "off: no sound")
+                t:assertEqual(#host.spoken, 0, "off: nothing read again")
+                WowVision.base.ui.settings.edgeSound = true
+                press(host, "left")
+                press(host, "right")
+                t:assertEqual(#played, 0, "Left and Right are level keys, not list edges")
+            end)
         end)
     end,
 })

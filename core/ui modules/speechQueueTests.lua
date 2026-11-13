@@ -8,8 +8,18 @@ local testRunner = WowVision.testing.testRunner
 -- clears the queue (wipe, or taking lines out) fails here instead of the
 -- count quietly never repeating a number again.
 
+-- The file as a chunk whose globals are env: setfenv where it exists (Lua
+-- 5.1, LuaJIT, the game), loadfile's own env argument on later Lua.
+local function loadIn(path, env)
+    if setfenv ~= nil then
+        local chunk = assert(loadfile(path))
+        setfenv(chunk, env)
+        return chunk
+    end
+    return assert(loadfile(path, "t", env))
+end
+
 local function loadSpeech(path)
-    local chunk = assert(loadfile(path))
     local module = { L = setmetatable({}, { __index = function(_, key) return key end }) }
     function module:setLabel() end
     function module:setVital() end
@@ -53,7 +63,7 @@ local function loadSpeech(path)
         tinsert = table.insert,
         tremove = table.remove,
     }, { __index = _G })
-    setfenv(chunk, env)
+    local chunk = loadIn(path, env)
     chunk("WowVision", {})
     return module, function()
         return stopped

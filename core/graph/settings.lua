@@ -434,7 +434,7 @@ local function pushComponentList(field, owner)
                                 config.label = label
                             end)
                             if copy ~= nil then
-                                WowVision:speak(label)
+                                WowVision:notify(label)
                             end
                         end,
                     })

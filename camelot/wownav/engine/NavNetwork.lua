@@ -1,5 +1,5 @@
 -- WowNav engine by Broesel33 (github.com/Broesel33/WoW_NavigationData, DemoAddon/WowVisionNavigation/NavNetwork.lua at
--- 2661280), carried in WowVision with his permission. Changes for WowVision: see camelot/wownav/engine/README.md.
+-- 52c6c83), carried in WowVision with his permission. Changes for WowVision: see camelot/wownav/engine/README.md.
 
 -- NavNetwork (schema 7, concept chapters 7, 7a and 8): loader/decoder, continent graph, attachment cells and the
 -- A* search. Replaces the graph, funnel, guidance and zone-by-zone world travel of the old core.
@@ -68,7 +68,8 @@ do
 end
 local BASE = 92
 
-local function Chars(text)
+-- pause (optional, also in PrefixSum and Decode): called between pieces of the work; it may yield (N.LoadZoneInSteps).
+local function Chars(text, pause)
     local n, result, i = #text, {}, 1
     while i <= n do
         local j = min(n, i + 3999)
@@ -79,6 +80,7 @@ local function Chars(text)
             result[i + k - 1] = value
         end
         i = j + 1
+        if pause then pause() end
     end
     return result
 end
@@ -323,11 +325,12 @@ end
 -- ---------------------------------------------------------------------------
 -- Decoder
 -- ---------------------------------------------------------------------------
-local function PrefixSum(values, factor)
+local function PrefixSum(values, factor, pause)
     local sum, result = 0, {}
     for i = 1, #values do
         sum = sum + values[i]
         result[i] = sum * factor
+        if pause and i % 4096 == 0 then pause() end
     end
     return result
 end
@@ -338,11 +341,13 @@ end
 
 local CELL_SIZES = { [0] = 16, [1] = 8, [2] = 32 }
 
-local function Decode(raw)
+-- pause (optional): called every few hundred steps of the long loops, so a caller that runs the decoding in a coroutine
+-- can spread it over several frames (N.LoadZoneInSteps). The result is the same with and without it.
+local function Decode(raw, pause)
     local n = raw.nodeCount
     local zone = { id = raw.zoneId, base = raw.zoneId * ZONE_BASE, mapId = raw.mapId, n = n,
         fingerprint = raw.fingerprint, raw = raw }
-    zone.x, zone.y, zone.z = PrefixSum(raw.x, 0.1), PrefixSum(raw.y, 0.1), PrefixSum(raw.z, 0.1)
+    zone.x, zone.y, zone.z = PrefixSum(raw.x, 0.1, pause), PrefixSum(raw.y, 0.1, pause), PrefixSum(raw.z, 0.1, pause)
     if #zone.x ~= n or #zone.y ~= n or #zone.z ~= n then error("coordinate fields have the wrong length") end
     local dictionary = {}
     for i, code in ipairs(raw.codes) do
@@ -353,24 +358,29 @@ local function Decode(raw)
             noExit = floor(code / 1048576) % 2 == 1,     -- 4.27: water component without a checked exit
         }
     end
-    local codes = Chars(raw.c)
+    local codes = Chars(raw.c, pause)
     if #codes ~= n then error("code field has the wrong length") end
     zone.bits, zone.area, zone.radius, zone.noExit = {}, {}, {}, {}
     for i = 1, n do
         local entry = dictionary[codes[i]]
         if not entry then error("code outside the dictionary") end
         zone.bits[i], zone.area[i], zone.radius[i], zone.noExit[i] = entry.bits, entry.area, entry.radius, entry.noExit
+        if pause and i % 1024 == 0 then pause() end
     end
-    zone.layer = Chars(raw.s)
+    zone.layer = Chars(raw.s, pause)
     -- Links (CSR, K6/K7)
-    local counts, offsets, flags = Chars(raw.lo), raw.lt, Chars(raw.lf)
+    local counts, offsets, flags = Chars(raw.lo, pause), raw.lt, Chars(raw.lf, pause)
     local linkCount = raw.linkCount
     if #counts ~= n or #offsets ~= linkCount or #flags ~= linkCount then error("link fields have the wrong length") end
     zone.lu, zone.lv, zone.lflag, zone.ldir, zone.llen = {}, {}, {}, {}, {}
     zone.adj = {}
-    for i = 1, n do zone.adj[i] = {} end
+    for i = 1, n do
+        zone.adj[i] = {}
+        if pause and i % 1024 == 0 then pause() end
+    end
     local k = 0
     for u = 0, n - 1 do
+        if pause and u % 64 == 0 then pause() end
         for _ = 1, counts[u + 1] do
             k = k + 1
             local v = u + offsets[k]
@@ -459,8 +469,8 @@ local function Decode(raw)
     zone.seam = {}
     -- Attachment cells (K10)
     local cx, cy, cz, ch = raw.cx, raw.cy, raw.cz, raw.ch
-    local classes, layers, attachmentCounts = Chars(raw.cc), Chars(raw.cl), Chars(raw.an)
-    local references, masks = raw.ar, Chars(raw.aq)
+    local classes, layers, attachmentCounts = Chars(raw.cc, pause), Chars(raw.cl, pause), Chars(raw.an, pause)
+    local references, masks = raw.ar, Chars(raw.aq, pause)
     local m = raw.cellCount
     if #cx ~= m or #cy ~= m or #cz ~= m or #ch ~= m or #classes ~= m or #layers ~= m
         or #attachmentCounts ~= m or #masks ~= 3 * #references then
@@ -476,6 +486,7 @@ local function Decode(raw)
     zone.cellMap = { {}, {}, {} }
     local ox, oy, mz, previous, a = 0, 0, 0, 0, 0
     for i = 1, m do
+        if pause and i % 256 == 0 then pause() end
         ox, oy, mz = ox + cx[i], oy + cy[i], mz + cz[i]
         local kind = classes[i]
         local size = CELL_SIZES[kind]
@@ -510,11 +521,12 @@ local function Decode(raw)
     -- Floor of the cells (F10, optional field cm): 16-bit mask per cell, bit 4 * row + column of the 4 x 4 fields. Data without the field
     -- (older exports) leave zone.cellFloor nil: every cell then covers its whole square.
     if raw.cm ~= nil then
-        local floors = Chars(raw.cm)
+        local floors = Chars(raw.cm, pause)
         if #floors ~= 3 * m then error("cell floor field has the wrong length") end
         zone.cellFloor = {}
         for i = 1, m do
             zone.cellFloor[i] = (floors[3 * i - 2] * BASE + floors[3 * i - 1]) * BASE + floors[3 * i]
+            if pause and i % 4096 == 0 then pause() end
         end
     end
     return zone
@@ -666,11 +678,58 @@ function N.LoadZone(zoneId)
     return zone
 end
 
+-- WowVision: decodes a zone over several calls, for work in the background (the zones prepared around the player). The
+-- result is the one N.LoadZone gives; the decoding runs in a coroutine that yields once a call has used `budget` on
+-- `clock` (clock() in the budget's unit; debugprofilestop: ms). Returns true when nothing is left to do for the zone
+-- (decoded and attached; decoded meanwhile by N.LoadZone; or not decodable, which N.LoadZone reports when asked), false
+-- while more remains. One zone at a time: another zone drops the unfinished one. Compiling the packed text is one piece
+-- and takes as long as it takes; the call after it goes on with the decoding.
+N.loading = nil       -- the unfinished zone: { zoneId, source, thread, pause, budget, clock, started, steps }
+
+function N.LoadZoneInSteps(zoneId, budget, clock)
+    local source = ZoneSource(zoneId)
+    local ready = N.zones[zoneId] or N.decoded[zoneId]
+    if source == nil or (ready and (N.zones[zoneId] or ready.source == source)) then
+        -- nothing to decode, or N.LoadZone was faster (a route needed the zone): its copy is the zone
+        if N.loading and N.loading.zoneId == zoneId then N.loading = nil end
+        return true
+    end
+    local job = N.loading
+    if not job or job.zoneId ~= zoneId or job.source ~= source then
+        job = { zoneId = zoneId, source = source, steps = 0 }
+        job.pause = function()
+            if job.clock() - job.started >= job.budget then coroutine.yield() end
+        end
+        -- (no pcall around the decoding: Lua 5.1 cannot yield through one; resume reports an error instead)
+        job.thread = coroutine.create(function()
+            local raw = Unpacked("WVN7", "WVN7Src", zoneId)
+            if type(raw) ~= "table" then return nil end
+            job.pause()
+            return Decode(raw, job.pause)
+        end)
+        N.loading = job
+    end
+    job.budget, job.clock, job.started, job.steps = budget, clock, clock(), job.steps + 1
+    local ok, decoded = coroutine.resume(job.thread)
+    if ok and coroutine.status(job.thread) ~= "dead" then return false end
+    N.loading = nil
+    if not ok or type(decoded) ~= "table" then return true end
+    if type(source) == "string" then
+        _G.WVN7[zoneId] = nil
+        decoded.raw = nil
+    end
+    decoded.source = source
+    N.decoded[zoneId] = decoded
+    N.LoadZone(zoneId)      -- attaches the decoded copy (seams, callback), as a decode in one piece does
+    return true
+end
+
 -- Drops a decoded zone, attached or only kept in N.decoded (it is decoded again on demand, from the packed source if there
 -- is one). Virtual points on its links go with it. The other zones need no update: their seams point at waypoint IDs, and
 -- the search decodes a zone behind a seam when it gets there. Never call this while a route job of that zone is running.
 -- N.onZoneUnloaded(zone) (optional) lets the core drop what it derived from the zone (resolutions, lists).
 function N.UnloadZone(zoneId)
+    if N.loading and N.loading.zoneId == zoneId then N.loading = nil end
     local zone = N.zones[zoneId] or N.decoded[zoneId]
     if not zone then return false end
     N.decoded[zoneId] = nil
@@ -826,6 +885,113 @@ function N.NodesWithin(zoneId, x, y, radius)
 end
 
 -- ---------------------------------------------------------------------------
+-- The node of a logical target (Weg B, user decision 10.11.2026)
+-- ---------------------------------------------------------------------------
+-- Every logical target of a zone built with Weg B has a fixed node of the network: the build puts it on the target's access point and
+-- links it like every other node. The core finds it by the target's coordinates: a node whose x and y lie within TARGET_XY_TOLERANCE of
+-- the target's (half the export resolution of the node coordinates, 0.1 yd; a tolerance, never an equality, because the build rounds
+-- in Python and the decoder sums in Lua), of those the one with the smallest height difference within the height band (a water node:
+-- the target not more than the band above it). Where that does not find it the catalog row carries the node number (n, see
+-- TargetCatalog.lua). tools/wegenetz/target_nodes.py is the twin of this rule in the pipeline.
+N.TARGET_XY_TOLERANCE = 0.05   -- yd: half the export resolution of the node coordinates (K2, 0.1 yd)
+local XY_EPSILON = 1e-6        -- the noise of the prefix sums (0.1 * integer)
+local POINT_OFFSET, POINT_SPAN = 1000000, 2000000
+local NEAR_CELL = 10.0         -- yd: raster of the search for the nearest nodes (speed only)
+
+local function PointKey(kx, ky)
+    return (kx + POINT_OFFSET) * POINT_SPAN + (ky + POINT_OFFSET)
+end
+
+-- The nodes of a zone on the 0.1 yd raster of the export (built on first use, kept with the decoded zone).
+local function PointMap(zone)
+    if zone.pointMap then return zone.pointMap end
+    local map = {}
+    for i = 1, zone.n do
+        local key = PointKey(floor(zone.x[i] * 10 + 0.5), floor(zone.y[i] * 10 + 0.5))
+        local list = map[key]
+        if not list then list = {}; map[key] = list end
+        list[#list + 1] = i
+    end
+    zone.pointMap = map
+    return map
+end
+
+local function FitsNode(zone, i, z, tolerance)
+    if z == nil then return true end
+    if zone.area[i] == 2 then return z <= zone.z[i] + tolerance end          -- a water node holds everything under its surface
+    return abs(zone.z[i] - z) <= tolerance
+end
+N.FitsNode = FitsNode
+
+-- The node of a target by its coordinates: the local index (1-based) or nil.
+function N.TargetNodeAt(zone, x, y, z, tolerance)
+    tolerance = tolerance or N.HEIGHT_TOLERANCE
+    local map = PointMap(zone)
+    local kx, ky = floor(x * 10 + 0.5), floor(y * 10 + 0.5)
+    local limit = N.TARGET_XY_TOLERANCE + XY_EPSILON
+    local best, bestDifference
+    for dx = -1, 1 do
+        for dy = -1, 1 do
+            for _, i in ipairs(map[PointKey(kx + dx, ky + dy)] or {}) do
+                if abs(zone.x[i] - x) <= limit and abs(zone.y[i] - y) <= limit and FitsNode(zone, i, z, tolerance) then
+                    local difference = z and abs(zone.z[i] - z) or 0
+                    if not best or difference < bestDifference or (difference == bestDifference and i < best) then
+                        best, bestDifference = i, difference
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- A node as the binding of a target (choice: "target_node" by the coordinates, "target_node_id" by n, "nearest_node" the fallback).
+function N.NodeTargetBinding(zone, i, x, y, choice)
+    local nx, ny, nz = zone.x[i], zone.y[i], zone.z[i]
+    return { zone = zone, type = "node", id = zone.base + i - 1, x = nx, y = ny, z = nz, choice = choice, node = i,
+        cellDistance = 0, approach = false, airDistance = sqrt((nx - x) ^ 2 + (ny - y) ^ 2) }
+end
+
+local function NearMap(zone)
+    if zone.nearMap then return zone.nearMap end
+    local map = {}
+    for i = 1, zone.n do
+        local key = PointKey(floor(zone.x[i] / NEAR_CELL), floor(zone.y[i] / NEAR_CELL))
+        local list = map[key]
+        if not list then list = {}; map[key] = list end
+        list[#list + 1] = i
+    end
+    zone.nearMap = map
+    return map
+end
+
+-- The fallback of a target without its node (a target that came with a target update after the build): the physical nodes of the zone
+-- within radius in the plane that fit its height, nearest first (a water node without an exit is left out). The last straight from such
+-- a node to the target is not checked: the route says so ("approximate").
+function N.NearestNodeBindings(zone, x, y, z, radius, tolerance)
+    tolerance = tolerance or N.HEIGHT_TOLERANCE
+    local map = NearMap(zone)
+    local reach = floor(radius / NEAR_CELL) + 1
+    local gx, gy = floor(x / NEAR_CELL), floor(y / NEAR_CELL)
+    local found = {}
+    for dx = -reach, reach do
+        for dy = -reach, reach do
+            for _, i in ipairs(map[PointKey(gx + dx, gy + dy)] or {}) do
+                local d = sqrt((zone.x[i] - x) ^ 2 + (zone.y[i] - y) ^ 2)
+                if d <= radius and FitsNode(zone, i, z, tolerance) and not zone.noExit[i] then
+                    found[#found + 1] = N.NodeTargetBinding(zone, i, x, y, "nearest_node")
+                end
+            end
+        end
+    end
+    table.sort(found, function(p, q)
+        if p.airDistance ~= q.airDistance then return p.airDistance < q.airDistance end
+        return p.id < q.id
+    end)
+    return found
+end
+
+-- ---------------------------------------------------------------------------
 -- Virtual points
 -- ---------------------------------------------------------------------------
 local function NewVirtual(data)
@@ -960,6 +1126,7 @@ end
 
 -- Bands at most 2 yd apart belong to the same layer (chapter 4.1).
 local SAME_LAYER_GAP = 2.0
+N.SAME_LAYER_GAP = SAME_LAYER_GAP   -- read by Guidance.ArrivalFloor (level grouping)
 
 local function MiddleOf(hit)
     return (hit.zone.cellZMin[hit.cell] + hit.zone.cellZMax[hit.cell]) / 2

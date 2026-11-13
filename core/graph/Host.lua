@@ -527,22 +527,44 @@ end
 -- the game cannot close for it: a pushed child screen, or a stack whose
 -- config opts in with captureClose (frameless temporary windows). Everywhere
 -- else Escape stays with the game.
+--
+-- A window whose frame shows a view inside itself with the game's own way
+-- back (the quest log's details) names that button through closeClick: while
+-- it returns one, the close key is a secure click of it, so Escape steps back
+-- a view before it closes the window.
 function GraphHost:_syncCloseKey()
     local stack = self:focusedStack()
-    local wants = stack ~= nil
-        and (#stack.screens > 1 or (stack.config ~= nil and stack.config.captureClose == true))
-    if wants and self._closeHandle == nil and not WowVision.inputActivator:anyInputHeld({ "close" }) then
-        self._closeHandle = WowVision.inputActivator:activate({
-            binding = "close",
-            type = "Function",
-            delay = 0,
-            func = function()
-                self:onKey("close")
-            end,
-        })
-    elseif not wants and self._closeHandle ~= nil then
+    local config = stack ~= nil and stack.config or nil
+    local owns = stack ~= nil and (#stack.screens > 1 or (config ~= nil and config.captureClose == true))
+    local target = nil
+    if stack ~= nil and not owns and config ~= nil and config.closeClick ~= nil then
+        target = config.closeClick()
+    end
+    local wants = owns or target ~= nil
+    -- What the key does changed (the view went back, another button): let go, then take it again.
+    if self._closeHandle ~= nil and (not wants or self._closeTarget ~= target) then
         self._closeHandle:release()
         self._closeHandle = nil
+    end
+    if wants and self._closeHandle == nil and not WowVision.inputActivator:anyInputHeld({ "close" }) then
+        if target ~= nil then
+            self._closeHandle = WowVision.inputActivator:activate({
+                binding = "close",
+                type = "Click",
+                emulatedKey = "LeftButton",
+                target = target,
+            })
+        else
+            self._closeHandle = WowVision.inputActivator:activate({
+                binding = "close",
+                type = "Function",
+                delay = 0,
+                func = function()
+                    self:onKey("close")
+                end,
+            })
+        end
+        self._closeTarget = target
     end
     -- The controller has no Escape key: where Escape stays with the game, the
     -- B button runs the game's own Escape command (gameClose keymap, no
@@ -849,8 +871,9 @@ end
 -- ends it; a focused slider adjusts on left/right before any navigation;
 -- edge-wired movement next; at an edge, a node's own onRight/onLeft (a Scanner
 -- entry opening its level, or going back), then right opens the entry's next
--- level, left/right get tree semantics, and left goes back one level; a bump
--- with nothing to do stays silent. The same
+-- level, left/right get tree semantics, and left goes back one level; an Up or
+-- Down bump at the first or last entry sounds and reads the entry again (the
+-- UI module's edgeSound setting), any other bump stays silent. The same
 -- arrow pressed twice quickly skips empty slots (doublePress.lua).
 function GraphHost:_arrow(screen, dir, at)
     local kg = screen.keyGraph
@@ -924,8 +947,24 @@ function GraphHost:_arrow(screen, dir, at)
         end
     end
 
-    -- Focus did not move: stay silent. Re-reading the same node on a
-    -- boundary bump is noise when arrowing quickly.
+    -- Focus did not move on Up or Down: the first or last entry. As in Sku, a
+    -- short sound and the entry read again (Left and Right bumps stay silent:
+    -- they are level and tree keys).
+    if (dir == "up" or dir == "down") and self:_playsEdgeSound() then
+        if PlaySound ~= nil then
+            PlaySound(GraphHost.EDGE_SOUND)
+        end
+        self:_announceMove(screen, { from = node, to = node })
+    end
+end
+
+-- The game's sound kit Sku plays when Up or Down hits the end of a list.
+GraphHost.EDGE_SOUND = 681
+
+-- The UI module's setting; on unless switched off.
+function GraphHost:_playsEdgeSound()
+    local ui = WowVision.base ~= nil and WowVision.base.ui or nil
+    return ui == nil or ui.settings == nil or ui.settings.edgeSound ~= false
 end
 
 -- The UI module's setting; on unless switched off.
