@@ -212,6 +212,8 @@ function alert:fire(message)
     local entry = {
         at = round(now - fight.t0),
         count = message ~= nil and message.count or nil,
+        -- a lost number said again (the combat module's resayLost)
+        again = message ~= nil and message.again or nil,
         countable = countNow(),
         queueBefore = #speech.queue,
         speakingBefore = speech.speaking and true or false,
@@ -235,7 +237,7 @@ function alert:fire(message)
     if #fight.said < 30 then
         tinsert(fight.said, entry)
     end
-    line("said " .. tostring(entry.count) .. " (the rule counts " .. tostring(entry.countable) .. "), queue before "
+    line("said " .. (entry.again and "again " or "") .. tostring(entry.count) .. " (the rule counts " .. tostring(entry.countable) .. "), queue before "
         .. entry.queueBefore .. (entry.speakingBefore and ", other speech playing" or ""))
     return unpack(results)
 end
