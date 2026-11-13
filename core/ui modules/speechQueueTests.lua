@@ -34,6 +34,12 @@ local function loadSpeech(path)
                 bustForeign = function(text) return text end,
             },
             speechSounds = { attach = function() end },
+            -- local-play only: the stall watchdog (core/speechStall.lua), every call a no-op here
+            speechStall = {
+                new = function()
+                    return setmetatable({}, { __index = function() return function() end end })
+                end,
+            },
         },
         C_VoiceChat = {
             SpeakText = function() end,
