@@ -38,7 +38,7 @@ local enemyCountAlert = module:addAlert({
     label = L["Enemy Count Alert"],
 })
 
-enemyCountAlert:addOutput({
+local enemyCountSpeech = enemyCountAlert:addOutput({
     type = "TTS",
     key = "tts",
     label = L["TTS Alert"],
@@ -135,8 +135,11 @@ local unitAuras = C_UnitAuras or {}
 
 -- A new number is said once it held this long: a plate that blinks out
 -- and back is not spoken twice, and a pack that comes in one after another
--- is said as one number. 0.3 s is the window Sku's TBC count waits for a
--- burst of new enemies (tFlushWindow in SkuCore/aqCombat.lua).
+-- is said as one number. 0.3 s is the length of the window Sku's TBC count
+-- waits for a burst of new enemies (tFlushWindow in SkuCore/aqCombat.lua).
+-- Unlike Sku's window, which flushes 0.3 s after the first new enemy, this
+-- hold starts again at every change, so a pack that trickles in is said
+-- 0.3 s after its last member.
 local SETTLE = 0.3
 
 local PLATES = {}
@@ -243,10 +246,18 @@ local api = {
     inCombat = UnitAffectingCombat,
     classification = UnitClassification,
     threat = UnitThreatSituation,
-    inGroup = function()
-        return IsInGroup()
+    -- Guarded like utils.groupFighting's reads: a missing or refused
+    -- answer is nil, which the group rule counts as no.
+    tapDenied = function(unit)
+        if UnitIsTapDenied == nil then
+            return nil
+        end
+        local ok, tapped = pcall(UnitIsTapDenied, unit)
+        if not ok then
+            return nil
+        end
+        return tapped
     end,
-    tapDenied = UnitIsTapDenied,
     isSecret = secrets.isSecret,
     -- The crowd control reads are guarded: each game version has a
     -- different part of them, and a refused read means "unknown".
@@ -296,44 +307,34 @@ local api = {
 local settler = enemyCount.Settler:new(SETTLE)
 local controlSettler = enemyCount.Settler:new(SETTLE, enemyCount.CONTROL_IDLE)
 local tracker = enemyCount.ControlTracker:new()
-local lostLine = enemyCount.LostLine:new()
 local recountQueued, settleQueued = false, false
 
--- Fires a count and watches its line in the speech queue (lostLine). A
--- message without a number (crowd control texts alone) leaves the watch on
--- the last number. The queue's absence (Vanilla) or a line sent at once
--- leaves nothing to watch.
-local function sayCount(message)
-    local speech = WowVision.base.speech
-    local queue = speech and speech.queue
-    local before = type(queue) == "table" and #queue or nil
-    enemyCountAlert:fire(message)
-    if message.count == nil or before == nil then
-        return
-    end
-    local item = nil
-    if speech.queue == queue and #queue > before then
-        item = queue[#queue]
-    end
-    lostLine:fired(queue, item, message, GetTime())
-end
-
--- Says a lost number again (lostLine), once.
-local function resayLost()
-    local speech = WowVision.base.speech
-    local queue = speech and speech.queue
-    if type(queue) ~= "table" or not enemyCountAlert.enabled then
-        return
-    end
-    local message = lostLine:check(queue, GetTime())
-    if message ~= nil then
-        -- A copy marked as said again, for whoever looks at the alert.
-        local again = { again = true }
-        for key, value in pairs(message) do
-            again[key] = value
+-- Fires the counts and says a lost one again (enemyCount.Announcer).
+local announcer = enemyCount.Announcer:new({
+    fire = function(message)
+        enemyCountAlert:fire(message)
+    end,
+    -- The alert's own checks (Alert:fire), for its speech output alone.
+    fireSpeech = function(message)
+        if enemyCountAlert.enabled and enemyCountSpeech.enabled and enemyCountSpeech:respondsTo(message.action) then
+            enemyCountSpeech:fire(message)
         end
-        enemyCountAlert:fire(again)
-    end
+    end,
+    queue = function()
+        local speech = WowVision.base.speech
+        return speech and speech.queue
+    end,
+    now = GetTime,
+    enabled = function()
+        return enemyCountAlert.enabled
+    end,
+    mode = function()
+        return module.settings.enemyCountControlMode
+    end,
+})
+
+local function sayCount(message)
+    announcer:say(message)
 end
 
 -- Whether a count is on or about to be said, so the ticker keeps checking.
@@ -350,7 +351,11 @@ local function recountControl(skip)
     local free, controlled = enemyCount.scan(api, settings.enemyCountMode, settings.enemyCountEliteOnly, skip)
     if controlSettler:update(enemyCount.controlKey(free, controlled), GetTime()) ~= nil then
         local message = tracker:change(free, controlled, api.controlText)
-        if message ~= nil then
+        if message == nil then
+            -- A quiet change (a controlled enemy gone): the free count is
+            -- the same, a lost number still stands.
+            announcer:quietChange()
+        else
             if message.ended then
                 controlEndedAlert:fire({})
             end
@@ -452,9 +457,15 @@ function module:onEnable()
             return
         end
         nextCheck = now + 1
-        resayLost()
-        if counting() or UnitAffectingCombat("player") then
-            recount()
+        local function check()
+            if counting() or UnitAffectingCombat("player") then
+                recount()
+            end
+        end
+        if controlOn() then
+            announcer:tick(check, controlSettler, false)
+        else
+            announcer:tick(check, settler, true)
         end
     end)
 end
