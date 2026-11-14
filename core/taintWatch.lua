@@ -63,6 +63,74 @@ WowVision.taintWatch = {}
 
 local watchedGlobals = {}
 
+-- Watched lists: tables the game makes and drops while it runs (the damage
+-- meter's rows). get returns { { name = ..., tbl = ... }, ... } or nil.
+local watchedLists = {}
+
+-- Recent actions: a short ring of what changed game state just before a
+-- scan found new taint -- every SetCVar (anyone's: the record says whether
+-- the call ran tainted and which file made it). A run of the same setting
+-- from the same caller (turn speed during a turn) is one entry with a
+-- count. Copied into the timeline entry of each new taint.
+local MAX_RECENT = 40
+local recent = {}
+
+-- key: what makes a run (setting, tainted or not, caller); text: the
+-- newest call, value included.
+local function addRecent(key, text, caller)
+    local last = recent[#recent]
+    if last ~= nil and last.key == key and last.caller == caller then
+        last.count = last.count + 1
+        last.last = GetTime()
+        last.text = text
+        return
+    end
+    tinsert(recent, { at = GetTime(), clock = date("%H:%M:%S"), key = key, text = text, caller = caller, count = 1 })
+    while #recent > MAX_RECENT do
+        tremove(recent, 1)
+    end
+end
+
+local function recentSnapshot()
+    local now = GetTime()
+    local lines = {}
+    for _, entry in ipairs(recent) do
+        local line = string.format("%s (%.1f s ago) %s", entry.clock, now - entry.at, entry.text)
+        if entry.count > 1 then
+            line = line .. string.format(" x%d, last %.1f s ago", entry.count, now - entry.last)
+        end
+        tinsert(lines, line .. " <- " .. tostring(entry.caller))
+    end
+    return lines
+end
+
+-- The first stack line outside this file and the hook wrapper: who called.
+local function callerLine()
+    local stack = debugstack(3, 4, 0) or ""
+    for line in stack:gmatch("[^\n]+") do
+        if not line:find("taintWatch", 1, true) and not line:find("^%[C%]") then
+            line = line:gsub("^%[string \"@?", ""):gsub("^%[", ""):gsub("\"?%]:", ":"):gsub(": in .*$", "")
+            return (line:gsub("^Interface/AddOns/", ""))
+        end
+    end
+    return "?"
+end
+
+local function hookCVar(owner, name, label)
+    if owner == nil or type(owner[name]) ~= "function" then
+        return
+    end
+    hooksecurefunc(owner, name, function(cvar, value)
+        pcall(function()
+            local secure = issecure ~= nil and issecure() and "secure" or "tainted"
+            local key = label .. " " .. tostring(cvar) .. " (" .. secure .. ")"
+            addRecent(key, key .. " last value " .. tostring(value), callerLine())
+        end)
+    end)
+end
+hookCVar(_G, "SetCVar", "SetCVar")
+hookCVar(C_CVar, "SetCVar", "C_CVar.SetCVar")
+
 -- Every watched field addon code wrote: { [ "Table.key" ] = addon }.
 -- Number keys count too (tables keyed by ID, such as the group finder's
 -- selected activities); globals are listed as _G.name.
@@ -74,15 +142,30 @@ local function scanTainted()
             found["_G." .. name] = tostring(taintedBy)
         end
     end
+    -- One table per pcall: a table the game guards (secret keys) must not
+    -- end the scan of the others.
+    local function scanTable(name, tbl)
+        for key in pairs(tbl) do
+            if type(key) == "string" or type(key) == "number" then
+                local okCheck, secure, taintedBy = pcall(issecurevariable, tbl, key)
+                if okCheck and not secure then
+                    found[name .. "." .. key] = tostring(taintedBy)
+                end
+            end
+        end
+    end
     for _, entry in ipairs(watched) do
         local ok, tbl = pcall(entry.get)
         if ok and type(tbl) == "table" then
-            for key in pairs(tbl) do
-                if type(key) == "string" or type(key) == "number" then
-                    local okCheck, secure, taintedBy = pcall(issecurevariable, tbl, key)
-                    if okCheck and not secure then
-                        found[entry.name .. "." .. key] = tostring(taintedBy)
-                    end
+            pcall(scanTable, entry.name, tbl)
+        end
+    end
+    for _, entry in ipairs(watchedLists) do
+        local ok, list = pcall(entry.get)
+        if ok and type(list) == "table" then
+            for _, item in ipairs(list) do
+                if type(item.tbl) == "table" then
+                    pcall(scanTable, entry.name .. "." .. item.name, item.tbl)
                 end
             end
         end
@@ -114,29 +197,57 @@ local MAX_TIMELINE = 150
 local lastTainted = nil
 local ticker = nil
 
-local function addTimeline(change, field, addon)
+local function addTimeline(change, field, addon, withRecent)
     WowVisionDump = WowVisionDump or {}
     local list = WowVisionDump.taintTimeline or {}
     WowVisionDump.taintTimeline = list
     local okFocus, focus = pcall(focusDescription)
-    tinsert(list, {
+    local entry = {
         time = date("%Y-%m-%d %H:%M:%S"),
         change = change,
         field = field,
         addon = addon,
         focus = okFocus and focus or ("focus error: " .. tostring(focus)),
-    })
+        inCombat = InCombatLockdown ~= nil and InCombatLockdown() or nil,
+    }
+    if withRecent then
+        local okRecent, lines = pcall(recentSnapshot)
+        entry.recent = okRecent and lines or { "recent error: " .. tostring(lines) }
+    end
+    tinsert(list, entry)
     while #list > MAX_TIMELINE do
         tremove(list, 1)
     end
 end
 
+-- Fields whose taint is announced (spoken and in chat), once per scan:
+-- the damage meter's, which break its rows in combat (Forever 2026-11-14).
+local function isAnnounced(field)
+    return field:find("^DamageMeter") ~= nil
+end
+
 local function scanTimeline()
     local now = scanTainted()
     if lastTainted ~= nil then
+        local fresh = {}
         for field, addon in pairs(now) do
             if lastTainted[field] == nil then
-                addTimeline("tainted", field, addon)
+                tinsert(fresh, field)
+            end
+        end
+        table.sort(fresh)
+        local announced = nil
+        for index, field in ipairs(fresh) do
+            -- The recent actions go with the first new field of the scan.
+            addTimeline("tainted", field, now[field], index == 1)
+            if announced == nil and isAnnounced(field) then
+                announced = field
+            end
+        end
+        if announced ~= nil then
+            print("WowVision taint: " .. announced .. " (" .. tostring(now[announced]) .. "), saved to WowVisionDump.taintTimeline")
+            if WowVision.base ~= nil and WowVision.base.speech ~= nil then
+                WowVision:speak("Damage meter tainted")
             end
         end
         for field in pairs(lastTainted) do
@@ -168,6 +279,74 @@ end
 function WowVision.taintWatch.watchGlobal(name)
     tinsert(watchedGlobals, name)
     startTimeline()
+end
+
+-- A changing set of tables: get returns { { name = ..., tbl = ... }, ... }.
+function WowVision.taintWatch.watchList(name, get)
+    tinsert(watchedLists, { name = name, get = get })
+    startTimeline()
+end
+
+-- Blizzard's damage meter (WoW: Forever, Retail): on 2026-11-14 its rows
+-- compared a secret spec icon "while execution tainted by 'WowVision'", in
+-- every fight until a reload, though no WowVision code touches the meter.
+-- Watched: the meter, its window list, each session window (up to 3), its
+-- scroll box and view, the visible rows, the own-player row, the row data
+-- the rows are built from, and Blizzard's cached setting values (a value
+-- cached from tainted code taints every later read). Only reads here; every
+-- get is nil where the meter does not exist (TBC, Era).
+do
+    local watch = WowVision.taintWatch.watch
+    local MAX_WINDOWS = 3
+    local function sessionWindow(index)
+        return _G["DamageMeterSessionWindow" .. index]
+    end
+    local function scrollBox(window)
+        local container = window ~= nil and window.MinimizeContainer or nil
+        return container ~= nil and container.ScrollBox or nil, container
+    end
+    watch("DamageMeter", function()
+        return DamageMeter
+    end)
+    watch("DamageMeter.windowDataList", function()
+        return DamageMeter ~= nil and DamageMeter.windowDataList or nil
+    end)
+    watch("CVarCallbackRegistry.cvarValueCache", function()
+        return CVarCallbackRegistry ~= nil and CVarCallbackRegistry.cvarValueCache or nil
+    end)
+    WowVision.taintWatch.watchList("DamageMeterWindows", function()
+        local list = {}
+        for index = 1, MAX_WINDOWS do
+            local window = sessionWindow(index)
+            if window ~= nil then
+                local prefix = "w" .. index
+                tinsert(list, { name = prefix, tbl = window })
+                local box, container = scrollBox(window)
+                if container ~= nil and container.LocalPlayerEntry ~= nil then
+                    tinsert(list, { name = prefix .. ".LocalPlayerEntry", tbl = container.LocalPlayerEntry })
+                end
+                if box ~= nil then
+                    tinsert(list, { name = prefix .. ".ScrollBox", tbl = box })
+                    local okView, view = pcall(box.GetView, box)
+                    if okView and type(view) == "table" then
+                        tinsert(list, { name = prefix .. ".view", tbl = view })
+                        if type(view.frames) == "table" then
+                            for row, frame in ipairs(view.frames) do
+                                tinsert(list, { name = prefix .. ".row" .. row, tbl = frame })
+                            end
+                        end
+                        local provider = view.dataProvider
+                        if type(provider) == "table" and type(provider.collection) == "table" then
+                            for row, data in ipairs(provider.collection) do
+                                tinsert(list, { name = prefix .. ".data" .. row, tbl = data })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return list
+    end)
 end
 
 -- The group finder (WoW: Forever, TBC): which value the post or the
