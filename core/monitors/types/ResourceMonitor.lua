@@ -391,36 +391,10 @@ end
 -- Read the resource: current and maximum, or nil while the game hides it
 -- (the list leaves hidden ones out, but a saved pick or a game change can
 -- still meet one) or the player does not have it.
--- LOCAL (game build only, drop before the PR): every turn of a resource to
--- hidden and back goes to the chat with where and whether in combat, for
--- the combo point test in combat and in a dungeon.
-local function noteHidden(monitor, power, hidden)
-    monitor._hiddenNoted = monitor._hiddenNoted or {}
-    if (monitor._hiddenNoted[power.key] or false) == hidden then
-        return
-    end
-    monitor._hiddenNoted[power.key] = hidden
-    if not hidden then
-        print("WowVision resource: " .. power.key .. " readable again")
-        return
-    end
-    local where = "world"
-    if IsInInstance ~= nil then
-        local inInstance, instanceType = IsInInstance()
-        if inInstance then
-            where = tostring(instanceType)
-        end
-    end
-    local combat = InCombatLockdown ~= nil and InCombatLockdown() and "in combat" or "out of combat"
-    print("WowVision resource: " .. power.key .. " hidden (" .. where .. ", " .. combat .. ")")
-end
-
 function ResourceMonitor:read(power)
     local current = UnitPower("player", power.id)
     local maximum = UnitPowerMax("player", power.id)
-    local hidden = WowVision.secrets.isSecret(current) or WowVision.secrets.isSecret(maximum)
-    noteHidden(self, power, hidden)
-    if hidden then
+    if WowVision.secrets.isSecret(current) or WowVision.secrets.isSecret(maximum) then
         return nil
     end
     if maximum == nil or maximum <= 0 then
