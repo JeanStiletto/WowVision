@@ -40,14 +40,15 @@ local function setting()
     return ui ~= nil and ui.settings ~= nil and ui.settings.pendingWindows or "on"
 end
 
--- Whether a close for this reason puts waiting windows aside: "escape" (the window's close key) or "closeAllKey"
--- (the Close All Windows key). Any other close (nil: a route start) leaves them in front.
+-- Whether a close for this reason puts waiting windows aside: "escape" (the window's close key), "closeAllKey"
+-- (the Close All Windows key) or "combat" (opened by itself in a fight, graph/combatKeys.lua). Any other close (nil:
+-- a route start) leaves them in front.
 function pending.puts(reason)
     local mode = setting()
     if mode == "off" then
         return false
     end
-    if reason == "closeAllKey" then
+    if reason == "closeAllKey" or reason == "combat" then
         return true
     end
     return reason == "escape" and mode == "on"
@@ -116,7 +117,7 @@ function pending.isAside(frame)
 end
 
 -- Put a waiting frame aside. entry: { window = window name, frame = frame, which = dialog key or nil,
--- label = function }.
+-- title = its short name (Group Invitation), label = function: its text }.
 function pending.putAside(entry)
     if aside[entry.frame] ~= nil then
         return
@@ -145,9 +146,14 @@ function pending.closeRequest(windowName, entries, reason, otherwise)
         pending.putAside(entry)
     end
     manager:closeWindow(windowName)
-    -- after the close: Interrupt Speech on Window Close would cut it off
-    if #entries > 0 and reason == "escape" then
-        WowVision:notify(L["Pending"])
+    -- after the close: Interrupt Speech on Window Close would cut it off. Only the short names: the text was read.
+    if #entries > 0 and (reason == "escape" or reason == "combat") then
+        local titles = {}
+        for _, entry in ipairs(entries) do
+            tinsert(titles, entry.title)
+        end
+        tinsert(titles, L["Pending"])
+        WowVision:notify(table.concat(titles, ", "))
     end
 end
 
@@ -155,9 +161,20 @@ function pending.list()
     return order
 end
 
+-- Windows taken up from Pending a moment ago: name -> time. In a fight a waiting window opening by itself goes to
+-- Pending (graph/combatKeys.lua); one the player takes up comes to the front.
+local takenUp = {}
+local TAKEN_UP_FOR = 2
+
+function pending.takenUp(windowName)
+    local at = windowName ~= nil and takenUp[windowName] or nil
+    return at ~= nil and GetTime() - at < TAKEN_UP_FOR
+end
+
 -- Take a waiting window up again in front: a closed window opens on the next check and takes the focus; one already
 -- open (another popup in front) gets the focus.
 function pending.reopen(entry)
+    takenUp[entry.window] = GetTime()
     drop(entry.frame)
     C_Timer.After(0, function()
         local window = WowVision.UIHost.windowManager:getWindow(entry.window)
@@ -191,9 +208,26 @@ local function renderPending(builder)
     builder:popContext()
 end
 
--- First in the WowVision menu while something waits.
+-- First in the WowVision menu while something waits: one waiting popup is the entry itself ("Pending, its text"),
+-- more are a level of their own ("Pending, 2").
 WowVision.graph.settings.registerRootEntry(function(builder)
-    if #pending.list() == 0 then
+    local list = pending.list()
+    if #list == 0 then
+        return
+    end
+    if #list == 1 then
+        local only = list[1]
+        builder:addItem(
+            ControlId.structural("pending"),
+            nodes.button({
+                label = function()
+                    return WowVision.secrets.join({ L["Pending"], only.label() }, ", ")
+                end,
+                onActivate = function()
+                    pending.reopen(only)
+                end,
+            })
+        )
         return
     end
     builder:addItem(

@@ -245,9 +245,45 @@ local function holdsEscape()
     return any and all
 end
 
+-- A put-aside dialog's short name, said with Pending (its text was read when it opened).
+local TITLES = {
+    PARTY_INVITE = "Group Invitation",
+    CONFIRM_SUMMON = "Summon",
+    CONFIRM_SUMMON_SCENARIO = "Summon",
+    CONFIRM_SUMMON_STARTING_AREA = "Summon",
+    RESURRECT = "Resurrection",
+    RESURRECT_NO_SICKNESS = "Resurrection",
+    RESURRECT_NO_TIMER = "Resurrection",
+    DEATH = "Death",
+    HARDCORE_DEATH = "Death",
+    WOWVISION_PENDING_TEST = "Pending test",
+}
+
+local function dialogTitle(frame)
+    local key = frame.which ~= nil and TITLES[frame.which] or nil
+    return L[key or "Popup"]
+end
+
 -- Escape (or the Close All Windows key) on the window: the dialogs in front that ignore Escape go to Pending, their
 -- frames left on screen, labelled with their text (read live: a countdown the game shows in it reads as it runs).
+-- In a fight WowVision holds Escape, so a dialog that takes Escape in the game is cancelled the game's own way
+-- (StaticPopup_EscapePressed: the dialogs with hideOnEscape cancel and hide), as Escape does out of combat; the
+-- waiting ones go to Pending with the next Escape, as out of combat.
+local function takesEscapeInFront()
+    local any = false
+    forEachFrontDialog(function(frame)
+        if WowVision.pending.takesEscape(frame) then
+            any = true
+        end
+    end)
+    return any
+end
+
 local function requestClose(_, reason)
+    if reason == "escape" and InCombatLockdown() and takesEscapeInFront() and StaticPopup_EscapePressed ~= nil then
+        StaticPopup_EscapePressed()
+        return
+    end
     local entries = {}
     forEachFrontDialog(function(frame)
         if not WowVision.pending.takesEscape(frame) then
@@ -255,6 +291,7 @@ local function requestClose(_, reason)
             tinsert(entries, {
                 frame = frame,
                 which = frame.which,
+                title = dialogTitle(frame),
                 label = function()
                     return text ~= nil and text:GetText() or L["Popup"]
                 end,
@@ -275,5 +312,20 @@ module:registerWindow({
         return any
     end,
     conflictingAddons = { "Sku" },
-    graphScreen = { render = render, captureClose = holdsEscape, onRequestClose = requestClose, waits = true },
+    graphScreen = {
+        render = render,
+        captureClose = holdsEscape,
+        onRequestClose = requestClose,
+        waits = true,
+        -- a dialog in front waits for an answer and ignores Escape (graph/combatKeys.lua puts it aside in a fight)
+        hasWaiting = function()
+            local any = false
+            forEachFrontDialog(function(frame)
+                if not WowVision.pending.takesEscape(frame) then
+                    any = true
+                end
+            end)
+            return any
+        end,
+    },
 })
