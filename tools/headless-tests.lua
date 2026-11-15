@@ -2356,6 +2356,7 @@ do
         function stub:setLabel() end
         function stub:registerCommand() end
         function stub:registerBinding() end
+        function stub:registerEvent() end
         function stub:registerWindow(def)
             harness.windows[def.name] = def
         end
@@ -2374,11 +2375,14 @@ do
     ACCEPT, DECLINE = "Accept", "Decline"
     loadAddonFile("core/windows/pending.lua")
     loadAddonFile("core/windows/RolePoll.lua")
+    loadAddonFile("core/windows/trade.lua")
     harness.popups = WowVision.base.windows.popups
+    harness.trade = WowVision.base.windows.trade
     WowVision.base = savedBase
     WowVision._popupsTestHarness = harness
     loadAddonFile("core/windows/popupsTests.lua")
     loadAddonFile("core/windows/pendingTests.lua")
+    loadAddonFile("core/windows/tradeTests.lua")
     WowVision._popupsTestHarness = nil
     StaticPopupDialogs, ACCEPT, DECLINE = savedDialogs, savedAccept, savedDecline
 end
