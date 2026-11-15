@@ -11,35 +11,35 @@ local powersDB = WowVision.gameDB:get("Power")
 -- joined into the spoken text, never compared, and a bar's percent comes
 -- from the game's own curve. The bar is on screen for every sighted player.
 
--- TRACE (temporary, while the key is tried in game): what each press does,
--- in the chat.
-local function trace(text)
-    print("WowVision main resource: " .. text)
-end
-
+-- Kept once it is built whole; a failed build is tried again next press.
 local percentCurve = nil
 local function curve()
     if percentCurve == nil then
-        percentCurve = C_CurveUtil.CreateCurve()
-        percentCurve:SetType(Enum.LuaCurveType.Step)
+        local built = C_CurveUtil.CreateCurve()
+        built:SetType(Enum.LuaCurveType.Step)
         for _, point in ipairs(steps.percentCurvePoints()) do
-            percentCurve:AddPoint(point[1], point[2])
+            built:AddPoint(point[1], point[2])
         end
+        percentCurve = built
     end
     return percentCurve
 end
 
--- A bar's percent: through the curve where the game has one (the value may
--- be hidden), else from the plain numbers (classic clients).
+local function curvePercent(powerType)
+    return UnitPowerPercent("player", powerType, false, curve())
+end
+
+-- A bar's percent: through the curve where the game has one (Retail,
+-- Forever, Mists and TBC; the value may be hidden), else from the plain
+-- numbers (Classic Era).
 local function barPercent(powerType)
     if UnitPowerPercent ~= nil and C_CurveUtil ~= nil and C_CurveUtil.CreateCurve ~= nil then
-        local ok, value = pcall(UnitPowerPercent, "player", powerType, false, curve())
+        local ok, value = pcall(curvePercent, powerType)
         -- A hidden value throws on any comparison, even with nil; only its
         -- truth can be tested.
         if ok and value then
             return value
         end
-        trace("percent function: " .. (ok and "no value" or tostring(value)))
     end
     local current = UnitPower("player", powerType)
     local maximum = UnitPowerMax("player", powerType)
@@ -58,6 +58,7 @@ local function speakMainResource()
     local entry = key ~= nil and powersDB:get(key) or nil
     local name = entry ~= nil and entry.label or (token ~= nil and _G[token]) or ""
     local counted = steps.isCounted(key)
+    -- A hidden value is tested by its truth only: any comparison throws.
     local value
     if counted then
         value = UnitPower("player", powerType)
@@ -65,10 +66,8 @@ local function speakMainResource()
         value = barPercent(powerType)
     end
     if not value then
-        trace("no value for " .. tostring(token))
         return
     end
-    trace("speaking " .. tostring(token) .. (WowVision.secrets.isSecret(value) and " (hidden value)" or ""))
     WowVision:speak(steps.readoutText(name, counted, value))
 end
 
@@ -78,11 +77,5 @@ module:registerBinding({
     inputs = {},
     label = L["Speak Main Resource"],
     interruptSpeech = true,
-    func = function()
-        trace("key pressed")
-        local ok, err = pcall(speakMainResource)
-        if not ok then
-            trace("error: " .. tostring(err))
-        end
-    end,
+    func = speakMainResource,
 })
