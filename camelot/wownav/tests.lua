@@ -1296,10 +1296,11 @@ if haveNetwork then
         end)
     end
 
-    suite["Menethil: the dock to Auberdine is walked to from beside the dock to the Southshore ferry"] = function(t)
+    suite["Menethil: the dock of the own station is walked to, not noted"] = function(t)
         setup()
-        -- where the walk test of 2026-11-02 stood: 32 yd from the Southshore ferry dock, which shares its position
-        -- with the dock to Auberdine (two lines, one pier); the game noted the Auberdine dock instead of walking there
+        -- where the walk test of 2026-11-02 stood: 32 yd from the Southshore ferry dock. Then the pier also had a dock
+        -- to Auberdine at the same position, and the game noted that dock instead of walking there; the data of
+        -- 2026-11-16 (5126a81) dropped that second dock, so the test uses the Southshore ferry dock on the same pier
         local x, y = -3695.9, -575.9
         local saved = _G.UnitPosition
         _G.UnitPosition = function()
@@ -1308,27 +1309,27 @@ if haveNetwork then
         local Dock = _G.WowVisionNavigationDockNavigation
         local choosePassive = Dock.ChoosePassive
         local ok, err = pcall(function()
-            local auberdine
-            for _, r in ipairs(catalog.search(N, C, 0, "auberdine", x, y, { german = false })) do
-                if auberdine == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 100 then
-                    auberdine = r
+            local ferryDock
+            for _, r in ipairs(catalog.search(N, C, 0, "southshore", x, y, { german = false })) do
+                if ferryDock == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 100 then
+                    ferryDock = r
                 end
             end
-            t:assertNotNil(auberdine, "the Menethil dock to Auberdine")
-            local outcome, target, why = dock.choose(N, auberdine, x, y)
+            t:assertNotNil(ferryDock, "the Menethil dock to the Southshore ferry")
+            local outcome, target, why = dock.choose(N, ferryDock, x, y)
             t:assertEqual(outcome, "route", tostring(why))
-            t:assertEqual(target.id, auberdine.tid)
+            t:assertEqual(target.id, ferryDock.tid)
             -- a dock of the own station is never noted, whatever his ride rule would say (the game's case)
             Dock:Reset(false)
             Dock.ChoosePassive = function()
                 return true
             end
-            local outcome2, target2, why2 = dock.choose(N, auberdine, x, y)
+            local outcome2, target2, why2 = dock.choose(N, ferryDock, x, y)
             t:assertEqual(outcome2, "route", tostring(why2))
-            t:assertEqual(target2.id, auberdine.tid)
+            t:assertEqual(target2.id, ferryDock.tid)
             -- a dock far away still is (the ride rule is asked)
             Dock:Reset(false)
-            t:assertEqual(dock.choose(N, auberdine, x, y - 300), "route", "away from every dock: walked to")
+            t:assertEqual(dock.choose(N, ferryDock, x, y - 300), "route", "away from every dock: walked to")
         end)
         Dock.ChoosePassive = choosePassive
         _G.UnitPosition = saved
@@ -1340,7 +1341,8 @@ if haveNetwork then
 
     suite["Menethil: the route to a ship dock ends at the dock, where the boarding beacon has its point"] = function(t)
         setup()
-        -- the walk test's start of 2026-11-02; the pier slopes down 3.6 yd to the dock to Auberdine
+        -- the walk test's start of 2026-11-02; the pier slopes down to its dock (then the dock to Auberdine, since
+        -- the data of 2026-11-16 the Southshore ferry dock at the same spot)
         local x, y = -3707.1, -712.0
         local saved = _G.UnitPosition
         _G.UnitPosition = function()
@@ -1350,17 +1352,17 @@ if haveNetwork then
             local game = newGame()
             game.x, game.y = x, y
             local route = Route.new(game.env)
-            local auberdine
-            for _, r in ipairs(catalog.search(N, C, 0, "auberdine", x, y, { german = false })) do
-                if auberdine == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 200 then
-                    auberdine = r
+            local ferryDock
+            for _, r in ipairs(catalog.search(N, C, 0, "southshore", x, y, { german = false })) do
+                if ferryDock == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 200 then
+                    ferryDock = r
                 end
             end
-            t:assertNotNil(auberdine, "the Menethil dock to Auberdine")
-            local target, nav = dock.target(N, auberdine)
+            t:assertNotNil(ferryDock, "the Menethil dock to the Southshore ferry")
+            local target, nav = dock.target(N, ferryDock)
             t:assertEqual(target.facilityKind, "boat")
             local start = catalog.autoPoints(N, x, y, nil, 1)[1]
-            local outcome = runJob(N.Job(route.prepare, route, catalog.contract(auberdine, 0), { nativeMapId = 0 },
+            local outcome = runJob(N.Job(route.prepare, route, catalog.contract(ferryDock, 0), { nativeMapId = 0 },
                 start.nodeId))
             t:assertEqual(outcome.kind, "start", tostring(outcome.reason))
             -- the route is not cut on the pier (the tram's drop rule): its end lies at the dock
@@ -1368,7 +1370,7 @@ if haveNetwork then
             t:assertTrue(dock.isVesselTarget(target), "a dock of the dock model")
             -- the route ends on the dock's own node, no unchecked end behind it
             t:assertEqual(outcome.plan.path[#outcome.plan.path], outcome.result.endNodeId)
-            route:begin(outcome.plan, catalog.contract(auberdine, 0), outcome.result, auberdine.n)
+            route:begin(outcome.plan, catalog.contract(ferryDock, 0), outcome.result, ferryDock.n)
             t:assertNil(route.logicalTarget)
             local arrived
             for _ = 1, 2000 do
