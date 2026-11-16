@@ -2412,8 +2412,8 @@ do
     WowVision.base = savedBase
     WowVision._popupsTestHarness = harness
     loadAddonFile("core/windows/popupsTests.lua")
-    loadAddonFile("core/windows/pendingTests.lua")
     loadAddonFile("core/windows/tradeTests.lua")
+    loadAddonFile("core/windows/pendingTests.lua")
     WowVision._popupsTestHarness = nil
     StaticPopupDialogs, ACCEPT, DECLINE = savedDialogs, savedAccept, savedDecline
 end

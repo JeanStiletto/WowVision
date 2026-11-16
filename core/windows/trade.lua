@@ -208,9 +208,14 @@ function module:onEvent(event, ...)
             and C_TradeInfo.ShouldShowTradeOfferWarning()
             or false
         if warn and not offerWarned then
+            -- a name the game keeps hidden cannot go through format: it is joined instead
             local partner = partnerName() or ""
-            local text = TRADE_WARNING_CHANGED_OFFER ~= nil and format(TRADE_WARNING_CHANGED_OFFER, partner)
-                or WowVision.secrets.join({ partner, L["changed the offer"] }, " ")
+            local text
+            if TRADE_WARNING_CHANGED_OFFER ~= nil and not WowVision.secrets.isSecret(partner) then
+                text = format(TRADE_WARNING_CHANGED_OFFER, partner)
+            else
+                text = WowVision.secrets.join({ partner, L["changed the offer"] }, " ")
+            end
             WowVision:notify(text)
         end
         offerWarned = warn and true or false
