@@ -10,6 +10,7 @@
 * Menus in Combat: your game key for the quest log opens it in a fight and hands WowVision the keys in the same press, as the bags key does: arrows, Tab and Space work in the log, Escape gives the keys back, the quest log key closes it again. Another game window you open in a fight with the game's own key says "To read, press" with your WowVision Menu key (Shift+F1); that key lands on it and hands WowVision the keys, the next press opens the menu. After Escape has given the keys back, the menu key lands on a game window still on screen first.
 
 ### Modern
+* Quest log: in a group, a quest's tooltip (Space) now has your own progress again, next to the progress of the group members on that quest. The game's tooltip drops yours as soon as a group member has the quest.
 * Group health: Include Yourself, Watch Party, Watch Raid and the Raid Groups switches now take effect at once. Before, a change waited for someone to join or leave the group, or a reload.
 
 ### Forever
