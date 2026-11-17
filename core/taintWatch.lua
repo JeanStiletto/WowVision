@@ -10,7 +10,7 @@
 -- theirs to fix. Macro blocks carry no addon and are always spoken
 -- (WowVision clicks through secure macros).
 
-local MAX_ENTRIES = 30
+local MAX_ENTRIES = 1000
 
 local function focusDescription()
     local host = WowVision.graphHost
@@ -72,7 +72,7 @@ local watchedLists = {}
 -- the call ran tainted and which file made it). A run of the same setting
 -- from the same caller (turn speed during a turn) is one entry with a
 -- count. Copied into the timeline entry of each new taint.
-local MAX_RECENT = 40
+local MAX_RECENT = 200
 local recent = {}
 
 -- key: what makes a run (setting, tainted or not, caller); text: the
@@ -193,7 +193,7 @@ end
 -- graph's focus then -- which action wrote it, read from the file after a
 -- reload with no probe typed in game. WowVisionDump.taintTimeline, newest
 -- last, MAX_TIMELINE entries.
-local MAX_TIMELINE = 300
+local MAX_TIMELINE = 5000
 local lastTainted = nil
 local ticker = nil
 
@@ -644,7 +644,7 @@ local function record(event, addon, func)
     WowVisionDump.taint = list
     local okFocus, focus = pcall(focusDescription)
     local okTainted, tainted = pcall(taintedFields)
-    tinsert(list, {
+    local entry = {
         time = date("%Y-%m-%d %H:%M:%S"),
         event = event,
         addon = tostring(addon),
@@ -652,7 +652,23 @@ local function record(event, addon, func)
         focus = okFocus and focus or ("focus error: " .. tostring(focus)),
         tainted = okTainted and tainted or ("tainted error: " .. tostring(tainted)),
         stack = debugstack(3, 30, 0),
-    })
+    }
+    -- A burst of the same block (one bar update moving every bar) is one
+    -- entry with a count and its last time: it can never push the first
+    -- block of the session out.
+    local last = list[#list]
+    if
+        last ~= nil
+        and last.event == entry.event
+        and last.func == entry.func
+        and last.stack == entry.stack
+        and last.tainted == entry.tainted
+    then
+        last.count = (last.count or 1) + 1
+        last.lastTime = entry.time
+    else
+        tinsert(list, entry)
+    end
     while #list > MAX_ENTRIES do
         tremove(list, 1)
     end
@@ -661,6 +677,23 @@ local function record(event, addon, func)
         WowVision:notify("Blocked: " .. tostring(func))
     end
 end
+
+-- Each login starts its own lists; the previous session's stay readable in
+-- taintBefore and taintTimelineBefore. Done when the saved variables have
+-- loaded (this file runs before them).
+local sessionFrame = CreateFrame("Frame")
+pcall(sessionFrame.RegisterEvent, sessionFrame, "ADDON_LOADED")
+sessionFrame:SetScript("OnEvent", function(self, _, name)
+    if name ~= "WowVision" then
+        return
+    end
+    self:UnregisterAllEvents()
+    WowVisionDump = WowVisionDump or {}
+    WowVisionDump.taintBefore = WowVisionDump.taint or {}
+    WowVisionDump.taintTimelineBefore = WowVisionDump.taintTimeline or {}
+    WowVisionDump.taint = {}
+    WowVisionDump.taintTimeline = {}
+end)
 
 local frame = CreateFrame("Frame")
 for _, event in ipairs({
