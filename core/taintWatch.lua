@@ -693,6 +693,141 @@ sessionFrame:SetScript("OnEvent", function(self, _, name)
     WowVisionDump.taintTimelineBefore = WowVisionDump.taintTimeline or {}
     WowVisionDump.taint = {}
     WowVisionDump.taintTimeline = {}
+    WowVisionDump.taintTraceBefore = WowVisionDump.taintTrace or {}
+    WowVisionDump.taintTrace = {}
+end)
+
+-- Call stacks of tainted writes. The timeline says which field turned
+-- WowVision's and when, not which run wrote it. These post-hooks
+-- (hooksecurefunc: the game's function runs as before, untouched) check
+-- right after a game call whether the value it just wrote came out as
+-- WowVision's, and only then save the full call stack, the focus and the
+-- recent setting changes to WowVisionDump.taintTrace (previous session in
+-- taintTraceBefore). A run of the same stack is one entry with a count.
+-- Traced (Forever 2026-11-17: the bank panel rebuilt as WowVision's, and
+-- the item context of every bag button with it, each time an armour kit
+-- opened the character pane): the bank panel's rebuild, tab data, page,
+-- bank type and slot rebuild; the bags' item context signal; the build of
+-- a bag frame.
+local MAX_TRACE = 2000
+
+local function addTrace(what, field)
+    WowVisionDump = WowVisionDump or {}
+    local list = WowVisionDump.taintTrace or {}
+    WowVisionDump.taintTrace = list
+    local stack = debugstack(2, 60, 0)
+    local last = list[#list]
+    if last ~= nil and last.what == what and last.stack == stack then
+        last.count = (last.count or 1) + 1
+        last.lastTime = date("%Y-%m-%d %H:%M:%S")
+        return
+    end
+    local okFocus, focus = pcall(focusDescription)
+    local okRecent, recentLines = pcall(recentSnapshot)
+    tinsert(list, {
+        time = date("%Y-%m-%d %H:%M:%S"),
+        what = what,
+        field = field,
+        focus = okFocus and focus or ("focus error: " .. tostring(focus)),
+        inCombat = InCombatLockdown ~= nil and InCombatLockdown() or nil,
+        stack = stack,
+        recent = okRecent and recentLines or nil,
+    })
+    while #list > MAX_TRACE do
+        tremove(list, 1)
+    end
+    print("WowVision taint trace: " .. what .. " ran as WowVision, saved to WowVisionDump.taintTrace")
+end
+
+-- True when tbl[key] holds a value written by addon code.
+local function writtenTainted(tbl, key)
+    if type(tbl) ~= "table" or issecurevariable == nil then
+        return false
+    end
+    local ok, secure = pcall(issecurevariable, tbl, key)
+    return ok and secure == false
+end
+
+-- Hook method name of tbl; after each call, probe(...) returns the table and
+-- key the call wrote, checked for taint. onlyTurning: record only when the
+-- value was clean at the call before (a signal that fires for many events
+-- while the value stays tainted until rewritten).
+local function traceMethod(label, tbl, name, probe, onlyTurning)
+    if type(tbl) ~= "table" or type(tbl[name]) ~= "function" then
+        return
+    end
+    local wasTainted = false
+    hooksecurefunc(tbl, name, function(...)
+        pcall(function(...)
+            local probeTable, probeKey = probe(...)
+            local tainted = writtenTainted(probeTable, probeKey)
+            if tainted and not (onlyTurning and wasTainted) then
+                addTrace(label, probeKey)
+            end
+            wasTainted = tainted
+        end, ...)
+    end)
+end
+
+local function firstBagButton()
+    for index = 1, (NUM_CONTAINER_FRAMES or 13) do
+        local frame = _G["ContainerFrame" .. index]
+        if type(frame) == "table" and frame:IsShown() and type(frame.Items) == "table" and frame.Items[1] ~= nil then
+            return frame.Items[1]
+        end
+    end
+    local combined = _G.ContainerFrameCombinedBags
+    if type(combined) == "table" and combined:IsShown() and type(combined.Items) == "table" then
+        return combined.Items[1]
+    end
+    return nil
+end
+
+local traceFrame = CreateFrame("Frame")
+pcall(traceFrame.RegisterEvent, traceFrame, "PLAYER_LOGIN")
+traceFrame:SetScript("OnEvent", function(self)
+    self:UnregisterAllEvents()
+    pcall(function()
+        local panel = _G.BankFrame ~= nil and _G.BankFrame.BankPanel or nil
+        if panel ~= nil then
+            local function panelField(key)
+                return function(self)
+                    return self, key
+                end
+            end
+            traceMethod("BankPanel:Reset", panel, "Reset", panelField("purchasedBankTabData"))
+            traceMethod(
+                "BankPanel:FetchPurchasedBankTabData",
+                panel,
+                "FetchPurchasedBankTabData",
+                panelField("purchasedBankTabData")
+            )
+            traceMethod("BankPanel:SetBankType", panel, "SetBankType", panelField("bankType"))
+            traceMethod("BankPanel:OnPageSelected", panel, "OnPageSelected", panelField("currentPage"))
+            traceMethod("BankPanel:GenerateItemSlotsForSelectedTab", panel, "GenerateItemSlotsForSelectedTab", function(self)
+                if self.itemButtonPool ~= nil then
+                    for button in self.itemButtonPool:EnumerateActive() do
+                        return button, "bankTabID"
+                    end
+                end
+                return nil
+            end)
+        end
+        if _G.ItemButtonUtil ~= nil then
+            traceMethod("ItemButtonUtil.TriggerEvent", _G.ItemButtonUtil, "TriggerEvent", function()
+                return firstBagButton(), "itemContextMatchResult"
+            end, true)
+        end
+        if type(_G.ContainerFrame_GenerateFrame) == "function" then
+            hooksecurefunc("ContainerFrame_GenerateFrame", function(frame)
+                pcall(function()
+                    if writtenTainted(frame, "size") then
+                        addTrace("ContainerFrame_GenerateFrame", "size")
+                    end
+                end)
+            end)
+        end
+    end)
 end)
 
 local frame = CreateFrame("Frame")
