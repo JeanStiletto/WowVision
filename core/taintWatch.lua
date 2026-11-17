@@ -193,7 +193,7 @@ end
 -- graph's focus then -- which action wrote it, read from the file after a
 -- reload with no probe typed in game. WowVisionDump.taintTimeline, newest
 -- last, MAX_TIMELINE entries.
-local MAX_TIMELINE = 150
+local MAX_TIMELINE = 300
 local lastTainted = nil
 local ticker = nil
 
@@ -237,6 +237,7 @@ local ANNOUNCED = {
     { pattern = "^BankFrame", speech = "Bags tainted" },
     { pattern = "^ItemButtonUtil", speech = "Bags tainted" },
     { pattern = "^ItemLocation", speech = "Bags tainted" },
+    { pattern = "^ContainerFrame", speech = "Bags tainted" },
 }
 -- The bag click's globals (BAG_CLICK_GLOBALS, below) are recorded as _G.name.
 local bagGlobals = {}
@@ -253,38 +254,82 @@ local function announcement(field)
     return nil
 end
 
+-- One timeline entry per scan, change and area: a bag frame built under
+-- taint turns hundreds of fields at once, and one entry per field pushed the
+-- moment it happened out of the list (2026-11-17: the "clean" of 150 bag
+-- fields left none of their "tainted"). The area is the field's first two
+-- parts (Bags.Bag1, ActionBars.StanceBar, _G.PENDING_LISTING_UPDATE); the
+-- entry keeps the count and the first fields by name.
+local SAMPLE_FIELDS = 12
+
+local function areaOf(field)
+    return field:match("^([^%.]+%.[^%.]+)") or field
+end
+
+local function addGrouped(change, fields, addons, withRecent)
+    table.sort(fields)
+    local areas, order = {}, {}
+    for _, field in ipairs(fields) do
+        local area = areaOf(field)
+        local group = areas[area]
+        if group == nil then
+            group = { fields = {}, count = 0, addons = {} }
+            areas[area] = group
+            tinsert(order, area)
+        end
+        group.count = group.count + 1
+        if #group.fields < SAMPLE_FIELDS then
+            tinsert(group.fields, field)
+        end
+        if addons ~= nil and addons[field] ~= nil then
+            group.addons[addons[field]] = true
+        end
+    end
+    for index, area in ipairs(order) do
+        local group = areas[area]
+        local names = {}
+        for addon in pairs(group.addons) do
+            tinsert(names, addon)
+        end
+        table.sort(names)
+        local field = area .. " (" .. group.count .. "): " .. table.concat(group.fields, ", ")
+        -- The recent actions go with the first area of the scan.
+        addTimeline(change, field, #names > 0 and table.concat(names, ", ") or nil, withRecent and index == 1)
+    end
+end
+
 local function scanTimeline()
     local now = scanTainted()
     if lastTainted ~= nil then
         local fresh = {}
-        for field, addon in pairs(now) do
+        for field in pairs(now) do
             if lastTainted[field] == nil then
                 tinsert(fresh, field)
             end
         end
         table.sort(fresh)
         local announced, speech = nil, nil
-        for index, field in ipairs(fresh) do
-            -- The recent actions go with the first new field of the scan.
-            addTimeline("tainted", field, now[field], index == 1)
-            if announced == nil then
-                speech = announcement(field)
-                if speech ~= nil then
-                    announced = field
-                end
+        for _, field in ipairs(fresh) do
+            speech = announcement(field)
+            if speech ~= nil then
+                announced = field
+                break
             end
         end
+        addGrouped("tainted", fresh, now, true)
         if announced ~= nil then
             print("WowVision taint: " .. announced .. " (" .. tostring(now[announced]) .. "), saved to WowVisionDump.taintTimeline")
             if WowVision.base ~= nil and WowVision.base.speech ~= nil then
                 WowVision:speak(speech)
             end
         end
+        local gone = {}
         for field in pairs(lastTainted) do
             if now[field] == nil then
-                addTimeline("clean", field, nil)
+                tinsert(gone, field)
             end
         end
+        addGrouped("clean", gone, nil, false)
     end
     lastTainted = now
 end
@@ -539,6 +584,11 @@ local BAG_CLICK_GLOBALS = {
     "ObliterumForgeFrame",
     "ChallengesKeystoneFrame",
     "CollectionsJournal",
+    "OpenAllBags",
+    "CloseAllBags",
+    "ContainerFrame_GenerateFrame",
+    "UpdateContainerFrameAnchors",
+    "ContainerFrameSettingsManager",
 }
 do
     local watch = WowVision.taintWatch.watch
@@ -546,7 +596,18 @@ do
         WowVision.taintWatch.watchGlobal(name)
         bagGlobals[name] = true
     end
-    for _, name in ipairs({ "MerchantFrame", "BankFrame", "ItemButtonUtil", "ItemLocation" }) do
+    -- What building a bag frame reads as the bags open (OpenAllBags,
+    -- ContainerFrame_GenerateFrame, UpdateContainerFrameAnchors): on
+    -- 2026-11-17 every field of every bag button was WowVision's at a refused
+    -- use, so the build that wrote them had read something of WowVision's.
+    for _, name in ipairs({
+        "MerchantFrame",
+        "BankFrame",
+        "ItemButtonUtil",
+        "ItemLocation",
+        "ContainerFrameSettingsManager",
+        "ContainerFrameContainer",
+    }) do
         watch(name, function()
             local value = _G[name]
             return type(value) == "table" and value or nil
