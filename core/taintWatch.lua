@@ -220,10 +220,26 @@ local function addTimeline(change, field, addon, withRecent)
     end
 end
 
--- Fields whose taint is announced (spoken and in chat), once per scan:
--- the damage meter's, which break its rows in combat (Forever 2026-11-14).
-local function isAnnounced(field)
-    return field:find("^DamageMeter") ~= nil
+-- Fields whose taint is announced (spoken and in chat), once per scan, with
+-- what to say: the damage meter's, which break its rows in combat (Forever
+-- 2026-11-14), and the action bars' and the quest map's, which block the
+-- bars in combat (Forever 2026-11-17). Spoken when it happens, the player
+-- knows which action did it.
+local ANNOUNCED = {
+    { pattern = "^DamageMeter", speech = "Damage meter tainted" },
+    { pattern = "^EditModeManagerFrame", speech = "Action bars tainted" },
+    { pattern = "^ActionBar", speech = "Action bars tainted" },
+    { pattern = "^MicroMenuContainer", speech = "Action bars tainted" },
+    { pattern = "^GamepadMainActionBarFrame", speech = "Gamepad bars tainted" },
+    { pattern = "^QuestMapFrame", speech = "Quest log tainted" },
+}
+local function announcement(field)
+    for _, entry in ipairs(ANNOUNCED) do
+        if field:find(entry.pattern) ~= nil then
+            return entry.speech
+        end
+    end
+    return nil
 end
 
 local function scanTimeline()
@@ -236,18 +252,21 @@ local function scanTimeline()
             end
         end
         table.sort(fresh)
-        local announced = nil
+        local announced, speech = nil, nil
         for index, field in ipairs(fresh) do
             -- The recent actions go with the first new field of the scan.
             addTimeline("tainted", field, now[field], index == 1)
-            if announced == nil and isAnnounced(field) then
-                announced = field
+            if announced == nil then
+                speech = announcement(field)
+                if speech ~= nil then
+                    announced = field
+                end
             end
         end
         if announced ~= nil then
             print("WowVision taint: " .. announced .. " (" .. tostring(now[announced]) .. "), saved to WowVisionDump.taintTimeline")
             if WowVision.base ~= nil and WowVision.base.speech ~= nil then
-                WowVision:speak("Damage meter tainted")
+                WowVision:speak(speech)
             end
         end
         for field in pairs(lastTainted) do
@@ -406,6 +425,79 @@ do
         local frame = browse()
         local dropdown = frame ~= nil and frame.ActivityDropdown or nil
         return dropdown ~= nil and dropdown.selectedValues or nil
+    end)
+end
+
+-- The action bars (WoW: Forever): on 2026-11-17 a fight in Bear Form had
+-- the stance bar's and the pet bar's own event handlers run "tainted by
+-- WowVision", so Edit Mode's moves of every bottom bar were blocked and the
+-- bars stayed broken until a reload; no WowVision key was pressed in that
+-- fight. Those handlers read the bars' fields (showAllButtons,
+-- isShownExternal, shownButtonContainers, the grid settings), the buttons',
+-- Edit Mode's and the controller's event frames, so all of them are
+-- watched, and the gamepad bars too (their flyout update failed in the same
+-- fight). The quest map is watched because its log was walked in a fight
+-- before. Only reads; a get is nil where the frame does not exist.
+local BAR_NAMES = {
+    "MainActionBar",
+    "MultiBarBottomLeft",
+    "MultiBarBottomRight",
+    "MultiBarRight",
+    "MultiBarLeft",
+    "MultiBar5",
+    "MultiBar6",
+    "MultiBar7",
+    "StanceBar",
+    "PetActionBar",
+    "OverrideActionBar",
+}
+do
+    local watch = WowVision.taintWatch.watch
+    local function global(name)
+        return function()
+            local value = _G[name]
+            return type(value) == "table" and value or nil
+        end
+    end
+    for _, name in ipairs({
+        "EditModeManagerFrame",
+        "ActionBarButtonEventsFrame",
+        "ActionBarActionEventsFrame",
+        "MicroMenuContainer",
+        "GamepadMainActionBarFrame",
+        "QuestMapFrame",
+    }) do
+        watch(name, global(name))
+    end
+    watch("GamepadMainActionBarFrame.PageUnit", function()
+        local frame = _G.GamepadMainActionBarFrame
+        return type(frame) == "table" and frame.PageUnit or nil
+    end)
+    for _, part in ipairs({ "QuestsFrame", "DetailsFrame" }) do
+        watch("QuestMapFrame." .. part, function()
+            local frame = _G.QuestMapFrame
+            return type(frame) == "table" and frame[part] or nil
+        end)
+    end
+    WowVision.taintWatch.watchList("ActionBars", function()
+        local list = {}
+        for _, name in ipairs(BAR_NAMES) do
+            local bar = _G[name]
+            if type(bar) == "table" then
+                tinsert(list, { name = name, tbl = bar })
+                for _, key in ipairs({ "shownButtonContainers", "oldGridSettings" }) do
+                    if type(bar[key]) == "table" then
+                        tinsert(list, { name = name .. "." .. key, tbl = bar[key] })
+                    end
+                end
+                if type(bar.actionButtons) == "table" then
+                    for index, button in ipairs(bar.actionButtons) do
+                        tinsert(list, { name = name .. ".button" .. index, tbl = button })
+                    end
+                end
+            end
+        end
+        return list
     end)
 end
 
