@@ -11,6 +11,7 @@
 -- (WowVision clicks through secure macros).
 
 local MAX_ENTRIES = 1000
+local MAX_SESSIONS = 20
 
 local function focusDescription()
     local host = WowVision.graphHost
@@ -689,12 +690,32 @@ sessionFrame:SetScript("OnEvent", function(self, _, name)
     end
     self:UnregisterAllEvents()
     WowVisionDump = WowVisionDump or {}
-    WowVisionDump.taintBefore = WowVisionDump.taint or {}
-    WowVisionDump.taintTimelineBefore = WowVisionDump.taintTimeline or {}
-    WowVisionDump.taint = {}
-    WowVisionDump.taintTimeline = {}
-    WowVisionDump.taintTraceBefore = WowVisionDump.taintTrace or {}
-    WowVisionDump.taintTrace = {}
+    local dump = WowVisionDump
+    -- Every earlier session that recorded anything stays, newest last, in
+    -- taintSessions (MAX_SESSIONS of them). An empty session is never kept
+    -- and never pushes one out: two logins in a row lost a trace on
+    -- 2026-11-17 when the "before" slot held one session only.
+    local taint, timeline, trace = dump.taint or {}, dump.taintTimeline or {}, dump.taintTrace or {}
+    dump.taintSessions = dump.taintSessions or {}
+    if #taint > 0 or #timeline > 0 or #trace > 0 then
+        tinsert(dump.taintSessions, {
+            ended = date("%Y-%m-%d %H:%M:%S"),
+            taint = taint,
+            timeline = timeline,
+            trace = trace,
+        })
+        while #dump.taintSessions > MAX_SESSIONS do
+            tremove(dump.taintSessions, 1)
+        end
+    end
+    -- The newest kept session also under the old names.
+    local newest = dump.taintSessions[#dump.taintSessions]
+    dump.taintBefore = newest ~= nil and newest.taint or {}
+    dump.taintTimelineBefore = newest ~= nil and newest.timeline or {}
+    dump.taintTraceBefore = newest ~= nil and newest.trace or {}
+    dump.taint = {}
+    dump.taintTimeline = {}
+    dump.taintTrace = {}
 end)
 
 -- Call stacks of tainted writes. The timeline says which field turned
