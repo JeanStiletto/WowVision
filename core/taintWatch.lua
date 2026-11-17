@@ -232,8 +232,19 @@ local ANNOUNCED = {
     { pattern = "^MicroMenuContainer", speech = "Action bars tainted" },
     { pattern = "^GamepadMainActionBarFrame", speech = "Gamepad bars tainted" },
     { pattern = "^QuestMapFrame", speech = "Quest log tainted" },
+    { pattern = "^Bags%.", speech = "Bags tainted" },
+    { pattern = "^MerchantFrame", speech = "Bags tainted" },
+    { pattern = "^BankFrame", speech = "Bags tainted" },
+    { pattern = "^ItemButtonUtil", speech = "Bags tainted" },
+    { pattern = "^ItemLocation", speech = "Bags tainted" },
 }
+-- The bag click's globals (BAG_CLICK_GLOBALS, below) are recorded as _G.name.
+local bagGlobals = {}
 local function announcement(field)
+    local global = field:match("^_G%.(.+)$")
+    if global ~= nil and bagGlobals[global] then
+        return "Bags tainted"
+    end
     for _, entry in ipairs(ANNOUNCED) do
         if field:find(entry.pattern) ~= nil then
             return entry.speech
@@ -493,6 +504,71 @@ do
                 if type(bar.actionButtons) == "table" then
                     for index, button in ipairs(bar.actionButtons) do
                         tinsert(list, { name = name .. ".button" .. index, tbl = button })
+                    end
+                end
+            end
+        end
+        return list
+    end)
+end
+
+-- The bags (WoW: Forever): on 2026-11-17, out of combat and in a session
+-- without a fight, using an armour set from the bags by WowVision's secure
+-- right click was refused (UseContainerItem forbidden, "WowVision"). The
+-- click (ContainerFrameItemButton_OnClick) reads the item button, the
+-- merchant's refund item, the bank's panel and type, ItemButtonUtil,
+-- ItemLocation, and the globals of every window it checks (several are
+-- made by load-on-demand addons: a load run by addon code makes them
+-- tainted globals). All of them are watched.
+local BAG_CLICK_GLOBALS = {
+    "ContainerFrameItemButton_OnClick",
+    "MerchantFrame_ResetRefundItem",
+    "BankUtil_IsAccountBankDepositRefundable",
+    "ItemButtonUtil",
+    "ItemLocation",
+    "MerchantFrame",
+    "AuctionHouseFrame",
+    "AzeriteRespecFrame",
+    "RuneforgeFrame",
+    "BankFrame",
+    "GuildBankFrame",
+    "MailFrame",
+    "AuctionFrame",
+    "TradeFrame",
+    "ItemUpgradeFrame",
+    "ObliterumForgeFrame",
+    "ChallengesKeystoneFrame",
+    "CollectionsJournal",
+}
+do
+    local watch = WowVision.taintWatch.watch
+    for _, name in ipairs(BAG_CLICK_GLOBALS) do
+        WowVision.taintWatch.watchGlobal(name)
+        bagGlobals[name] = true
+    end
+    for _, name in ipairs({ "MerchantFrame", "BankFrame", "ItemButtonUtil", "ItemLocation" }) do
+        watch(name, function()
+            local value = _G[name]
+            return type(value) == "table" and value or nil
+        end)
+    end
+    watch("BankFrame.BankPanel", function()
+        local frame = _G.BankFrame
+        return type(frame) == "table" and frame.BankPanel or nil
+    end)
+    WowVision.taintWatch.watchList("Bags", function()
+        local list = {}
+        local frames = { { name = "Combined", frame = _G.ContainerFrameCombinedBags } }
+        for index = 1, (NUM_CONTAINER_FRAMES or 13) do
+            tinsert(frames, { name = "Bag" .. index, frame = _G["ContainerFrame" .. index] })
+        end
+        for _, entry in ipairs(frames) do
+            local frame = entry.frame
+            if type(frame) == "table" and frame:IsShown() then
+                tinsert(list, { name = entry.name, tbl = frame })
+                if type(frame.Items) == "table" then
+                    for index, button in ipairs(frame.Items) do
+                        tinsert(list, { name = entry.name .. ".item" .. index, tbl = button })
                     end
                 end
             end
