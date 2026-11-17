@@ -1786,6 +1786,11 @@ function Entry:update(key, x, y, floor)
     if self.distanceFor then
         distance = math.min(self.distanceFor(key) or distance, self.distanceFor(self.current) or distance)
     end
+    -- `holdFor(key)` (optional): at least this far, whatever the shorter distance (a way's direction changing again
+    -- soon after the last change, bugs 169 and 79)
+    if self.holdFor then
+        distance = math.max(distance, self.holdFor(key) or 0)
+    end
     if self.walked >= distance then
         self.current, self.candidate = key, nil
         self.fromX, self.fromY = self.candidateX, self.candidateY

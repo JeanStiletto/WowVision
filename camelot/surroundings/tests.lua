@@ -1868,6 +1868,24 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(e:update("open land", 0, 17), "open land") -- the rest keeps 8 yd
     end,
 
+    ["holdFor keeps a key at least that far, over a shorter distanceFor (bugs 169 and 79)"] = function(t)
+        local e = logic.newEntry(8)
+        e.distanceFor = function()
+            return 0
+        end
+        local held = true
+        e.holdFor = function(key)
+            return held and key == "street b" and 20 or nil
+        end
+        e:update("street a", 0, 0)
+        t:assertNil(e:update("street b", 0, 1))                -- held: 0 yd would have taken it at once
+        t:assertNil(e:update("street b", 0, 15))
+        t:assertEqual(e:update("street b", 0, 21), "street b") -- 20 yd on it
+        t:assertEqual(e:update("street c", 0, 22), "street c") -- another key: at once
+        held = false
+        t:assertEqual(e:update("street b", 0, 23), "street b") -- no hold: at once again
+    end,
+
     ["the nearest road from off the road, with its direction"] = function(t)
         local z = newZone()
         logic.unpack(z)

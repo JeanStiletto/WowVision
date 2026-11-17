@@ -54,6 +54,13 @@ local EDGE_REACH = 3 -- a drop edge this close is warned about
 local EDGE_REARM = 0.5 -- beyond the reach before the same edge warns again (not on position noise)
 local EDGE_LOOK = 10 -- drop edges in the path are warned about this far ahead
 local EDGE_REPEAT = 1 -- the same edge warning is not said again within this
+-- seconds after an edge warning in which another edge AHEAD stays quiet (one within EDGE_REACH is still said): at a
+-- canal fork five edges came in one second, 2026-11-17 15:15:36 (bug 170)
+local hold = { EDGE_BURST = 2 }
+-- yd: a way's direction (the next piece of one street, one flight of one stairs) changes again only this far from
+-- where it last changed: crossing a wide junction of the Trade District said three to four bare directions in 1 to 3 s
+-- on every pass, its stretches 12 to 15 yd long (bug 169), the Lion's Pride Inn's landing flipped five times in 7 s (bug 79), 2026-11-17
+hold.DIR_SPACING = 20
 local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead along
 local AHEAD_FORGET = 6 -- yd farther from a piece said ahead than when it was said: forgotten
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
@@ -87,6 +94,9 @@ local indoor = logic.newEntry(ENTRY_INDOORS)
 local laneDecided = false -- a centre line decided the last outdoor value (see distanceFor)
 local leftWay = nil -- the way piece the player last stepped off (back onto it only after a few yards)
 local leftClimb = nil -- the ramp or stairs piece the player last stepped off (the same)
+-- hold.posX, hold.posY: where the player is at this look (for holdFor)
+-- hold.dirX, hold.dirY: where the outdoor place or a way's direction last changed
+-- hold.lastDir: the direction words the last place line ended on ("Ost nach West"): not said again bare
 local wasIndoors = nil -- indoors at the last look (nil before the first)
 local lastCheck = 0
 local lastX, lastY = nil, nil -- the previous position, for walking through doorways
@@ -306,6 +316,7 @@ local function forgetPlace()
         end
     end
     warnedEdges = {}
+    hold.dirX, hold.dirY, hold.lastDir, hold.wayPlace = nil, nil, nil, nil
     layerMode = false
 end
 
@@ -347,6 +358,33 @@ outdoor.distanceFor = function(key)
     end
     if logic.NARROW[logic.kind(zone, logic.keyPlace(key))] then
         return ENTRY_NARROW
+    end
+end
+
+-- Another piece of the same place (a street's next stretch, a stairs' next flight or its landing) counts only after
+-- hold.DIR_SPACING yd on it while the place's direction last changed less than hold.DIR_SPACING yd from here: a real bend after a
+-- straight run is still said at once (distanceFor), a junction crossed at a slant or a landing's seam stays quiet
+outdoor.holdFor = function(key)
+    local current = outdoor.current
+    if key == nil or current == nil or key == current or hold.posX == nil or hold.dirX == nil then
+        return nil
+    end
+    -- the same place as the one held, or from a fork or crossing back onto the place held before it
+    local here = logic.keyPlace(current)
+    if logic.ARMED[logic.kind(zone, here)] then
+        here = hold.wayPlace
+    end
+    if logic.keyPlace(key) ~= here then
+        return nil
+    end
+    -- never a fork or crossing: two forks a few yards apart can share one place (the canal fork by the bridge and the
+    -- one at the stairs, replay of 2026-11-17 15:05:03 lost the second fork's line)
+    local kind = logic.kind(zone, logic.keyPlace(key))
+    if logic.ARMED[kind] then
+        return nil
+    end
+    if logic.dist(hold.posX, hold.posY, hold.dirX, hold.dirY) < hold.DIR_SPACING then
+        return hold.DIR_SPACING
     end
 end
 
@@ -1237,7 +1275,10 @@ local function checkEdges(z, x, y, px, py, rooms)
     if i then
         local text = logic.edgeText(z, i, along, x, y, qx, qy)
         local now = GetTime()
-        if text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
+        if along and now - edgeAt < hold.EDGE_BURST then
+            -- an edge ahead right after another warning: only logged (one within reach is still said, bug 170)
+            logEntry("edge", text, x, y, { same = true })
+        elseif text ~= lastEdgeText or now - edgeAt >= EDGE_REPEAT then
             say(text, "edge", x, y)
             lastEdgeText, edgeAt = text, now
         end
@@ -1402,7 +1443,15 @@ local function checkAhead(z, x, y, px, py)
         -- onto it: a stairs' line in a tower beside the canal walk had no direction to say)
         local text, named
         if logic.sameWay(value, key, wayNamed, z) then
+            -- (not where the way's direction changed less than hold.DIR_SPACING yd ago, nor the direction just said: the
+            -- place line's rules, holdFor and hold.lastDir)
+            if hold.dirX and logic.dist(x, y, hold.dirX, hold.dirY) < hold.DIR_SPACING then
+                return
+            end
             text = logic.directionText(z, value)
+            if text == hold.lastDir then
+                return
+            end
         else
             -- (a fork ahead: the arm of the way the player is on says its directions alone)
             local came = logic.keyLabel(z, key)
@@ -1462,6 +1511,7 @@ local function checkPlace(z, x, y, forced)
         value, laneDecided = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
     end
     local previous = outdoor.current
+    hold.posX, hold.posY = x, y
     -- a building's floors on a grid of their own (cells of 2 yd: the Brill tavern) are rooms: said
     -- after ENTRY_INDOORS (the kitchen came 14 s after the guidance to its stairs, walk 2026-10-03
     -- 23:14). The halls on the zone's grid keep ENTRY_OUTDOORS: at 5 or 3 Ironforge's large hall
@@ -1469,6 +1519,13 @@ local function checkPlace(z, x, y, forced)
     -- between places (replay of all walks, 2026-10-04)
     outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y, z._index.floor or 0) then
+        -- (any change counts: stepping onto a street and its first stretch's end 5 yd later was two lines in 1 s; but not
+        -- a fork or crossing piece: the Trade District's junction has a small fork piece inside, and each step back off
+        -- it onto the street began the count anew, 2026-11-17 15:04:42 to 45)
+        if not logic.ARMED[logic.kind(z, logic.keyPlace(outdoor.current))] then
+            hold.dirX, hold.dirY = x, y
+            hold.wayPlace = logic.keyPlace(outdoor.current)
+        end
         leftWay = logic.isWayKey(previous) and previous or nil
         leftClimb = previous and logic.CLIMBS[logic.kind(z, logic.keyPlace(previous))] and previous or nil
         -- off a way onto a square: at the way's end the square's description, before its end (a
@@ -1484,6 +1541,7 @@ local function checkPlace(z, x, y, forced)
             sideways = sq ~= nil and logic.isOpeningOf(z, sq, previous)
                 and not logic.leftAtEnd(z, sq, previous, outdoor.fromX or x, outdoor.fromY or y)
         end
+        local sameBefore = logic.sameWay(value, previous, wayNamed, z)
         local text, square, said = logic.spotText(z, x, y, value, previous,
             { cut = true, facing = turnFacing(), swimming = IsSwimming(), named = wayNamed, sideways = sideways,
                 from = { outdoor.fromX or x, outdoor.fromY or y }, through = forkCame })
@@ -1514,9 +1572,14 @@ local function checkPlace(z, x, y, forced)
             if helperArrival then
                 helperArrival()
             end
+        elseif sameBefore and text ~= nil and text ~= "" and text == hold.lastDir then
+            -- the next piece of the same way says only its direction, and that is what was just said ("Rampe, Ost nach
+            -- West" up the inn's lower flight, then "Ost nach West" again up the upper one, 2026-11-17): only logged
+            logEntry("place", text, x, y, { walked = round1(outdoor.walked), same = true })
         else
             say(text, "place", x, y, outdoor.walked)
         end
+        hold.lastDir = logic.directionText(z, value)
     elseif region and outdoor.current == logic.placeOf(region.value) then
         -- also from the square's edge (a step onto the street beside it does not leave it)
         checkApproach(z, x, y)
