@@ -2417,6 +2417,8 @@ do
     WowVision._popupsTestHarness = nil
     StaticPopupDialogs, ACCEPT, DECLINE = savedDialogs, savedAccept, savedDecline
 end
+loadAddonFile("core/windows/options/layoutPages.lua")
+loadAddonFile("core/windows/options/layoutPagesTests.lua")
 loadAddonFile("core/graph/menuNavTests.lua")
 loadAddonFile("core/graph/combatKeysTests.lua")
 loadAddonFile("core/graph/secretLabelTests.lua")

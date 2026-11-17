@@ -6,9 +6,9 @@ Die Kampfeinstellungen findest du im WowVision-Menü (tippe /wv) unter Benutzero
 
 ## Was passiert, wenn der Kampf beginnt
 
-WoW erlaubt Addons nicht, im Kampf Tastenbelegungen zu ändern oder viele seiner Funktionen zu benutzen. Mit der Einstellung Menüs im Kampf (Menus in Combat, im Menü Benutzeroberfläche, standardmäßig an) arbeiten die Menüs von WowVision im Kampf trotzdem weiter, über ein sicheres Fenster, dem das Spiel das Halten von Tasten erlaubt; siehe [Menüs im Kampf](#menüs-im-kampf) unten. Ohne offenes WowVision-Fenster bleiben alle Tasten beim Spiel: deine Bewegungstasten, Tab für die Zielerfassung und deine Aktionsleisten verhalten sich genau so, wie das Spiel es vorsieht.
+WoW erlaubt Addons nicht, im Kampf Tastenbelegungen zu ändern oder viele seiner Funktionen zu benutzen. Mit der Einstellung Menüs im Kampf (Menus in Combat, im Menü Benutzeroberfläche, standardmäßig aus) arbeiten die Menüs von WowVision im Kampf trotzdem weiter, über ein sicheres Fenster, dem das Spiel das Halten von Tasten erlaubt; siehe [Menüs im Kampf](#menüs-im-kampf) unten. Ohne offenes WowVision-Fenster bleiben alle Tasten beim Spiel: deine Bewegungstasten, Tab für die Zielerfassung und deine Aktionsleisten verhalten sich genau so, wie das Spiel es vorsieht.
 
-Mit ausgeschalteten Menüs im Kampf tritt WowVision im selben Moment zur Seite, in dem ein Kampf beginnt: die Tasten, die es für seine Fenster übernommen hat, gehen an das Spiel zurück, und seine Fenster werden bis zum Ende des Kampfes weder gelesen noch aktualisiert.
+Mit ausgeschalteten Menüs im Kampf, also solange du sie nicht einschaltest, tritt WowVision im selben Moment zur Seite, in dem ein Kampf beginnt: die Tasten, die es für seine Fenster übernommen hat, gehen an das Spiel zurück, und seine Fenster werden bis zum Ende des Kampfes weder gelesen noch aktualisiert.
 
 In beiden Fällen:
 
@@ -41,7 +41,7 @@ Classic Era, The Burning Crusade und Mists of Pandaria haben diese Einschränkun
 
 ### Öffnen und schließen
 
-Die Tasten, die ein WowVision-Fenster öffnen, wirken im Kampf wie außerhalb: das WowVision-Menü (Umschalt+F1), der Chat (Umschalt+F3), der Scanner (F9), die Navigation (F10) und die Aktionsleisten (Umschalt+F4). Öffnet eine davon ein Fenster, bekommt WowVision seine Menütasten: die Pfeiltasten, Tab und Umschalt+Tab, Strg+Tab, Pos1 und Ende, Eingabe und Rücktaste, Umschalt+F10, Leertaste und Esc. Ein Fenster, das schon offen war, als der Kampf begann, behält sie.
+Die Tasten, die ein WowVision-Fenster öffnen, wirken im Kampf wie außerhalb: das WowVision-Menü (Umschalt+F1), der Chat (Umschalt+F3), der Scanner (F9), die Navigation (F10) und die Aktionsleisten (Umschalt+F4). Öffnet eine davon ein Fenster, bekommt WowVision seine Menütasten: die Pfeiltasten, Tab und Umschalt+Tab, Strg+Tab, Pos1 und Ende, Eingabe und Rücktaste, Umschalt+F10, Leertaste und Esc. Ein Fenster, das schon offen war, als der Kampf begann, behält sie, außer du hast in dem Moment eine davon für das Spiel gehalten (siehe [Tasten, die du hältst, während sich ein Menü öffnet](#tasten-die-du-hältst-während-sich-ein-menü-öffnet)).
 
 Esc schließt die eigenen Fenster von WowVision und gibt sofort alle Tasten an das Spiel zurück. Die Fenster des Spiels (das Questlog, die Charakteransicht) darf ein Addon im Kampf nicht schließen; sie bleiben auf dem Bildschirm und sind nach dem Kampf wieder da.
 
@@ -87,9 +87,19 @@ Ein Popup, das auf etwas antwortet, das du gerade getan hast, etwa „diesen Geg
 
 Im Kampf sagen die Knöpfe des Handelsfensters (Handel, Abbrechen und die Handelsplätze) „Im Kampf nicht verfügbar“. Nimm den Handel mit der Taste Handel annehmen (Alt+Strg+T) an: sie ist eine Tastenbelegung des Spiels selbst und wirkt deshalb auch im Kampf. Siehe [Tastenbelegung](../reference/keybindings.md).
 
+### Tasten, die du hältst, während sich ein Menü öffnet
+
+Das Spiel gibt das Loslassen einer Taste an den, der die Taste in diesem Moment hält. Nimmt ein Menü eine Taste, während du sie für das Spiel hältst, einen Pfeil, mit dem du läufst oder dich drehst, oder die Leertaste beim Auftauchen, dann sieht das Spiel das Loslassen nie, und dein Charakter läuft oder dreht sich weiter.
+
+WowVision schützt davor, wo es kann. Ein Fenster, das offen ist, wenn ein Kampf beginnt, behält seine Tasten nur, wenn WowVision sie schon hielt. Wartete es noch darauf, dass du eine Taste loslässt, bleiben die Tasten in diesem Kampf beim Spiel; eine Taste, die ein Fenster öffnet, übernimmt sie, sobald du losgelassen hast, und bei einem Popup, das wartet, hörst du „Zum Antworten drücke Umschalt+F1“.
+
+Ein Menü, das du im Kampf öffnest, kann es nicht schützen, weil das Spiel das sichere Fenster nicht sehen lässt, ob eine Taste gehalten wird. Lass also die Pfeiltasten und die Leertaste los, bevor du eine Taste drückst, die ein Fenster öffnet, deine Taschentaste oder deine Charaktertaste. (Nur Retail und WoW: Forever) Wurde trotzdem eine gehaltene Taste erwischt, nennt WowVision sie einen Moment später: „Pfeil nach oben, gehalten, als das Menü die Tasten übernahm. Schließe das Menü und tippe die Taste einmal an, um die Bewegung zu beenden“. Drücke Esc und tippe dann diese Taste einmal an. Die anderen Versionen können das nicht erkennen und sagen nichts; der Ausweg ist derselbe.
+
+Wenn du dich mit den Pfeiltasten bewegst, gib den Menütasten für den Kampf andere Tasten (die Tasten „Im Kampf“ unten), damit die Pfeile beim Spiel bleiben.
+
 ### Einstellungen und Tasten
 
-- Menüs im Kampf (Menus in Combat, im Menü Benutzeroberfläche, an): aus tritt WowVision im Kampf zur Seite wie oben beschrieben.
+- Menüs im Kampf (Menus in Combat, im Menü Benutzeroberfläche, aus): an arbeiten die Menüs von WowVision im Kampf, wie dieser Abschnitt es beschreibt, und im Kampf öffnen deine Spieltasten für Alle Taschen öffnen, Rucksack umschalten und Charakterinfo die Listen von WowVision. Aus tritt WowVision im Kampf zur Seite wie oben beschrieben.
 - Jede Menütaste hat im Fenster für die Tastenbelegung eine eigene Taste für den Kampf, benannt „Im Kampf:“ und die Taste, zum Beispiel „Im Kampf: Hoch“. Leer gelassen (die Vorgabe) benutzt der Kampf die Tasten der Menütaste selbst; lege dort eine fest, wenn du im Kampf eine andere Taste willst, zum Beispiel weil du dich mit den Pfeiltasten bewegst.
 - /wv combatkeys gibt aus, was die Kampftasten gerade tun, zur Fehlersuche. WowVision führt von selbst ein Protokoll darüber; siehe [Slash-Befehle](../reference/commands.md).
 

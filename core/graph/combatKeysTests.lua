@@ -39,8 +39,10 @@ local function newHandle(name)
         tinsert(self.calls, { method, ... })
     end
     function handle:run(body, params, ...)
-        -- the game runs a snippet as the body of function(self, <params>)
-        local snippet = assert(loadstring("return function(self, " .. params .. ")\n" .. body .. "\nend"))()
+        -- the game runs a snippet as the body of function(self, <params>); loadstring in the game and LuaJIT, load in
+        -- Lua 5.4
+        local compile = loadstring or load
+        local snippet = assert(compile("return function(self, " .. params .. ")\n" .. body .. "\nend"))()
         return snippet(self, ...)
     end
     handle.attributes._take = combatKeys.TAKE
@@ -128,6 +130,34 @@ local function inputManager(keymaps)
 end
 
 testRunner:addSuite("CombatKeys", {
+    ["the fight's start takes the keys only while the host holds them and none runs a game command"] = function(t)
+        local down = {}
+        local env = {
+            isKeyDown = function(key)
+                return down[key] == true
+            end,
+            bindingAction = function(key)
+                return ({ UP = "MOVEFORWARD", SPACE = "JUMP" })[key]
+            end,
+            flags = {},
+            isMoving = function()
+                return true
+            end,
+        }
+        local inputs = { "UP", "DOWN", "SPACE", "ESCAPE" }
+        t:assertTrue(combatKeys.takesAtStart(true, inputs, env))
+        -- the host still waits for a held key before taking its own: the fight must not take it either
+        t:assertFalse(combatKeys.takesAtStart(false, inputs, env))
+        -- a menu key pressed in the open menu: down, but its game command does not run
+        down.UP = true
+        t:assertTrue(combatKeys.takesAtStart(true, inputs, env))
+        down.UP = nil
+        -- Space held on the game's Jump (swimming up) while the host holds the arrows
+        down.SPACE = true
+        env.flags.ascend = true
+        t:assertFalse(combatKeys.takesAtStart(true, inputs, env))
+    end,
+
     ["the fight binds nothing when no menu is open"] = function(t)
         local handle = newHandle()
         stage(handle, MENU, false)

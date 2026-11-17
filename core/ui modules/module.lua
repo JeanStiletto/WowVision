@@ -101,12 +101,14 @@ settings:add({
     default = false,
 })
 
--- The menus keep working in combat (graph/combatKeys.lua). Off: they fall silent at combat start, as before.
+-- The menus keep working in combat (graph/combatKeys.lua). Off, the default: they fall silent at combat start, as
+-- before. On, it takes keys in a fight, among them the game's own bag and character keys, and a key held while a
+-- menu opens in a fight loses its release, so it is the player's choice.
 local combatMenus = settings:add({
     type = "Bool",
     key = "combatMenus",
     label = L["Menus in Combat"],
-    default = true,
+    default = false,
 })
 combatMenus.events.valueChange:subscribe(module, function()
     WowVision.graph.combatKeys.stage()

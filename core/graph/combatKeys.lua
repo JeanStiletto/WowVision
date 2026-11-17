@@ -9,7 +9,8 @@ local graph = WowVision.graph
 -- HANDLE:ClearBinding), and it may call back into addon code (HANDLE:CallMethod, run insecure). So in combat one
 -- secure frame holds the menu keys:
 --   * a state driver on [combat] (the game's own SecureStateDriver) tells the frame when a fight begins and ends; it
---     takes the menu keys at once when a WowVision window was open as the fight began, and lets every key go after;
+--     takes the menu keys at once when the graph host held them for an open window as the fight began (not while the
+--     host still waited for a held key, see tick), and lets every key go after;
 --   * a key that opens a WowVision window (a binding declared with opensWindow) takes the menu keys: its own secure
 --     button carries a wrapper of this frame (SecureHandlerWrapScript), so the binding does what it always does and
 --     the wrapper takes the keys before it, in the same key press;
@@ -23,6 +24,12 @@ local graph = WowVision.graph
 --
 -- What cannot work in combat: an entry whose Enter or Backspace is a secure click of a game button (the click
 -- button cannot be pointed at another frame in combat). Those say so (Host:combatKey).
+--
+-- Held keys. A key taken while it is held on a game command (an arrow that moves or turns) loses its release, and the
+-- command runs on (core/ui/input/heldKeys.lua). Secure code cannot ask whether a key is held: the restricted
+-- environment reads Shift, Ctrl and Alt only. So the fight's start takes the keys only where addon code saw, out of
+-- combat, that it is safe (tick), and a take by a key press in the fight, which nothing can hold back, is followed
+-- by a spoken warning when a held key was caught (warnHeld). The setting is off by default.
 local combatKeys = {}
 graph.combatKeys = combatKeys
 
@@ -100,9 +107,9 @@ end
 -- ---- the secure frame ----
 --
 -- Attributes: menu-n / menu-k<i> / menu-a<i> the staged inputs and their action names; rc-n / rc-k<i> the inputs of
--- the right click among them; enabled 1 or 0 (the setting); menuopen 1 when a WowVision window is open (kept current
--- out of combat, read as the fight begins); fighting 1 in a fight with the setting on; taken 1 while the menu keys
--- are bound to the frame.
+-- the right click among them; enabled 1 or 0 (the setting); menuopen 1 when the fight's start may take the menu keys
+-- (the graph host holds them for an open window and none is held on a game command; kept current out of combat, read
+-- as the fight begins); fighting 1 in a fight with the setting on; taken 1 while the menu keys are bound to the frame.
 --
 -- Mirrored lists (registerMirror below): a window whose entries need a secure action in combat (Backspace uses a bag
 -- item) cannot have addon code point that action at the focused entry. So in such a list the secure side walks the
@@ -480,6 +487,8 @@ combatKeys.ON_STATE = [[
 
 local keysFrame = nil
 local stagedOpen = nil
+-- the staged menu inputs, as written onto the frame (writeStage)
+local stagedInputs = {}
 -- The keys or the window-opening buttons changed (a rebind, a module switched on or off, the setting): written on
 -- the next update out of combat.
 local dirty = true
@@ -548,6 +557,9 @@ local function watch(keys, driver)
         if name == "taken" or name == "fighting" or name == "mode" then
             log(name .. " " .. tostring(value) .. " (" .. lockdown() .. ")")
         end
+        if name == "taken" and value == 1 then
+            combatKeys.warnHeld()
+        end
     end)
     driver:HookScript("OnAttributeChanged", function(_, name, value)
         if name == "state-combat" then
@@ -580,6 +592,12 @@ local function watch(keys, driver)
                 log("in the fight (" .. lockdown() .. "): " .. stateLine())
                 log("keys: " .. bindingLine())
             end)
+            -- A popup that waits in front while the fight's start could not take the keys (one was held): the key
+            -- that lands on it is named, as for a popup that opens in the fight.
+            local focused = WowVision.graphHost:focusedStack()
+            if focused ~= nil and focused.config ~= nil and focused.config.waits then
+                combatKeys.hintMenuKey()
+            end
         else
             log("fight ends: " .. stateLine())
         end
@@ -629,7 +647,7 @@ end
 
 local function enabled()
     local ui = WowVision.base ~= nil and WowVision.base.ui or nil
-    return ui == nil or ui.settings == nil or ui.settings.combatMenus ~= false
+    return ui == nil or ui.settings == nil or ui.settings.combatMenus == true
 end
 combatKeys.enabled = enabled
 
@@ -901,6 +919,10 @@ local function writeStage()
     end
     local menu = combatKeys.entries(WowVision.input, combatKeys.MENU_KEYS)
     writeList(keysFrame, "menu", menu, { k = "input", a = "action" })
+    stagedInputs = {}
+    for i, entry in ipairs(menu) do
+        stagedInputs[i] = entry.input
+    end
     local rightClick = {}
     for _, entry in ipairs(menu) do
         if entry.action == "rightClick" then
@@ -924,20 +946,62 @@ local function writeStage()
     log("staged " .. #menu .. " menu keys, " .. opening .. " opening buttons, enabled " .. tostring(enabled()))
 end
 
--- Every graph host update out of combat: write what changed, and whether a WowVision window is open, for the next
--- fight's start (written only when it changes).
-function combatKeys.tick(open)
+-- Whether the fight's start may take the menu keys: the graph host holds its navigation keys for an open window
+-- (while it still waits for a held key before taking them, the fight must not take them either), and none of the
+-- staged inputs is held on a game command right now (a menu key the host does not hold out of combat: Space while
+-- swimming up).
+function combatKeys.takesAtStart(holdsKeys, inputs, env)
+    return holdsKeys == true and WowVision.heldKeys.commandKey(inputs, env) == nil
+end
+
+-- The menu keys were just taken in a fight. One that is held on a game command lost its release there, and nothing
+-- could hold the take back (see the head of this file): the player hears which key, and how to stop the move or turn
+-- (with the menu closed the key is the game's again, and a tap ends its command). Said a moment later, after the
+-- window that opened is read.
+local HELD_WARNING_AFTER = 1.5
+
+function combatKeys.warnHeld()
+    local heldKeys = WowVision.heldKeys
+    local input = heldKeys.commandKey(stagedInputs, heldKeys.gameEnv())
+    if input == nil then
+        return
+    end
+    log("taken while " .. input .. " is held on a game command")
+    local keyText = GetBindingText ~= nil and GetBindingText(input) or input
+    C_Timer.After(HELD_WARNING_AFTER, function()
+        local L = WowVision:getLocale()
+        WowVision:notify(
+            keyText .. ", " .. L["held as the menu took the keys. Close the menu and tap the key once to stop moving"]
+        )
+    end)
+end
+
+-- Every graph host update out of combat: write what changed, and whether the next fight's start may take the menu
+-- keys (takesAtStart; written only when it changes). holdsKeys: the graph host holds its navigation keys. With the
+-- setting off and never switched on in this session nothing is set up at all; switched off later, the frame stays
+-- and only the mirrored lists rest.
+function combatKeys.tick(holdsKeys)
     if InCombatLockdown() then
+        return
+    end
+    local on = enabled()
+    if not on and keysFrame == nil then
         return
     end
     if dirty then
         writeStage()
     end
-    if mirrorsDirty then
-        writeMirrors()
+    if on then
+        if mirrorsDirty then
+            writeMirrors()
+        end
+        tickMirrors()
     end
-    tickMirrors()
-    local value = open and 1 or 0
+    local value = 0
+    if on and holdsKeys then
+        local heldKeys = WowVision.heldKeys
+        value = combatKeys.takesAtStart(true, stagedInputs, heldKeys.gameEnv()) and 1 or 0
+    end
     if stagedOpen ~= value then
         stagedOpen = value
         keysFrame:SetAttribute("menuopen", value)
@@ -1153,7 +1217,11 @@ end
 -- /wv combatkeys: the state of the secure frame and, per staged key, what the game runs on it now.
 function combatKeys.report()
     if keysFrame == nil then
-        print("WowVision combat keys: not set up yet")
+        if enabled() then
+            print("WowVision combat keys: not set up yet")
+        else
+            print("WowVision combat keys: Menus in Combat is off")
+        end
         return
     end
     local function attr(name)

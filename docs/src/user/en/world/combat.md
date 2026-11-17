@@ -6,9 +6,9 @@ The combat settings are in the WowVision menu (type /wv) under UI, then Combat. 
 
 ## What happens when combat starts
 
-WoW does not let addons change key bindings or use many of its functions during combat. With the Menus in Combat setting on (UI menu, on by default), WowVision's menus keep working in a fight anyway, through a secure frame that the game allows to hold keys; see [Menus in combat](#menus-in-combat) below. Without a WowVision window open, every key stays the game's: your movement keys, Tab for targeting and your action bars behave exactly as the game intends.
+WoW does not let addons change key bindings or use many of its functions during combat. With the Menus in Combat setting on (UI menu, off by default), WowVision's menus keep working in a fight anyway, through a secure frame that the game allows to hold keys; see [Menus in combat](#menus-in-combat) below. Without a WowVision window open, every key stays the game's: your movement keys, Tab for targeting and your action bars behave exactly as the game intends.
 
-With Menus in Combat off, WowVision steps aside the moment a fight begins: the keys it took over for its windows go back to the game, and its windows are neither read nor updated until combat is over.
+With Menus in Combat off, as it is until you switch it on, WowVision steps aside the moment a fight begins: the keys it took over for its windows go back to the game, and its windows are neither read nor updated until combat is over.
 
 Either way:
 
@@ -41,7 +41,7 @@ Classic Era, The Burning Crusade and Mists of Pandaria do not have these limits.
 
 ### Opening and closing
 
-The keys that open a WowVision window work in a fight as they do outside: the WowVision menu (Shift+F1), chat (Shift+F3), the Scanner (F9), navigation (F10) and the action bars (Shift+F4). Opening one hands WowVision its menu keys: the arrows, Tab and Shift+Tab, Ctrl+Tab, Home and End, Enter and Backspace, Shift+F10, Space and Escape. A window that was already open as the fight began keeps them.
+The keys that open a WowVision window work in a fight as they do outside: the WowVision menu (Shift+F1), chat (Shift+F3), the Scanner (F9), navigation (F10) and the action bars (Shift+F4). Opening one hands WowVision its menu keys: the arrows, Tab and Shift+Tab, Ctrl+Tab, Home and End, Enter and Backspace, Shift+F10, Space and Escape. A window that was already open as the fight began keeps them, unless you were holding one of them for the game at that moment (see [Keys you are holding as a menu opens](#keys-you-are-holding-as-a-menu-opens)).
 
 Escape closes WowVision's own windows and gives every key back to the game at once. The game's windows (the quest log, the character pane) cannot be closed by an addon in a fight; they stay on screen and are there again after the fight.
 
@@ -87,9 +87,19 @@ A popup that answers something you just did, such as "bind this item to you?", c
 
 In a fight the buttons of the trade window (Trade, Cancel and the trade slots) say "Not available in combat". Accept the trade with the Accept Trade key (Alt+Ctrl+T): it is a key binding of the game's own, so it works in a fight too. See [Key bindings](../reference/keybindings.md).
 
+### Keys you are holding as a menu opens
+
+The game hands a key's release to whatever holds that key at that moment. If a menu takes a key while you hold it for the game, an arrow you move or turn with, or Space while you swim up, the game never sees the release, and your character keeps moving or turning.
+
+WowVision guards against this where it can. A window that is open as a fight begins keeps its keys only if WowVision already held them. If it was still waiting for you to let go of a key, the keys stay the game's in that fight; a key that opens a window takes them once you have let go, and for a popup that waits you hear "To answer, press Shift+F1".
+
+It cannot guard a menu that you open inside a fight, because the game does not let the secure frame see whether a key is held. So let go of the arrows and Space before you press a key that opens a window, your bags key or your character key. (Retail and WoW: Forever only) If a held key was caught anyway, WowVision names it a moment later: "Up Arrow, held as the menu took the keys. Close the menu and tap the key once to stop moving". Press Escape, then tap that key once. The other versions cannot tell and say nothing; the way out is the same.
+
+If you move with the arrow keys, give the menu keys other keys for fights (the In Combat keys below), so the arrows stay with the game.
+
 ### Settings and keys
 
-- Menus in Combat (UI menu, on): off, WowVision steps aside in fights as described above.
+- Menus in Combat (UI menu, off): on, WowVision's menus work in fights as this section describes, and in a fight your game keys for Open All Bags, Toggle Backpack and Character Info open WowVision's lists. Off, WowVision steps aside in fights as described above.
 - Each menu key has a key of its own for fights in the keybinding window, named "In Combat:" and the key, for example "In Combat: Up". Left empty (the default), the fight uses the menu key's own keys; set one there if you want another key in fights, for example when you move with the arrow keys.
 - /wv combatkeys prints what the combat keys do right now, for troubleshooting. WowVision keeps a log of them by itself; see [Slash commands](../reference/commands.md).
 

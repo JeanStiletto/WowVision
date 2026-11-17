@@ -318,6 +318,11 @@ layoutWatch:SetScript("OnUpdate", function()
         return
     end
     nextLook = now + 0.25
+    -- nothing to measure for while Menus in Combat is off
+    if not WowVision.graph.combatKeys.enabled() then
+        wasOpen = false
+        return
+    end
     local open = #module.shownItemButtons() > 0
     if open and not wasOpen then
         -- the frames lay their buttons out as they show; read them a moment later

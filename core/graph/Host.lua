@@ -205,9 +205,6 @@ end
 function GraphHost:update()
     local combat = InCombatLockdown()
     local combatKeys = graph.combatKeys
-    if not combat and combatKeys ~= nil then
-        combatKeys.tick(#self.stacks > 0)
-    end
     if #self.stacks == 0 then
         if combat then
             -- every binding was let go at combat start: only the focus goes
@@ -219,6 +216,9 @@ function GraphHost:update()
         end
         self:_releaseNavBindings()
         self:_dropNodeFocus()
+        if combatKeys ~= nil then
+            combatKeys.tick(false)
+        end
         return
     end
     if combat then
@@ -249,6 +249,11 @@ function GraphHost:update()
             self:_logKeys("took the navigation keys")
             self._navWaitLogged = false
         end
+    end
+    -- Menus in combat: the next fight's start takes the menu keys only while the host holds them here. While it
+    -- waits for a held key, the fight must not take that key either (graph/combatKeys.lua).
+    if combatKeys ~= nil then
+        combatKeys.tick(#self._navHandles > 0)
     end
     self:_syncCloseKey()
     self:_syncLetterKeys()
