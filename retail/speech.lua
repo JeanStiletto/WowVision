@@ -17,8 +17,9 @@ module.queue = {}
 module.speaking = false
 -- The queue's line in flight with the client (sent, not ended), nil when none.
 module.current = nil
--- The tag the next queued lines get (module:withTag).
-local queueTag = nil
+-- Tagged lines: module:withTag, module:dropQueued (core/speechTags.lua); the playing line's
+-- tag is module.current.tag (the surroundings: a new place clears its old lines).
+WowVision.speechTags.install(module)
 
 -- After a stop the next line cuts a screen reader bridge voice (core/speechInterrupt.lua).
 local handOver = WowVision.speechInterrupt.handOver
@@ -47,32 +48,8 @@ guard = WowVision.speechStall.new(module, pollQueue, GetTime)
 guard:watchStops()
 
 local function enqueue(voice, text, rate, volume)
-    tinsert(module.queue, { voice = voice, text = text, rate = rate, volume = volume, tag = queueTag })
+    tinsert(module.queue, { voice = voice, text = text, rate = rate, volume = volume, tag = module.queueTag })
     pollQueue()
-end
-
--- Speech queued while `fn` runs carries `tag` (a table with an `owner`), so its caller finds its
--- lines again: drops those still waiting (module:dropQueued) or learns which one is playing
--- (module.current.tag). For speech that goes through C_VoiceChat.SpeakText from an alert's output
--- (the surroundings: a new place clears its old lines). With the queue off it changes nothing.
-function module:withTag(tag, fn)
-    local old = queueTag
-    queueTag = tag
-    local ok, err = pcall(fn)
-    queueTag = old
-    if not ok then
-        error(err, 0)
-    end
-end
-
--- Drops the waiting lines tagged by `owner` (not the one playing).
-function module:dropQueued(owner)
-    for i = #self.queue, 1, -1 do
-        local tag = self.queue[i].tag
-        if tag ~= nil and tag.owner == owner then
-            tremove(self.queue, i)
-        end
-    end
 end
 
 -- Replacement for C_VoiceChat.SpeakText that routes all TTS through our queue.

@@ -28,6 +28,8 @@
   <Script file="speechInterruptTests.lua" />
   <Script file="speechStall.lua" />
   <Script file="speechStallTests.lua" />
+  <Script file="speechTags.lua" />
+  <Script file="speechTagsTests.lua" />
   <Script file="speechSounds.lua" />
   <Script file="speechSoundsTests.lua" />
   <Include file="templates/modules.xml" />
