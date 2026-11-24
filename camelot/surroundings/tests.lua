@@ -1979,6 +1979,11 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(logic.describeRoom(z, 2, 1), "back room")
         t:assertEqual(logic.describeRoom(z, 2, nil), "Test Inn, back room")
         t:assertEqual(z._index.rooms[2].name, "back room 2")   -- the identity keeps the number
+        -- a building whose name holds the room's word is said alone ("Turm von Azora", not "..., Turm")
+        t:assertTrue(logic.holdsWord("Turm von Azora", "Turm"))
+        t:assertTrue(logic.holdsWord("Tower of Azora", "tower"))
+        t:assertFalse(logic.holdsWord("Turmhalle", "Turm"))
+        t:assertFalse(logic.holdsWord("Test Inn", "back room"))
         -- the doorways into both said once, with both directions
         local items = logic.roomDoorways(z, 1)
         local backRooms = 0
@@ -2159,7 +2164,8 @@ testRunner:addSuite("Surroundings", {
         logic.unpack(z)
         t:assertEqual(logic.describeRoom(z, 1, nil), "Test Inn, common room")
         t:assertEqual(logic.describeRoom(z, 3, 1), "back room")
-        t:assertEqual(logic.describeRoom(z, 4, 3), "Test Barn, barn")
+        -- (the barn's name holds the room's word: said alone, user 2026-11-24)
+        t:assertEqual(logic.describeRoom(z, 4, 3), "Test Barn")
     end,
 
     ["a room of the city's own complex never names the city"] = function(t)
