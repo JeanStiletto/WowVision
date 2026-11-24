@@ -2329,13 +2329,13 @@ function helper.update(self)
         if self.waitsForLine and helperArrival then
             helperArrival()
         end
-        -- the rule never came true within the guidance's reach of the last point (no room or place line there):
-        -- the route ends there as any other, with "Arrived", not left led with no beacon
+        -- the rule never came true within the guidance's reach of the last point (no room or place line there, or
+        -- the player walked off): the route ends, said as ended, not left led with no beacon
         local last = self.waypoints[#self.waypoints]
         local x, y = UnitPosition("player")
         if self.active and not self.complete and (not self.waitsForLine
                 or (last and x and logic.dist(x, y, last.x, last.y) > logic.GUIDE_REACH)) then
-            self.waitsForLine = false
+            self.endedAway = self.waitsForLine
             self.events.complete:emit(self)
             self.active = false
             self.complete = true
@@ -2372,7 +2372,8 @@ end
 -- On a place or room line (say): the route led ends here when the player is where it leads by the same rules.
 helperArrival = function()
     local led = helper.led
-    if led == nil or not led.path.active or led.path.complete then
+    -- (a route replaced or stopped (Shift-F12) is no longer the maps' path: it never ends another one)
+    if led == nil or not led.path.active or led.path.complete or WowVision.base.navigation.maps.path ~= led.path then
         helper.led = nil
         return
     end
@@ -2393,8 +2394,14 @@ function helper.pathClass()
     return helper.Path
 end
 
--- helper.cycle: the list Alt-I steps through (logic.helperChoices) while the player stays where it was made: { ctx
--- (the room id or the square's region), grid, entries, index (the entry led to last), path (its route) }.
+-- helper.cycle: the list Alt-I steps through (logic.helperChoices) while a route of it is led and the player has not
+-- come into another room or onto another square: { ctx (the room id or the square's region), grid, entries, index (the
+-- entry led to last), path (its route) }. A press after the route ended, or elsewhere, makes the list afresh from where
+-- the player stands (its points and order are those of where it was made).
+function helper.cycleLed(cycle)
+    local path = cycle and cycle.path
+    return path ~= nil and WowVision.base.navigation.maps.path == path and path.active and not path.complete
+end
 
 -- Where the player stands for the helper: the grid, and the context its list is made for (nil where the describe key
 -- names no exits: the water, a street, open ground) with the options for logic.helperChoices.
@@ -2453,8 +2460,13 @@ function helper.lead(self, grid, route, text, x, y)
     path.waitsForLine = logic.helperArrived(route, start, start) ~= nil
     helper.led = path.waitsForLine and { path = path, route = route, start = start, grid = grid } or nil
     path.events.complete:subscribe(self, function()
+        if maps.path ~= path then
+            return
+        end
         maps.path = nil
-        if not path.waitsForLine then
+        if path.endedAway then
+            WowVision:speak(L["Route ended"])
+        elseif not path.waitsForLine then
             WowVision:speak(L["Arrived"])
         end
     end)
@@ -2473,11 +2485,17 @@ function module:leadOn(back)
         return
     end
     updateWords()
-    -- on a ramp or stairs with its own line: along it toward the end faced
+    local grid, ctx, opts = helper.place(z, x, y)
+    -- a list route still led: its list, stepped on or back, wherever the route has brought the player (on its stairs,
+    -- a street) unless into another room or onto another square
+    local cycle = helper.cycle
+    local stepping = helper.cycleLed(cycle) and (ctx == nil or (cycle.ctx == ctx and cycle.grid == grid))
+    -- on a ramp or stairs with its own line: along it toward the end faced (in a room said by its text on the layer's
+    -- held floor, as the turn key: the Golden Rose's and the Slaughtered Lamb's stairs, lineFacing)
     local layer = logic.layer(z, IsIndoors())
-    local lineGrid = (isInside() and layerMode and layer) and layer or z
+    local lineGrid = (isInside() and layer and (layerMode or (layer._index.floor or 0) ~= 0)) and layer or z
     local on = lineGrid._index.floor
-    if on and on ~= 0 and lineGrid._index.lineFloors and lineGrid._index.lineFloors[on] then
+    if not stepping and on and on ~= 0 and lineGrid._index.lineFloors and lineGrid._index.lineFloors[on] then
         local route = logic.climbRouteFrom(lineGrid, on, x, y, GetPlayerFacing())
         if route and #route.points > 0 then
             helper.cycle = nil
@@ -2489,12 +2507,12 @@ function module:leadOn(back)
             return
         end
     end
-    local grid, ctx, opts = helper.place(z, x, y)
-    local cycle = helper.cycle
-    if ctx ~= nil and not (cycle and cycle.ctx == ctx and cycle.grid == grid) then
+    if stepping then
+        grid = cycle.grid
+    elseif ctx ~= nil then
         cycle = { ctx = ctx, grid = grid, entries = logic.helperChoices(grid, x, y, opts), index = 0 }
     end
-    local i = ctx ~= nil and logic.cycleIndex(cycle.index, #cycle.entries, back) or nil
+    local i = (stepping or ctx ~= nil) and logic.cycleIndex(cycle.index, #cycle.entries, back) or nil
     if i == nil then
         helper.cycle = nil
         local route, text = helper.fallback(z, grid, x, y)
@@ -2523,9 +2541,7 @@ end
 -- round: at a fork or crossing the next arm counter-clockwise, anywhere else as the turn key (I).
 function module:leadBack()
     local maps = WowVision.base.navigation.maps
-    local cycle = helper.cycle
-    local path = cycle and cycle.path
-    if path and maps.path == path and path.active and not path.complete then
+    if helper.cycleLed(helper.cycle) then
         self:leadOn(true)
         return
     end

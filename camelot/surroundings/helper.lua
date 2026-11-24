@@ -1,8 +1,8 @@
--- The building helper (Alt plus the turn key): a beacon route from where the player stands through the next
--- exit the surroundings point at. A doorway, an entrance or a way out of the water: to it. The foot of a ramp or
--- stairs, or a climb the player stands on: along the climb's own centre line to its other end and to the join of
--- the floor there (the next landing: the griffon ramp's platform, a tower's upper floor). Pure: the module turns the
--- points into a path.
+-- The building helper (Alt plus the turn key): a beacon route from where the player stands to one of the exits the
+-- describe key names there (helperChoices, below), or the target it says. A doorway, an entrance, a street's
+-- beginning or a way out of the water: to it. A ramp's or stairs' end, or a climb the player stands on: along the
+-- climb's own centre line to its other end and to the floor there (the next landing: the griffon ramp's platform, a
+-- tower's upper floor). Pure: the module turns the points into a path.
 -- The route has no points of its own beyond these (user 2026-10-17: "i don't want extra artificial points"). It
 -- ends where the surroundings' own rules say the player is there, on the line they say for it (helperArrived): out
 -- of the water on the place beyond, in the room beyond the doorway, on the landing's floor.
@@ -28,42 +28,6 @@ local function climbLanes(zone, piece, x, y)
     return logic.lanesNear(zone, x, y, 80, function(lane)
         return lane.piece == piece
     end)
-end
-
--- The climb piece whose line has a free end nearest (x, y) within `reach` (on the floor `fromFloor`'s side),
--- with that end. nil when no climb line ends there. A climb that goes UP from here (the free end is its foot:
--- the line runs from it the way the climb rises, riseOf) comes before one that goes down, whatever is nearer:
--- on Northshire Abbey's gallery the main ramp's top lay 2 yd off and the bell tower ramp's foot 3 yd, and Alt-I
--- always led down to the hall (user 2026-10-18).
--- `floor` (optional): only climbs joined to that floor piece; `upOnly`: only ends that are feet (or unknown).
-function logic.climbAtFoot(zone, x, y, reach, floor, upOnly)
-    local ix = zone._index
-    if ix.lineFloors == nil then
-        return nil
-    end
-    local joined = floor ~= nil and ix.joined[floor] or nil
-    local best, bx, by, bd, bRank
-    for _, lane in ipairs(logic.lanesNear(zone, x, y, reach + logic.LANE_REACH, function(lane)
-        return ix.lineFloors[lane.piece] and (floor == nil or lane.piece ~= floor and joined and joined[lane.piece])
-    end)) do
-        for _, e in ipairs({ { lane.free1, lane.x1, lane.y1, lane.x2, lane.y2 }, { lane.free2, lane.x2, lane.y2, lane.x1, lane.y1 } }) do
-            if e[1] then
-                local d = dist(x, y, e[2], e[3])
-                -- 0 up from here, 1 down, 0.5 unknown (no rise in the value)
-                local rank = 0.5
-                local up = logic.riseOf(zone, lane.value)
-                if up ~= nil and (e[4] ~= e[2] or e[5] ~= e[3]) then
-                    local away = logic.bearingOf(e[4] - e[2], e[5] - e[3])
-                    local off = math.abs((away - up + 180) % 360 - 180)
-                    rank = off < 90 and 0 or 1
-                end
-                if d <= reach and not (upOnly and rank == 1) and (bd == nil or rank < bRank or (rank == bRank and d < bd)) then
-                    best, bx, by, bd, bRank = lane.piece, e[2], e[3], d, rank
-                end
-            end
-        end
-    end
-    return best, bx, by
 end
 
 -- The climb's line from the point (sx, sy) on it: the stretches followed end to end (at a fork the one that turns
@@ -150,32 +114,10 @@ local function onto(points, jx, jy)
     end
 end
 
--- A climb route from its foot (fx, fy) on the floor `footFloor`: { points, piece, landing, short }, or nil.
-function logic.climbRoute(zone, fx, fy, footFloor)
-    -- a climb joined to the foot's floor that goes up from it (two feet share the Abbey gallery's west end: the bell
-    -- tower ramp's on the gallery and, 16 yd below, the main ramp's on the hall floor)
-    local piece, ex, ey = logic.climbAtFoot(zone, fx, fy, logic.HELPER_FOOT, footFloor, true)
-    if piece == nil and footFloor ~= nil then
-        piece, ex, ey = logic.climbAtFoot(zone, fx, fy, logic.HELPER_FOOT)
-    end
-    if piece == nil then
-        return nil
-    end
-    local points = followLine(climbLanes(zone, piece, ex, ey), ex, ey)
-    if dist(fx, fy, ex, ey) > 0.5 then
-        table.insert(points, 1, { x = fx, y = fy })
-    end
-    local top = points[#points]
-    local landing, jx, jy = landingAt(zone, piece, top.x, top.y, footFloor or 0, fx, fy, lineLength(points))
-    if landing then
-        onto(points, jx, jy)
-    end
-    return { points = points, piece = piece, landing = landing, short = landing == nil }
-end
-
 -- Climb ends (data since trial L4e: zone.climbTops beside the feet; user 2026-10-20: Alt-I and the turn key fully on
--- the new system). A staircase is led through from one end record to the other: along each flight's line, across
--- the landings between, to the far end, onto its floor. Up or down alike.
+-- the new system; every zone with climbs has them, the routes of the data before them are gone, 2026-11-24). A
+-- staircase is led through from one end record to the other: along each flight's line, across the landings between,
+-- to the far end, onto its floor. Up or down alike.
 
 -- The free end of a climb line within HELPER_FOOT of the end record `rec`, on a piece joined to its floor: of its own
 -- place first, then the nearest. Piece, x, y, or nil.
@@ -245,7 +187,7 @@ end
 -- On from the last of `points` on the climb `piece` through its staircase (`used`: the pieces walked): at a far end
 -- record there, to it (no point beyond: being on its floor is the module's floor rule, helperArrived); else into the
 -- next flight along its line, and so on; with no end record found, onto the piece joined at the last line's end as
--- before (landingAt). The route { points, piece, landing, short, last end }.
+-- before (landingAt). The route { points, piece, landing, short }.
 local function throughStaircase(zone, points, piece, used, from)
     for _ = 1, 12 do
         local last = points[#points]
@@ -254,7 +196,7 @@ local function throughStaircase(zone, points, piece, used, from)
             if dist(last.x, last.y, e.x, e.y) > 0.5 then
                 points[#points + 1] = { x = e.x, y = e.y }
             end
-            return { points = points, piece = piece, landing = e.floor or 0, short = false, ending = e }
+            return { points = points, piece = piece, landing = e.floor or 0, short = false }
         end
         local q, qx, qy = nextFlight(zone, piece, last.x, last.y, used)
         if q == nil then
@@ -266,8 +208,11 @@ local function throughStaircase(zone, points, piece, used, from)
         end
         piece = q
     end
+    -- (from an end record: a join onto its own floor counts only as landingAt's same-floor rule says, the ground
+    -- joining a ramp along its side is no landing)
     local last = points[#points]
-    local landing, jx, jy = landingAt(zone, piece, last.x, last.y, nil, nil, nil, nil)
+    local landing, jx, jy = landingAt(zone, piece, last.x, last.y, from and (from.floor or 0), from and from.x,
+        from and from.y, lineLength(points))
     if landing then
         onto(points, jx, jy)
     end
@@ -348,19 +293,10 @@ function logic.climbRouteFrom(zone, piece, x, y, facing)
     local a, b = line[bestK], line[math.min(bestK + 1, #line)]
     local from = { x = a.x + bestT * (b.x - a.x), y = a.y + bestT * (b.y - a.y) }
     local along = forward and math.atan2(b.y - a.y, b.x - a.x) or math.atan2(a.y - b.y, a.x - b.x)
-    local first = forward and line[1] or line[#line]
-    -- with end records: on through the staircase to the end faced, onto its floor
-    if zone._index.climbTops then
-        local route = throughStaircase(zone, points, piece, { [piece] = true }, nil)
-        route.from, route.along = from, along
-        return route
-    end
-    local top = points[#points]
-    local landing, jx, jy = landingAt(zone, piece, top.x, top.y, nil, first.x, first.y, lineLength(line))
-    if landing then
-        onto(points, jx, jy)
-    end
-    return { points = points, piece = piece, landing = landing, short = landing == nil, from = from, along = along }
+    -- on through the staircase to the end faced, onto its floor
+    local route = throughStaircase(zone, points, piece, { [piece] = true }, nil)
+    route.from, route.along = from, along
+    return route
 end
 
 -- yd along a climb route from the player's point on the line to its last point
@@ -431,23 +367,11 @@ function logic.helperRoute(zone, t)
     if t == nil then
         return nil
     end
-    if t.kind == "climb" and zone._index.climbTops then
+    if t.kind == "climb" then
         return logic.endRoute(zone, t)
     end
-    if t.kind == "climb" then
-        local route = logic.climbRoute(zone, t.x, t.y, t.floor)
-        if route then
-            route.kind = "climb"
-            return route
-        end
-        -- no line at this foot: to the foot and on up the way its bearing says
-        return { points = logic.throughRoute(t), kind = "climb", short = true }
-    end
-    if t.kind == "doorway" or t.kind == "entrance" or t.kind == "exit" then
+    if t.kind == "doorway" or t.kind == "entrance" or t.kind == "exit" or t.kind == "way" then
         return { points = logic.throughRoute(t), kind = t.kind }
-    end
-    if t.kind == "way" then
-        return { points = { { x = t.x, y = t.y } }, kind = "way" }
     end
     return nil
 end
@@ -494,7 +418,7 @@ local function mouthEntry(zone, region, item, m, x, y)
         e.place = m.value and logic.placeOf(m.value) or nil
         for _, b in ipairs(logic.wayBeginnings(zone, region)) do
             if b.mouth == m then
-                e.x, e.y, e.through = b.x, b.y, b.onward
+                e.x, e.y = b.x, b.y
                 break
             end
         end
@@ -526,6 +450,8 @@ end
 function logic.helperChoices(zone, x, y, ctx)
     local out = {}
     if ctx.room then
+        -- a small room says its doorways with the fixed way through them (doorwayDirection), a big one from the player
+        local fixed = not logic.isBigRoom(zone, ctx.room)
         local items = logic.roomDoorways(zone, ctx.room, { dirs = logic.ITEM_DIRS, x = x, y = y })
         for _, item in ipairs(items) do
             for _, d in ipairs(partsByDir(item, item.doors or {}, function(p)
@@ -535,9 +461,7 @@ function logic.helperChoices(zone, x, y, ctx)
                 if dx then
                     local e = { label = item.label, class = item.class, kind = "doorway", x = dx, y = dy,
                         door = d.door, via = d.via, room = ctx.room }
-                    -- a small room says its doorways with the fixed way through them (doorwayDirection), a big one
-                    -- from the player (roomDoorways)
-                    if not logic.isBigRoom(zone, ctx.room) then
+                    if fixed then
                         e.fixedDir = d.dir
                     end
                     if d.via then
@@ -567,12 +491,7 @@ end
 function logic.choiceRoute(zone, e)
     if e.kind == "climb" then
         -- (the end record itself where the opening stands at one; never changed here, it is the zone's)
-        local t = e.rec or { x = e.x, y = e.y, floor = e.floor, value = e.value }
-        if zone._index.climbTops then
-            return logic.endRoute(zone, t)
-        end
-        return logic.helperRoute(zone, { kind = "climb", x = t.x, y = t.y, floor = t.floor or 0, value = t.value,
-            bearing = t.bearing })
+        return logic.endRoute(zone, e.rec or { x = e.x, y = e.y, floor = e.floor, value = e.value })
     end
     local points = { { x = e.x, y = e.y } }
     if e.viaX then
@@ -637,8 +556,10 @@ function logic.helperArrived(route, start, now)
     if kind == "way" and route.place ~= nil then
         return now.place == route.place
     end
-    if kind == "climb" and route.landing ~= nil then
-        return now.floor == route.landing and now.floor ~= start.floor
+    -- (a climb that lands on the floor it began from, landingAt's same-floor rule, has no floor change to wait for:
+    -- its last point decides)
+    if kind == "climb" and route.landing ~= nil and route.landing ~= start.floor then
+        return now.floor == route.landing
     end
     return nil
 end

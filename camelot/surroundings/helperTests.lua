@@ -4,7 +4,7 @@ local logic = WowVision.surroundingsLogic
 -- A square with a turning stairs (piece 1) and a landing (piece 2): 4 rows x 7 columns of 4 yd cells, north edge at
 -- x = 100, west edge at y = 60. The stairs' own line: from its foot at 97, 50 north to 93, 50, west to 93, 54, north
 -- to 89, 54 (three stretches, a turn at each end of the middle one, as a spiral's). The ground joins it at the foot;
--- the landing joins it at 88, 54 (unless `noLanding`).
+-- the landing joins it at 88, 54 (unless `noLanding`), where the climb's top record stands (none without a landing).
 local function stairsZone(noLanding)
     local z = {
         key = "stairs", map = 0, top = 100, left = 60, cell = 4, rows = 4, cols = 7,
@@ -25,9 +25,15 @@ local function stairsZone(noLanding)
         joins = noLanding and { 0, 1, 97, 50, 0 } or { 0, 1, 97, 50, 0, 1, 2, 88, 54, 0 },
         climbFeetFields = 5,
         climbFeet = { 97, 50, 20000, 0, 0 },
+        climbTops = noLanding and {} or { 88, 54, 20000, 180, 2 },
     }
     logic.unpack(z)
     return z
+end
+
+-- The foot's record of stairsZone, as the list and the guidance hand it to the route.
+local function foot(z)
+    return z._index.climbFeet[1]
 end
 
 -- A U-shaped staircase (cells of 4 yd, north edge x = 100, west edge y = 60): the lower flight (piece 1) from the
@@ -73,9 +79,9 @@ local function near(t, p, x, y, what)
 end
 
 testRunner:addSuite("Surroundings building helper", {
-    ["from a climb's foot along its whole line, to the landing's join at its end"] = function(t)
+    ["from a climb's foot along its whole line, to its top record on the landing"] = function(t)
         local z = stairsZone()
-        local route = logic.climbRoute(z, 97, 50, 0)
+        local route = logic.endRoute(z, foot(z))
         t:assertNotNil(route)
         t:assertEqual(route.piece, 1)
         t:assertEqual(route.landing, 2)
@@ -85,13 +91,13 @@ testRunner:addSuite("Surroundings building helper", {
         near(t, p[2], 93, 50, "the first turn")
         near(t, p[3], 93, 54, "the second turn")
         near(t, p[4], 89, 54, "the line's end")
-        near(t, p[5], 88, 54, "the landing's join")
-        t:assertEqual(#p, 5, "no point of its own beyond the join")
+        near(t, p[5], 88, 54, "the top record at the landing")
+        t:assertEqual(#p, 5, "no point of its own beyond it")
     end,
 
     ["a line that ends before any landing ends the route there, said as short"] = function(t)
         local z = stairsZone(true)
-        local route = logic.climbRoute(z, 97, 50, 0)
+        local route = logic.endRoute(z, foot(z))
         t:assertTrue(route.short)
         t:assertNil(route.landing)
         near(t, route.points[#route.points], 89, 54, "the line's end")
@@ -138,9 +144,11 @@ testRunner:addSuite("Surroundings building helper", {
             z.lanes[i] = 20180   -- the stairs rise toward 180 (south), from the foot at 97, 50 to the landing
         end
         z.climbFeet = { 97, 50, 20180, 180, 0, 88, 54, 20180, 180, 2 }
+        z.climbTops = {}
         logic.unpack(z)
-        local up = logic.climbRoute(z, 97, 50, 0)
+        local up = logic.endRoute(z, foot(z))
         t:assertEqual(up.landing, 2)
+        near(t, up.points[#up.points], 88, 54, "the record at the other end")
     end,
 
     ["the turn key on a landing faces the flight the player did not come from, at the far end of its join"] = function(t)
@@ -252,5 +260,15 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertTrue(logic.helperPassed(9.5, 2, 10.5, 2, a, w), "crossed 2 yd beside it")
         t:assertFalse(logic.helperPassed(9.5, 5, 10.5, 5, a, w), "crossed 5 yd beside it")
         t:assertFalse(logic.helperPassed(10.5, 2, 9.5, 2, a, w), "crossed backwards")
+    end,
+
+    ["a climb that lands on the floor it began from ends at its last point, no floor change waited for"] = function(t)
+        -- (review 2026-11-24: the route waited for a floor change that could not come, until the player walked off)
+        local route = { kind = "climb", landing = 0 }
+        local start = { floor = 0 }
+        t:assertNil(logic.helperArrived(route, start, start))
+        route.landing = 2
+        t:assertFalse(logic.helperArrived(route, start, start))
+        t:assertTrue(logic.helperArrived(route, start, { floor = 2 }))
     end,
 })
