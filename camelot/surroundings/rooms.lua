@@ -517,9 +517,32 @@ function logic.describeRoom(zone, roomId, previousRoomId)
     -- a city's own complex (Ironforge) is named after the zone the player knows: never said
     local city = interior ~= nil and interior.city
     if not city and (previous == nil or previous.interior ~= room.interior) then
-        return (interior and interior.name or "") .. ", " .. name
+        local building = interior and interior.name or ""
+        -- the building's name already holds the room's word ("Turm von Azora", room "Turm"): the name alone
+        -- (user 2026-11-24: no double naming)
+        if building ~= "" and name ~= "" and logic.holdsWord(building, name) then
+            return building
+        end
+        return building .. ", " .. name
     end
     return name
+end
+
+-- Whether `text` holds `word` as a word of its own (letters on neither side), ignoring case.
+function logic.holdsWord(text, word)
+    local t, w = string.lower(text), string.lower(word)
+    local from = 1
+    while true do
+        local a, b = string.find(t, w, from, true)
+        if a == nil then
+            return false
+        end
+        local before, after = t:sub(a - 1, a - 1), t:sub(b + 1, b + 1)
+        if not before:find("[%a\128-\255]") and not after:find("[%a\128-\255]") then
+            return true
+        end
+        from = a + 1
+    end
 end
 
 logic.BIG_ROOM = 800 -- sq yd; in a room this big its doorways are said from where the player stands
