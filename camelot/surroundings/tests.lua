@@ -3283,3 +3283,143 @@ testRunner:addSuite("Surroundings", {
         end
     end,
 })
+
+-- The building helper's list (helper.lua helperChoices): what the describe key names, in its order, one entry per
+-- direction said; stepped through forward and back, wrapping (user 2026-11-24).
+local function choiceTexts(z, x, y, ctx)
+    local out = {}
+    for _, e in ipairs(logic.helperChoices(z, x, y, ctx)) do
+        out[#out + 1] = logic.choiceText(z, e, x, y)
+    end
+    return table.concat(out, ", ")
+end
+
+testRunner:addSuite("Surroundings building helper list", {
+    ["a small room's list is its doorways as the describe key says them, the way outside first"] = function(t)
+        local z = newZone()
+        logic.unpack(z)
+        t:assertEqual(logic.roomText(z, 1, nil, false), "Test Inn, common room, way outside to the south, upstairs landing to the west")
+        local list = logic.helperChoices(z, 5, 5, { room = 1 })
+        t:assertEqual(#list, 2)
+        t:assertEqual(choiceTexts(z, 5, 5, { room = 1 }), "way outside to the south, upstairs landing to the west")
+        -- each led to its own doorway (the frame equals world yards), through which the room changes
+        t:assertEqual(list[1].kind, "doorway")
+        local route = logic.choiceRoute(z, list[1])
+        t:assertEqual(#route.points, 1)
+        t:assertEqual(route.points[1].x, 0)
+        t:assertEqual(route.points[1].y, 5)
+        t:assertEqual(logic.choiceRoute(z, list[2]).points[1].x, 5)
+        -- (the fixed way through a small room's doorway, wherever the player stands in it)
+        t:assertEqual(choiceTexts(z, 8, 2, { room = 1 }), "way outside to the south, upstairs landing to the west")
+    end,
+
+    ["a big room's list is its doorways from where the player stands, nearest first"] = function(t)
+        local z = newHallZone()
+        logic.unpack(z)
+        t:assertEqual(logic.roomText(z, 1, nil, false, 95, 25),
+            "great hall, way outside to the north, shop to the west, passage to the southeast")
+        t:assertEqual(choiceTexts(z, 95, 25, { room = 1 }), "way outside to the north, shop to the west, passage to the southeast")
+        -- said from where the player stands when the entry is chosen, not when the list was made
+        local list = logic.helperChoices(z, 95, 25, { room = 1 })
+        t:assertEqual(logic.choiceText(z, list[2], 85, 30), "shop to the northwest")
+    end,
+
+    ["a square's list is its ways on and its entrances, as the describe key names them"] = function(t)
+        local z = newSquareZone()
+        table.insert(z.places, { "road", "road" })
+        z.grid[1] = "30000*2,28000*2,60000,30000*2"
+        logic.unpack(z)
+        local region = logic.regionAt(z, 78, 35)
+        local list = logic.helperChoices(z, 78, 35, { region = region })
+        local said = logic.itemsText(z, logic.describeEdgeItems(z, 78, 35, region))
+        t:assertEqual(choiceTexts(z, 78, 35, { region = region }), said)
+        local kinds = {}
+        for _, e in ipairs(list) do
+            kinds[e.kind] = e
+        end
+        -- the street: to where it begins on the square (the middle of its opening), done once on the street
+        local street = kinds.way
+        t:assertNotNil(street)
+        t:assertEqual(street.label, "street of Test")
+        local b = logic.wayBeginnings(z, region)[1]
+        t:assertEqual(street.x, b.x)
+        t:assertEqual(street.y, b.y)
+        local route = logic.choiceRoute(z, street)
+        local start = { floor = 0, room = nil, inside = false, place = 1 }
+        t:assertFalse(logic.helperArrived(route, start, start))
+        t:assertTrue(logic.helperArrived(route, start, { floor = 0, inside = false, place = street.place }))
+        -- the bank's entrance, led through: done inside
+        t:assertNotNil(kinds.entrance)
+        t:assertEqual(kinds.entrance.x, 65)
+        t:assertEqual(kinds.entrance.y, 15)
+        route = logic.choiceRoute(z, kinds.entrance)
+        t:assertEqual(route.kind, "entrance")
+        t:assertTrue(logic.helperArrived(route, start, { floor = 0, inside = true, place = 1 }))
+    end,
+
+    ["a climb's opening on a platform is led through the whole climb from its end record"] = function(t)
+        local z = newTowerZone()
+        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
+            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
+        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
+        z.climbFeet = { 96, 52, 20090, 90, 0 }
+        z.climbTops = { 96, 38, 20090, 270, 2 }
+        logic.unpack(z)
+        logic.setFloor(z, 2)
+        local region = logic.regionAt(z, 95, 25)
+        local list = logic.helperChoices(z, 95, 25, { region = region })
+        local climb = nil
+        for _, e in ipairs(list) do
+            if e.kind == "climb" then
+                climb = e
+            end
+        end
+        t:assertNotNil(climb)
+        t:assertEqual(climb.label, "stairs to the landing")
+        t:assertNotNil(climb.rec)
+        t:assertEqual(climb.rec.x, 96)
+        t:assertEqual(climb.rec.y, 38)
+        local route = logic.choiceRoute(z, climb)
+        t:assertEqual(route.kind, "climb")
+        t:assertEqual(route.points[1].x, 96)
+        t:assertEqual(route.points[1].y, 38)
+        -- (the zone's record is left as it was)
+        t:assertNil(z._index.climbTops[1].kind)
+        logic.setFloor(z, 0)
+    end,
+
+    ["the list steps forward and back, wrapping; a fresh list stepped back starts at its last entry"] = function(t)
+        t:assertEqual(logic.cycleIndex(0, 3, false), 1)
+        t:assertEqual(logic.cycleIndex(1, 3, false), 2)
+        t:assertEqual(logic.cycleIndex(3, 3, false), 1)
+        t:assertEqual(logic.cycleIndex(1, 3, true), 3)
+        t:assertEqual(logic.cycleIndex(3, 3, true), 2)
+        t:assertEqual(logic.cycleIndex(0, 3, true), 3)
+        t:assertEqual(logic.cycleIndex(5, 3, false), 1)
+        t:assertEqual(logic.cycleIndex(1, 1, true), 1)
+        t:assertNil(logic.cycleIndex(0, 0, false))
+    end,
+
+    ["a doorway into a piece of the same room is done only beyond that piece"] = function(t)
+        local z = newZone()
+        z.rooms[3][2] = "common room 2"
+        logic.unpack(z)
+        local route = { kind = "doorway", via = true, room = 1, zone = z }
+        local start = { room = 1, inside = true }
+        t:assertFalse(logic.helperArrived(route, start, { room = 3, inside = true }))
+        t:assertTrue(logic.helperArrived(route, start, { room = 2, inside = true }))
+        t:assertTrue(logic.helperArrived(route, start, { room = 3, inside = false }))
+    end,
+
+    ["the back key at a fork turns to the next arm counter-clockwise"] = function(t)
+        local function near(a, degrees)
+            return math.abs(logic.degreesBetween(a, math.rad(degrees))) < 0.5
+        end
+        -- arms north, east, south, west (facings counter-clockwise from north: 0, -90, -180, -270)
+        local facings = { 0, math.rad(-90), math.rad(-180), math.rad(-270) }
+        t:assertTrue(near(logic.lineTurnFacing(facings, 0, true), -90))         -- I: east
+        t:assertTrue(near(logic.lineTurnFacing(facings, 0, true, true), 90))    -- back: west
+        -- not facing an arm: the nearest, either way
+        t:assertTrue(near(logic.lineTurnFacing(facings, math.rad(-80), true, true), -90))
+    end,
+})

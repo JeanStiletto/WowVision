@@ -412,8 +412,9 @@ end
 logic.LINE_FACED = 3
 
 -- Which of `facings` the turn key turns to: the one nearest the facing; at a fork (`cycle`), when
--- the player faces an arm already, the next arm clockwise (each press turns to the next).
-function logic.lineTurnFacing(facings, facing, cycle)
+-- the player faces an arm already, the next arm clockwise (each press turns to the next); `back`: counter-clockwise
+-- (Alt-Shift-I, the way back round).
+function logic.lineTurnFacing(facings, facing, cycle, back)
     local best, bestOff = nil, nil
     for _, f in ipairs(facings) do
         local off = math.abs(logic.degreesBetween(f, facing))
@@ -424,10 +425,10 @@ function logic.lineTurnFacing(facings, facing, cycle)
     if not cycle or bestOff > logic.LINE_FACED then
         return best
     end
-    -- clockwise is a falling facing: the smallest clockwise gap beyond the arm faced
+    -- clockwise is a falling facing: the smallest clockwise gap beyond the arm faced (counter-clockwise a rising one)
     local next, nextGap = nil, nil
     for _, f in ipairs(facings) do
-        local gap = (-logic.degreesBetween(f, facing)) % 360
+        local gap = (back and logic.degreesBetween(f, facing) or -logic.degreesBetween(f, facing)) % 360
         if gap > logic.LINE_FACED and (nextGap == nil or gap < nextGap) then
             next, nextGap = f, gap
         end

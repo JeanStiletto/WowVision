@@ -15,7 +15,6 @@
 local logic = WowVision.surroundingsLogic
 
 logic.HELPER_FOOT = 6      -- yd: a climb's line end at most this far from its foot belongs to it
-logic.HELPER_NEAR = 4      -- yd: a climb line beginning this near the player is the one to lead up
 logic.HELPER_LANDING = 6   -- yd: a join at most this far from the line's end is where the climb lands
 logic.HELPER_RADIUS = 1.5  -- yd: a point of the route counts as reached within this
 logic.HELPER_SIDE = 3      -- yd: passing a point's line (across the way in) counts within this beside it
@@ -176,29 +175,7 @@ end
 
 -- Climb ends (data since trial L4e: zone.climbTops beside the feet; user 2026-10-20: Alt-I and the turn key fully on
 -- the new system). A staircase is led through from one end record to the other: along each flight's line, across
--- the landings between, to the far end, onto its floor. Up or down alike; the end of a climb just crossed is skipped
--- (logic.noteClimbStep), as the guidance skips it.
-
--- The end records (feet and tops) on the floor piece `floor` within `reach` of (x, y), nearest first: { rec, d }.
-function logic.climbEndsNear(zone, x, y, floor, reach)
-    local ix = zone._index
-    local crossed = ix.crossed
-    local out = {}
-    for _, list in ipairs({ ix.climbFeet or {}, ix.climbTops or {} }) do
-        for _, f in ipairs(list) do
-            if (f.floor or 0) == (floor or 0) and not (crossed and logic.placeOf(f.value) == crossed.place) then
-                local d = dist(x, y, f.x, f.y)
-                if d <= reach then
-                    out[#out + 1] = { rec = f, d = d }
-                end
-            end
-        end
-    end
-    table.sort(out, function(a, b)
-        return a.d < b.d
-    end)
-    return out
-end
+-- the landings between, to the far end, onto its floor. Up or down alike.
 
 -- The free end of a climb line within HELPER_FOOT of the end record `rec`, on a piece joined to its floor: of its own
 -- place first, then the nearest. Piece, x, y, or nil.
@@ -313,132 +290,6 @@ function logic.endRoute(zone, rec)
     local route = throughStaircase(zone, points, piece, { [piece] = true }, rec)
     route.kind = "climb"
     return route
-end
-
--- A climb whose line begins within `reach` of the player at (x, y) on a piece joined to the player's floor `floor`
--- (a foot the data has no foot record for: many a spiral's): the climb route from that line's end, or nil.
-function logic.climbNear(zone, x, y, floor, reach)
-    -- a climb that goes up from this floor (the Abbey gallery: the main ramp's top lay nearest and Alt-I led down)
-    local piece, ex, ey = logic.climbAtFoot(zone, x, y, reach, floor or 0, true)
-    if piece == nil then
-        return nil
-    end
-    return logic.climbRoute(zone, ex, ey, floor or 0)
-end
-
-logic.HELPER_FLOOR_REACH = 40   -- yd: a climb's foot on the player's own floor piece that Alt-I leads to along its line
-
--- The way along a piece's own line (a landing's or platform's, path-line data) from where the player stands to
--- near the point (fx, fy): the stretch nearest the player, then its chain followed the way that comes within
--- HELPER_FOOT of the point, cut there. Points, or nil (no line of the piece within reach, or none reaching the point).
-function logic.lineRouteTo(zone, piece, x, y, fx, fy)
-    local lanes = climbLanes(zone, piece, x, y)
-    local best, bx, by, bd
-    for _, lane in ipairs(lanes) do
-        if lane.x1 ~= lane.x2 or lane.y1 ~= lane.y2 then
-            local px, py, d = logic.segmentPoint(x, y, lane.x1, lane.y1, lane.x2, lane.y2)
-            if d <= logic.LANE_REACH and (bd == nil or d < bd) then
-                best, bx, by, bd = lane, px, py, d
-            end
-        end
-    end
-    if best == nil then
-        return nil
-    end
-    local choice
-    for _, e in ipairs({ { best.x2, best.y2 }, { best.x1, best.y1 } }) do
-        local chain = followLine(lanes, e[1], e[2], best)
-        local k, kd
-        for i, p in ipairs(chain) do
-            local d = dist(p.x, p.y, fx, fy)
-            if kd == nil or d < kd then
-                k, kd = i, d
-            end
-        end
-        if kd ~= nil and kd <= logic.HELPER_FOOT and (choice == nil or kd < choice.kd) then
-            choice = { chain = chain, k = k, kd = kd }
-        end
-    end
-    if choice == nil then
-        return nil
-    end
-    local points = { { x = bx, y = by } }
-    for i = 1, choice.k do
-        -- the stretch's end is left out where the chain turns back past the player's point at once (two paths'
-        -- stretches overlap on a platform ring: no 3 yd east to come back west)
-        local p, nxt = choice.chain[i], choice.chain[i + 1]
-        if not (i == 1 and nxt and i < choice.k and dist(bx, by, nxt.x, nxt.y) < dist(p.x, p.y, nxt.x, nxt.y)) then
-            points[#points + 1] = p
-        end
-    end
-    return points
-end
-
--- A route up from the player's own floor piece when no climb begins within HELPER_NEAR: to the nearest foot on
--- this piece within HELPER_FLOOR_REACH along the piece's own line (the safe way round: Northshire Abbey's gallery
--- to the bell tower ramp's foot at its west end, not along the 2 yd strip over the hall, user 2026-10-18), then up
--- the climb as climbRoute. { points, piece, landing, short, name }, or nil.
-function logic.floorClimbRoute(zone, floor, x, y)
-    local ix = zone._index
-    if floor == nil or floor == 0 then
-        return nil
-    end
-    -- with end records: the nearest end on this floor of either kind (a top leads down as a foot leads up), along
-    -- the floor's own line to it
-    if ix.climbTops then
-        for _, near in ipairs(logic.climbEndsNear(zone, x, y, floor, logic.HELPER_FLOOR_REACH)) do
-            local climb = logic.endRoute(zone, near.rec)
-            if climb and not climb.short then
-                local lead = logic.lineRouteTo(zone, floor, x, y, near.rec.x, near.rec.y)
-                if lead then
-                    local points = {}
-                    for _, p in ipairs(lead) do
-                        points[#points + 1] = p
-                    end
-                    for _, p in ipairs(climb.points) do
-                        points[#points + 1] = p
-                    end
-                    climb.points = points
-                end
-                climb.foot = near.rec
-                return climb
-            end
-        end
-        return nil
-    end
-    -- (only a foot a climb goes UP from, as climbNear: a foot stored at a climb's top, the Abbey main ramp's on the
-    -- gallery in trial K9, led Alt-I down the ramp, walk 2026-10-19 22:15)
-    local best, bd
-    for _, f in ipairs(ix.climbFeet or {}) do
-        if (f.floor or 0) == floor then
-            local d = dist(x, y, f.x, f.y)
-            if d <= logic.HELPER_FLOOR_REACH and (bd == nil or d < bd)
-                and logic.climbAtFoot(zone, f.x, f.y, logic.HELPER_FOOT, floor, true) ~= nil then
-                best, bd = f, d
-            end
-        end
-    end
-    if best == nil then
-        return nil
-    end
-    local climb = logic.climbRoute(zone, best.x, best.y, floor)
-    if climb == nil then
-        return nil
-    end
-    local lead = logic.lineRouteTo(zone, floor, x, y, best.x, best.y)
-    if lead then
-        local points = {}
-        for _, p in ipairs(lead) do
-            points[#points + 1] = p
-        end
-        for _, p in ipairs(climb.points) do
-            points[#points + 1] = p
-        end
-        climb.points = points
-    end
-    climb.kind = "climb"
-    climb.foot = best
-    return climb
 end
 
 -- A climb route for a player standing on the climb `piece` at (x, y), facing `facing` (radians as GetPlayerFacing,
@@ -601,19 +452,190 @@ function logic.helperRoute(zone, t)
     return nil
 end
 
+-- The building helper's list (user 2026-11-24: "take all described exits of a room, reusing the existing ordering
+-- logic for Alt-L"): every exit the describe key names where the player stands, in the order it names them, one
+-- entry per direction said ("street of Old Town to the northwest and south" is two). Alt-I steps forward through
+-- it, Alt-Shift-I back; the module keeps the list while the player stays in the same room or on the same square.
+-- `ctx`: { room = id } in a room of the zone (its doorways, logic.roomDoorways as logic.roomText asks), or
+-- { region = r } on a square or a hall of the indoor layer (its openings, logic.describeEdgeItems as the describe
+-- key's spot text). Each entry: { key, label, class, kind, x, y, mouth or door, fixedDir, via, place, rec,
+-- floor }; nothing else is computed here: the route is made when the entry is chosen (logic.choiceRoute).
+
+-- The end record a climb's opening stands at (`px`, `py` one of its points), or nil.
+local function endRecordAt(zone, px, py)
+    local ix = zone._index
+    for _, list in ipairs({ ix.climbFeet or {}, ix.climbTops or {} }) do
+        for _, f in ipairs(list) do
+            if f.x == px and f.y == py then
+                return f
+            end
+        end
+    end
+    return nil
+end
+
+-- One entry for the opening `m` of the region, seen from (x, y).
+local function mouthEntry(zone, region, item, m, x, y)
+    local _d, px, py = logic.nearestOfPoints(m.points, x, y)
+    local e = { label = item.label, class = item.class, mouth = m, x = px, y = py, floor = zone._index.floor or 0 }
+    if m.climb then
+        e.kind = "climb"
+        e.rec = m.endRecord and endRecordAt(zone, px, py) or nil
+        e.value = m.value
+    elseif m.class == "entrance" then
+        e.kind = "entrance"
+    elseif m.class == "room" then
+        -- (in the indoor layer: a passage, stairs or the way out, through its doorway)
+        e.kind = "doorway"
+    else
+        -- a street, road, square or hall: to where it begins on the square (the middle of its opening, as the
+        -- guidance leads to it: logic.wayBeginnings), else to its opening's nearest point (a street along the side)
+        e.kind = "way"
+        e.place = m.value and logic.placeOf(m.value) or nil
+        for _, b in ipairs(logic.wayBeginnings(zone, region)) do
+            if b.mouth == m then
+                e.x, e.y, e.through = b.x, b.y, b.onward
+                break
+            end
+        end
+    end
+    e.key = e.kind .. "|" .. e.label .. "|" .. math.floor(e.x + 0.5) .. "," .. math.floor(e.y + 0.5)
+    return e
+end
+
+-- For each direction an item is said with, the first of its `parts` (nearest first) said in that direction
+-- (`dirOf(part)`); an item said "here" (no direction), its first part.
+local function partsByDir(item, parts, dirOf)
+    if #item.dirs == 0 then
+        return { parts[1] }
+    end
+    local out, used = {}, {}
+    for _, dir in ipairs(item.dirs) do
+        for i, p in ipairs(parts) do
+            local pd = dirOf(p)
+            if not used[i] and pd ~= nil and logic.sameDir(pd, dir) then
+                used[i] = true
+                out[#out + 1] = p
+                break
+            end
+        end
+    end
+    return out
+end
+
+function logic.helperChoices(zone, x, y, ctx)
+    local out = {}
+    if ctx.room then
+        local items = logic.roomDoorways(zone, ctx.room, { dirs = logic.ITEM_DIRS, x = x, y = y })
+        for _, item in ipairs(items) do
+            for _, d in ipairs(partsByDir(item, item.doors or {}, function(p)
+                return p.dir
+            end)) do
+                local dx, dy = logic.doorWorld(zone, d.door)
+                if dx then
+                    local e = { label = item.label, class = item.class, kind = "doorway", x = dx, y = dy,
+                        door = d.door, via = d.via, room = ctx.room }
+                    -- a small room says its doorways with the fixed way through them (doorwayDirection), a big one
+                    -- from the player (roomDoorways)
+                    if not logic.isBigRoom(zone, ctx.room) then
+                        e.fixedDir = d.dir
+                    end
+                    if d.via then
+                        e.viaX, e.viaY = logic.doorWorld(zone, d.via)
+                    end
+                    e.key = "doorway|" .. e.label .. "|" .. math.floor(dx + 0.5) .. "," .. math.floor(dy + 0.5)
+                    out[#out + 1] = e
+                end
+            end
+        end
+    elseif ctx.region then
+        for _, item in ipairs(logic.describeEdgeItems(zone, x, y, ctx.region)) do
+            for _, m in ipairs(partsByDir(item, item.mouths or {}, function(p)
+                return select(2, logic.mouthDistance(p, x, y))
+            end)) do
+                if m.points and #m.points >= 2 then
+                    out[#out + 1] = mouthEntry(zone, ctx.region, item, m, x, y)
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- The route to a chosen entry: { points, kind, ... } as logic.helperRoute. A doorway into a piece of the same room
+-- (roomDoorways' `via`) is led on through that piece's own doorway; a climb's opening through the whole climb.
+function logic.choiceRoute(zone, e)
+    if e.kind == "climb" then
+        -- (the end record itself where the opening stands at one; never changed here, it is the zone's)
+        local t = e.rec or { x = e.x, y = e.y, floor = e.floor, value = e.value }
+        if zone._index.climbTops then
+            return logic.endRoute(zone, t)
+        end
+        return logic.helperRoute(zone, { kind = "climb", x = t.x, y = t.y, floor = t.floor or 0, value = t.value,
+            bearing = t.bearing })
+    end
+    local points = { { x = e.x, y = e.y } }
+    if e.viaX then
+        points[2] = { x = e.viaX, y = e.viaY }
+    end
+    return { points = points, kind = e.kind, place = e.place, via = e.via ~= nil, zone = zone, room = e.room }
+end
+
+-- What the describe key says for the entry, from (x, y) now: its name with the one direction it lies in
+-- ("stairs to the east"; "way outside to the north"), logic.itemsText's words.
+function logic.choiceText(zone, e, x, y)
+    local dir = e.fixedDir
+    if dir == nil then
+        local d
+        if e.mouth then
+            d, dir = logic.mouthDistance(e.mouth, x, y)
+        else
+            d, dir = logic.dist(e.x, e.y, x, y), logic.bearingOf(e.x - x, e.y - y)
+        end
+        if d < logic.HERE then
+            dir = nil
+        end
+    end
+    local floor = e.mouth and logic.floorOfValue(zone, logic.valueAt(zone, x, y)) or nil
+    return logic.itemsText(zone, { { label = e.label, class = e.class, dirs = { dir } } }, floor)
+end
+
+-- The next entry from `index` (0: none chosen yet) in a list of `n`, a step forward or back, wrapping.
+function logic.cycleIndex(index, n, back)
+    if n == 0 then
+        return nil
+    end
+    if index < 1 or index > n then
+        return back and n or 1
+    end
+    if back then
+        return (index - 2) % n + 1
+    end
+    return index % n + 1
+end
+
 -- Has the player arrived where the route `route` leads, by the surroundings' own rules? Asked when the module says
 -- (or logs) a place or room line, the moment it holds the player on a new place. `start` and `now`: { floor (the
 -- floor piece in the route's grid), liquid (that piece is a liquid's), room, inside }. Out of the water: off the
 -- piece swum in, on floor; through a doorway or an entrance: another room, or in or out of the building; up or down
--- a climb with a landing: on the landing's piece. A route of none of these (a way's beginning, a climb whose line
--- ends short) ends at its last point. Returns true, false, or nil (no rule: the last point decides).
+-- a climb with a landing: on the landing's piece; to a street, square or hall of the list (route.place): on that
+-- place. A doorway into a piece of the same room (route.via) counts only beyond that piece. A route of none of these
+-- (a way's beginning from the guidance, a climb whose line ends short) ends at its last point. `now.place`: the place
+-- under the player. Returns true, false, or nil (no rule: the last point decides).
 function logic.helperArrived(route, start, now)
     local kind = route and route.kind
     if kind == "exit" then
         return now.floor ~= start.floor and not now.liquid
     end
+    if kind == "doorway" and route.via and now.inside == start.inside and now.room ~= nil and route.room ~= nil
+        and logic.sameRoomName(route.zone, route.room, now.room) then
+        return false
+    end
     if kind == "doorway" or kind == "entrance" then
         return now.room ~= start.room or now.inside ~= start.inside
+    end
+    if kind == "way" and route.place ~= nil then
+        return now.place == route.place
     end
     if kind == "climb" and route.landing ~= nil then
         return now.floor == route.landing and now.floor ~= start.floor

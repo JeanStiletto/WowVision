@@ -658,7 +658,7 @@ function logic.roomDoorways(zone, roomId, opts)
             if item == nil then
                 -- through: said only through rooms said alike (sectionText: a single way on
                 -- through the same thing is no choice)
-                item = { label = label, class = class, dirs = {}, through = via ~= nil }
+                item = { label = label, class = class, dirs = {}, through = via ~= nil, doors = {} }
                 byLabel[label] = item
                 items[#items + 1] = item
             elseif not via then
@@ -674,6 +674,9 @@ function logic.roomDoorways(zone, roomId, opts)
                 dir = logic.doorwayDirection(zone, door, roomId)
             end
             logic.addDir(item, dir, opts.dirs)
+            -- every doorway the item stands for, with its direction (the building helper leads to the one said in
+            -- each direction, helper.lua helperChoices)
+            item.doors[#item.doors + 1] = { door = door, dir = dir, via = via }
         end
     end
     return logic.capItems(items, opts.max, cameLabel)

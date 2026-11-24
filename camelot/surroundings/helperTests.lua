@@ -131,7 +131,7 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertNil(logic.climbLineFacing(z, 0, 91, 53.5, 0))
     end,
 
-    ["along the floor only to a foot a climb goes up from, never down from a foot stored at a climb's top"] = function(t)
+    ["a foot stored at a climb's top too: from the foot below the climb still leads up to its landing"] = function(t)
         -- (the Abbey main ramp's foot stored on the gallery at its top in trial K9: Alt-I led down, walk 2026-10-19)
         local z = stairsZone()
         for i = 5, #z.lanes, z.laneFields do
@@ -139,7 +139,6 @@ testRunner:addSuite("Surroundings building helper", {
         end
         z.climbFeet = { 97, 50, 20180, 180, 0, 88, 54, 20180, 180, 2 }
         logic.unpack(z)
-        t:assertNil(logic.floorClimbRoute(z, 2, 86, 54))
         local up = logic.climbRoute(z, 97, 50, 0)
         t:assertEqual(up.landing, 2)
     end,

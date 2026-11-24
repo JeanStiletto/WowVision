@@ -53,10 +53,17 @@ tested in `tests.lua` (the stored data in `storeTests.lua`, against `tools/testd
   objects are only in its index.
 - `texts.lua`: every spoken text: places, squares, rooms, drop edges, guidance targets.
 - `stops.lua`: where one waits for a ship, zeppelin, lift or tram, and which way it will be.
-- `helper.lua`: the building helper (Alt plus the turn key) and the climbs' routes: a beacon route to the next
-  doorway, entrance or way out of the water, or along a climb's own stored centre line to its other end and the
-  floor joined there (`logic.helperRoute`, `logic.climbRouteFrom`); the turn key's facing on a climb
-  (`logic.climbLineFacing`). It follows only what the export stored (tested in `helperTests.lua`).
+- `helper.lua`: the building helper (Alt plus the turn key) and the climbs' routes. Its list
+  (`logic.helperChoices`) is what the describe key names where the player stands, in the same order: a room's
+  doorways (`logic.roomDoorways`), a square's or hall's streets, halls, entrances, ramps and stairs
+  (`logic.describeEdgeItems`), one entry per direction said. Alt-I leads to the next entry, Alt-Shift-I to the one
+  before (with no list route led: the turn key's fork arms counter-clockwise); the module keeps the list while the
+  player stays in the same room or on the same square. A beacon route to a doorway or entrance, to where a street
+  begins on the square, or along a climb's own stored centre line through the staircase to the floor at its other
+  end (`logic.choiceRoute`, `logic.endRoute`, `logic.climbRouteFrom`); the routes end on the surroundings' own room
+  or place line (`logic.helperArrived`). Where the describe key names no exits (the water, a street) the target it
+  says. The turn key's facing on a climb (`logic.climbLineFacing`). It follows only what the export stored (tested in
+  `helperTests.lua` and the "building helper list" suite of `tests.lua`).
 - `tracker.lua`: the walk-graph tracker, the floor piece the player is on followed over a layer's own floor
   surfaces (the zone's `<zone>-surfaces.lua` file, written by the tools' `surfaces.py`: every floor surface in
   1 yd columns with its height, its piece and its steps to the neighbouring columns), with a few costed

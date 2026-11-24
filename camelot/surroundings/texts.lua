@@ -820,6 +820,12 @@ local function edgeItems(zone, x, y, region, cut, previous, said, from)
     return items
 end
 
+-- The items the describe key says on a square or hall (edgeItems, no announcement), in its order: the building
+-- helper's list (helper.lua helperChoices) is this list, so Alt-I leads to exactly what Alt-L names.
+function logic.describeEdgeItems(zone, x, y, region)
+    return edgeItems(zone, x, y, region, false, nil, {}, nil)
+end
+
 -- Around the player, by radius: off a way (just stepped off one, or the describe key) where the
 -- nearest road or street is, toward its centre line where it has one (across the way, so it does
 -- not flicker; the same rule for both, in a city the word is street), within ROAD_SIDE_REACH; and
