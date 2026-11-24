@@ -43,6 +43,9 @@ settings:add({ key = "enabled", type = "Bool", label = L["Routes from WowNav"], 
 -- WowNav's comfort level: a road route may be up to this many percent longer than the shortest way (his default 60
 -- since 2026-10-25).
 settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Percent Longer)"], default = 60, min = 0, max = 300 })
+-- his /vn safety (default 0 = off): a route may be up to this many percent longer than the shortest way to keep away
+-- from monster spawns. Off, the search is the one without it (no extra pass, no spawn table).
+settings:add({ key = "safety", type = "Number", label = L["Safe Routes (Percent Longer)"], default = 0, min = 0, max = 300 })
 -- his /vn outposts (Z2, default on): routes go around the outposts and capitals of the opposing faction; without a way
 -- around they lead through one and say so
 settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = true })
@@ -69,12 +72,16 @@ settings:add({ key = "preload", type = "Bool", label = L["Prepare Neighbouring Z
 -- the radius Alt-P picks (navigation/maps) is the minimum over the data's own radius of each waypoint
 
 local BUDGET_MS = 8          -- search time per frame (his chapter 7 point 4 allows 30)
+-- while the player stands still out of combat, waiting for the route: his limit. On a slow computer a frame outside the
+-- search takes 30 ms or more, and with 8 ms a frame a search of 20 s took over a minute to answer.
+local BUDGET_STILL_MS = 30
 local SLOW_NOTICE = 1.0      -- seconds before "calculating route" is said
 local RECALC_DELAY = 1.0     -- seconds after the last change of the road preference before the route is searched again
 
 local job = nil              -- the pending search: { job, request, startedAt, noticed }
 local passive = nil          -- the noted dock (his passive mode): { name, near }
 local recalcAt = nil         -- when the running route is searched again with a changed road preference
+local recalcText = nil       -- what is said then (the road preference's text when nil)
 local route = nil            -- the wownavRoute of the module
 local routeMap = nil         -- the native map the running route lives on
 
@@ -189,6 +196,9 @@ local function ready(self)
         })
     end
     N.SetComfort(self.settings.comfort or 60)
+    if N.SetSafety ~= nil and not N.SetSafety(self.settings.safety or 0) then
+        N.SetSafety(0)
+    end
     N.SetAvoidOutposts(self.settings.avoidOutposts ~= false)
     -- his settings live in WowVisionNavigationDB, where his resolver and route rules read them (R:Settings,
     -- Route.chokeFallback); while the standalone addon is loaded this module is off and the table is his
@@ -343,7 +353,9 @@ local TRANSIT_TEXTS = { dive = L["Dive here; the route goes on after it"],
     wind_bridge = L["Wait here until you hear the Wind Bridge, then step into the wind current; the route goes on after it"] }
 -- his MODE_TEXT: a transit without a text of its own by how it is activated (a portal that is clicked, no trigger)
 local TRANSIT_MODE_TEXTS = {
-    click = L["Target the portal with soft targeting and interact with it; the route goes on after it"] }
+    click = L["Target the portal with soft targeting and interact with it; the route goes on after it"],
+    -- his action_waiting.walk_into_volume (5a1290b): the route led into the trigger of a walk-in portal
+    walk_into_volume = L["Keep walking straight on; the route goes on by itself after the transition"] }
 
 -- What a transit says (his ActionNavigation texts): by its kind, else by its activation mode, else the generic text;
 -- a transit whose positions are estimates says so (his approximateSuffix).
@@ -539,6 +551,17 @@ local function heightHintText(N, request, outcome)
     return WowVisionNavigationText("height_hint_" .. hint.direction, hint.yards)
 end
 
+-- His safety_route_info: the yards the route leads near monsters, and those of the shortest route; nil while the
+-- setting is off, or when the shortest route passes none.
+local function dangerText(result)
+    if type(result) ~= "table" or type(result.danger) ~= "number" or type(result.dangerA) ~= "number"
+        or result.dangerA <= 0 then
+        return nil
+    end
+    return string.format(L["The route leads %d yards near monsters, the shortest route %d yards."],
+        math.floor(result.danger + 0.5), math.floor(result.dangerA + 0.5))
+end
+
 local function startRoute(self, request, outcome)
     local N = self:network()
     local trimmed = false
@@ -625,6 +648,11 @@ local function startRoute(self, request, outcome)
     if outpost == "through" or outpost == "target" then
         text = text .. ". " .. WowVisionNavigationText("outpost_" .. outpost)
     end
+    -- his safe routes: with the setting on, a route whose shortest way passes monsters says how far, against that way
+    self.routeDanger = dangerText(outcome.plan and outcome.plan.result)
+    if self.routeDanger ~= nil then
+        text = text .. ". " .. self.routeDanger
+    end
     if reversed ~= nil then
         text = reversed.text .. ". " .. text
     end
@@ -652,7 +680,7 @@ end
 -- A job planning in time slices, as every search (stepJob runs it).
 local function newJob(N, request, work)
     return { request = request, startedAt = GetTime(), job = work, frames = 0, misses = N.wholeMisses or 0,
-        answers = N.knownMissAnswers or 0, closed = N.closedWaterGoals or 0 }
+        answers = N.knownMissAnswers or 0, closed = N.closedWaterGoals or 0, repeated = N.repeatedSearches or 0 }
 end
 
 -- Starts the search for a request. request: { contract or nodeId, label, onArrive, start }; start: the entry point the
@@ -1021,6 +1049,7 @@ function module:stopRoute(keepPenalties, keepDock)
     end
     routeMap = nil
     self.heightHint = nil
+    self.routeDanger = nil
 end
 
 local function onOutcome(self, request, outcome)
@@ -1050,17 +1079,19 @@ local function stepJob(self)
     if j == nil then
         return
     end
-    local done, outcome, failure = j.job:Step(BUDGET_MS, debugprofilestop)
+    local still = route ~= nil and route.env.moving ~= nil and not route.env.moving()
+        and not (InCombatLockdown ~= nil and InCombatLockdown())
+    local done, outcome, failure = j.job:Step(still and BUDGET_STILL_MS or BUDGET_MS, debugprofilestop)
     j.frames = j.frames + 1
     if done then
         -- how long the search took, the whole searches that missed (the floor check) and what they answered, and the
         -- goals in closed water that no search was spent on
         local N = self:network()
         logLine(string.format("search %s: %s after %.1f s in %d frames, %d whole misses, %d targets answered from them, "
-            .. "%d closed water goals left out",
+            .. "%d closed water goals left out, %d repeated searches answered from the first",
             tostring(j.request.label), type(outcome) == "table" and tostring(outcome.kind) or tostring(failure),
             GetTime() - j.startedAt, j.frames, (N.wholeMisses or 0) - j.misses, (N.knownMissAnswers or 0) - j.answers,
-            (N.closedWaterGoals or 0) - j.closed))
+            (N.closedWaterGoals or 0) - j.closed, (N.repeatedSearches or 0) - j.repeated))
     end
     if not done then
         if not j.noticed and GetTime() - j.startedAt >= SLOW_NOTICE then
@@ -1232,7 +1263,7 @@ local function checkAction(self)
             say(L["The route goes on"])
             local N = self:network()
             N.activeMapId = map
-            job = newJob(N, request, N.Job(route.continueTo, route, toNode, targetNodeId, result))
+            job = newJob(N, request, N.Job(route.continueTo, route, toNode, targetNodeId, result, request.contract))
         end
     end
 end
@@ -1303,6 +1334,8 @@ local function checkRecalculation(self)
         return
     end
     recalcAt = nil
+    local text = recalcText or L["Searching the route again with the new road preference"]
+    recalcText = nil
     local request = self:runningRequest()
     if request ~= nil then
         local _, _, map = route.env.position()
@@ -1312,7 +1345,7 @@ local function checkRecalculation(self)
             say(WowVisionNavigationText("target_source_gone"))
             return
         end
-        say(L["Searching the route again with the new road preference"])
+        say(text)
         local start = restartPoint(self, request)
         self:stopRoute()
         search(self, { contract = contract, nodeId = request.nodeId, label = request.label,
@@ -1512,6 +1545,9 @@ function module:status()
     elseif self.path ~= nil and route ~= nil and route.active then
         say(string.format(L["En route to %s, waypoint %d of %d"], tostring(self.request and self.request.label or ""),
             route.pathIndex or 0, #(route.path or {})))
+        if self.routeDanger ~= nil then
+            say(self.routeDanger)
+        end
     elseif route ~= nil and route.action ~= nil then
         say(string.format(L["Waiting for the far end of %s"],
             TRANSIT_WORDS[route.action.action.kind] or L["the transit"]))
@@ -1580,6 +1616,19 @@ module:registerBinding({
 module.settings.class:getField("comfort").events.valueChange:subscribe(module, function()
     if module:runningRequest() ~= nil then
         recalcAt = GetTime() + RECALC_DELAY
+        recalcText = nil
+    end
+end)
+
+-- his /vn safety: the new factor at once, and the running route searched again with it once the slider rests
+module.settings.class:getField("safety").events.valueChange:subscribe(module, function(_, _, _, _, value)
+    local N = module:network()
+    if N ~= nil and N.SetSafety ~= nil and not N.SetSafety(value or 0) then
+        N.SetSafety(0)
+    end
+    if module:runningRequest() ~= nil then
+        recalcAt = GetTime() + RECALC_DELAY
+        recalcText = L["Searching the route again with the new safety setting"]
     end
 end)
 
@@ -1591,6 +1640,7 @@ module.settings.class:getField("avoidOutposts").events.valueChange:subscribe(mod
     end
     if module:runningRequest() ~= nil then
         recalcAt = GetTime() + RECALC_DELAY
+        recalcText = nil
     end
 end)
 

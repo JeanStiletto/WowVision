@@ -217,6 +217,83 @@ function module.visualRows(buttons)
     return rows
 end
 
+-- One item slot of a bag or the bank: the label (with "[Favorite]" and "[Junk]"
+-- ahead of it when the player marked its item, see favorites.lua and junk.lua),
+-- the clicks, and the Select Favorite and Select Junk keys and menu entries.
+-- The bags' Item Lists stop (retail/containers/Bags.lua) lists slots again and
+-- builds them with this too, so they read the same wherever they are.
+--
+-- A slot is built again on every rebuild of the window (every frame), so what
+-- does not change is made once per item button and kept: where the button
+-- points and how its label reads. Item buttons are the game's own frames and
+-- stay for the session.
+local slotParts = {}
+
+local function partsOf(itemButton)
+    local parts = slotParts[itemButton]
+    if parts == nil then
+        local function locate()
+            return module.slotLocation(itemButton)
+        end
+        parts = {
+            locate = locate,
+            label = function()
+                local windows = WowVision.base.windows
+                local label = windows.junk:tagLabel(module.getBagItemLabel(itemButton), locate())
+                return windows.favorites:tagLabel(label, locate())
+            end,
+        }
+        slotParts[itemButton] = parts
+    end
+    return parts
+end
+
+local function slotNode(itemButton)
+    local parts = partsOf(itemButton)
+    local windows = WowVision.base.windows
+    local node = module.itemSlotNode(
+        itemButton,
+        parts.label,
+        module.itemClickLabels(itemButton),
+        module.slotIsEmpty(itemButton)
+    )
+    node = windows.favorites:decorateSlot(node, parts.locate, itemButton)
+    return windows.junk:decorateSlot(node, parts.locate, itemButton)
+end
+module.slotNode = slotNode
+
+-- The text in the game's bag search box. The bag and bank boxes hold the
+-- same text (the game copies one into the others as it is typed), and the
+-- game clears it when the last of them hides.
+function module.searchText()
+    local box = BagItemSearchBox
+    if box == nil or box.GetText == nil then
+        return ""
+    end
+    return box:GetText() or ""
+end
+
+-- With a search typed, only the slots that hold a matching item, in the
+-- order given. The game dims the others and leaves them where they are;
+-- read out, that is a bag full of "Filtered" to step through, so they are
+-- left out, and the empty slots with them. Returns the slots to read and
+-- whether a search is on.
+function module.searchMatches(buttons)
+    if module.searchText() == "" then
+        return buttons, false
+    end
+    local matches = {}
+    for _, itemButton in ipairs(buttons) do
+        if itemButton:IsShown() then
+            local info = C_Container.GetContainerItemInfo(module.slotLocation(itemButton))
+            if info ~= nil and not info.isFiltered then
+                tinsert(matches, itemButton)
+            end
+        end
+    end
+    return matches, true
+end
+
 -- Emit a bag's item slots in the configured shape. Grid rows share the
 -- "grid" row key, so up and down follow POSITION in the row rather than
 -- the screen column: the combined bag fills from the bottom-right and a
@@ -224,18 +301,31 @@ end
 -- in SLOT order (the order the buttons are given in: slot 1 first), the way
 -- older addons do; screen order would start at the top-left cell, which is
 -- the LAST slot, and read the bag backwards. Returns the visual row count.
+-- While a bag search is typed, only the matching items are emitted, as a
+-- list in slot order whatever the shape (what is left of a grid has holes);
+-- a bag without a match says No results.
 function module.renderSlots(builder, buttons)
+    local all = buttons
+    local searching
+    buttons, searching = module.searchMatches(buttons)
+    if searching and #buttons == 0 then
+        local first = all[1]
+        if first ~= nil then
+            local bagID, slotID = module.slotLocation(first)
+            builder:addItem(
+                ControlId.structural("noMatch:" .. tostring(bagID) .. ":" .. tostring(slotID)),
+                nodes.text({ label = L["No results"] })
+            )
+            return 1
+        end
+        return 0
+    end
     local rows = module.visualRows(buttons)
-    local grid = module.settings.shape == "grid"
+    local grid = module.settings.shape == "grid" and not searching
     if not grid then
         for _, itemButton in ipairs(buttons) do
             if itemButton:IsShown() then
-                builder:addItem(
-                    ControlId.forObject(itemButton),
-                    module.itemSlotNode(itemButton, function()
-                        return module.getBagItemLabel(itemButton)
-                    end, module.itemClickLabels(itemButton), module.slotIsEmpty(itemButton))
-                )
+                builder:addItem(ControlId.forObject(itemButton), slotNode(itemButton))
             end
         end
         return #rows
@@ -243,12 +333,7 @@ function module.renderSlots(builder, buttons)
     for _, row in ipairs(rows) do
         builder:startRow("grid")
         for _, itemButton in ipairs(row) do
-            builder:addItem(
-                ControlId.forObject(itemButton),
-                module.itemSlotNode(itemButton, function()
-                    return module.getBagItemLabel(itemButton)
-                end, module.itemClickLabels(itemButton), module.slotIsEmpty(itemButton))
-            )
+            builder:addItem(ControlId.forObject(itemButton), slotNode(itemButton))
         end
         builder:endRow()
     end

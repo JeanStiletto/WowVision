@@ -52,6 +52,8 @@ Jede dieser Tasten, dazu Eingabe, Rücktaste, Umschalt+F10 und Leertaste, hat au
 |---|---|
 | Vorherige Tooltipzeile (Previous Tooltip Line) | Umschalt+Pfeil hoch |
 | Nächste Tooltipzeile (Next Tooltip Line) | Umschalt+Pfeil runter |
+| Vorheriger Tooltipblock (Previous Tooltip Block) | Strg+Umschalt+Pfeil hoch |
+| Nächster Tooltipblock (Next Tooltip Block) | Strg+Umschalt+Pfeil runter |
 | Tooltip links vorlesen (Read Tooltip Left) | Umschalt+Pfeil links |
 | Tooltip rechts vorlesen (Read Tooltip Right) | Umschalt+Pfeil rechts |
 
@@ -78,8 +80,10 @@ Siehe [Tooltips](../basics/tooltips.md).
 | Nächster Puffer (Next Buffer) | Alt+Pfeil rechts |
 | Vorherige Puffergruppe (Previous Buffer Group) | Alt+Strg+Pfeil links |
 | Nächste Puffergruppe (Next Buffer Group) | Alt+Strg+Pfeil rechts |
+| Spieler-Auren ansagen (Speak Player Auras) | Alt+Strg+B |
+| Spieler-Auren (Player Auras) | Alt+Umschalt+B |
 
-Die Einstellung Elementrichtung umkehren (Invert Item Direction) im Modul Puffer vertauscht Alt+Pfeil hoch und Alt+Pfeil runter. Siehe [Puffer](../information/buffers.md).
+Die Einstellung Elementrichtung umkehren (Invert Item Direction) im Modul Puffer vertauscht Alt+Pfeil hoch und Alt+Pfeil runter. Spieler-Auren ansagen sagt jeden Buff und Debuff auf dir an, und Spieler-Auren öffnet eine Liste davon. Siehe [Puffer](../information/buffers.md#deine-buffs-und-debuffs-auf-einen-blick).
 
 ## Chat
 
@@ -90,6 +94,16 @@ Die Einstellung Elementrichtung umkehren (Invert Item Direction) im Modul Puffer
 | Umschaltklick (Shift Click) | Umschalt+Eingabe | Klickt den ausgewählten Teil mit Umschalt an (legt einen Link ins Chatfeld) |
 
 Siehe [Chat](../windows/chat.md).
+
+## Taschen
+
+| Aktion | Standardtaste | Hinweise |
+|---|---|---|
+| Plunder auswählen (Select Junk) | Unbelegt | Auf einem Gegenstandsplatz der Taschen oder der Bank: markiert den Gegenstand als Plunder oder nimmt die Markierung weg. Das Kontextmenü des Platzes (Umschalt+F10) tut dasselbe ohne Taste. Gib der Belegung nicht Umschalt+Eingabe oder Umschalt+Rücktaste: Auf einem Taschenplatz sind das die Umschaltklicks des Spiels (einen Stapel teilen, einen Gegenstand in den Chat linken) |
+
+| Favorit auswählen (Select Favorite) | Unbelegt | Auf einem Gegenstandsplatz der Taschen oder der Bank: markiert den Gegenstand als Favorit oder nimmt die Markierung weg. Das Kontextmenü des Platzes (Umschalt+F10) tut dasselbe ohne Taste. Ein Favorit wird mit „[Favorit]“ vor dem Namen gelesen und wird nie verkauft |
+
+Siehe [Plunder](../windows/bags-and-bank.md#plunder) und [Favoriten](../windows/bags-and-bank.md#favoriten).
 
 ## Navigation und Routen
 
@@ -130,6 +144,7 @@ Siehe [Minimap](../world/minimap.md).
 | Soft Target Freund (Soft Target Friend) | Umschalt+P | Dasselbe für die weiche Zielerfassung von Freunden |
 | Soft Target Interaktion (Soft Target Interact) | Umschalt+O | Dasselbe für die weiche Zielerfassung zur Interaktion |
 | Ziel des Ziels (Target of Target) | Unbelegt | Macht das Ziel deines Ziels zu deinem Ziel, ohne einen Angriff zu beginnen |
+| Ziel anpingen (Ping Target) | Unbelegt | Pingt dein Ziel an, damit du hörst, wo es ist, und sagt, wie weit es weg ist. Ohne Ziel hörst du "Kein Ziel" |
 | Zielmenü öffnen (Open Target Menu) | Alt+T | Öffnet das Menü deines Ziels, wie ein Rechtsklick auf sein Porträt |
 | Zielfokus 1 bis Zielfokus 5 (Target Focus 1 bis 5) | Unbelegt | Erfasst eines der fünf WowVision-Fokusziele |
 
@@ -162,6 +177,14 @@ Siehe [Beute, Handel und Post](../windows/loot-trade-mail.md).
 | Aktion | Standardtaste | Hinweise |
 |---|---|---|
 | Gruppeneinladung annehmen (Accept Group Invitation) | Unbelegt | Nimmt die angezeigte Gruppeneinladung an, auch im Kampf, wie /wv accept. Ist keine da, hörst du "Keine Gruppeneinladung" |
+
+Siehe [Gruppensuche](../windows/group-finder.md).
+
+## LFG Forever
+
+| Aktion | Standardtaste | Hinweise |
+|---|---|---|
+| LFG Forever öffnen oder schließen (Open or Close LFG Forever) | Alt+Strg+G | Öffnet das Fenster des Addons LFG Forever oder schließt es, wie /lfg und /wv lfg. Gibt es nur in WoW: Forever mit installiertem LFG Forever. Die zwei eigenen Tasten von LFG Forever (Öffnen und Suchen, in der Tastenbelegung des Spiels) bleiben unberührt |
 
 Siehe [Gruppensuche](../windows/group-finder.md).
 
@@ -212,7 +235,9 @@ Siehe [Chat](../windows/chat.md), [Navigation und Routen](../world/navigation.md
 
 Einige WowVision-Belegungen erfüllen dieselbe Aufgabe wie Tasten von Sku, dem älteren Barrierefreiheits-Addon. Solange Sku geladen ist, aktiviert WowVision diese Belegungen gar nicht und überlässt die Tasten Sku:
 
-- die vier Tasten für Tooltipzeilen (Umschalt+Pfeil hoch, Umschalt+Pfeil runter, Umschalt+Pfeil links, Umschalt+Pfeil rechts)
+- die sechs Tooltip-Tasten (Umschalt+Pfeil hoch, Umschalt+Pfeil runter, Strg+Umschalt+Pfeil hoch, Strg+Umschalt+Pfeil runter, Umschalt+Pfeil links, Umschalt+Pfeil rechts)
+- Handel annehmen (Alt+Strg+T)
+- LFG Forever öffnen oder schließen (Alt+Strg+G)
 - die Umschalter der weichen Zielerfassung (Umschalt+I, Umschalt+P, Umschalt+O)
 - Zielfokus 1 bis Zielfokus 5 (und die Befehle `/focus1` bis `/focus5`)
 

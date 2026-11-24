@@ -1,8 +1,18 @@
 -- Headless runner for the WoW-independent test suites (currently the graph
--- core). Runs under a plain Lua interpreter, no game client needed.
+-- core). Runs under LuaJIT (or Lua 5.4), no game client needed.
 --
 -- Usage, from the repo root:
---   lua tools/headless-tests.lua [suiteFilter] [-v]
+--   luajit tools/headless-tests.lua [suiteFilter] [-v]
+--
+-- Which interpreter: LuaJIT has to pass. It is the closest to the game's Lua
+-- 5.1 and the builds install it anyway for tools/wownav-pack.lua. Lua 5.4
+-- (lua tools/headless-tests.lua) passes too and is worth a second run, but
+-- it accepts syntax the game does not, so it never stands in for LuaJIT.
+-- Plain Lua 5.1 does not work: WoW's Lua passes xpcall's extra arguments on
+-- to the called function (xpcall(f, handler, a, b)), LuaJIT and 5.4 do too,
+-- plain 5.1 drops them. The code relies on it (utils.guardedCall,
+-- graph/Screen.lua), so under plain 5.1 about 40 menu, scanner and
+-- error-handling tests fail with "attempt to call global 'geterrorhandler'".
 --
 -- Only files with no WoW API dependencies can be loaded here; in-game suites
 -- still run through /wowvision test.
@@ -89,6 +99,8 @@ loadAddonFile("camelot/surroundings/tests.lua")
 loadAddonFile("camelot/surroundings/placesTests.lua")
 loadAddonFile("camelot/surroundings/storeTests.lua")
 loadAddonFile("camelot/surroundings/helperTests.lua")
+loadAddonFile("core/navigation/remainingAnnounce.lua")
+loadAddonFile("core/navigation/remainingAnnounceTests.lua")
 loadAddonFile("core/navigation/breathSteps.lua")
 loadAddonFile("core/navigation/breathTests.lua")
 loadAddonFile("core/navigation/stateRepeat.lua")
@@ -354,6 +366,8 @@ loadAddonFile("core/colors/colors.lua")
 loadAddonFile("core/colors/tests.lua")
 loadAddonFile("core/windows/bars/lock.lua")
 loadAddonFile("core/windows/bars/tests.lua")
+loadAddonFile("core/windows/junkStore.lua")
+loadAddonFile("core/windows/junkStoreTests.lua")
 loadAddonFile("core/targeting/softTargeting.lua")
 loadAddonFile("core/targeting/softTargetingTests.lua")
 loadAddonFile("core/ui modules/enemyCount.lua")
@@ -369,6 +383,14 @@ loadAddonFile("core/scanner/nearest.lua")
 loadAddonFile("core/scanner/nearestTests.lua")
 loadAddonFile("core/secrets.lua")
 loadAddonFile("core/secretsTests.lua")
+loadAddonFile("core/crowdControl.lua")
+loadAddonFile("core/crowdControlTests.lua")
+loadAddonFile("core/scriptsCheck.lua")
+loadAddonFile("core/scriptsCheckTests.lua")
+loadAddonFile("core/windows/bagLists.lua")
+loadAddonFile("core/windows/bagListsTests.lua")
+loadAddonFile("core/windows/newItems.lua")
+loadAddonFile("core/windows/newItemsTests.lua")
 -- The group health monitor's module: loaded against a stand-in module whose settings are a real settings class (as
 -- Module:hasSettings makes them), so a setting's change reaches the module as in the game. The suite stubs the
 -- game's unit functions per test.
@@ -458,6 +480,8 @@ loadAddonFile("core/ui/tooltip/types/GameTooltip.lua")
 loadAddonFile("core/ui/tooltip/types/gameTooltipTests.lua")
 loadAddonFile("retail/questLogTooltip.lua")
 loadAddonFile("retail/questLogTooltipTests.lua")
+loadAddonFile("retail/questDifficulty.lua")
+loadAddonFile("retail/questDifficultyTests.lua")
 
 -- Object types read the game on demand: their spoken lines run here with
 -- stand-ins for the game functions they call.
@@ -648,6 +672,66 @@ WowVision.testing.testRunner:addSuite("AuraBufferStacks", {
         local ok, err = pcall(body)
         restrictedUnits.player = nil
         BuffFrame = savedBuff
+        if not ok then
+            error(err, 0)
+        end
+    end,
+})
+
+WowVision.testing.testRunner:addSuite("AuraBufferRefresh", {
+    ["entering or walking the buffer counts the auras again, with no event from the game"] = function(t)
+        local savedSpeak, savedGetTime = WowVision.speak, GetTime
+        local spoken = {}
+        WowVision.speak = function(_, text)
+            spoken[#spoken + 1] = text
+        end
+        local clock = 0
+        GetTime = function()
+            return clock
+        end
+        local list = fakeAuras.target.HARMFUL
+        local savedList = { unpack(list) }
+        local body = function()
+            local buffer = WowVision.buffers:create("Aura", { label = "Debuffs", sources = { "target:HARMFUL" } })
+            t:assertEqual(#buffer.items, 2)
+
+            -- a new debuff lands; the game sends nothing
+            tinsert(list, { name = "Insect Swarm", applications = 0, duration = 0, dispelName = "" })
+            fakeTooltips["Insect Swarm"] = { "Insect Swarm" }
+            clock = 1
+            buffer:UIMoveItem(1)
+            t:assertEqual(#buffer.items, 3, "walking counts again")
+            buffer:UIMoveItem(1)
+            buffer:UIMoveItem(1)
+            t:assertTrue(spoken[#spoken]:find("Insect Swarm", 1, true) ~= nil, "the new debuff is reached")
+
+            -- two debuffs end; entering the buffer reads the list as it is
+            table.remove(list)
+            table.remove(list)
+            clock = 2
+            local text = buffer:getFocusString()
+            t:assertEqual(#buffer.items, 1)
+            t:assertTrue(text:find("Moonfire", 1, true) ~= nil, "the focus moved back onto what is left")
+            t:assertTrue(text:find("Gone", 1, true) == nil)
+
+            -- the same frame asks again: one count is enough
+            tinsert(list, { name = "Sunfire", applications = 3, duration = 0, dispelName = "" })
+            buffer:startAtTop()
+            t:assertEqual(#buffer.items, 1, "same frame: not counted twice")
+            clock = 3
+            buffer:startAtTop()
+            t:assertEqual(#buffer.items, 2)
+            buffer:unsubscribe()
+        end
+        local ok, err = pcall(body)
+        for i = #list, 1, -1 do
+            list[i] = nil
+        end
+        for i, aura in ipairs(savedList) do
+            list[i] = aura
+        end
+        fakeTooltips["Insect Swarm"] = nil
+        WowVision.speak, GetTime = savedSpeak, savedGetTime
         if not ok then
             error(err, 0)
         end
@@ -2022,7 +2106,7 @@ WowVision.testing.testRunner:addSuite("SpellCooldownMonitor", {
         monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
 
         -- A real cooldown: the event says so, with the time left in our words
-        fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 49 }
+        fakeCooldowns[22812] = { isActive = true, isEnabled = true, duration = 60, remaining = 49 }
         monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
         t:assertEqual(fired[#fired], "Barkskin On Cooldown")
         t:assertEqual(rule:currentText(), "Barkskin, On Cooldown, 49 seconds")
@@ -2063,7 +2147,7 @@ WowVision.testing.testRunner:addSuite("SpellCooldownMonitor", {
         monitor:onCooldownEvent("SPELL_UPDATE_CHARGES")
         t:assertEqual(chargedFired[#chargedFired], "Fire Blast Charging")
         t:assertEqual(charged:currentText(), "Fire Blast, Charging, 1 charges, 8 seconds")
-        fakeCooldowns[108853] = { isActive = true, isEnabled = true, remaining = 8 }
+        fakeCooldowns[108853] = { isActive = true, isEnabled = true, duration = 10, remaining = 8 }
         fakeCharges[108853].currentCharges = 0
         monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
         t:assertEqual(chargedFired[#chargedFired], "Fire Blast On Cooldown")
@@ -2075,6 +2159,115 @@ WowVision.testing.testRunner:addSuite("SpellCooldownMonitor", {
         monitor:update()
         t:assertEqual(chargedFired[#chargedFired], "Fire Blast Ready")
         GetTime = savedGetTime
+    end,
+    ["a short lockout such as a wand shot is not the spell's cooldown"] = function(t)
+        local savedGetTime = GetTime
+        local now = 900
+        GetTime = function()
+            return now
+        end
+        local monitor = WowVision.monitors:create("SpellCooldown", {})
+        monitor.class:getField("rules"):addElement(monitor, { type = "SpellCooldownState", spell = 22812 })
+        local rule = monitor.rules[1]
+        local fired = {}
+        for _, state in ipairs({ "ready", "on_cooldown" }) do
+            local alert = rule.class:getField(state):getAlert(rule)
+            alert:setEnabled(true)
+            for _, output in ipairs(alert.outputs) do
+                if output.key == "tts" then
+                    output:setEnabled(true)
+                    output.onFire = function(_, message)
+                        tinsert(fired, message.text)
+                    end
+                end
+            end
+        end
+        local function tick(seconds)
+            now = now + seconds
+            monitor:update()
+        end
+        local body = function()
+            monitor:update()
+            t:assertEqual(rule:getCurrentState(), "ready")
+
+            -- The length is plain and short: five shots, not a word
+            for _ = 1, 5 do
+                fakeCooldowns[22812] = { isActive = true, isEnabled = true, duration = 1.5, remaining = 1 }
+                monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
+                tick(0.5)
+                tick(0.5)
+                t:assertEqual(rule:getCurrentState(), "ready")
+                t:assertEqual(rule:currentText(), "Barkskin, Ready")
+                fakeCooldowns[22812] = nil
+                tick(0.6)
+            end
+            t:assertEqual(#fired, 0, "plain short lockouts")
+
+            -- The length is secret (no number to read): our clock decides.
+            -- A lockout ends before it counts...
+            for _ = 1, 3 do
+                fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 1 }
+                monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
+                tick(0.7)
+                tick(0.7)
+                fakeCooldowns[22812] = nil
+                tick(0.2)
+            end
+            t:assertEqual(#fired, 0, "secret short lockouts")
+
+            -- ...a cooldown that outlasts one is announced then, and its end too
+            fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 40 }
+            monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
+            tick(1.0)
+            t:assertEqual(#fired, 0)
+            tick(1.1)
+            t:assertEqual(fired[#fired], "Barkskin On Cooldown")
+            fakeCooldowns[22812] = nil
+            tick(0.2)
+            t:assertEqual(fired[#fired], "Barkskin Ready")
+            t:assertEqual(#fired, 2)
+
+            -- The player's own cast needs no wait, even with a secret length,
+            -- whichever event comes first
+            fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 40 }
+            monitor:onCast(22812)
+            t:assertEqual(fired[#fired], "Barkskin On Cooldown")
+            t:assertEqual(#fired, 3)
+            fakeCooldowns[22812] = nil
+            tick(0.2)
+            t:assertEqual(#fired, 4)
+            fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 40 }
+            monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
+            t:assertEqual(#fired, 4, "the cooldown event came first: still waiting")
+            monitor:onCast(22812)
+            t:assertEqual(fired[#fired], "Barkskin On Cooldown")
+            fakeCooldowns[22812] = nil
+            tick(0.2)
+            t:assertEqual(fired[#fired], "Barkskin Ready")
+            t:assertEqual(#fired, 6)
+
+            -- Another spell's cast, a wand's Shoot, proves nothing
+            fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 1 }
+            monitor:onCast(5019)
+            monitor:onCooldownEvent("SPELL_UPDATE_COOLDOWN")
+            tick(0.5)
+            fakeCooldowns[22812] = nil
+            tick(0.2)
+            t:assertEqual(#fired, 6)
+
+            -- A cooldown already running when the rule settles is taken as it is
+            fakeCooldowns[22812] = { isActive = true, isEnabled = true, remaining = 40 }
+            monitor._trackingDirty = true
+            monitor:update()
+            t:assertEqual(rule:getCurrentState(), "on_cooldown")
+            t:assertEqual(#fired, 6, "settled silently")
+        end
+        local ok, err = pcall(body)
+        fakeCooldowns[22812] = nil
+        GetTime = savedGetTime
+        if not ok then
+            error(err, 0)
+        end
     end,
     ["a proc rule follows the glow"] = function(t)
         local monitor = WowVision.monitors:create("SpellCooldown", {})
@@ -2430,14 +2623,123 @@ do
     WowVision._popupsTestHarness = nil
     StaticPopupDialogs, ACCEPT, DECLINE = savedDialogs, savedAccept, savedDecline
 end
+-- The Social window: loads against a stand-in window module for its card keys.
+do
+    local savedBase = WowVision.base
+    local stub = { L = WowVision:getLocale() }
+    function stub:setLabel() end
+    function stub:registerWindow() end
+    WowVision.base = {
+        windows = {
+            createModule = function()
+                return stub
+            end,
+        },
+    }
+    loadAddonFile("retail/socialUI.lua")
+    WowVision.base = savedBase
+    WowVision._socialUITestHarness = stub
+    loadAddonFile("retail/socialUITests.lua")
+    WowVision._socialUITestHarness = nil
+end
+-- LFG Forever's window (camelot/lfgForever): the files load against a stand-in window module, as many times as a test
+-- asks (harness.load takes the addons that count as loaded); the window, key and command they register come back
+-- to the suite, and the game's frames are per test.
+do
+    local savedBase, savedLoaded = WowVision.base, WowVision.loadedAddons
+    local function stubModule(registered)
+        local stub = { L = WowVision:getLocale() }
+        function stub:setLabel() end
+        function stub:registerWindow(def)
+            registered.windows[def.name] = def
+        end
+        function stub:registerBinding(def)
+            registered.bindings[def.key] = def
+        end
+        function stub:registerCommand(def)
+            registered.commands[def.name] = def
+        end
+        function stub:createModule(key)
+            local child = stubModule(registered)
+            self[key] = child
+            return child
+        end
+        return stub
+    end
+    local harness = {}
+    function harness.load(loaded)
+        local registered = { windows = {}, bindings = {}, commands = {} }
+        WowVision.base = { windows = stubModule(registered) }
+        WowVision.loadedAddons = loaded
+        for _, file in ipairs({ "lfgForever", "labels", "screen" }) do
+            loadAddonFile("camelot/lfgForever/" .. file .. ".lua")
+        end
+        local module = WowVision.base.windows.lfgForever
+        WowVision.base, WowVision.loadedAddons = savedBase, savedLoaded
+        return module, registered
+    end
+    harness.module, harness.registered = harness.load({ LFGForever = true })
+    WowVision._lfgForeverTestHarness = harness
+    loadAddonFile("camelot/lfgForever/tests.lua")
+    WowVision._lfgForeverTestHarness = nil
+end
 loadAddonFile("core/windows/options/layoutPages.lua")
 loadAddonFile("core/windows/options/layoutPagesTests.lua")
 loadAddonFile("core/graph/menuNavTests.lua")
 loadAddonFile("core/graph/combatKeysTests.lua")
 loadAddonFile("core/graph/secretLabelTests.lua")
+
+-- The player auras (the key that says every buff and debuff, the list window): playerAuras.lua loads against a stand-in
+-- buffers module that keeps the key, the command and the window it registers, and the suite runs them on the real Aura
+-- buffer over the fake game of the Aura buffer suites above (its auras, restriction and tooltips).
+do
+    local savedBase = WowVision.base
+    local harness = {
+        world = {
+            auras = fakeAuras,
+            tooltips = fakeTooltips,
+            units = fakeUnits,
+            restricted = restrictedUnits,
+            dispel = fakeDispelTypes,
+        },
+    }
+    local function stubModule()
+        local stub = { L = WowVision:getLocale(), bindings = {}, commands = {}, windows = {} }
+        function stub:setLabel(label)
+            self.label = label
+        end
+        function stub:registerBinding(info)
+            tinsert(self.bindings, info)
+        end
+        function stub:registerCommand(config)
+            tinsert(self.commands, config)
+        end
+        function stub:registerWindow(def)
+            self.windows[def.name] = def
+        end
+        function stub:createModule(key)
+            local child = stubModule()
+            self[key] = child
+            return child
+        end
+        return stub
+    end
+    WowVision.base = { buffers = stubModule() }
+    loadAddonFile("core/buffers/playerAuras.lua")
+    harness.module = WowVision.base.buffers.auras
+    WowVision.base = savedBase
+    WowVision._playerAurasTestHarness = harness
+    loadAddonFile("core/buffers/playerAurasTests.lua")
+    WowVision._playerAurasTestHarness = nil
+end
+
 loadAddonFile("core/targeting/targetNames.lua")
 loadAddonFile("core/targeting/targetNamesTests.lua")
+loadAddonFile("core/targeting/pingTarget.lua")
+loadAddonFile("core/targeting/pingTargetTests.lua")
 
+-- The junk module and the merchant sale, against a stand-in for the game.
+loadAddonFile("tools/junkModuleTests.lua")
 -- Native quest source and the scanner's quest categories: the adapter and
 -- the provider load against stand-ins for the quest module and the scanner;
 -- the suite installs the game's map and quest log APIs per test and points
@@ -2535,6 +2837,9 @@ local parseOnly = {
     "core/graph/hybridScroll.lua",
     "mists/QuestLog.lua",
     "core/windows/merchant.lua",
+    "core/windows/marks.lua",
+    "core/windows/junk.lua",
+    "core/windows/favorites.lua",
     "core/windows/containers.lua",
     "classic/containers/Bag.lua",
     "classic/containers/Bank.lua",

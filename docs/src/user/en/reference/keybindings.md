@@ -48,6 +48,8 @@ Each of these keys, and Enter, Backspace, Shift+F10 and Space, also has a key of
 |---|---|
 | Previous Tooltip Line | Shift+Up |
 | Next Tooltip Line | Shift+Down |
+| Previous Tooltip Block | Ctrl+Shift+Up |
+| Next Tooltip Block | Ctrl+Shift+Down |
 | Read Tooltip Left | Shift+Left |
 | Read Tooltip Right | Shift+Right |
 
@@ -74,8 +76,10 @@ See [Tooltips](../basics/tooltips.md).
 | Next Buffer | Alt+Right |
 | Previous Buffer Group | Alt+Ctrl+Left |
 | Next Buffer Group | Alt+Ctrl+Right |
+| Speak Player Auras | Alt+Ctrl+B |
+| Player Auras | Alt+Shift+B |
 
-The Invert Item Direction setting in the Buffers module swaps Alt+Up and Alt+Down. See [Buffers](../information/buffers.md).
+The Invert Item Direction setting in the Buffers module swaps Alt+Up and Alt+Down. Speak Player Auras says every buff and debuff on you, and Player Auras opens a list of them. See [Buffers](../information/buffers.md#your-buffs-and-debuffs-at-a-glance).
 
 ## Chat
 
@@ -86,6 +90,16 @@ The Invert Item Direction setting in the Buffers module swaps Alt+Up and Alt+Dow
 | Shift Click | Shift+Enter | Shift click the selected part (puts a link into the chat box) |
 
 See [Chat](../windows/chat.md).
+
+## Bags
+
+| Action | Default key | Notes |
+|---|---|---|
+| Select Junk | Unbound | On an item slot of the bags or the bank: marks the item as junk, or takes the mark off. The slot's context menu (Shift+F10) does the same without a key. Do not give it Shift+Enter or Shift+Backspace: on a bag slot those are the game's shift clicks (splitting a stack, linking an item into chat) |
+
+| Select Favorite | Unbound | On an item slot of the bags or the bank: marks the item as a favorite, or takes the mark off. The slot's context menu (Shift+F10) does the same without a key. A favorite reads "[Favorite]" before its name and is never sold |
+
+See [Junk](../windows/bags-and-bank.md#junk) and [Favorites](../windows/bags-and-bank.md#favorites).
 
 ## Navigation and routes
 
@@ -126,6 +140,7 @@ See [Minimap](../world/minimap.md).
 | Soft Target Friend | Shift+P | The same for soft friend targeting |
 | Soft Target Interact | Shift+O | The same for soft interact targeting |
 | Target of Target | Unbound | Makes your target's target your target, without starting an attack |
+| Ping Target | Unbound | Pings your target, so you hear where it is, and says how far away it is. Without a target you hear "No target" |
 | Open Target Menu | Alt+T | Opens the menu of your target, like a right click on its portrait |
 | Target Focus 1 to Target Focus 5 | Unbound | Targets one of the five WowVision focus targets |
 
@@ -158,6 +173,14 @@ See [Loot, Trade and Mail](../windows/loot-trade-mail.md).
 | Action | Default key | Notes |
 |---|---|---|
 | Accept Group Invitation | Unbound | Accepts the group invitation that is shown, also in combat, the same as /wv accept. Without one you hear "No group invitation" |
+
+See [Group Finder](../windows/group-finder.md).
+
+## LFG Forever
+
+| Action | Default key | Notes |
+|---|---|---|
+| Open or Close LFG Forever | Alt+Ctrl+G | Opens the window of the LFG Forever addon, or closes it, the same as /lfg and /wv lfg. Only exists on WoW: Forever with LFG Forever installed. LFG Forever's own two keys (Open and Search, in the game's key bindings) are left as they are |
 
 See [Group Finder](../windows/group-finder.md).
 
@@ -208,7 +231,9 @@ See [Chat](../windows/chat.md), [Navigation and Routes](../world/navigation.md),
 
 Some WowVision bindings do the same job as keys of Sku, the older accessibility addon. While Sku is loaded, WowVision does not activate these bindings at all and leaves the keys to Sku:
 
-- the four tooltip line keys (Shift+Up, Shift+Down, Shift+Left, Shift+Right)
+- the six tooltip keys (Shift+Up, Shift+Down, Ctrl+Shift+Up, Ctrl+Shift+Down, Shift+Left, Shift+Right)
+- Accept Trade (Alt+Ctrl+T)
+- Open or Close LFG Forever (Alt+Ctrl+G)
 - the soft targeting switches (Shift+I, Shift+P, Shift+O)
 - Target Focus 1 to Target Focus 5 (and the `/focus1` to `/focus5` commands)
 

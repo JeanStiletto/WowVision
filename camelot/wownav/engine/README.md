@@ -56,6 +56,39 @@ Keep this list current; everything else is his text, line for line (line endings
 - `NavNetwork.lua`, time slices: `N.Job(fn, ...)` runs any work that searches routes in a coroutine; the A* loop of
   `Pass` yields every 64 expansions once the frame's budget is used. `N.RouteJob` is `N.Job(N.Route, ...)`. No
   `pcall` may stand between a job and the search (Lua 5.1 cannot yield across it).
+- `NavNetwork.lua`, repeated searches: inside a job (`N.Job`), `N.Route` answers a search it already answered with the
+  same arguments (bindings by id, pools by members and approach lengths, foot-only, the penalty table) from a copy of
+  the first answer (`routeCache`, `SearchKey`, `CopyAnswer`). Planning a route asked the same search twice: the
+  resolver's `context.route` to the target's attachment, then `Route:planToNode` for the same pair (Orgrimmar to Thunder
+  Bluff: 2 x 13 s in the tests' Lua). `N.repeatedSearches` counts them.
+- `NavNetwork.lua`, speed of `Pass` (same costs, same order, same routes): `LinkFactor` once per flag and pass (a
+  table instead of a call per link), the zone's arrays, the penalty row and the hostile table (`Blocked`) looked up
+  once per expanded waypoint, the estimate of a waypoint read from its zone's arrays, and the way a waypoint was
+  reached kept in two flat tables (`previous`, `via`) instead of a new table per improvement. A search made up to a few
+  hundred thousand such tables, and the garbage collector walked all decoded zones (about 500 MB) again and again:
+  Elwynn to Westfall 23 s before, 14 s after in the tests' Lua, 85 MB of garbage per search before, 37 MB after.
+- `NavNetwork.lua`, the estimate with actions (`ActionBound`, used by `Pass`): his rule turns the straight-line estimate
+  off while any decoded zone has an action, so every search in a capital with a portal, a tram or a lift expanded
+  everything around its start. With the action ends of the whole data (`WVN7ActionEnds`, written by
+  `tools/wownav-pack.lua` into `mapdata/WowNavPacked/actions.lua`: exact positions of both waypoints, cost, maps) the
+  estimate is `hmin x min(straight line to the goal, straight line to the nearest shortcut start + E)`, E being the
+  straight line from the nearest shortcut end on the goals' map to the goal; a shortcut is an action into another map
+  or one cheaper than hmin times its straight line. It never overestimates and stays consistent, so the routes are the
+  same (48 random pairs in capitals, across the tram and the Teldrassil portal, on foot and not: the same waypoints and
+  costs); 2 to 3 times fewer waypoints searched there. Without `WVN7ActionEnds`, or with goals on two maps, his rule
+  stays.
+- `NavNetwork.lua`, routes on foot between maps: no seam joins two maps (0 of 3,042 in data a9bf246), so a foot-only
+  route from one map to another is "no route" at once (`SharesMap`) instead of after a search of the whole continent.
+- `NavNetwork.lua`, safe routes (his `/vn safety`, 72777e3): his danger tables, `Pass(..., danger)` and the safety
+  passes of `N.Route` are taken as they are; in our `Pass` the danger is added in the loop over the links after the
+  link cost (one test per link while the factor is 0, no table, no extra pass). `SearchKey` adds the factor and the
+  `points` only while the factor is above 0, so a repeated search inside a job is answered as before when it is off.
+  The module sets the factor from the setting Safe Routes (`N.SetSafety`), and `../route.lua` passes the player's and
+  the target's position as `points` only while it is on.
+- His walk-in portal as a link of the route (WowVisionNavigation.lua, 5a1290b) is in `../route.lua`, not here:
+  `Route.triggerPoint` (his `WowVisionNavigationTriggerPoint`) and the leg's last waypoint in the trigger
+  (`Route:begin`). His `PendingTriggerEntered` was already WowVision's `Route:walkInTransit`, and the exit zone of a
+  teleport into a neighbouring zone is decoded by `Route:actionArrival`, so his `exitReady` change has no counterpart.
 - `Guidance.lua`: `G.MinArrivalRadius` reads `G.arrivalMin` (WowVision's arrival distance, set by the module)
   instead of his saved variable `arrivalMin`; the wownav module writes the radius Alt-P picks there (0.1 to 20 yd,
   default 1; his default 0 = the data's radius alone).

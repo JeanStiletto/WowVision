@@ -21,6 +21,9 @@
   <Script file="secrets.lua" />
   <Script file="crowdControl.lua" />
   <Script file="secretsTests.lua" />
+  <Script file="crowdControlTests.lua" />
+  <Script file="scriptsCheck.lua" />
+  <Script file="scriptsCheckTests.lua" />
   <Script file="utilsTests.lua" />
   <Script file="ttsCacheBust.lua" />
   <Script file="ttsCacheBustTests.lua" />

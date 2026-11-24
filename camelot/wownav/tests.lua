@@ -1296,11 +1296,44 @@ if haveNetwork then
         end)
     end
 
-    suite["Menethil: the dock of the own station is walked to, not noted"] = function(t)
+    suite["Auberdine: standing at one ship dock, another dock of the harbour is walked to"] = function(t)
+        -- 2026-11-17: at the dock to Stormwind, the dock to Menethil (162 yd away, another line) said "The dock has no
+        -- valid waiting point proof": the same-line rule took the point on board of the ship to Stormwind for its
+        -- counterpart, since every ship's stop id ("TaxiPathNode:<node>") has the same stop key
         setup()
-        -- where the walk test of 2026-11-02 stood: 32 yd from the Southshore ferry dock. Then the pier also had a dock
-        -- to Auberdine at the same position, and the game noted that dock instead of walking there; the data of
-        -- 2026-11-16 (5126a81) dropped that second dock, so the test uses the Southshore ferry dock on the same pier
+        N.activeMapId = 1
+        local Dock = _G.WowVisionNavigationDockNavigation
+        local x, y = 6420, 500
+        local docks = {}
+        for _, r in ipairs(catalog.search(N, C, 1, "", x, y, { german = false })) do
+            if dock.isVesselRow(r) and Route.distance(r.x, r.y, x, y) < 700 then
+                docks[#docks + 1] = r
+            end
+        end
+        t:assertTrue(#docks >= 2, "Auberdine has ship docks of several lines: " .. #docks)
+        local pairsTried = 0
+        for _, from in ipairs(docks) do
+            for _, to in ipairs(docks) do
+                if from.tid ~= to.tid then
+                    Dock:Reset(false)
+                    local outcome, target, why = dock.choose(N, to, from.x, from.y)
+                    t:assertEqual(outcome, "route", string.format("%s -> %s: %s", from.n, to.n, tostring(why)))
+                    t:assertEqual(type(target) == "table" and target.id, to.tid, "the chosen dock itself")
+                    pairsTried = pairsTried + 1
+                end
+            end
+        end
+        Dock:Reset(false)
+        N.activeMapId = 0
+        t:assertTrue(pairsTried >= 2)
+    end
+
+    suite["Menethil: a dock of the player's own station is walked to, never noted"] = function(t)
+        setup()
+        -- where the walk test of 2026-11-02 stood: 32 yd from the Southshore ferry dock. Until data 5126a81 a second
+        -- line shared that pier, the dock to Auberdine, and the game noted it instead of walking there; that line is
+        -- gone from the data (Auberdine is a stop of the ferry), so the rule is tried on the ferry's own dock. Two
+        -- docks in one harbour: the Auberdine tests below.
         local x, y = -3695.9, -575.9
         local saved = _G.UnitPosition
         _G.UnitPosition = function()
@@ -1309,14 +1342,14 @@ if haveNetwork then
         local Dock = _G.WowVisionNavigationDockNavigation
         local choosePassive = Dock.ChoosePassive
         local ok, err = pcall(function()
-            local ferryDock
-            for _, r in ipairs(catalog.search(N, C, 0, "southshore", x, y, { german = false })) do
-                if ferryDock == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 100 then
-                    ferryDock = r
+            local auberdine
+            for _, r in ipairs(catalog.search(N, C, 0, "southshore ferry", x, y, { german = false })) do
+                if auberdine == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 100 then
+                    auberdine = r
                 end
             end
-            t:assertNotNil(ferryDock, "the Menethil dock to the Southshore ferry")
-            local outcome, target, why = dock.choose(N, ferryDock, x, y)
+            t:assertNotNil(auberdine, "the Menethil dock of the Southshore ferry")
+            local outcome, target, why = dock.choose(N, auberdine, x, y)
             t:assertEqual(outcome, "route", tostring(why))
             t:assertEqual(target.id, ferryDock.tid)
             -- a dock of the own station is never noted, whatever his ride rule would say (the game's case)
@@ -1341,8 +1374,8 @@ if haveNetwork then
 
     suite["Menethil: the route to a ship dock ends at the dock, where the boarding beacon has its point"] = function(t)
         setup()
-        -- the walk test's start of 2026-11-02; the pier slopes down to its dock (then the dock to Auberdine, since
-        -- the data of 2026-11-16 the Southshore ferry dock at the same spot)
+        -- the walk test's start of 2026-11-02; the pier slopes down to the dock (the Southshore ferry's since data
+        -- 5126a81, which has no dock to Auberdine there any more)
         local x, y = -3707.1, -712.0
         local saved = _G.UnitPosition
         _G.UnitPosition = function()
@@ -1352,14 +1385,14 @@ if haveNetwork then
             local game = newGame()
             game.x, game.y = x, y
             local route = Route.new(game.env)
-            local ferryDock
-            for _, r in ipairs(catalog.search(N, C, 0, "southshore", x, y, { german = false })) do
-                if ferryDock == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 200 then
-                    ferryDock = r
+            local auberdine
+            for _, r in ipairs(catalog.search(N, C, 0, "southshore ferry", x, y, { german = false })) do
+                if auberdine == nil and dock.isDockRow(r) and Route.distance(r.x, r.y, x, y) < 200 then
+                    auberdine = r
                 end
             end
-            t:assertNotNil(ferryDock, "the Menethil dock to the Southshore ferry")
-            local target, nav = dock.target(N, ferryDock)
+            t:assertNotNil(auberdine, "the Menethil dock of the Southshore ferry")
+            local target, nav = dock.target(N, auberdine)
             t:assertEqual(target.facilityKind, "boat")
             local start = catalog.autoPoints(N, x, y, nil, 1)[1]
             local outcome = runJob(N.Job(route.prepare, route, catalog.contract(ferryDock, 0), { nativeMapId = 0 },
@@ -1600,7 +1633,9 @@ if haveNetwork then
         end
         t:assertNotNil(portal, portalId)
         local sv, av = portal.sourceVolume, portal.arrivalVolume
-        sv.radius = radius or sv.radius
+        -- the data's radius again after the test (the decoded zone stays for the other tests)
+        portal.dataRadius = portal.dataRadius or sv.radius
+        sv.radius = radius or portal.dataRadius
         local startId
         for i = 0, 5000 do
             local id = zoneId * N.ZONE_BASE + i
@@ -1645,6 +1680,7 @@ if haveNetwork then
         if state == nil then
             state = route:observeAction(av.x + 1, av.y + 1, map, 3)
         end
+        sv.radius = portal.dataRadius
         return transit, state, route, transitAt, aheadAt
     end
 
@@ -1664,18 +1700,60 @@ if haveNetwork then
     end
 
     suite["a portal at the route's last waypoint: the route waits for it, seen in it or not"] = function(t)
-        -- Rut'theran to Darnassus: the route's last waypoint lies 11.0 yd from the centre of the 10 yd portal (data
-        -- 51460d3), so the volume is widened to put it on the rim, the case this test is about
-        local radius = 12
-        local transit, state, route, at = throughPortal(t, 1, 57, "portal:areatrigger:542", false, radius)
+        -- Rut'theran to Darnassus with the data's own 10 yd trigger: the portal's start node (its pre-point) lies 11.0 yd
+        -- from the centre, outside it; his walk-in portal as a link (5a1290b) goes on from there to the activation point
+        -- of the entrance capture inside the trigger, the leg's last waypoint
+        local transit, state, route, at = throughPortal(t, 1, 57, "portal:areatrigger:542", false)
+        local action = transit.action
+        local sv = action.sourceVolume
+        t:assertEqual(sv.radius, 10, "the data's trigger")
+        local px, py = N.Position(action.fromNode)
+        t:assertTrue(Route.distance(px, py, sv.x, sv.y) > sv.radius, "the pre-point lies outside the trigger")
+        t:assertEqual(route.path[#route.path], route.triggerPoint, "the leg ends at the activation point")
+        local tx, ty = N.Position(route.triggerPoint)
+        t:assertTrue(Route.distance(tx, ty, sv.x, sv.y) < sv.radius, "the activation point lies inside the trigger")
         t:assertEqual(at, #route.path, "in the portal at the route's last waypoint")
         t:assertTrue(transit.sourceEntered == true)
         t:assertTrue(transit.announced == true, "said before the portal, not again in it")
         t:assertEqual(state, "arrived", "the route goes on in Darnassus")
-        transit, state = throughPortal(t, 1, 57, "portal:areatrigger:542", true, radius)
+        transit, state = throughPortal(t, 1, 57, "portal:areatrigger:542", true)
         t:assertTrue(transit.teleported == true, "only the landing was seen")
         t:assertTrue(transit.announced == true, "said before the teleport")
         t:assertEqual(state, "arrived")
+    end
+
+    suite["a walk-in portal into a neighbouring zone: through it, the route goes on in that zone"] = function(t)
+        -- Darnassus to Rut'theran (zone 1457 to zone 57 of map 1) with the data's own trigger: the leg ends in the
+        -- trigger, and after the landing the continuation is planned in Teldrassil
+        local transit, state, route = throughPortal(t, 1, 1457, "portal:areatrigger:527", false)
+        t:assertEqual(route.path[#route.path], route.triggerPoint, "the leg goes on into the trigger")
+        t:assertTrue(transit.sourceEntered == true, "in the portal")
+        t:assertEqual(state, "arrived")
+        local _, toNode, targetNodeId = route:actionArrival()
+        t:assertEqual(math.floor(toNode / N.ZONE_BASE), 57, "the far end lies in Teldrassil")
+        local next = runJob(N.Job(route.continueTo, route, toNode, targetNodeId, nil))
+        t:assertEqual(next.kind, "start", tostring(next.reason))
+    end
+
+    suite["a portal without an entrance capture keeps its leg ending at the pre-point"] = function(t)
+        setup()
+        local zone = N.LoadZone(57)
+        local portal
+        for _, action in ipairs(zone.actions) do
+            if action.id == "portal:areatrigger:542" then
+                portal = action
+            end
+        end
+        t:assertNotNil(Route.triggerPoint(N, portal), "the data's capture")
+        local moved = {}
+        for k, v in pairs(portal) do
+            moved[k] = v
+        end
+        moved.fromNode = 57 * N.ZONE_BASE + 1
+        t:assertNil(Route.triggerPoint(N, moved), "no capture for another pre-point")
+        moved.fromNode = portal.fromNode
+        moved.activation = { mode = "click" }
+        t:assertNil(Route.triggerPoint(N, moved), "only a walk-in portal")
     end
 
     suite["a portal walked into after the route's end: its teleport alone proves it"] = function(t)
@@ -1695,7 +1773,8 @@ if haveNetwork then
         -- 39 yd below it; the route ends 11.7 yd from the centre of the 7 yd portal, at its height
         local transit, state, route, at, aheadAt = throughPortal(t, 0, STORMWIND, "portal:areatrigger:704", false)
         t:assertEqual(at, #route.path, "the transit at the route's last waypoint, not on the ramp below the portal")
-        t:assertNil(transit.sourceEntered, "the route ends outside the portal")
+        t:assertEqual(route.path[#route.path], route.triggerPoint, "the leg goes on into the portal (his 5a1290b)")
+        t:assertTrue(transit.sourceEntered == true, "the route ends in the portal")
         t:assertTrue(transit.announced == true, "said before the portal, not again at the route's end")
         local _, _, z = N.Position(route.path[aheadAt])
         local sv = transit.action.sourceVolume
@@ -2308,6 +2387,179 @@ if haveNetwork then
             steps = steps + 1
         until N.LoadZoneInSteps(id, 20, clock) or steps > 100000
         t:assertNotNil(N.zones[id])
+    end
+
+    -- A route as positions and cost: virtual points are numbered in the order they are made, which the search order
+    -- decides, so two searches of the same route compare by where their points lie.
+    local function routeShape(result)
+        if result == nil then
+            return "none"
+        end
+        local parts = { string.format("%.9f", result.cost) }
+        for _, id in ipairs(result.path) do
+            if id >= N.VIRT_BASE then
+                parts[#parts + 1] = string.format("%.4f/%.4f/%.4f", N.Position(id))
+            else
+                parts[#parts + 1] = string.format("%.0f", id)
+            end
+        end
+        return table.concat(parts, ",")
+    end
+
+    local TELDRASSIL, DARNASSUS = 57, 1457
+
+    suite["the action ends of the packed data are the decoded actions' waypoints"] = function(t)
+        setup()
+        local ends = _G.WVN7ActionEnds
+        t:assertNotNil(ends, "tools/wownav-pack.lua writes actions.lua")
+        local count = 0
+        for _, entry in ipairs(ends) do
+            local zone = N.zones[math.floor(entry.from / N.ZONE_BASE)] or N.LoadZone(math.floor(entry.from / N.ZONE_BASE))
+            local found
+            for _, action in ipairs(zone.actions) do
+                if action.fromNode == entry.from and action.toNode == entry.to and action.cost == entry.cost then
+                    found = action
+                end
+            end
+            t:assertNotNil(found, string.format("action %.0f -> %.0f", entry.from, entry.to))
+            N.LoadZone(math.floor(entry.to / N.ZONE_BASE))
+            local fx, fy, fz = N.Position(entry.from)
+            local tx, ty, tz = N.Position(entry.to)
+            t:assertEqual(string.format("%.6f %.6f %.6f %.6f %.6f %.6f", fx, fy, fz, tx, ty, tz),
+                string.format("%.6f %.6f %.6f %.6f %.6f %.6f", entry.fx, entry.fy, entry.fz, entry.tx, entry.ty, entry.tz))
+            count = count + 1
+        end
+        t:assertTrue(count > 40, "every action of the data: " .. count)
+    end
+
+    suite["the estimate with actions finds the routes of the search without an estimate"] = function(t)
+        -- Stormwind has a tram into another map and portals; Teldrassil and Darnassus a portal far cheaper than its
+        -- straight line. Without the action ends his rule turns the estimate off there (a search around the start).
+        setup()
+        local ends = _G.WVN7ActionEnds
+        t:assertNotNil(ends)
+        N.LoadZone(STORMWIND)
+        N.LoadZone(TELDRASSIL)
+        N.LoadZone(DARNASSUS)
+        t:assertTrue(N.actionCount > 0, "zones with actions are decoded")
+        local pairsToRoute = {
+            { STORMWIND * N.ZONE_BASE + 8390, STORMWIND * N.ZONE_BASE + 2959 },
+            { STORMWIND * N.ZONE_BASE + 7278, STORMWIND * N.ZONE_BASE + 5903 },
+            { STORMWIND * N.ZONE_BASE + 3149, ELWYNN * N.ZONE_BASE + 7703 },
+            { TELDRASSIL * N.ZONE_BASE + 20076, DARNASSUS * N.ZONE_BASE + 1419 },
+            { DARNASSUS * N.ZONE_BASE + 1921, TELDRASSIL * N.ZONE_BASE + 24255 },
+        }
+        for _, pair in ipairs(pairsToRoute) do
+            local with = N.RouteIds(pair[1], pair[2])
+            _G.WVN7ActionEnds = nil
+            local without = N.RouteIds(pair[1], pair[2])
+            _G.WVN7ActionEnds = ends
+            t:assertNotNil(with, string.format("a route %.0f -> %.0f", pair[1], pair[2]))
+            t:assertEqual(routeShape(with), routeShape(without))
+            t:assertTrue(with.expansions <= without.expansions, "no more waypoints searched than without the estimate")
+        end
+    end
+
+    suite["a route on foot into another map is no route at once, without a whole search"] = function(t)
+        setup()
+        local tramZone
+        for id, entry in pairs(N.index) do
+            if entry.dir == "DeeprunTram" then
+                tramZone = id
+            end
+        end
+        t:assertNotNil(tramZone)
+        N.LoadZone(STORMWIND)
+        N.LoadZone(tramZone)
+        local result, why, slices = runJob(N.Job(function()
+            return N.RouteIds(STORMWIND * N.ZONE_BASE + 1, tramZone * N.ZONE_BASE + 1, nil, true)
+        end))
+        t:assertNil(result)
+        t:assertEqual(why, "no_route")
+        t:assertEqual(slices, 1, "answered in the first slice")
+    end
+
+    suite["a search repeated inside a job is answered from the first, as a copy"] = function(t)
+        setup()
+        N.LoadZone(STORMWIND)
+        local from, to = STORMWIND * N.ZONE_BASE + 8390, STORMWIND * N.ZONE_BASE + 2959
+        local repeated = N.repeatedSearches
+        local first, second = runJob(N.Job(function()
+            local a = N.RouteIds(from, to)
+            local b = N.RouteIds(from, to)
+            return a, b
+        end))
+        t:assertNotNil(first)
+        t:assertEqual(N.repeatedSearches, repeated + 1, "the second search was not run again")
+        t:assertEqual(routeShape(second), routeShape(first))
+        t:assertTrue(second.path ~= first.path, "a copy: a caller changing it changes nothing else")
+        -- outside a job every search runs
+        N.RouteIds(from, to)
+        t:assertEqual(N.repeatedSearches, repeated + 1)
+    end
+
+    -- his safe routes (/vn safety): monster spawns on the shortest route; off (0) nothing changes and no spawn is read
+    suite["safe routes: off the route is the shortest and reads no spawns; on it keeps away within the factor"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local from, to = STORMWIND * N.ZONE_BASE + 8390, STORMWIND * N.ZONE_BASE + 2959
+        local source, asked = N.DangerSource, 0
+        local spawns = {}
+        N.DangerSource = function(zoneId)
+            asked = asked + 1
+            return zoneId == STORMWIND and spawns or nil, zoneId == STORMWIND and spawns or nil
+        end
+        N.dangerGen = N.dangerGen + 1
+        local ok, err = pcall(function()
+            N.SetSafety(0)
+            local plain = N.RouteIds(from, to)
+            t:assertNotNil(plain, "a route across Stormwind")
+            t:assertNil(plain.danger, "off: no danger in the result")
+            t:assertEqual(asked, 0, "off: no spawn table is built")
+            -- spawns around the middle third of the shortest route
+            local n = #plain.path
+            for i = math.floor(n / 3), math.floor(2 * n / 3) do
+                local x, y, z = N.Position(plain.path[i])
+                spawns[#spawns + 1] = { x = x, y = y, z = z, name = "Spawn " .. i }
+            end
+            N.dangerGen = N.dangerGen + 1
+            t:assertEqual(routeShape(N.RouteIds(from, to)), routeShape(plain), "off: the same route with spawns")
+            N.SetSafety(300)
+            local safe = N.RouteIds(from, to)
+            t:assertNotNil(safe, "on: still a route")
+            t:assertTrue(asked > 0, "on: the spawns are read")
+            t:assertTrue(safe.dangerA > 0, "the shortest route passes the spawns")
+            t:assertTrue(safe.danger < safe.dangerA, "the safe route passes fewer of them")
+            t:assertTrue(safe.length <= N.SAFETY_RATIO * safe.lengthA + 1e-6, "within the factor")
+            t:assertEqual(safe.pass, "s", "a safety pass won")
+            -- the same answer inside a job, where the cache key carries the factor
+            local inJob = runJob(N.Job(function()
+                return N.RouteIds(from, to)
+            end))
+            t:assertEqual(routeShape(inJob), routeShape(safe))
+            -- a factor too small for any detour keeps the former choice
+            N.SetSafety(0.001)
+            local tight = N.RouteIds(from, to)
+            t:assertTrue(tight.length <= N.SAFETY_RATIO * tight.lengthA + 1e-6, "never longer than the factor")
+        end)
+        N.DangerSource = source
+        N.SetSafety(0)
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    suite["safe routes: the monster spawns of a zone come from its logical catalogue"] = function(t)
+        setup()
+        local rows = zoneRows(ELWYNN)
+        t:assertTrue(#rows > 0, "Elwynn's catalogue is active")
+        local token, list = C:DangerSpawns(ELWYNN)
+        t:assertNotNil(token, "a catalogue")
+        t:assertTrue(#list > 100, "Elwynn has monster spawns")
+        t:assertEqual(type(list[1].x), "number")
+        t:assertEqual(type(list[1].name), "string")
     end
 end
 
