@@ -120,6 +120,33 @@ local function record(x, y, inside, rooms, text)
     end
 end
 
+-- LOCAL (local-play only): the collision probe. While the player pushes (a movement key held, autorun), every
+-- look (CHECK_INTERVAL) goes into WowVisionDump.bumpProbe: "<time> <map> <x> <y> <facing> <push> <moved> <blocked>"
+-- (yd and radians to two places; push: the way pushed in radians; moved: yd since the last look; blocked: 1 while
+-- the wall detection says blocked, else 0). Always on, a ring of PROBE_KEPT lines; the previous session's ring is
+-- kept as WowVisionDump.bumpProbeBefore. tools/bumps/probe.lua compares it with the objects' footprints: a player
+-- whose centre stood inside a footprint passed through it, one stopped at its edge while pushing toward it was held.
+local PROBE_KEPT = 30000
+local probe = nil
+local function probeStart()
+    WowVisionDump = WowVisionDump or {}
+    if type(WowVisionDump.bumpProbe) == "table" and WowVisionDump.bumpProbe.lines then
+        WowVisionDump.bumpProbeBefore = WowVisionDump.bumpProbe
+    end
+    probe = { lines = {}, nextAt = 1, kept = PROBE_KEPT, started = date("%Y-%m-%d %H:%M:%S") }
+    WowVisionDump.bumpProbe = probe
+    print(string.format("WowVision bump probe on: every look while you push is kept (%d at most).", PROBE_KEPT))
+end
+
+local function probeRecord(now, map, x, y, facing, push, moved, isBlocked)
+    if probe == nil then
+        probeStart()
+    end
+    probe.lines[probe.nextAt] = string.format("%.2f %d %.2f %.2f %.2f %.2f %.2f %d", now, map or -1, x, y, facing,
+        push, moved or -1, isBlocked and 1 or 0)
+    probe.nextAt = probe.nextAt % PROBE_KEPT + 1
+end
+
 -- The way the player pushes from the movement keys held and the facing, as a unit vector, or nil.
 local function pushDirection()
     local facing = GetPlayerFacing()
@@ -179,6 +206,13 @@ module:hasUpdate(function(self)
     setZone(found)
     local px, py, dt = lastX, lastY, lastTime and now - lastTime
     lastX, lastY, lastTime = x, y, now
+    do -- LOCAL: the collision probe (anywhere, also outside the bump data's zones)
+        local vx, vy = pushDirection()
+        if vx ~= nil then
+            probeRecord(now, map, x, y, GetPlayerFacing(), math.atan2(vy, vx),
+                px and bumpLogic.dist(x, y, px, py), blocked(now))
+        end
+    end
     if zone == nil then
         return
     end
