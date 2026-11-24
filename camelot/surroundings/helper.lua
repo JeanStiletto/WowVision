@@ -118,29 +118,32 @@ end
 -- staircase is led through from one end record to the other: along each flight's line, across the landings between,
 -- to the far end, onto its floor. Up or down alike.
 
--- The free end of a climb line within HELPER_FOOT of the end record `rec`, on a piece joined to its floor: of its own
--- place first, then the nearest. Piece, x, y, or nil.
-local function lineEndAt(zone, rec)
+-- The free end nearest (x, y) within `reach` of a climb line on a piece joined to the piece `joinedTo`, leaving out the
+-- pieces in `skip` (a set, optional); with `place`, an end of a line of that place before any other. Piece, x, y, or
+-- nil. The one search for a staircase's line ends: where it begins at an end record (lineEndAt) and where its next
+-- flight begins from a landing (nextFlight).
+local function freeEndNear(zone, x, y, reach, joinedTo, skip, place)
     local ix = zone._index
-    if ix.lineFloors == nil then
-        return nil
-    end
-    local joined = ix.joined[rec.floor or 0] or {}
-    local place = logic.placeOf(rec.value)
+    local joined = ix.joined[joinedTo] or {}
     local best, bx, by, bd, bOwn
-    for _, lane in ipairs(logic.lanesNear(zone, rec.x, rec.y, logic.HELPER_FOOT + logic.LANE_REACH, function(lane)
-        return ix.lineFloors[lane.piece] and joined[lane.piece]
+    for _, lane in ipairs(logic.lanesNear(zone, x, y, reach + logic.LANE_REACH, function(lane)
+        return ix.lineFloors[lane.piece] and joined[lane.piece] and not (skip and skip[lane.piece])
     end)) do
-        local own = logic.placeOf(lane.value) == place
+        local own = place ~= nil and logic.placeOf(lane.value) == place
         for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
-            local d = e[1] and dist(rec.x, rec.y, e[2], e[3])
-            if d and d <= logic.HELPER_FOOT
-                and (bd == nil or (own and not bOwn) or (own == bOwn and d < bd)) then
+            local d = e[1] and dist(x, y, e[2], e[3])
+            if d and d <= reach and (bd == nil or (own and not bOwn) or (own == bOwn and d < bd)) then
                 best, bx, by, bd, bOwn = lane.piece, e[2], e[3], d, own
             end
         end
     end
     return best, bx, by
+end
+
+-- The free end of a climb line within HELPER_FOOT of the end record `rec`, on a piece joined to its floor: of its own
+-- place first, then the nearest. Piece, x, y, or nil.
+local function lineEndAt(zone, rec)
+    return freeEndNear(zone, rec.x, rec.y, logic.HELPER_FOOT, rec.floor or 0, nil, logic.placeOf(rec.value))
 end
 
 -- The far end record of a staircase where its line ends at (ex, ey): within HELPER_LANDING, on a floor joined to the
@@ -167,20 +170,7 @@ end
 -- line is a stub, its flights' lines begin across it). Piece, x, y.
 logic.HELPER_NEXT = 10
 local function nextFlight(zone, piece, ex, ey, used)
-    local ix = zone._index
-    local joined = ix.joined[piece] or {}
-    local best, bx, by, bd
-    for _, lane in ipairs(logic.lanesNear(zone, ex, ey, logic.HELPER_NEXT + logic.LANE_REACH, function(lane)
-        return ix.lineFloors[lane.piece] and not used[lane.piece] and joined[lane.piece]
-    end)) do
-        for _, e in ipairs({ { lane.free1, lane.x1, lane.y1 }, { lane.free2, lane.x2, lane.y2 } }) do
-            local d = e[1] and dist(ex, ey, e[2], e[3])
-            if d and d <= logic.HELPER_NEXT and (bd == nil or d < bd) then
-                best, bx, by, bd = lane.piece, e[2], e[3], d
-            end
-        end
-    end
-    return best, bx, by
+    return freeEndNear(zone, ex, ey, logic.HELPER_NEXT, piece, used, nil)
 end
 
 -- On from the last of `points` on the climb `piece` through its staircase (`used`: the pieces walked): at a far end
