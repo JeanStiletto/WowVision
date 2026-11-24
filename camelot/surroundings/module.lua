@@ -61,6 +61,18 @@ local hold = { EDGE_BURST = 2 }
 -- where it last changed: crossing a wide junction of the Trade District said three to four bare directions in 1 to 3 s
 -- on every pass, its stretches 12 to 15 yd long (bug 169), the Lion's Pride Inn's landing flipped five times in 7 s (bug 79), 2026-11-17
 hold.DIR_SPACING = 20
+-- seconds: a place line said this recently, within hold.DIR_SPACING yd, is only logged when the player comes back onto
+-- that place (turning back
+-- on the bank's ramp said "Plattform" twice in 5 s and the ramp twice in 3 s, 2026-11-20 14:54:32 to 39)
+hold.RETURN_QUIET = 8
+hold.saidAt = {}
+-- seconds: a place line beginning with the name of the climb the guidance just said (or left bare, its name just
+-- heard) drops that name ("Rampe Richtung Zählhaus von Sturmwind", then "Rampe Richtung Zählhaus von Sturmwind, Nord
+-- nach Süd" in the same second, the bank's ramp 2026-11-20 14:59:39)
+hold.CLIMB_NAMED = 3
+-- seconds: the same line ahead is not said again this soon (a fork ahead three times in one second while turning at
+-- the General Goods door, 2026-11-20 15:03:11, which the replay does not show; whatever forgot it, this holds)
+hold.AHEAD_REPEAT = 10
 local MOVE_MIN = 0.3 -- moved in one look that gives a direction to look ahead along
 local AHEAD_FORGET = 6 -- yd farther from a piece said ahead than when it was said: forgotten
 local GUIDE_TURN = 32 -- degrees off the last said direction before a new one is said
@@ -317,6 +329,7 @@ local function forgetPlace()
     end
     warnedEdges = {}
     hold.dirX, hold.dirY, hold.lastDir, hold.wayPlace = nil, nil, nil, nil
+    hold.saidAt, hold.climbName = {}, nil
     layerMode = false
 end
 
@@ -939,6 +952,9 @@ local function guideTo(z, g, t, x, y, brief)
     if brief then
         if g.key ~= t.key then
             say(t.name, t.kind, x, y)
+            if t.kind == "climb" then
+                hold.climbName, hold.climbAt = t.name, now
+            end
             g.key, g.dir, g.at, g.time, g.named = t.key, t.dir, false, now, t.key
             -- the target just named is the one the turn key and Alt-I take (review 2026-10-29: they took the one
             -- named before the beacon started)
@@ -962,6 +978,9 @@ local function guideTo(z, g, t, x, y, brief)
                 and logic.placeOf(logic.valueAt(z, x, y)) == logic.placeOf(t.value)
             if not onIt then
                 say(logic.guideText(z, t, named, true, bare), t.kind, x, y)
+                if t.kind == "climb" then
+                    hold.climbName, hold.climbAt = t.name, now
+                end
             end
             g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, true, now, t.key, false
             noteSaid(g, t)
@@ -992,6 +1011,9 @@ local function guideTo(z, g, t, x, y, brief)
     end
     if g.key ~= t.key or g.quiet or (turned and now - g.time >= GUIDE_REPEAT) or (g.at and t.d > logic.GUIDE_AT + GUIDE_AWAY) then
         say(logic.guideText(z, t, named, false, bare), t.kind, x, y)
+        if t.kind == "climb" then
+            hold.climbName, hold.climbAt = t.name, now
+        end
         g.key, g.dir, g.at, g.time, g.named, g.quiet = t.key, t.dir, false, now, t.key, false
         noteSaid(g, t)
         g.atSaid = nil
@@ -1462,7 +1484,13 @@ local function checkAhead(z, x, y, px, py)
         if text and text ~= "" then
             aheadSaid[nextKey] = { x = tx or x, y = ty or y, d = yards }
             wayNamed = named or wayNamed
-            say(text, "ahead", x, y)
+            local now = GetTime()
+            if text == hold.aheadText and now - hold.aheadAt < hold.AHEAD_REPEAT then
+                logEntry("ahead", text, x, y, { same = true })
+            else
+                say(text, "ahead", x, y)
+                hold.aheadText, hold.aheadAt = text, now
+            end
         end
     end
 end
@@ -1576,8 +1604,32 @@ local function checkPlace(z, x, y, forced)
             -- the next piece of the same way says only its direction, and that is what was just said ("Rampe, Ost nach
             -- West" up the inn's lower flight, then "Ost nach West" again up the upper one, 2026-11-17): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), same = true })
+        elseif text ~= nil and text ~= "" and hold.saidAt[outdoor.current]
+            and GetTime() - hold.saidAt[outdoor.current].t < hold.RETURN_QUIET
+            and logic.dist(x, y, hold.saidAt[outdoor.current].x, hold.saidAt[outdoor.current].y) < hold.DIR_SPACING then
+            -- back onto a place said moments ago near here (hold.RETURN_QUIET; a way's same direction again farther on is
+            -- a turn of the way, said): only logged
+            logEntry("place", text, x, y, { walked = round1(outdoor.walked), same = true })
+            heardLines = { text }
         else
-            say(text, "place", x, y, outdoor.walked)
+            -- the climb the guidance just said: its name not again (hold.CLIMB_NAMED)
+            local name, full = hold.climbName, text
+            if text and name and GetTime() - hold.climbAt < hold.CLIMB_NAMED and text:sub(1, #name) == name then
+                text = text:sub(#name + 1):gsub("^,%s*", "")
+            end
+            if text == "" then
+                logEntry("place", full, x, y, { walked = round1(outdoor.walked), same = true })
+                heardLines[#heardLines + 1] = full
+            else
+                say(text, "place", x, y, outdoor.walked)
+                if text ~= full then
+                    -- (its name was heard all the same: what comes next may leave it out, as after the full line)
+                    heardLines[#heardLines + 1] = full
+                end
+            end
+            if full ~= nil and full ~= "" then
+                hold.saidAt[outdoor.current] = { t = GetTime(), x = x, y = y }
+            end
         end
         hold.lastDir = logic.directionText(z, value)
     elseif region and outdoor.current == logic.placeOf(region.value) then
