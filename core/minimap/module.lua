@@ -1712,6 +1712,247 @@ local function naturalRead(frames)
     return best
 end
 
+-- ---- secret probe ----
+-- Since Forever 1.60.1.70938 (2026-11-13) the minimap tooltip text is a
+-- secret value: the fast read had 1 line, GameTooltip "(secret)", every
+-- sweep 0 dots (WoWUIBugs #894: "Minimap is off limits"). A secret cannot
+-- be parsed or compared, but it can be spoken. The probe asks: does an
+-- empty point of the minimap still read 0 lines (so a sweep could find
+-- dots by the line count alone), and what does the secret say when the
+-- game's voice speaks it?
+
+-- The raw mouseover: line count, the first line's text (secret, plain or
+-- nil) and the data for the dump.
+local function rawRead()
+    local ok, data = pcall(C_TooltipInfo.GetMinimapMouseover)
+    if not ok or data == nil or type(data.lines) ~= "table" then
+        return { count = 0 }
+    end
+    local read = { count = #data.lines, data = data }
+    for _, line in ipairs(data.lines) do
+        if line.leftText ~= nil then
+            read.text = line.leftText
+            break
+        end
+    end
+    return read
+end
+
+local function textKind(text)
+    if text == nil then
+        return "no text"
+    elseif WowVision.isSecret(text) then
+        return "secret text"
+    end
+    return "plain text " .. tostring(text)
+end
+
+-- Speaks with the game voice 0 (the walking voice); a secret joins by "..".
+local function speakGameVoice(text)
+    local s = WowVision.base.speech.settings
+    local volume = math.max(0, math.min(100, s.speechVolume or 100))
+    C_VoiceChat.SpeakText(0, WowVision.ttsCacheBust.bust(text), s.speechRate, volume, false)
+end
+
+local PROBE_STEP = 8
+-- Frames the category presence check waits for a line (a switched filter
+-- shows the next frames; earlier runs named dots from the second frame).
+local PROBE_PRESENCE_FRAMES = 8
+
+-- Inside a running task: the minimap at scale, every point of a step grid
+-- (full-size units) laid under the cursor; touching lit points form a
+-- spot: its middle in yards and the text of the point nearest that middle.
+local function probeGrid(state, x, y, scale, step, yardsPerUnit, facing)
+    local started = GetTime()
+    local radius = state.width / 2
+    local ask = Engine.pointReader(state, x, y, scale, rawRead)
+    local lit, asked, litCount, most = {}, 0, 0, 0
+    for _, cell in ipairs(Scan.sweepCells(radius + 10 / scale, step)) do
+        local read = ask(cell[1] * step, cell[2] * step)
+        asked = asked + 1
+        if read.count > 0 then
+            litCount = litCount + 1
+            most = math.max(most, read.count)
+            lit[Scan.cellKey(cell[1], cell[2])] = { ix = cell[1], iy = cell[2], n = read.count, text = read.text }
+        end
+    end
+    local spots = {}
+    for _, comp in ipairs(Scan.components(lit)) do
+        local sx, sy = 0, 0
+        for _, c in ipairs(comp.cells) do
+            sx, sy = sx + c.ix, sy + c.iy
+        end
+        sx, sy = sx / comp.size, sy / comp.size
+        local best, bestD = nil, nil
+        for _, c in ipairs(comp.cells) do
+            local d = (c.ix - sx) ^ 2 + (c.iy - sy) ^ 2
+            if bestD == nil or d < bestD then
+                best, bestD = c, d
+            end
+        end
+        local north, west = Scan.offsetToWorld(sx * step, sy * step, yardsPerUnit, facing)
+        tinsert(spots, {
+            size = comp.size,
+            maxN = comp.maxN,
+            distance = math.sqrt(north * north + west * west),
+            text = best.text,
+            where = string.format(
+                "%.0f yards %s, %.0f yards %s",
+                math.abs(north),
+                north >= 0 and "north" or "south",
+                math.abs(west),
+                west >= 0 and "west" or "east"
+            ),
+        })
+    end
+    table.sort(spots, function(a, b)
+        return a.distance < b.distance
+    end)
+    return { spots = spots, asked = asked, litCount = litCount, most = most, seconds = GetTime() - started }
+end
+
+local function addSpots(add, spots)
+    for i, spot in ipairs(spots) do
+        add(string.format(
+            "  spot %d: %d points, at most %d lines, %s, middle point %s",
+            i,
+            spot.size,
+            spot.maxN,
+            spot.where,
+            textKind(spot.text)
+        ))
+    end
+end
+
+-- Inside a running task (the minimap captured as task.state, zoom 0):
+-- adds the probe's lines, returns the sentence to speak.
+-- 2026-11-13 probes: a quest area answered 275 grid points with its full
+-- quest text and swallowed the innkeeper's dot; drawing the quest areas
+-- invisible (SetQuestBlob...Alpha 0) changed nothing. Now: every quest
+-- tracking filter (a filter name with "Quest" in it) off while the probe
+-- runs; the task's cleanup puts the tracking back.
+local function questFiltersOff(state)
+    local names = {}
+    for _, t in ipairs(state.tracking) do
+        if not t.isSpell and t.active and t.filter ~= nil and t.filter:find("Quest") then
+            local info = C_Minimap.GetTrackingInfo(t.index)
+            if info ~= nil and info.active then
+                pcall(C_Minimap.SetTracking, t.index, false)
+            end
+            tinsert(names, string.format("%d %s (%s)", t.index, t.name, t.filter))
+        end
+    end
+    return names
+end
+
+local function secretProbe(task, add, x, y)
+    local state = task.state
+    local off = questFiltersOff(state)
+    add("Quest tracking filters off for the probe: " .. (#off > 0 and table.concat(off, ", ") or "none were on"))
+    Engine.wait(3)
+    -- 1. The shrunk minimap under the cursor: all dots in range at once.
+    Engine.shrink(x, y)
+    Engine.wait(2)
+    local shrunk = { count = 0 }
+    for _ = 1, SKU_READ_FRAMES do
+        Engine.nudge()
+        Engine.wait()
+        local read = rawRead()
+        if read.count > shrunk.count or (shrunk.text == nil and read.text ~= nil) then
+            shrunk = read
+        end
+    end
+    add(string.format("Secret probe, shrunk: %d lines, first line %s", shrunk.count, textKind(shrunk.text)))
+    if shrunk.data ~= nil then
+        for _, line in ipairs(Scan.rawLines(shrunk.data, WowVision.isSecret)) do
+            add("  " .. line)
+        end
+    end
+
+    -- 2. Full size, every point of an 8-unit grid, the quest filters off:
+    -- lines or none there?
+    local radius = state.width / 2
+    Engine.restoreFrame(state)
+    Minimap:SetZoom(0)
+    Minimap:SetAlpha(0)
+    local yardsPerUnit = (C_Minimap.GetViewRadius() or 0) / radius
+    local facing = GetCVar("rotateMinimap") == "1" and (GetPlayerFacing() or 0) or 0
+    local all = probeGrid(state, x, y, 1, PROBE_STEP, yardsPerUnit, facing)
+    add(string.format(
+        "Secret probe, full size, grid step %d, every filter but the quest ones: %d points asked, %d with a line, %d empty; most lines at one point %d; %.2f yd a unit; %.1f s",
+        PROBE_STEP,
+        all.asked,
+        all.litCount,
+        all.asked - all.litCount,
+        all.most,
+        yardsPerUnit,
+        all.seconds
+    ))
+    addSpots(add, all.spots)
+
+    -- 3. The category passes: each tracking filter alone (the quest ones
+    -- stay off), then every filter off (what is left: quest givers and
+    -- the tracking spells' dots, which are never switched). Per pass: is
+    -- anything of it in range (the shrunk minimap, a line or none), and
+    -- only then the half-size sweep for its spots.
+    local filters = {}
+    for _, t in ipairs(state.tracking) do
+        if not t.isSpell and t.filter ~= nil then
+            tinsert(filters, t)
+        end
+    end
+    local passes = {}
+    for _, t in ipairs(filters) do
+        if not t.filter:find("Quest") then
+            tinsert(passes, { label = t.name, on = { [t.index] = true } })
+        end
+    end
+    tinsert(passes, { label = "every filter off", on = {} })
+    local spoken = "Minimap category probe. "
+    local started = GetTime()
+    for _, pass in ipairs(passes) do
+        setFilters(filters, pass.on)
+        local passStart = GetTime()
+        Engine.shrink(x, y)
+        Engine.wait(2)
+        local presentAt = nil
+        for frame = 1, PROBE_PRESENCE_FRAMES do
+            Engine.nudge()
+            Engine.wait()
+            if rawRead().count > 0 then
+                presentAt = frame
+                break
+            end
+        end
+        local checkSeconds = GetTime() - passStart
+        if presentAt == nil then
+            add(string.format("Category %s: nothing in range (%d frames, %.1f s)", pass.label, PROBE_PRESENCE_FRAMES, checkSeconds))
+        else
+            Engine.restoreFrame(state)
+            Minimap:SetZoom(0)
+            Minimap:SetAlpha(0)
+            local grid = probeGrid(state, x, y, SWEEP.scale, SWEEP.step, yardsPerUnit, facing)
+            add(string.format(
+                "Category %s: in range (line at frame %d, %.1f s); half-size sweep %d questions, %.1f s, %d points lit, %d spots",
+                pass.label,
+                presentAt,
+                checkSeconds,
+                grid.asked,
+                grid.seconds,
+                grid.litCount,
+                #grid.spots
+            ))
+            addSpots(add, grid.spots)
+            spoken = spoken .. pass.label .. ", " .. #grid.spots .. (#grid.spots == 1 and " spot. " or " spots. ")
+            for _, spot in ipairs(grid.spots) do
+                spoken = spoken .. spot.where .. ": " .. (spot.text ~= nil and spot.text or "no text") .. ". "
+            end
+        end
+    end
+    add(string.format("Category passes together: %d passes, %.1f s", #passes, GetTime() - started))
+    return spoken
+end
+
 local function skuReadText(label, read)
     return string.format(
         "%s: mouse over the minimap %s, focus %s: %d minimap lines, names: %s; GameTooltip %d lines: %s",
@@ -1754,6 +1995,8 @@ function module:skuTest()
         task.state = state
         Engine.onCleanup(function()
             Engine.restoreFrame(state)
+            -- The secret probe switches quest filters off (never spells).
+            Engine.restoreTracking(state, false)
         end)
         local hidden = Engine.clearWay()
         -- The view radius frame by frame after the zoom goes to 0: does the
@@ -1791,6 +2034,15 @@ function module:skuTest()
             end
             named[dot.name].count = named[dot.name].count + 1
         end
+
+        task.secretSpeech = secretProbe(task, add, x, y)
+        if #work == 0 then
+            -- Nothing named: the name sweeps below would only ask empty.
+            add("Name sweeps skipped: the fast read named nothing")
+            return
+        end
+        Engine.restoreFrame(state)
+        Minimap:SetZoom(0)
 
         -- The scanner's sweep at several minimap sizes on the same spot:
         -- the first (full size, step 8, the sweep of 2026-11-10 morning)
@@ -1943,6 +2195,11 @@ function module:skuTest()
         for _, line in ipairs(task.lines) do
             tinsert(lines, line)
         end
+        local restored, notRestored = Engine.trackingRestored(task.state)
+        tinsert(lines, restored and "Tracking restored after the probe" or ("Tracking NOT restored: " .. tostring(notRestored)))
+        if not restored then
+            speak("Tracking not restored: " .. tostring(notRestored))
+        end
         tinsert(lines, "Tracking types on")
         for _, t in ipairs(task.state.tracking) do
             if t.active then
@@ -1957,6 +2214,14 @@ function module:skuTest()
             tinsert(parts, string.format("%s %.0f seconds, %d missing, %d extra", sw.label, sw.seconds, sw.missing, sw.extra))
         end
         speak("Sku test done. " .. table.concat(parts, "; "))
+        local secretSpeech = task.secretSpeech
+        if secretSpeech ~= nil then
+            -- After the done line, in the game voice (a secret cannot go
+            -- through our speech queue's checks).
+            C_Timer.After(4, function()
+                speakGameVoice(secretSpeech)
+            end)
+        end
     end
     Engine.run(task)
 end

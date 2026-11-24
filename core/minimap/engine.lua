@@ -289,8 +289,11 @@ end
 -- GetCursorPosition gave them). The dots keep their size at any scale.
 -- Each question takes one frame; two frames first for the new size (the
 -- first frame after the minimap arrives reads empty).
-function Engine.pointReader(state, cursorX, cursorY, scale)
+-- readFn (optional) replaces the dot read, for a test that wants the raw
+-- mouseover (/wv mscan sku's secret probe).
+function Engine.pointReader(state, cursorX, cursorY, scale, readFn)
     scale = scale or 1
+    readFn = readFn or readMouseover
     Engine.clearWay()
     local s = Minimap:GetEffectiveScale()
     local cx, cy = cursorX / s, cursorY / s
@@ -302,7 +305,7 @@ function Engine.pointReader(state, cursorX, cursorY, scale)
         Minimap:ClearAllPoints()
         Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx - ox * scale, cy - oy * scale)
         Engine.wait()
-        return readMouseover()
+        return readFn()
     end
 end
 
