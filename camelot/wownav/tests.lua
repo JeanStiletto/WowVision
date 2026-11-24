@@ -1351,18 +1351,18 @@ if haveNetwork then
             t:assertNotNil(auberdine, "the Menethil dock of the Southshore ferry")
             local outcome, target, why = dock.choose(N, auberdine, x, y)
             t:assertEqual(outcome, "route", tostring(why))
-            t:assertEqual(target.id, ferryDock.tid)
+            t:assertEqual(target.id, auberdine.tid)
             -- a dock of the own station is never noted, whatever his ride rule would say (the game's case)
             Dock:Reset(false)
             Dock.ChoosePassive = function()
                 return true
             end
-            local outcome2, target2, why2 = dock.choose(N, ferryDock, x, y)
+            local outcome2, target2, why2 = dock.choose(N, auberdine, x, y)
             t:assertEqual(outcome2, "route", tostring(why2))
-            t:assertEqual(target2.id, ferryDock.tid)
+            t:assertEqual(target2.id, auberdine.tid)
             -- a dock far away still is (the ride rule is asked)
             Dock:Reset(false)
-            t:assertEqual(dock.choose(N, ferryDock, x, y - 300), "route", "away from every dock: walked to")
+            t:assertEqual(dock.choose(N, auberdine, x, y - 300), "route", "away from every dock: walked to")
         end)
         Dock.ChoosePassive = choosePassive
         _G.UnitPosition = saved
@@ -1395,7 +1395,7 @@ if haveNetwork then
             local target, nav = dock.target(N, auberdine)
             t:assertEqual(target.facilityKind, "boat")
             local start = catalog.autoPoints(N, x, y, nil, 1)[1]
-            local outcome = runJob(N.Job(route.prepare, route, catalog.contract(ferryDock, 0), { nativeMapId = 0 },
+            local outcome = runJob(N.Job(route.prepare, route, catalog.contract(auberdine, 0), { nativeMapId = 0 },
                 start.nodeId))
             t:assertEqual(outcome.kind, "start", tostring(outcome.reason))
             -- the route is not cut on the pier (the tram's drop rule): its end lies at the dock
@@ -1403,7 +1403,7 @@ if haveNetwork then
             t:assertTrue(dock.isVesselTarget(target), "a dock of the dock model")
             -- the route ends on the dock's own node, no unchecked end behind it
             t:assertEqual(outcome.plan.path[#outcome.plan.path], outcome.result.endNodeId)
-            route:begin(outcome.plan, catalog.contract(ferryDock, 0), outcome.result, ferryDock.n)
+            route:begin(outcome.plan, catalog.contract(auberdine, 0), outcome.result, auberdine.n)
             t:assertNil(route.logicalTarget)
             local arrived
             for _ = 1, 2000 do
