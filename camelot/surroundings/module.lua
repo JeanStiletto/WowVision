@@ -2192,6 +2192,10 @@ local function lineFacing(wayOnly, back)
                 if onFlight then
                     return onFlight, "flight"
                 end
+                -- (the beacon's quiet rule: being on such a climb is enough, no route built at every ping)
+                if wayOnly and logic.onClimbLine(layer, held) then
+                    return facing, "climb"
+                end
                 local onClimb = logic.climbLineFacing(layer, held, x, y, facing)
                 if onClimb then
                     return onClimb, "climb"
@@ -2218,8 +2222,9 @@ local function lineFacing(wayOnly, back)
     if onFlight then
         return onFlight, "flight"
     end
-    -- (the beacon's quiet rule asks only whether there is a way to turn along: the way's own line first, before the
-    -- route Alt-I would lead by on a climb, which builds that whole route at every ping; the same answer)
+    -- (the beacon's quiet rule asks only whether there is a way to turn along: the way's own line, or being on a
+    -- climb with a line of its own, without building the route Alt-I would lead by there at every ping; maps.wayHere
+    -- reads only whether a facing came back)
     if wayOnly then
         local value = logic.outdoorValue(z, x, y, isWay(outdoor.current, true))
         local facings, fork = logic.lineFacings(z, x, y, value, facing)
@@ -2227,6 +2232,10 @@ local function lineFacing(wayOnly, back)
         if along then
             return along, fork and "fork" or "line"
         end
+        if logic.onClimbLine(z, z._index.floor) then
+            return facing, "climb"
+        end
+        return nil
     end
     -- on a ramp or stairs with its own line: along the route Alt-I leads by from here (helper.lua climbLineFacing)
     local onClimb = logic.climbLineFacing(z, z._index.floor, x, y, facing)
@@ -2495,7 +2504,7 @@ function module:leadOn(back)
     local layer = logic.layer(z, IsIndoors())
     local lineGrid = (isInside() and layer and (layerMode or (layer._index.floor or 0) ~= 0)) and layer or z
     local on = lineGrid._index.floor
-    if not stepping and on and on ~= 0 and lineGrid._index.lineFloors and lineGrid._index.lineFloors[on] then
+    if not stepping and logic.onClimbLine(lineGrid, on) then
         local route = logic.climbRouteFrom(lineGrid, on, x, y, GetPlayerFacing())
         if route and #route.points > 0 then
             helper.cycle = nil

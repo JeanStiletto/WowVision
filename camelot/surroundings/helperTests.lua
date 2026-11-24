@@ -271,4 +271,44 @@ testRunner:addSuite("Surroundings building helper", {
         t:assertFalse(logic.helperArrived(route, start, start))
         t:assertTrue(logic.helperArrived(route, start, { floor = 2 }))
     end,
+
+    ["a climb's line longer than 80 yd is followed to its far end"] = function(t)
+        -- (the Forever data's longest climbs run 85 to 101 yd; the line was gathered only within about 80 yd of its
+        -- start, which on this ramp left out its last stretch)
+        -- a straight ramp of 200 yd: 60 rows x 3 columns of 4 yd cells, north edge at x = 260, west edge at y = 60;
+        -- its line from the foot at 256, 50 south in five stretches to the top at 56, 50 on the platform (piece 2)
+        local grid, lanes = {}, {}
+        for i = 1, 60 do
+            grid[i] = "20000*3"
+        end
+        for k = 0, 4 do
+            for _, v in ipairs({ 256 - 40 * k, 50, 216 - 40 * k, 50, 10000, 10, 15, 10, 15, 1 }) do
+                lanes[#lanes + 1] = v
+            end
+        end
+        local z = {
+            key = "long", map = 0, top = 260, left = 60, cell = 4, rows = 60, cols = 3,
+            dirs = { "running %s" },
+            compass = { "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest" },
+            axes = { "north-south", "northeast-southwest", "east-west", "northwest-southeast" },
+            places = { { "ramp", "ramp to the platform" } },
+            grid = grid,
+            laneFields = 10,
+            lanes = lanes,
+            lineFloors = { 1 },
+            floorCells = {},
+            noGround = {},
+            joins = { 0, 1, 256, 50, 0, 1, 2, 56, 50, 0 },
+            climbFeet = { 256, 50, 10000, 180, 0 },
+            climbTops = { 56, 50, 10000, 0, 2 },
+        }
+        logic.unpack(z)
+        local route = logic.endRoute(z, z._index.climbFeet[1])
+        t:assertFalse(route.short)
+        t:assertEqual(route.landing, 2)
+        near(t, route.points[#route.points], 56, 50, "the top, 200 yd on")
+        -- on it, facing on up (south) from its first stretch: the whole way too
+        local on = logic.climbRouteFrom(z, 1, 250, 50, math.pi)
+        near(t, on.points[#on.points], 56, 50, "the top from on the ramp")
+    end,
 })

@@ -483,21 +483,8 @@ function logic.atClimbTop(zone, placeId)
     -- the data's top records (since trial L4): a top of that climb on this floor, and none of its feet (a climb with
     -- its foot and its top on one floor piece, the huts' stairs onto a ground that runs on inside: from that floor
     -- the step onto it tells, riseFrom; STATE bug 113)
-    if ix.climbTops then
-        local tops = ix.topFloors[placeId]
-        return tops ~= nil and tops[floor] == true and not own[floor] and not (feet and feet[floor])
-    end
-    if feet == nil or feet[floor] or own[floor] then
-        return false
-    end
-    -- (only from a floor the climb is joined to: its top; a floor held a moment by mistake beside
-    -- it named the Brill tavern's stairs up "Treppe Richtung Schankraum" in the common room)
-    for q in pairs(ix.joined[floor] or {}) do
-        if own[q] then
-            return true
-        end
-    end
-    return false
+    local tops = ix.topFloors[placeId]
+    return tops ~= nil and tops[floor] == true and not own[floor] and not (feet and feet[floor])
 end
 
 -- A ramp or stairs named from where the player stands (user 2026-10-17: "Treppe Richtung Keller"
@@ -1131,8 +1118,9 @@ function logic.unpack(zone, locale)
     end)
     -- the tops of ramps and stairs (export.climb_ends, data since trial L4): x, y, the top flight's cell value, the
     -- way on DOWN that flight (degrees), the floor piece at the top; guided to from that floor as a foot is from its
-    -- own (user 2026-10-20: tops and feet alike). Data without them: nil, the top is worked out (logic.atClimbTop)
-    ix.climbTops = zone.climbTops and {} or nil
+    -- own (user 2026-10-20: tops and feet alike). Every zone with climbs has them (the rules for data without them,
+    -- the top worked out from the feet, were dropped 2026-11-24); a zone without climbs has none
+    ix.climbTops = {}
     ix.topFloors = {}
     eachRecord(zone.climbTops, 5, function(x, y, value, bearing, floor)
         ix.climbTops[#ix.climbTops + 1] = { x = x, y = y, value = value, bearing = bearing, floor = floor, top = true }
@@ -1215,10 +1203,19 @@ function logic.unpack(zone, locale)
             end
         end
     end
+    -- each climb's whole line, per piece (helper.lua climbLanes: a route follows the line end to end, however far it
+    -- runs; by the cells near its start the Forever data's longest, 85 to 101 yd, were cut at 80, 2026-11-24)
+    ix.pieceLanes = {}
     for _, lane in ipairs(order) do
         if ix.lineFloors[lane.piece] then
             lane.free1 = ends[endKey(lane, lane.x1, lane.y1)] == 1
             lane.free2 = ends[endKey(lane, lane.x2, lane.y2)] == 1
+            local list = ix.pieceLanes[lane.piece]
+            if list == nil then
+                list = {}
+                ix.pieceLanes[lane.piece] = list
+            end
+            list[#list + 1] = lane
         end
         -- a path-line data's line across a landing or platform between flights (gated to a piece that is no
         -- lineFloor) is a way through for the turn key and the guidance only, never a way the place is said by

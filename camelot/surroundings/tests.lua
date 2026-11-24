@@ -796,30 +796,6 @@ testRunner:addSuite("Surroundings", {
         t:assertEqual(found, true)
     end,
 
-    ["from a climb's top its opening goes down, whatever lies round its top on the grid"] = function(t)
-        -- walk 2026-10-20: the Abbey bell tower's floor lies round its ramp's top on the grid; from it the ramp
-        -- went "up" (its way on back into the tower). Data without top records: the top worked out from the feet
-        local z = newTowerZone()
-        -- the flight (row 0, column 1) rises east; the landing wraps round its cell: west of it (column 0),
-        -- east of it (columns 2 and 3) and along row 1 under it
-        z.floorCells = { 0, 1, 1, 20090, 0, 0, 2, 30000, 0, 2, 2, 30000, 0, 3, 2, 30000,
-            1, 0, 2, 30000, 1, 1, 2, 30000, 1, 2, 2, 30000, 1, 3, 2, 30000 }
-        z.joins = { 0, 1, 95, 52, 90, 1, 2, 96, 38, 90 }
-        z.climbFeet = { 96, 52, 20090, 90, 0 }
-        logic.unpack(z)
-        logic.setFloor(z, 2)
-        t:assertEqual(logic.atClimbTop(z, 2), true)
-        local mouth = nil
-        for _, m in ipairs(logic.regionAt(z, 95, 35).mouths) do
-            if m.label == "stairs to the landing" then
-                mouth = m
-            end
-        end
-        t:assertEqual(mouth.rise, "down")
-        logic.setFloor(z, 0)
-        t:assertEqual(logic.atClimbTop(z, 2), false)
-    end,
-
     ["a climb's top record is its opening and its guidance target from the floor at the top, as a foot from below"] = function(t)
         -- user 2026-10-20: tops and feet alike; the data's top (export.climb_ends): where the flight meets the
         -- landing (96, 38), the way on down it west (270), on the landing (piece 2)

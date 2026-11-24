@@ -23,11 +23,10 @@ local function dist(ax, ay, bx, by)
     return math.sqrt((ax - bx) ^ 2 + (ay - by) ^ 2)
 end
 
--- The stretches of a climb piece's line near (x, y) (the lane buckets of the cells within 80 yd), each once.
-local function climbLanes(zone, piece, x, y)
-    return logic.lanesNear(zone, x, y, 80, function(lane)
-        return lane.piece == piece
-    end)
+-- The stretches of a climb piece's whole line, each once (zone.lua pieceLanes; until 2026-11-24 those within 80 yd of
+-- the start, which cut the Forever data's longest climbs).
+local function climbLanes(zone, piece)
+    return zone._index.pieceLanes[piece] or {}
 end
 
 -- The climb's line from the point (sx, sy) on it: the stretches followed end to end (at a fork the one that turns
@@ -203,7 +202,7 @@ local function throughStaircase(zone, points, piece, used, from)
             break
         end
         used[q] = true
-        for _, p in ipairs(followLine(climbLanes(zone, q, qx, qy), qx, qy)) do
+        for _, p in ipairs(followLine(climbLanes(zone, q), qx, qy)) do
             points[#points + 1] = p
         end
         piece = q
@@ -228,7 +227,7 @@ function logic.endRoute(zone, rec)
         return { points = logic.throughRoute({ x = rec.x, y = rec.y, bearing = rec.bearing, through = rec.bearing }),
             kind = "climb", short = true }
     end
-    local points = followLine(climbLanes(zone, piece, ex, ey), ex, ey)
+    local points = followLine(climbLanes(zone, piece), ex, ey)
     if dist(rec.x, rec.y, ex, ey) > 0.5 then
         table.insert(points, 1, { x = rec.x, y = rec.y })
     end
@@ -241,7 +240,7 @@ end
 -- or nil): along its line toward the end the player faces (from the nearest point of the line on), onto the floor
 -- joined there. Returns as climbRoute, or nil when the piece has no line here.
 function logic.climbRouteFrom(zone, piece, x, y, facing)
-    local lanes = climbLanes(zone, piece, x, y)
+    local lanes = climbLanes(zone, piece)
     -- the free ends of the line: start from one, the whole line in order
     local sx, sy
     for _, lane in ipairs(lanes) do
@@ -325,9 +324,15 @@ end
 logic.CLIMB_SQUARE = 60   -- degrees
 logic.CLIMB_AT_END = 3.0  -- yd
 
-function logic.climbLineFacing(zone, piece, x, y, facing)
+-- Is the floor piece `piece` a climb with a line of its own (where climbLineFacing turns along Alt-I's route)? Cheap:
+-- the beacon's quiet rule asks it at every ping (module lineFacing), the route is built only for the key.
+function logic.onClimbLine(zone, piece)
     local ix = zone._index
-    if piece == nil or piece == 0 or ix.lineFloors == nil or not ix.lineFloors[piece] then
+    return piece ~= nil and piece ~= 0 and ix.lineFloors ~= nil and ix.lineFloors[piece] == true
+end
+
+function logic.climbLineFacing(zone, piece, x, y, facing)
+    if not logic.onClimbLine(zone, piece) then
         return nil
     end
     local route = logic.climbRouteFrom(zone, piece, x, y, facing)

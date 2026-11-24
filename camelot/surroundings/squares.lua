@@ -104,7 +104,7 @@ end
 logic.END_NEAR = 1 -- cells from a climb's opening within which its end record is that opening
 local function climbEndPoints(zone, floors, value, rise, members)
     local ix = zone._index
-    local list = rise == "down" and ix.climbTops or rise == "up" and ix.climbTops and ix.climbFeet or nil
+    local list = rise == "down" and ix.climbTops or rise == "up" and ix.climbFeet or nil
     local place = logic.placeOf(value)
     local points = nil
     for _, f in ipairs(list or {}) do
@@ -430,7 +430,7 @@ end
 -- the west" 6 yd from its foot, the strip running on parallel below it, walk 2026-10-25 17:59). A climb with an end
 -- on the square keeps the openings at it, one is made there where the border found none; a climb with ends elsewhere
 -- only is no opening from this square. An opening the data has no end of that kind for stays as before (up: no foot
--- record, down: no top record, along the side: not both; data without tops: all): the stairs down from the Kharanos
+-- record, down: no top record, along the side: not both): the stairs down from the Kharanos
 -- hut to its cellar have no top record, their border by the top was their only opening; the shop ledges in
 -- Stormwind with a foot record only are met "along" from the ledge. An end is on the square where it stands on one
 -- of its floors within END_REACH of its cells (the Command Center's ramp foot, 4 yd beyond the square's last cell).
@@ -453,9 +453,6 @@ end
 
 local function climbEndOpenings(zone, region, cells, floors)
     local ix = zone._index
-    if not ix.climbTops then
-        return
-    end
     local withEnds = climbsWithEnds(zone)
     local cols = zone.cols
     -- the climbs' end records on the square: on one of its floors, in or right beside its cells
