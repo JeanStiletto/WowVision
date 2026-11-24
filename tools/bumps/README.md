@@ -32,6 +32,11 @@ The chain, from the game's files to the addon:
    zone files in format 4 (a Lua header with the zone's frame, then JSON text). The export tools change with
    every round of the surroundings work and are published with the surroundings module. Object names come
    from the model file names (the community listfile) with a word list per language.
+   The zones without a surroundings export come from a **bump-only export** of the same tools
+   (`tools/bumpzone.py`): every open-world zone of the client, only its objects, buildings, rooms and doorways (no
+   structures: outdoors the module then says a plain "wall"), the same format 4. It also writes each zone's chunk
+   mask and, for the zones of the surroundings data, their building obstacles until the next surroundings export
+   carries them (below).
 2. **Pack** (`pack.lua`, here): keeps of each zone only what naming a bump needs and writes it as Lua into
    `mapdata/bumps/<client>/`, with a `data.xml` per client that `vanilla/`, `tbc/` and `camelot/modules.xml`
    include. Mists and Retail have no data yet: the module loads there and says nothing.
@@ -57,18 +62,35 @@ All lists are numbers separated by spaces, in one string each (decoded on zone e
 - `doors`: per doorway room a, room b (0 outside), building, x, y, the plane's normal nx ny, side, half width.
 - `structCells`, `waterStructs`: the floor cells of structures (gates, city walls, bridges) as runs along a grid
   row (row, column, count, structure); water edges are no wall.
+- `chunks`: the map chunks (33.3 yd squares of the game's terrain) that are the zone's, as runs "row column count"
+  with row = floor(x / 33.33) + 1 and column = floor(y / 33.33) + 1 of a point in it. The frames of neighbouring zones
+  overlap; `bumpLogic.findZone` takes the zone whose chunks hold the spot. A zone without `chunks` holds its whole
+  frame.
 - `roomsId`: a fingerprint of the rooms and doorways. A room kept over a reload, or handed over by another module
   (`bumps:setRoomSource`), counts only while it is the same.
 
 ## pack.lua: write the data
 
 ```
-luajit tools/bumps/pack.lua <WowVision_Surroundings folder>
-luajit tools/bumps/pack.lua <WowVision_Surroundings folder> --check
+luajit tools/bumps/pack.lua <WowVision_Surroundings folder> [--extra <bump-only export folder>]
+luajit tools/bumps/pack.lua <WowVision_Surroundings folder> [--extra <bump-only export folder>] --check
 ```
 
 The first writes every client folder it finds; the second only reports stale or orphaned files and exits with 1
-when there are any (a data commit that changes no room or object leaves the files as they are).
+when there are any (a data commit that changes no room or object leaves the files as they are). With `--extra`, the
+zones of the bump-only export are packed too (a zone the surroundings data has is taken from there), and from either
+source:
+
+- `<client>/masks/<zone>.txt`: the zone's chunk mask (`chunks` above).
+- `<client>/obstacles/<zone>.txt` (extra source only): building obstacles for a zone whose surroundings file has none
+  yet, per obstacle "x y halfLength halfWidth angle room" (tenths of a yard, degrees). Each is kept only where its
+  centre lies on a floor box of its room (1 yd margin), which guards against rooms numbered otherwise.
+
+Building obstacles are free-standing solid pieces of a building's own model inside a room (the counters of
+Stormwind's bank, a pillar standing in a hall): at walking height (0.4 to 2 yd over the floor) solid, with that
+floor on at least 90 % of the half-yard cells round them, at least 1 yd on the short side and at most 15 yd on the
+long side (shorter is a sliver of a wall's detail, longer a room's own wall with floor on both sides). The model
+names no parts, so they are called "obstacle".
 
 ## stacked.lua: the worst case on stacked floors
 
@@ -122,3 +144,8 @@ position against the zone's rooms and objects in `mapdata/bumps/<client>/`.
 - A ramp's or stairs' side is not named (it needs the surroundings' place grid); a module that has it can give the
   wall text (the same hook).
 - Object names are only as good as the model names: a few are generic ("object").
+- Server-spawned game objects (mailboxes, chairs, chests, ore veins) are not in the map files and not in the data.
+  Measured on Forever 2026-11-24: a mailbox holds the player, the inns' chairs do not (walked through at full run)
+  although their models carry a collision mesh.
+- An object of the neighbouring zone within reach of the border is not looked at (each object belongs to the zone
+  its origin lies in).

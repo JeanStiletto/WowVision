@@ -59,9 +59,49 @@ function bumpLogic.cellOf(zone, x, y)
     return math.floor((zone.top - x) / zone.cell), math.floor((zone.left - y) / zone.cell)
 end
 
+-- The map chunks of the game's terrain (33.3 yd squares): a zone with `chunks` (runs "row column count", row =
+-- floor(x / CHUNK) + 1, column = floor(y / CHUNK) + 1) holds only those spots of its frame. The frames of
+-- neighbouring zones overlap; the chunks do not.
+bumpLogic.CHUNK = 100 / 3
+
+local function chunkRuns(zone)
+    local runs = zone._chunkRuns
+    if runs == nil then
+        runs = {}
+        local list = numbers(zone.chunks)
+        for i = 1, #list - 2, 3 do
+            local row = runs[list[i]]
+            if row == nil then
+                row = {}
+                runs[list[i]] = row
+            end
+            row[#row + 1] = list[i + 1]
+            row[#row + 1] = list[i + 2]
+        end
+        zone._chunkRuns = runs
+    end
+    return runs
+end
+
 function bumpLogic.covers(zone, x, y)
     local r, c = bumpLogic.cellOf(zone, x, y)
-    return r >= 0 and r < zone.rows and c >= 0 and c < zone.cols
+    if not (r >= 0 and r < zone.rows and c >= 0 and c < zone.cols) then
+        return false
+    end
+    if zone.chunks == nil then
+        return true
+    end
+    local row = chunkRuns(zone)[math.floor(x / bumpLogic.CHUNK) + 1]
+    if row == nil then
+        return false
+    end
+    local col = math.floor(y / bumpLogic.CHUNK) + 1
+    for i = 1, #row - 1, 2 do
+        if col >= row[i] and col < row[i] + row[i + 1] then
+            return true
+        end
+    end
+    return false
 end
 
 -- The registered zone of map `map` that covers the position, or nil.

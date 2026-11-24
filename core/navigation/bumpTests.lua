@@ -358,6 +358,25 @@ testRunner:addSuite("BumpLogic", {
         t:assertNil(bumpLogic.findZone(150, 0, 0))
         bumpLogic.zones = saved
     end,
+
+    ["where two frames overlap, the zone whose chunks hold the spot is found"] = function(t)
+        local saved = bumpLogic.zones
+        bumpLogic.zones = {}
+        -- both frames span x -100..100, y -100..100; chunk rows are floor(x / CHUNK) + 1: x 0..33.3 is row 1,
+        -- x -33.3..0 is row 0. West: rows 0 and 1, columns 0 and 1; east: row 1, columns 2 and 3 (y 33.3..100)
+        local west = { key = "west", map = 0, top = 100, left = 100, cell = 4, rows = 50, cols = 50, chunks = "0 0 2 1 0 2" }
+        local east = { key = "east", map = 0, top = 100, left = 100, cell = 4, rows = 50, cols = 50, chunks = "1 2 2" }
+        bumpLogic.addZone(west)
+        bumpLogic.addZone(east)
+        t:assertEqual(bumpLogic.findZone(10, 10, 0), west)    -- row 1, column 1
+        t:assertEqual(bumpLogic.findZone(-10, 10, 0), west)   -- row 0, column 1
+        t:assertEqual(bumpLogic.findZone(10, 40, 0), east)    -- row 1, column 2
+        t:assertEqual(bumpLogic.findZone(10, 70, 0), east)    -- row 1, column 3
+        t:assertNil(bumpLogic.findZone(-10, 40, 0))           -- row 0, column 2: neither zone's
+        t:assertNil(bumpLogic.findZone(50, 10, 0))            -- row 2: neither zone's
+        t:assertFalse(bumpLogic.covers(east, 10, 10))
+        bumpLogic.zones = saved
+    end,
 })
 
 -- The packed data itself (mapdata/bumps; the headless runner loads every client's, the game its own): every zone

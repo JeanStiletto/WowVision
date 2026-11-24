@@ -4,21 +4,33 @@
 -- The source is the WowVision_Surroundings data repository (format 4 zone files, generated offline from each
 -- client's own map files by the wv-surroundings tools); its folders era/, tbc/ and forever/ become the folders of
 -- the same name here. The output is plain Lua, one file per zone and a data.xml per client, kept in git.
+-- A second source (--extra) holds bump-only exports of the zones the surroundings data does not have yet (the same
+-- format 4, fewer parts: no structures); a zone in both is taken from the surroundings data. Either source may hold
+-- <client>/masks/<zone>.txt, the map chunks that are the zone's (runs "row column count"): the packed zone then
+-- carries them, and the module finds the zone of a spot by them instead of by its frame, which overlaps its
+-- neighbours'.
 --
---   luajit tools/bumps/pack.lua <WowVision_Surroundings folder>            (from the repo root)
---   luajit tools/bumps/pack.lua <WowVision_Surroundings folder> --check    (only report; exit code 1 when stale)
+--   luajit tools/bumps/pack.lua <WowVision_Surroundings folder> [--extra <folder>]            (from the repo root)
+--   luajit tools/bumps/pack.lua <WowVision_Surroundings folder> [--extra <folder>] --check    (only report; exit 1 when stale)
 
 local TARGET = "mapdata/bumps"
 local CLIENTS = { "era", "tbc", "forever" }
 local LOCALES = { "enUS", "deDE", "frFR" }
 
-local source, check = nil, false
-for _, a in ipairs(arg or {}) do
+local source, extra, check = nil, nil, false
+local args = arg or {}
+local i = 1
+while i <= #args do
+    local a = args[i]
     if a == "--check" then
         check = true
+    elseif a == "--extra" then
+        i = i + 1
+        extra = args[i] and args[i]:gsub("\\", "/"):gsub("/$", "")
     else
         source = a:gsub("\\", "/"):gsub("/$", "")
     end
+    i = i + 1
 end
 if source == nil then
     print("usage: luajit tools/bumps/pack.lua <WowVision_Surroundings folder> [--check]")
@@ -227,8 +239,9 @@ local function fingerprint(text)
     return string.format("%d", h)
 end
 
--- One zone file of the pack from a format 4 zone file's text, or nil when it holds no zone.
-local function packZone(text, origin)
+-- One zone file of the pack from a format 4 zone file's text, or nil when it holds no zone. mask: the zone's chunk
+-- runs (text), or nil. obstacleText: building obstacles to add (see below), or nil.
+local function packZone(text, origin, mask, obstacleText)
     local header = text:match("addZone%((%b{})")
     local json = text:match("%[=%[(.*)%]=%]")
     if header == nil or json == nil then
@@ -279,6 +292,71 @@ local function packZone(text, origin)
             rooms[#rooms + 1] = v
         end
     end
+    -- the building obstacles (free-standing pieces of a building's own model in a room) of a zone whose
+    -- surroundings export does not carry them yet: the extra source's obstacles/<zone>.txt, per obstacle x, y, half
+    -- length, half width (tenths of a yard), angle (degrees), room. Each is kept only where its centre lies on a
+    -- floor box of its room (within OBSTACLE_MARGIN yd): the rooms are numbered by the same rule as the zone's,
+    -- this guards against an export whose numbering differs.
+    local objectNames = names.enUS and names.enUS.objectNames or {}
+    local hasObstacles = false
+    for _, n in ipairs(objectNames) do
+        hasObstacles = hasObstacles or n == "obstacle"
+    end
+    if obstacleText and not hasObstacles then
+        local OBSTACLE_MARGIN = 1.0
+        local index = #objectNames + 1
+        local function onRoomFloor(room, x, y)
+            local r = b.rooms[room]
+            local f = r and b.interiors[r.i]
+            if f == nil then
+                return false
+            end
+            local a, c = (f[1] - x) / f[3], (f[2] - y) / f[3]
+            local det = f[4] * f[7] - f[5] * f[6]
+            if math.abs(det) < 1e-9 then
+                return false
+            end
+            local vx, vy = (a * f[7] - f[5] * c) / det, (f[4] * c - f[6] * a) / det
+            for k = 1, #r.b - 3, 4 do
+                local x0, y0, x1, y1 = r.b[k], r.b[k + 1], r.b[k + 2], r.b[k + 3]
+                if vx >= math.min(x0, x1) - OBSTACLE_MARGIN and vx <= math.max(x0, x1) + OBSTACLE_MARGIN
+                    and vy >= math.min(y0, y1) - OBSTACLE_MARGIN and vy <= math.max(y0, y1) + OBSTACLE_MARGIN then
+                    return true
+                end
+            end
+            return false
+        end
+        local list, kept, dropped = {}, 0, 0
+        for v in obstacleText:gmatch("%S+") do
+            list[#list + 1] = tonumber(v)
+        end
+        for i = 1, #list - 5, 6 do
+            local x, y, hl, hw, angle, room = list[i], list[i + 1], list[i + 2], list[i + 3], list[i + 4], list[i + 5]
+            if room > 0 and onRoomFloor(room, x / 10, y / 10) then
+                for _, v in ipairs({ x, y, hl, hw, angle, index, room }) do
+                    objects[#objects + 1] = v
+                end
+                kept = kept + 1
+            else
+                dropped = dropped + 1
+            end
+        end
+        if kept > 0 then
+            local forms = { enUS = "obstacle", deDE = "Hindernis", frFR = "obstacle" }
+            for locale, n in pairs(names) do
+                if type(n) == "table" and n.objectNames then
+                    n.objectNames[index] = forms[locale] or forms.enUS
+                end
+            end
+        end
+        print(string.format("  %s: %d building obstacles added, %d left out (not on their room's floor)", origin, kept,
+            dropped))
+    end
+    -- a zone with nothing to bump into (open sea) is left out
+    if #objects == 0 and #b.rooms == 0 then
+        print("  " .. origin .. ": no objects and no rooms, left out")
+        return nil
+    end
     -- doors: room a, room b (0 outside), interior, x, y, plane normal nx, ny, side, half width (building frame)
     local doors = {}
     for _, d in ipairs(b.doors) do
@@ -287,7 +365,7 @@ local function packZone(text, origin)
         end
     end
     local ground = data.layers.ground
-    local structCells = ground.cells and ground.cells.struct or {}
+    local structCells = ground and ground.cells and ground.cells.struct or {}
 
     local function localeNames(key)
         return function(locale)
@@ -324,7 +402,7 @@ local function packZone(text, origin)
         "    roomAreas = " .. perLocale(names, hallAreas, sparseList) .. ",",
         "    doors = " .. quote(doorsText) .. ",",
         "    structCells = " .. quote(numbers(structCells)) .. ",",
-        "    waterStructs = { " .. table.concat(ground.waterStructs or {}, ", ") .. " },",
+        "    waterStructs = { " .. table.concat(ground and ground.waterStructs or {}, ", ") .. " },",
         "    structNames = " .. perLocale(names, localeNames("structs"), stringList) .. ",",
         "    ofTemplate = " .. perLocale(names, function(locale)
             return data.words[locale] and data.words[locale].ofTemplate
@@ -332,17 +410,35 @@ local function packZone(text, origin)
         "})",
         "",
     }
+    if mask then
+        table.insert(out, #out - 1, "    chunks = " .. quote(mask) .. ",")
+    end
     return (table.concat(out, "\n"):gsub("\r", ""))
 end
 
 local stale, written = 0, 0
 for _, client in ipairs(CLIENTS) do
-    local zonesDir = source .. "/" .. client .. "/zones"
-    local files = {}
-    for _, name in ipairs(listFiles(zonesDir)) do
-        if name:match("%.lua$") and not name:match("%-surfaces%.lua$") then
-            files[#files + 1] = name
+    -- the zone files: the surroundings data's, then the extra source's that the surroundings data has not
+    local files, from = {}, {}
+    for _, src in ipairs({ { source, "WowVision_Surroundings" }, extra and { extra, "bump-only export" } or nil }) do
+        for _, name in ipairs(listFiles(src[1] .. "/" .. client .. "/zones")) do
+            if name:match("%.lua$") and not name:match("%-surfaces%.lua$") and not from[name] then
+                files[#files + 1] = name
+                from[name] = src
+            end
         end
+    end
+    table.sort(files)
+    -- a zone's chunk mask from either source (the surroundings data's first)
+    local function maskOf(name)
+        local key = name:gsub("%.lua$", "")
+        for _, src in ipairs({ source, extra }) do
+            local text = read(src .. "/" .. client .. "/masks/" .. key .. ".txt")
+            if text then
+                return (text:gsub("%s+$", ""))
+            end
+        end
+        return nil
     end
     if #files > 0 then
         local dir = TARGET .. "/" .. client
@@ -351,8 +447,10 @@ for _, client in ipairs(CLIENTS) do
         end
         local scripts = {}
         for _, name in ipairs(files) do
-            local origin = "WowVision_Surroundings " .. client .. "/zones/" .. name
-            local packed = packZone(read(zonesDir .. "/" .. name), origin)
+            local src = from[name]
+            local origin = src[2] .. " " .. client .. "/zones/" .. name
+            local obstacleText = extra and read(extra .. "/" .. client .. "/obstacles/" .. name:gsub("%.lua$", ".txt"))
+            local packed = packZone(read(src[1] .. "/" .. client .. "/zones/" .. name), origin, maskOf(name), obstacleText)
             if packed then
                 scripts[#scripts + 1] = '  <Script file="' .. name .. '" />'
                 local path = dir .. "/" .. name
@@ -371,9 +469,10 @@ for _, client in ipairs(CLIENTS) do
             end
         end
         -- a zone file whose source is gone (named; removed when writing)
+        -- (only the zones packed: a zone left out above is an orphan too)
         local kept = {}
-        for _, name in ipairs(files) do
-            kept[name] = true
+        for _, line in ipairs(scripts) do
+            kept[line:match('file="([^"]+)"')] = true
         end
         for _, name in ipairs(listFiles(dir)) do
             if name:match("%.lua$") and not kept[name] then

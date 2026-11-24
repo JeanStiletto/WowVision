@@ -6,7 +6,8 @@ module:setLabel(L["Name What I Bump Into"])
 -- "blocked", held for a moment), the object in the way ("barrel", "fence", "mine cart"), or outdoors the
 -- wall of the building or structure ahead ("wall of Stormwind Keep"), or indoors a wall. Once per bump;
 -- the same thing again only after moving freely. The data (mapdata/bumps/<client>/, tools/bumps/pack.lua)
--- covers the zones the surroundings data has been exported for; elsewhere nothing is said. Nothing while
+-- covers the open-world zones of each client with data (the surroundings data's zones, the rest from a
+-- bump-only export); where there is none (dungeons, Mists, Retail) nothing is said. Nothing while
 -- the wall detection is off. Toggle it via the alert's enable.
 --
 -- Which room the player is in comes from bumpLogic's tracker (doorways walked through, room floors, the
