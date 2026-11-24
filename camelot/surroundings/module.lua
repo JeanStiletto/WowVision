@@ -65,6 +65,12 @@ hold.DIR_SPACING = 20
 -- that place (turning back
 -- on the bank's ramp said "Plattform" twice in 5 s and the ramp twice in 3 s, 2026-11-20 14:54:32 to 39)
 hold.RETURN_QUIET = 8
+-- seconds: also quiet when the player left that place less than hold.RETURN_QUIET s ago, within hold.DIR_SPACING yd of
+-- where they left it, and its line is no older than this (walking backwards off the square onto the bank's ramp, 6 s
+-- after leaving the ramp but 8.4 s after its line, said ramp, square, ramp in one second, walk 2026-11-24 18:39:05).
+-- Not counted from leaving alone: a place crossed for minutes and left for a few steps then went unsaid on coming back
+-- (Forever walk set replay: 700 lines, a third of them said more than a minute before)
+hold.RETURN_SAID = 15
 hold.saidAt = {}
 -- seconds: a place line beginning with the name of the climb the guidance just said (or left bare, its name just
 -- heard) drops that name ("Rampe Richtung Zählhaus von Sturmwind", then "Rampe Richtung Zählhaus von Sturmwind, Nord
@@ -1531,6 +1537,20 @@ local function roomsHere(z, x, y)
 end
 
 -- Outdoors: the place, announced after the entry distance; on a square what comes close.
+-- Back onto a place said moments ago near here, or left moments ago and said not long before (hold.RETURN_QUIET,
+-- hold.RETURN_SAID)? `s`: hold.saidAt's record of it.
+local function returnQuiet(s, x, y)
+    if s == nil then
+        return false
+    end
+    local now = GetTime()
+    if now - s.t < hold.RETURN_QUIET and logic.dist(x, y, s.x, s.y) < hold.DIR_SPACING then
+        return true
+    end
+    return s.leftT ~= nil and now - s.leftT < hold.RETURN_QUIET and now - s.t < hold.RETURN_SAID
+        and logic.dist(x, y, s.leftX, s.leftY) < hold.DIR_SPACING
+end
+
 local function checkPlace(z, x, y, forced)
     local value
     if forced then
@@ -1547,6 +1567,11 @@ local function checkPlace(z, x, y, forced)
     -- between places (replay of all walks, 2026-10-04)
     outdoor.distance = z.cell < zone.cell - 0.01 and ENTRY_INDOORS or ENTRY_OUTDOORS
     if outdoor:update(logic.outdoorKey(z, value, outdoor.current), x, y, z._index.floor or 0) then
+        -- the place left: when and where (hold.RETURN_SAID)
+        local left = previous ~= nil and hold.saidAt[previous]
+        if left then
+            left.leftT, left.leftX, left.leftY = GetTime(), x, y
+        end
         -- (any change counts: stepping onto a street and its first stretch's end 5 yd later was two lines in 1 s; but not
         -- a fork or crossing piece: the Trade District's junction has a small fork piece inside, and each step back off
         -- it onto the street began the count anew, 2026-11-17 15:04:42 to 45)
@@ -1604,9 +1629,7 @@ local function checkPlace(z, x, y, forced)
             -- the next piece of the same way says only its direction, and that is what was just said ("Rampe, Ost nach
             -- West" up the inn's lower flight, then "Ost nach West" again up the upper one, 2026-11-17): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), same = true })
-        elseif text ~= nil and text ~= "" and hold.saidAt[outdoor.current]
-            and GetTime() - hold.saidAt[outdoor.current].t < hold.RETURN_QUIET
-            and logic.dist(x, y, hold.saidAt[outdoor.current].x, hold.saidAt[outdoor.current].y) < hold.DIR_SPACING then
+        elseif text ~= nil and text ~= "" and returnQuiet(hold.saidAt[outdoor.current], x, y) then
             -- back onto a place said moments ago near here (hold.RETURN_QUIET; a way's same direction again farther on is
             -- a turn of the way, said): only logged
             logEntry("place", text, x, y, { walked = round1(outdoor.walked), same = true })
