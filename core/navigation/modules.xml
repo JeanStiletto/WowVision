@@ -21,6 +21,8 @@
   <Script file="follow.lua" />
   <Script file="pitchLock.lua" />
   <Include file="atlas/modules.xml" />
+  <Script file="customPoints.lua" />
+  <Script file="customPointsTests.lua" />
   <Include file="maps/modules.xml" />
   <Script file="visitedStore.lua" />
   <Script file="visitedTests.lua" />
