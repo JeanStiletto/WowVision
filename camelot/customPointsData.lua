@@ -33,3 +33,10 @@ shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-2", kind = "blocked", map = 
 -- height; the foot of the rock lies at about 69 yd and is not hit).
 shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-top", kind = "blocked", map = 0, x = 1185.5, y = -1182.0, z = 81.5,
     radius = 12 }
+-- The walk of 00:43: a slope past the water north-east of the rock where the player kept falling and sliding for
+-- about 20 s (links 14220012999 - 13030 - 13033 - 13078, 11 yd down over 11 yd), and the bank the next route tried to
+-- leave the water by (links 14220013138 - 13090 - 13105, blocked from the water and from the bank).
+shipped[#shipped + 1] = { id = "wv:forever:wpl-slope-1", kind = "blocked", map = 0, x = 1446.0, y = -995.0, z = 78.0,
+    radius = 10 }
+shipped[#shipped + 1] = { id = "wv:forever:wpl-bank-1", kind = "blocked", map = 0, x = 1450.0, y = -975.0, z = 57.0,
+    radius = 8 }
