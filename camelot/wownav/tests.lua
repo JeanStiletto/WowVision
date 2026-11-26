@@ -115,6 +115,31 @@ local function rowsWith(rows, category)
 end
 
 local suite = {
+    -- 2026-11-27: the player's blocked passages (Route.persistentPenalties) come back with every new route; a manual new
+    -- route keeps what it has.
+    ["every new route starts with the saved blocked passages' penalties"] = function(t)
+        local saved = Route.persistentPenalties
+        local ok, err = pcall(function()
+            local calls = 0
+            Route.persistentPenalties = function()
+                calls = calls + 1
+                return { [11] = { [12] = 1000 }, [12] = { [11] = 1000 } }
+            end
+            local route = Route.new(newGame().env)
+            t:assertEqual(route.penalties[11][12], 1000, "a new route has them")
+            route.penalties[11][12] = 2000
+            route:reset(true)
+            t:assertEqual(route.penalties[11][12], 2000, "the manual new route keeps its own")
+            route:reset()
+            t:assertEqual(route.penalties[11][12], 1000, "the next route starts afresh with the saved ones")
+            t:assertTrue(calls >= 2)
+        end)
+        Route.persistentPenalties = saved
+        if not ok then
+            error(err, 0)
+        end
+    end,
+
     ["a transit is proven in the plane: left the source, then in the arrival volume"] = function(t)
         local game = newGame()
         local route = Route.new(game.env)

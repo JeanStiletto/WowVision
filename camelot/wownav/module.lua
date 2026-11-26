@@ -309,6 +309,20 @@ local function useCustomDangers(N)
             N.dangerGen = (N.dangerGen or 0) + 1
         end
     end)
+    -- the player's blocked passages: every new route starts with their penalties (route.lua Route:reset)
+    Route.persistentPenalties = function()
+        local store = maps:customPointStore()
+        if store == nil then
+            return {}
+        end
+        local penalties = cp.blockedPenalties(store, N.activeMapId, function(id)
+            if id >= N.VIRT_BASE or N.zones[math.floor(id / N.ZONE_BASE)] == nil then
+                return nil
+            end
+            return N.Position(id)
+        end)
+        return penalties
+    end
 end
 
 local indexed = false
@@ -1513,6 +1527,19 @@ function module:newRoute()
     end
     local request = self.request
     local start = restartPoint(self, request)
+    -- the link the player is stuck on is remembered as a blocked passage (per account): later routes avoid it too
+    local N = route.N
+    local toId = route.path[route.pathIndex]
+    local fromId = route.pathIndex > 1 and route.path[route.pathIndex - 1] or nil
+    if fromId ~= nil and toId ~= nil and fromId < N.VIRT_BASE and toId < N.VIRT_BASE and fromId ~= toId then
+        local ax, ay = N.Position(fromId)
+        local bx, by = N.Position(toId)
+        local maps = WowVision.base.navigation.maps
+        local _, _, map = route.env.position()
+        if maps.saveBlockedPassage ~= nil and maps:saveBlockedPassage(fromId, toId, ax, ay, bx, by, map) ~= nil then
+            say(L["Blocked passage saved"])
+        end
+    end
     route:penalizeCurrentLink()
     self:stopRoute(true)
     local _, _, map = route.env.position()

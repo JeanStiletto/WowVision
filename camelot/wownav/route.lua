@@ -32,6 +32,9 @@ Route.BLOCKAGE_MIN_MOVEMENT = 1.0     -- yd: below this it counts as stuck
 Route.BLOCKAGE_MOVEMENT_TOLERANCE = 0.5 -- s: "tries to walk" survives short dropouts of the moving flag
 Route.BLOCKAGE_ESCALATION_WAIT_TIME = 1.5 -- s of continuous sticking until escalation
 Route.BLOCKAGE_EDGE_PENALTY = 1000.0  -- yd on the blocked link of a manual new route
+-- WowVision (2026-11-27): the penalties every route starts with (the player's saved blocked passages, set by the
+-- module): function() -> a fresh { [a] = { [b] = yd } } table. Nil: none.
+Route.persistentPenalties = nil
 Route.STAGNATION_WINDOW = 10.0        -- s observation window
 Route.STAGNATION_MIN_APPROACH = 2.0   -- yd the distance has to drop within the window
 Route.STAGNATION_MIN_TRAVEL = 5.0     -- yd of way covered in the window ("moves")
@@ -80,7 +83,7 @@ function Route.new(env)
     self.env = env
     self.N, self.G, self.R, self.C = env.N, env.G, env.R, env.C
     self.A = env.A or _G.WowVisionNavigationTransitActivation
-    self.penalties = {}       -- EdgePenalties[a][b] in yd, dropped at the end of the route
+    self.penalties = {}       -- EdgePenalties[a][b] in yd, dropped at the end of the route (persistent ones come back)
     self.anchor = { height = nil, preferred = nil, last = nil }   -- his HeightAnchor
     self:reset()
     return self
@@ -541,7 +544,7 @@ function Route:reset(keepPenalties)
     self.source = nil         -- the target (his layerTargetSource)
     self.anchor.height = nil
     if not keepPenalties then
-        self.penalties = {}
+        self.penalties = Route.persistentPenalties ~= nil and Route.persistentPenalties() or {}
     end
     self.blockagesPerEdge = {}
     self.fallbackTimePerIndex = {}
