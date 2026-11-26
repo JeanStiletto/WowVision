@@ -124,6 +124,44 @@ end
 -- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (N.dangerGen).
 -- The token names the source's own token and the list's generation, so a table is kept while neither changes.
 local customDangerGen = 0
+
+-- The links of the decoded zones that touch a blocked spot: a waypoint inside its circle, within the height band of
+-- its height when it has one. Cached per spot until the decoded zones change (N.generation).
+local spotLinkCache = {}
+local function spotLinks(N, cp, point)
+    local key = tostring(point.id) .. ":" .. point.x .. ":" .. point.y .. ":" .. tostring(point.radius)
+    local cached = spotLinkCache[key]
+    if cached ~= nil and cached.generation == N.generation then
+        return cached.links
+    end
+    local links = {}
+    local radius = point.radius or cp.BLOCKED_SPOT_RADIUS
+    local r2, band = radius * radius, cp.BLOCKED_HEIGHT_BAND
+    for _, zoneId in ipairs(N.ZonesForPoint(point.x, point.y)) do
+        local zone = N.zones[zoneId]
+        if zone ~= nil then
+            local zx, zy, zz = zone.x, zone.y, zone.z
+            local inside = {}
+            for i = 1, zone.n do
+                local dx, dy = zx[i] - point.x, zy[i] - point.y
+                if dx * dx + dy * dy <= r2 and (point.z == nil or math.abs(zz[i] - point.z) <= band) then
+                    inside[i - 1] = true
+                end
+            end
+            if next(inside) ~= nil then
+                local lu, lv = zone.lu, zone.lv
+                for k = 1, #lu do
+                    if inside[lu[k]] or inside[lv[k]] then
+                        links[#links + 1] = { zone.base + lu[k], zone.base + lv[k] }
+                    end
+                end
+            end
+        end
+    end
+    spotLinkCache[key] = { generation = N.generation, links = links }
+    return links
+end
+
 local function useCustomDangers(N)
     local maps = WowVision.base.navigation.maps
     local cp = WowVision.customPoints
@@ -188,6 +226,8 @@ local function useCustomDangers(N)
                 return nil
             end
             return N.Position(id)
+        end, function(point)
+            return spotLinks(N, cp, point)
         end)
         return penalties
     end
