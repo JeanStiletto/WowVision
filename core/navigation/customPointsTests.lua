@@ -68,6 +68,23 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(cp.mergeShipped(store, shipped), 1)
     end,
 
+    ["a shipped point already handed over gets a name shipped later, unless the player named it"] = function(t)
+        local store = cp.store({})
+        local shipped = {
+            { id = "wv:v1", kind = "danger", x = 1, y = 1, map = 0 },
+            { id = "wv:v2", kind = "danger", x = 2, y = 2, map = 0 },
+        }
+        cp.mergeShipped(store, shipped)
+        cp.rename(store, "danger", "wv:v2", "My vulture")
+        shipped[1].name = "Pestschwingengeier"
+        shipped[2].name = "Pestschwingengeier"
+        t:assertEqual(cp.mergeShipped(store, shipped), 1, "one point named")
+        t:assertEqual(cp.find(store, "danger", "wv:v1").name, "Pestschwingengeier")
+        t:assertEqual(cp.find(store, "danger", "wv:v2").name, "My vulture", "the player's name stays")
+        t:assertEqual(#store.dangers, 2, "nothing added twice")
+        t:assertEqual(cp.mergeShipped(store, shipped), 0, "nothing left to do")
+    end,
+
     ["lists are per map; danger spawns carry a unique name and the radius"] = function(t)
         local store = cp.store({})
         cp.add(store, "danger", 10, 10, nil, 0)

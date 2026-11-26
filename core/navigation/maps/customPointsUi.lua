@@ -2,8 +2,9 @@
 --   Alt+Ctrl+W  a new custom waypoint: the current position or typed map coordinates, then a name
 --   Alt+Ctrl+D  a new custom danger point: the current position or typed map coordinates; no name asked ("Monster
 --               spawn", renamed in the list when wanted)
--- Both kinds join the destination list of the navigation window (F10), and its "Custom Points" button lists them
--- with Rename and Delete (Shift+F10 on a point). A route engine's safe routes count the danger points
+-- Both kinds join the destination list of the navigation window (F10). The WowVision menu's Navigation page has a
+-- "Custom Points" button that lists them with Rename and Delete (Shift+F10 on a point); Enter on one opens F10
+-- aimed at it. A route engine's safe routes count the danger points
 -- (customPointsChanged tells it when they change; camelot/wownav/module.lua).
 -- Kept per account (the module's account store); the points the addon ships (customPoints.shipped) are handed over
 -- once and never replace the player's.
@@ -204,7 +205,7 @@ module:registerBinding({
     end,
 })
 
--- ---- the navigation window (ui.lua): the points as destinations, and the list with Rename and Delete
+-- ---- the navigation window (ui.lua): the points as destinations
 
 -- The points of the player's map join the window's destinations (copies of the window's table: the continent's own
 -- waypoint table is shared). Each is a virtual destination, so without a route engine it gets a straight beacon.
@@ -298,9 +299,14 @@ local function renderList(builder, screen)
     end
 end
 
--- The "Custom Points" button of the navigation window (its own stop after the destinations).
-function module:renderCustomPointsStop(builder, screen)
-    builder:beginStop("customPoints")
+-- ---- the WowVision menu: "Custom Points" on the Navigation page (user 2026-11-27: there, not in F10), next to
+-- whatever else that page lists
+local navigation = WowVision.base.navigation
+local previousMenuItems = navigation.getGraphMenuItems
+function navigation:getGraphMenuItems(builder)
+    if previousMenuItems ~= nil then
+        previousMenuItems(self, builder)
+    end
     builder:addItem(ControlId.structural("customPoints"), nodes.button({
         label = L["Custom Points"],
         opensLevel = true,
