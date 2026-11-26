@@ -4,6 +4,7 @@
   <Script file="Router.lua" />
   <Script file="module.lua" />
   <Script file="ui.lua" />
+  <Script file="customPointsUi.lua" />
   <Script file="Beacon.lua" />
   <Script file="Path.lua" />
   <Script file="routerTests.lua" />
