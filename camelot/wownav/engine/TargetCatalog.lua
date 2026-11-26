@@ -395,20 +395,61 @@ end
 
 C.SEARCH_LIMIT = 1000            -- at most this many entries per search of the target list
 
+-- WowVision (trial 2026-11-26, Broesel decides): which faction a creature is friendly to. function(entry) -> "A" | "H" | "AH" | nil (no
+-- faction: friendly to neither), or false when it cannot be said (no source, or the source is not ready). WowVision's module sets it from
+-- Questie (friendlyToFaction); nil here keeps his kind rule.
+C.NpcFaction = nil
+local ENEMY_LETTER = { alliance = "H", horde = "A" }
+
+-- Whether a class endangers the player of `faction` ("alliance" | "horde" | nil). His rule: the kinds mob and creature. With a faction source
+-- (C.NpcFaction) and a known player faction: a creature friendly to the other faction only ("H" for an Alliance player) endangers whatever its
+-- kind (quest givers and guards of the other side are kind npc), a mob or creature friendly to neither endangers, a creature friendly to the
+-- player's side or to both does not (the Argent Dawn). Returns true | false, or nil when the source could not say (then his rule decides).
+local function FactionDanger(class, faction)
+    local enemy = faction and ENEMY_LETTER[faction]
+    if not enemy or type(C.NpcFaction) ~= "function" or class.entry == nil then return nil end
+    if class.kind ~= "npc" and class.kind ~= "mob" and class.kind ~= "creature" then return nil end
+    local ok, friendly = pcall(C.NpcFaction, class.entry)
+    if not ok or friendly == false then return nil end
+    if friendly == enemy then return true end
+    if friendly == nil then return class.kind ~= "npc" end
+    return false
+end
+
+-- Faction-dependent tokens: the danger table of a zone is kept while catalogue and rule stay (NavNetwork.DangerOf compares the token).
+local factionTokens = setmetatable({}, { __mode = "k" })
+local function DangerToken(catalog, key)
+    local byKey = factionTokens[catalog]
+    if not byKey then byKey = {}; factionTokens[catalog] = byKey end
+    local token = byKey[key]
+    if not token then token = { catalog = catalog, rule = key }; byKey[key] = token end
+    return token
+end
+
 -- Monster spawns of a zone for the safe routes (NavNetwork.DangerSource, /vn safety): the rows of the logical catalogue whose class has the kind
 -- mob or creature (npc and objects do not endanger). Returns the catalogue as the token of the data and the list { {x, y, z (or nil), name} }
 -- | nil when the zone has no logical catalogue.
+-- WowVision: with a faction source the classes are judged by FactionDanger (a class it cannot judge keeps his kind rule); the token then
+-- names catalogue, player faction and whether every class could be judged, so a source that becomes ready later builds the table again.
 function C:DangerSpawns(zoneId)
     local provider = self.providers["package_logical_" .. tostring(zoneId)]
     local catalog = provider and provider.compact
     if not catalog then return nil end
     local classes = catalog.classObjects or C.ValidateCatalog(catalog)
     if not classes then return nil end
-    local names, any = {}, false
+    local network = _G.WowVisionNavigationNavNetwork
+    local faction = network and network.PlayerFaction and network.PlayerFaction() or nil
+    local names, any, judged, unjudged = {}, false, 0, 0
     for index = 1, #classes do
         local class = classes[index]
-        if class.kind == "mob" or class.kind == "creature" then names[index] = class.nameEn; any = true end
+        local byFaction = FactionDanger(class, faction)
+        if byFaction ~= nil then judged = judged + 1 elseif class.kind == "npc" or class.kind == "mob" or class.kind == "creature" then unjudged = unjudged + 1 end
+        local danger = byFaction
+        if danger == nil then danger = class.kind == "mob" or class.kind == "creature" end
+        if danger then names[index] = class.nameEn; any = true end
     end
+    local token = catalog
+    if judged > 0 then token = DangerToken(catalog, tostring(faction) .. (unjudged > 0 and ":partial" or ":full")) end
     local list = {}
     if any then
         local rows = catalog.targets
@@ -418,7 +459,7 @@ function C:DangerSpawns(zoneId)
             if name then list[#list + 1] = { x = row[3], y = row[4], z = row[5], name = name } end
         end
     end
-    return catalog, list
+    return token, list
 end
 
 -- A changed catalogue invalidates the danger tables of the zones (NavNetwork builds them again from the new data on the next safe route).

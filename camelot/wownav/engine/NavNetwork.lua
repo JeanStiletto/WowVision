@@ -53,7 +53,9 @@ N.SetComfort(N.COMFORT_DEFAULT)
 -- Safety factor (user request 2026-11-23, /vn safety <p>): p percent, 0 to 300, default 0 = off. X = 1 + p/100 is how much longer a safer route may be
 -- than the shortest one (pass (a)). The danger of a link is the length of the link (yd, horizontal) within DANGER_RADIUS of a monster spawn of the
 -- logical targets (classes of kind mob / creature; npc and objects do not count). Values to be confirmed by the user.
-N.SAFETY_DEFAULT, N.SAFETY_MAX = 0, 300
+-- WowVision (trial 2026-11-26, Broesel decides): default 30 instead of 0, and the spawns judged by faction (TargetCatalog C:DangerSpawns,
+-- creatures of the other faction count whatever their kind); with that the outpost avoidance below is off by default.
+N.SAFETY_DEFAULT, N.SAFETY_MAX = 30, 300
 N.DANGER_RADIUS = 20.0        -- yd: a spawn endangers the part of a link that lies this close to it (aggro range of the usual mobs plus a margin)
 N.DANGER_DZ = 8.0             -- yd: a spawn whose height differs this much from the link at its nearest point does not count (caves, floors)
 N.DANGER_DEDUP = 2.0          -- yd: spawns of the same name this close to each other (several sources of one spawn) count once
@@ -1911,7 +1913,7 @@ end
 -- Z2: outposts and capitals of the opposing faction. A route avoids their waypoints (a detour), never fails because of them: when no
 -- route exists without one, the route leads through (N.Route). An outpost that holds the start or the target of the route is open.
 -- ---------------------------------------------------------------------------
-N.avoidOutposts = true                      -- /vn outposts on|off
+N.avoidOutposts = false                     -- /vn outposts on|off (WowVision trial 2026-11-26: default off, see N.SAFETY_DEFAULT)
 local OPPONENT = { horde = "alliance", alliance = "horde" }
 
 function N.SetAvoidOutposts(enabled)

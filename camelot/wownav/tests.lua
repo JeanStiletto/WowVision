@@ -355,10 +355,16 @@ if haveNetwork then
             N.SetPlayerFaction(nil)
             return result
         end
+        -- the trial of 2026-11-26 turns the avoidance off by default; his rule itself is tested switched on
+        N.SetAvoidOutposts(true)
         local horde = routeAs("Horde")
+        N.SetAvoidOutposts(false)
         t:assertNotNil(horde, "an outpost never makes a route fail")
         t:assertEqual(horde.outpost, "target", "Stormwind is an Alliance capital: the target lies in it")
-        t:assertNil(routeAs("Alliance").outpost, "no warning in the own capital")
+        N.SetAvoidOutposts(true)
+        local alliance = routeAs("Alliance")
+        N.SetAvoidOutposts(false)
+        t:assertNil(alliance.outpost, "no warning in the own capital")
         t:assertTrue(WowVisionNavigationText("outpost_target") ~= "outpost_target", "the warning has a text")
     end
 
@@ -2397,6 +2403,63 @@ if haveNetwork then
         t:assertTrue(#list > 100, "Elwynn has monster spawns")
         t:assertEqual(type(list[1].x), "number")
         t:assertEqual(type(list[1].name), "string")
+    end
+
+    -- Trial 2026-11-26: Deathguard Kristof (kind npc, quest giver, 251001) killed an Alliance player beside a route that
+    -- counted only mobs and creatures. With a faction source he counts for an Alliance player and not for a Horde one;
+    -- the Argent Defender (creature, friendly to both) no longer counts.
+    suite["safe routes: creatures of the other faction count whatever their kind (faction source)"] = function(t)
+        setup()
+        local TIRISFAL = 18
+        t:assertTrue(#zoneRows(TIRISFAL) > 0, "Tirisfal's catalogue is active")
+        local function names(list)
+            local out = {}
+            for _, spawn in ipairs(list or {}) do
+                out[spawn.name] = true
+            end
+            return out
+        end
+        local factions = { [251001] = "H", [1495] = "H", [11194] = "AH", [1740] = "H" }
+        local source = C.NpcFaction
+        local ok, err = pcall(function()
+            N.SetPlayerFaction("Alliance")
+            local plainToken, plain = C:DangerSpawns(TIRISFAL)
+            local before = names(plain)
+            t:assertNil(before["Deathguard Kristof"], "his kind rule: a quest giver does not count")
+            C.NpcFaction = function(entry)
+                return factions[entry]
+            end
+            local token, list = C:DangerSpawns(TIRISFAL)
+            local after = names(list)
+            t:assertTrue(after["Deathguard Kristof"] == true, "Kristof is friendly to the Horde only: he counts")
+            t:assertTrue(after["Deathguard Linnea"] == true, "so does Linnea")
+            t:assertNil(after["Argent Defender (The Argent Dawn)"], "friendly to both: no danger")
+            t:assertTrue(after["Vampiric Duskbat"] == true, "a monster friendly to neither still counts")
+            t:assertTrue(token ~= plainToken, "another rule, another token")
+            local again = C:DangerSpawns(TIRISFAL)
+            t:assertTrue(again == token, "the same rule keeps its token (the danger table is not rebuilt)")
+            N.SetPlayerFaction("Horde")
+            local horde = names(select(2, C:DangerSpawns(TIRISFAL)))
+            t:assertNil(horde["Deathguard Kristof"], "a Horde player's own guards do not count")
+            -- a source that cannot answer (Questie not ready) keeps his kind rule
+            C.NpcFaction = function()
+                return false
+            end
+            N.SetPlayerFaction("Alliance")
+            local waitingToken, waiting = C:DangerSpawns(TIRISFAL)
+            t:assertNil(names(waiting)["Deathguard Kristof"], "no answer: his rule")
+            t:assertTrue(waitingToken == plainToken, "no answer: his token")
+        end)
+        C.NpcFaction = source
+        N.SetPlayerFaction(nil)
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    suite["trial defaults: safe routes 30 percent, outpost avoidance off"] = function(t)
+        t:assertEqual(N.SAFETY_DEFAULT, 30)
+        t:assertEqual(N.avoidOutposts, false)
     end
 end
 
