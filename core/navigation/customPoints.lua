@@ -2,6 +2,9 @@
 --   waypoint  a place to navigate to; it joins the destination list of the navigation window (F10)
 --   danger    a place a route keeps away from (a monster the route data does not know); it joins the destination list
 --             too, and the route engine's safe routes (WowNav) count it like a monster spawn
+--   blocked   a passage of the route network the player cannot get through (a slope too steep in the game): two
+--             waypoints of the network (a, b with their positions); every route puts a penalty on that link, so it
+--             is used only when there is no way around (2026-11-27). Not a destination.
 -- The addon may ship points as well (customPoints.shipped, filled by data files of a version): a shipped point is
 -- handed to the player's list once and is then his like any other. Nothing in his list is ever replaced: his names
 -- stay, and a shipped point he deleted does not come back (shippedSeen remembers every one handed over).
@@ -13,7 +16,9 @@
 local customPoints = {}
 WowVision.customPoints = customPoints
 
-customPoints.LISTS = { waypoint = "waypoints", danger = "dangers" }
+customPoints.LISTS = { waypoint = "waypoints", danger = "dangers", blocked = "blocked" }
+customPoints.BLOCKED_PENALTY = 1000  -- yd added to a blocked passage's link (the manual new route's penalty)
+customPoints.BLOCKED_TOLERANCE = 2   -- yd: a blocked passage counts only while its waypoints still lie where they did
 customPoints.DANGER_RADIUS = 45      -- yd around a custom danger point (the radius of a monster far above the player)
 customPoints.shipped = {}            -- { { id = "wv:...", kind = "danger" | "waypoint", x, y, z, map, name, radius }, ... }
 
@@ -38,6 +43,9 @@ function customPoints.store(data)
     if type(store.dangers) ~= "table" then
         store.dangers = {}
     end
+    if type(store.blocked) ~= "table" then
+        store.blocked = {}
+    end
     if type(store.shippedSeen) ~= "table" then
         store.shippedSeen = {}
     end
@@ -48,10 +56,13 @@ function customPoints.store(data)
 end
 
 local function copyPoint(point)
-    return {
-        id = point.id, name = point.name, x = point.x, y = point.y, z = point.z, map = point.map,
-        radius = point.radius, shipped = point.shipped,
-    }
+    local copy = {}
+    for key, value in pairs(point) do
+        if key ~= "kind" then
+            copy[key] = value
+        end
+    end
+    return copy
 end
 
 -- Hands the shipped points the store has never had to it (appended). A shipped point the player already has and
@@ -140,11 +151,52 @@ function customPoints.list(store, kind, map)
 end
 
 -- The name to say: the point's own, else the kind's default (L: the locale table).
+local DEFAULT_NAMES = { danger = "Monster spawn", blocked = "Blocked passage", waypoint = "Custom waypoint" }
 function customPoints.label(point, kind, L)
     if point.name ~= nil and point.name ~= "" then
         return point.name
     end
-    return kind == "danger" and L["Monster spawn"] or L["Custom waypoint"]
+    return L[DEFAULT_NAMES[kind] or DEFAULT_NAMES.waypoint]
+end
+
+-- A blocked passage: the link between the network's waypoints a and b (positions ax, ay and bx, by) on map. Its
+-- position (x, y) is the link's middle. The same link saved again is not added twice. Returns the point.
+function customPoints.addBlocked(store, a, b, ax, ay, bx, by, map)
+    for _, point in ipairs(store.blocked) do
+        if (point.a == a and point.b == b) or (point.a == b and point.b == a) then
+            return point
+        end
+    end
+    local id = "u" .. store.nextId
+    store.nextId = store.nextId + 1
+    local point = { id = id, a = a, b = b, ax = ax, ay = ay, bx = bx, by = by, map = map,
+        x = (ax + bx) / 2, y = (ay + by) / 2 }
+    store.blocked[#store.blocked + 1] = point
+    return point
+end
+
+-- The route penalties of the blocked passages on map: { [a] = { [b] = yd }, [b] = { [a] = yd } }. positionOf(id) ->
+-- x, y of a waypoint of the loaded network (nil when unknown): a passage whose waypoints moved (other route data) or
+-- are unknown is left out. Returns the table and how many passages it holds.
+function customPoints.blockedPenalties(store, map, positionOf)
+    local penalties, count = {}, 0
+    local tolerance = customPoints.BLOCKED_TOLERANCE
+    local function near(id, x, y)
+        local px, py = positionOf(id)
+        return px ~= nil and x ~= nil and (px - x) ^ 2 + (py - y) ^ 2 <= tolerance * tolerance
+    end
+    for _, point in ipairs(store.blocked) do
+        if point.map == map and point.a ~= nil and point.b ~= nil and near(point.a, point.ax, point.ay)
+            and near(point.b, point.bx, point.by) then
+            local a, b = point.a, point.b
+            penalties[a] = penalties[a] or {}
+            penalties[b] = penalties[b] or {}
+            penalties[a][b] = (penalties[a][b] or 0) + customPoints.BLOCKED_PENALTY
+            penalties[b][a] = (penalties[b][a] or 0) + customPoints.BLOCKED_PENALTY
+            count = count + 1
+        end
+    end
+    return penalties, count
 end
 
 -- Typed coordinates: "45.2 63.1" (map percent of the current zone, the numbers maps and guides give; a decimal comma,
