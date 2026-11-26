@@ -2518,6 +2518,58 @@ if haveNetwork then
         end
     end
 
+    -- Trial 2026-11-26: a level 56 Skeletal Acolyte attacked a level 34 player from about 30 yd; creatures at least
+    -- C.HIGH_LEVEL_GAP levels above the player endanger within C.HIGH_LEVEL_RADIUS instead of DANGER_RADIUS.
+    suite["safe routes: creatures far above the player's level endanger from further away"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        local saved = { C.NpcLevel, C.PlayerLevel, N.safety }
+        local ok, err = pcall(function()
+            N.SetSafety(30)
+            local function yards(levelOf, player)
+                C.NpcLevel, C.PlayerLevel = levelOf, player
+                N.dangerGen = N.dangerGen + 1
+                zone.danger = nil
+                local danger = N.ZoneDanger(zone)
+                local sum = 0
+                for _, y in pairs(danger.len) do
+                    sum = sum + y
+                end
+                return sum, danger
+            end
+            local _, list = C:DangerSpawns(ELWYNN)
+            t:assertNil(list[1].radius, "no level source: the usual radius")
+            local plain = yards(nil, nil)
+            local high, danger = yards(function()
+                return 60
+            end, function()
+                return 10
+            end)
+            t:assertEqual(danger.maxRadius, C.HIGH_LEVEL_RADIUS, "every spawn is far above a level 10 player")
+            t:assertTrue(high > plain * 1.5, "the wider radius endangers more of the links")
+            local _, high4 = C:DangerSpawns(ELWYNN)
+            t:assertEqual(high4[1].radius, C.HIGH_LEVEL_RADIUS)
+            -- four levels above: not high level
+            C.NpcLevel, C.PlayerLevel = function()
+                return 14
+            end, function()
+                return 10
+            end
+            local _, near = C:DangerSpawns(ELWYNN)
+            t:assertNil(near[1].radius, "four levels above keeps the usual radius")
+            local same = yards(C.NpcLevel, C.PlayerLevel)
+            t:assertTrue(math.abs(same - plain) < 1e-6, "and the same danger as without levels")
+        end)
+        C.NpcLevel, C.PlayerLevel = saved[1], saved[2]
+        N.SetSafety(saved[3])
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+
     suite["trial defaults: safe routes 30 percent, outpost avoidance off"] = function(t)
         t:assertEqual(N.SAFETY_DEFAULT, 30)
         t:assertEqual(N.avoidOutposts, false)
