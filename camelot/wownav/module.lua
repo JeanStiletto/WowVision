@@ -43,12 +43,13 @@ settings:add({ key = "enabled", type = "Bool", label = L["Routes from WowNav"], 
 -- WowNav's comfort level: a road route may be up to this many percent longer than the shortest way (his default 60
 -- since 2026-10-25).
 settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Percent Longer)"], default = 60, min = 0, max = 300 })
--- his /vn safety (default 0 = off): a route may be up to this many percent longer than the shortest way to keep away
--- from monster spawns. Off, the search is the one without it (no extra pass, no spawn table).
-settings:add({ key = "safety", type = "Number", label = L["Safe Routes (Percent Longer)"], default = 0, min = 0, max = 300 })
--- his /vn outposts (Z2, default on): routes go around the outposts and capitals of the opposing faction; without a way
--- around they lead through one and say so
-settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = true })
+-- his /vn safety (his default 0 = off; WowVision trial 2026-11-26: 30): a route may be up to this many percent longer
+-- than the shortest way to keep away from monster spawns and from creatures of the other faction (Questie's
+-- friendlyToFaction, see the faction source below). Off, the search is the one without it (no extra pass, no spawn table).
+settings:add({ key = "safety", type = "Number", label = L["Safe Routes (Percent Longer)"], default = 30, min = 0, max = 300 })
+-- his /vn outposts (Z2, his default on; WowVision trial 2026-11-26: off, the faction danger above replaces it): routes
+-- go around the outposts and capitals of the opposing faction; without a way around they lead through one and say so
+settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = false })
 -- his /vn showauto (default off): the network's own waypoints near the player join the F10 list, by height
 settings:add({ key = "showAuto", type = "Bool", label = L["Show Automatic Waypoints"], default = false })
 -- his /vn radius and /vn toleranz: how far from the network a target may lie, and the height band of a floor
@@ -162,6 +163,59 @@ local function gameState(full)
     return game
 end
 
+-- Trial 2026-11-26 (Broesel decides): the faction of a creature for the safe routes (TargetCatalog C.NpcFaction), from
+-- Questie's friendlyToFaction ("A", "H", "AH" or nil = friendly to neither). Sighted players see it as the colour of the
+-- name. false while Questie cannot be asked or does not know the ID: then his kind rule judges that creature.
+local function questieDB()
+    if QuestieLoader == nil or type(QuestieLoader.ImportModule) ~= "function" then
+        return nil
+    end
+    local questie = rawget(_G, "Questie")
+    if type(questie) ~= "table" or type(questie.API) ~= "table" or questie.API.isReady ~= true then
+        return nil
+    end
+    local ok, db = pcall(QuestieLoader.ImportModule, QuestieLoader, "QuestieDB")
+    if not ok or type(db) ~= "table" or type(db.QueryNPCSingle) ~= "function" then
+        return nil
+    end
+    return db
+end
+
+local function npcFaction(entry)
+    local db = questieDB()
+    if db == nil or (db.NPCPointers ~= nil and db.NPCPointers[entry] == nil) then
+        return false
+    end
+    local ok, friendly = pcall(db.QueryNPCSingle, entry, "friendlyToFaction")
+    if not ok then
+        return false
+    end
+    if friendly == "A" or friendly == "H" then
+        return friendly
+    end
+    if friendly == nil or friendly == "" then
+        return nil
+    end
+    return "AH"
+end
+
+-- Questie may get ready after the first safe route: the danger tables are then judged again (NavNetwork.dangerGen).
+local hookedQuestieApi = nil
+local function useQuestieFactions(N, C)
+    if C == nil then
+        return
+    end
+    C.NpcFaction = npcFaction
+    local questie = rawget(_G, "Questie")
+    local api = type(questie) == "table" and questie.API or nil
+    if type(api) == "table" and api ~= hookedQuestieApi and type(api.RegisterOnReady) == "function" then
+        hookedQuestieApi = api
+        pcall(api.RegisterOnReady, function()
+            N.dangerGen = (N.dangerGen or 0) + 1
+        end)
+    end
+end
+
 local indexed = false
 local function ready(self)
     local N, G = self:network()
@@ -196,10 +250,11 @@ local function ready(self)
         })
     end
     N.SetComfort(self.settings.comfort or 60)
-    if N.SetSafety ~= nil and not N.SetSafety(self.settings.safety or 0) then
-        N.SetSafety(0)
+    if N.SetSafety ~= nil and not N.SetSafety(self.settings.safety or N.SAFETY_DEFAULT) then
+        N.SetSafety(N.SAFETY_DEFAULT)
     end
-    N.SetAvoidOutposts(self.settings.avoidOutposts ~= false)
+    N.SetAvoidOutposts(self.settings.avoidOutposts == true)
+    useQuestieFactions(N, _G.WowVisionNavigationTargetCatalog)
     -- his settings live in WowVisionNavigationDB, where his resolver and route rules read them (R:Settings,
     -- Route.chokeFallback); while the standalone addon is loaded this module is off and the table is his
     WowVisionNavigationDB = type(WowVisionNavigationDB) == "table" and WowVisionNavigationDB or {}
