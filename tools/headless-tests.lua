@@ -109,6 +109,8 @@ loadAddonFile("core/navigation/visitedStore.lua")
 loadAddonFile("core/navigation/visitedTests.lua")
 loadAddonFile("core/navigation/corpseFind.lua")
 loadAddonFile("core/navigation/corpseTests.lua")
+loadAddonFile("core/navigation/unitPosition.lua")
+loadAddonFile("core/navigation/unitPositionTests.lua")
 loadAddonFile("core/navigation/targetFind.lua")
 loadAddonFile("core/navigation/targetTests.lua")
 
@@ -425,6 +427,8 @@ do
 end
 loadAddonFile("retail/groupHealth/moduleTests.lua")
 loadAddonFile("retail/groupHealth/dispelTests.lua")
+loadAddonFile("camelot/worldRefresh.lua")
+loadAddonFile("camelot/worldRefreshTests.lua")
 loadAddonFile("camelot/petTraining.lua")
 loadAddonFile("camelot/petTrainingTests.lua")
 loadAddonFile("core/gameDB/itemQuality.lua")
