@@ -555,11 +555,6 @@ local function render(builder, screen)
     builder:addItem(ControlId.structural("destinations"), destinationCursor(screen))
     builder:popContext()
 
-    -- the custom points' list with Rename and Delete (customPointsUi.lua)
-    if module.renderCustomPointsStop ~= nil then
-        module:renderCustomPointsStop(builder, screen)
-    end
-
     builder:popContext()
 end
 
