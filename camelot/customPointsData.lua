@@ -32,3 +32,8 @@ shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 
     a = 14220006522, ax = 1164.8, ay = -1201.3, b = 14220006538, bx = 1177.1, by = -1182.2, x = 1171.0, y = -1191.8 }
 shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-2", kind = "blocked", map = 0,
     a = 14220006538, ax = 1177.1, ay = -1182.2, b = 14220006580, bx = 1206.2, by = -1182.5, x = 1191.7, y = -1182.4 }
+-- The next walk (00:30) went over the same rock top on parallel links (14220006547-6551-6582): the rock top carries a
+-- dense mesh of links, so the whole top is a blocked spot (links touching a waypoint within 12 yd and 8 yd of 81.5 yd
+-- height; the foot of the rock lies at about 69 yd and is not hit).
+shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-top", kind = "blocked", map = 0, x = 1185.5, y = -1182.0, z = 81.5,
+    radius = 12 }

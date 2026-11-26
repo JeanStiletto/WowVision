@@ -167,6 +167,27 @@ testRunner:addSuite("CustomPoints", {
         t:assertNil(rock.kind)
     end,
 
+    ["a blocked spot penalises every link the network lists around it, each link once"] = function(t)
+        local store = cp.store({})
+        local spot = cp.addBlockedSpot(store, 100, 100, 80, 0)
+        t:assertEqual(spot.radius, cp.BLOCKED_SPOT_RADIUS)
+        cp.addBlocked(store, 1, 2, 0, 0, 5, 5, 0)
+        local asked = nil
+        local pen, count = cp.blockedPenalties(store, 0, function(id)
+            return id == 1 and 0 or 5, id == 1 and 0 or 5
+        end, function(point)
+            asked = point
+            return { { 1, 2 }, { 3, 4 } }
+        end)
+        t:assertTrue(asked == spot, "the spot is handed to the network side")
+        t:assertEqual(count, 2, "the link named by both the passage and the spot counts once")
+        t:assertEqual(pen[1][2], cp.BLOCKED_PENALTY)
+        t:assertEqual(pen[4][3], cp.BLOCKED_PENALTY)
+        t:assertEqual(select(2, cp.blockedPenalties(store, 0, function()
+            return 0, 0
+        end)), 0, "without the network side a spot adds nothing (and the link moved)")
+    end,
+
     ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)
         local parse = WowVision.mapCoordinates.parse
         local function check(text, mode, a, b)

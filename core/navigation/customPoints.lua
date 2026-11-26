@@ -2,9 +2,12 @@
 --   waypoint  a place to navigate to; it joins the destination list of the navigation window (F10)
 --   danger    a place a route keeps away from (a monster the route data does not know); it joins the destination list
 --             too, and the route engine's safe routes (WowNav) count it like a monster spawn
---   blocked   a passage of the route network the player cannot get through (a slope too steep in the game): two
---             waypoints of the network (a, b with their positions); every route puts a penalty on that link, so it
---             is used only when there is no way around (2026-11-27). Not a destination.
+--   blocked   a passage of the route network the player cannot get through (a slope too steep in the game); every
+--             route puts a penalty on it, so it is used only when there is no way around (2026-11-27). Not a
+--             destination. Two forms:
+--               a link   two waypoints of the network (a, b with their positions ax, ay, bx, by)
+--               a spot   x, y (z optional) and a radius: every link touching a network waypoint inside the circle
+--                        (within BLOCKED_HEIGHT_BAND of z, when z is known) -- a rock top with many parallel links
 -- The addon may ship points as well (customPoints.shipped, filled by data files of a version): a shipped point is
 -- handed to the player's list once and is then his like any other. Nothing in his list is ever replaced: his names
 -- stay, and a shipped point he deleted does not come back (shippedSeen remembers every one handed over).
@@ -20,6 +23,8 @@ WowVision.customPoints = customPoints
 customPoints.LISTS = { waypoint = "waypoints", danger = "dangers", blocked = "blocked" }
 customPoints.BLOCKED_PENALTY = 1000  -- yd added to a blocked passage's link (the manual new route's penalty)
 customPoints.BLOCKED_TOLERANCE = 2   -- yd: a blocked passage counts only while its waypoints still lie where they did
+customPoints.BLOCKED_SPOT_RADIUS = 12  -- yd: the default circle of a blocked spot
+customPoints.BLOCKED_HEIGHT_BAND = 8   -- yd above and below a blocked spot's height (a bridge or a cave is not hit)
 customPoints.DANGER_RADIUS = 45      -- yd around a custom danger point (the radius of a monster far above the player)
 customPoints.shipped = {}            -- { { id = "wv:...", kind = "danger" | "waypoint", x, y, z, map, name, radius }, ... }
 
@@ -84,7 +89,7 @@ function customPoints.mergeShipped(store, shipped)
             store.shippedSeen[point.id] = true
             local entry = copyPoint(point)
             entry.shipped = true
-            if entry.radius == customPoints.DANGER_RADIUS then
+            if point.kind == "danger" and entry.radius == customPoints.DANGER_RADIUS then
                 entry.radius = nil
             end
             local list = listOf(store, point.kind)
@@ -175,25 +180,49 @@ function customPoints.addBlocked(store, a, b, ax, ay, bx, by, map)
     return point
 end
 
--- The route penalties of the blocked passages on map: { [a] = { [b] = yd }, [b] = { [a] = yd } }. positionOf(id) ->
--- x, y of a waypoint of the loaded network (nil when unknown): a passage whose waypoints moved (other route data) or
--- are unknown is left out. Returns the table and how many passages it holds.
-function customPoints.blockedPenalties(store, map, positionOf)
+-- A blocked spot at x, y (z may be nil) on map; radius nil: BLOCKED_SPOT_RADIUS. Returns the point.
+function customPoints.addBlockedSpot(store, x, y, z, map, radius)
+    local id = "u" .. store.nextId
+    store.nextId = store.nextId + 1
+    local point = { id = id, x = x, y = y, z = z, map = map, radius = radius or customPoints.BLOCKED_SPOT_RADIUS }
+    store.blocked[#store.blocked + 1] = point
+    return point
+end
+
+-- The route penalties of the blocked passages on map: { [a] = { [b] = yd }, [b] = { [a] = yd } }.
+--   positionOf(id) -> x, y of a waypoint of the loaded network (nil when unknown): a link whose waypoints moved (other
+--     route data) or are unknown is left out
+--   linksNear(point) -> { { a, b }, ... }: the links touching a blocked spot (radius, height band); nil: spots are
+--     left out
+-- Returns the table and how many links it holds.
+function customPoints.blockedPenalties(store, map, positionOf, linksNear)
     local penalties, count = {}, 0
     local tolerance = customPoints.BLOCKED_TOLERANCE
     local function near(id, x, y)
         local px, py = positionOf(id)
         return px ~= nil and x ~= nil and (px - x) ^ 2 + (py - y) ^ 2 <= tolerance * tolerance
     end
-    for _, point in ipairs(store.blocked) do
-        if point.map == map and point.a ~= nil and point.b ~= nil and near(point.a, point.ax, point.ay)
-            and near(point.b, point.bx, point.by) then
-            local a, b = point.a, point.b
-            penalties[a] = penalties[a] or {}
-            penalties[b] = penalties[b] or {}
-            penalties[a][b] = (penalties[a][b] or 0) + customPoints.BLOCKED_PENALTY
-            penalties[b][a] = (penalties[b][a] or 0) + customPoints.BLOCKED_PENALTY
+    local function add(a, b)
+        penalties[a] = penalties[a] or {}
+        penalties[b] = penalties[b] or {}
+        if penalties[a][b] == nil then
             count = count + 1
+        end
+        -- one penalty per link, however many passages name it
+        penalties[a][b] = customPoints.BLOCKED_PENALTY
+        penalties[b][a] = customPoints.BLOCKED_PENALTY
+    end
+    for _, point in ipairs(store.blocked) do
+        if point.map == map then
+            if point.a ~= nil and point.b ~= nil then
+                if near(point.a, point.ax, point.ay) and near(point.b, point.bx, point.by) then
+                    add(point.a, point.b)
+                end
+            elseif linksNear ~= nil and point.x ~= nil then
+                for _, link in ipairs(linksNear(point) or {}) do
+                    add(link[1], link[2])
+                end
+            end
         end
     end
     return penalties, count
