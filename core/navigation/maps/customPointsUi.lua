@@ -26,7 +26,11 @@ local KIND_WORDS = {
     danger = function()
         return L["Danger point"]
     end,
+    blocked = function()
+        return L["Blocked passage"]
+    end,
 }
+local LIST_TITLES = { waypoint = "Custom Waypoints", danger = "Danger Points", blocked = "Blocked Passages" }
 
 module.customPointsChanged = WowVision.Event:new("customPointsChanged")
 
@@ -198,6 +202,18 @@ module:registerWindow({
     graphScreen = { render = renderNew, captureClose = true },
 })
 
+-- A passage of the route network the player could not get through (the route engine's manual new route saves the
+-- link it was stuck on): later routes put a penalty on it. a, b: the network's waypoints, with their positions.
+function module:saveBlockedPassage(a, b, ax, ay, bx, by, map)
+    local store = storeOrSay()
+    if store == nil then
+        return nil
+    end
+    local point = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
+    self.customPointsChanged:emit("blocked")
+    return point
+end
+
 function module:newCustomPoint(kind)
     self.newCustomKind = kind
     WowVision.UIHost:openWindow(NEW_WINDOW)
@@ -239,7 +255,7 @@ function module:destinationWaypoints()
         return waypoints, engine
     end
     local foldCase = WowVision.utils.foldCase
-    for kind in pairs(cp.LISTS) do
+    for _, kind in ipairs({ "waypoint", "danger" }) do
         for _, point in ipairs(cp.list(store, kind, map)) do
             local label = cp.label(point, kind, L)
             local detail = KIND_WORDS[kind]()
@@ -256,9 +272,9 @@ end
 local function renderList(builder, screen)
     local store = module:customPointStore()
     local _, _, map = playerPosition()
-    for _, kind in ipairs({ "waypoint", "danger" }) do
+    for _, kind in ipairs({ "waypoint", "danger", "blocked" }) do
         builder:beginStop(kind)
-        builder:pushContext(kind, kind == "danger" and L["Danger Points"] or L["Custom Waypoints"])
+        builder:pushContext(kind, L[LIST_TITLES[kind]])
         local points = (store ~= nil and map ~= nil) and cp.list(store, kind, map) or {}
         if map == nil then
             -- without the map every continent's points would be listed

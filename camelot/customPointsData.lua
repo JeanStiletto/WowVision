@@ -23,3 +23,12 @@ shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-1", kind = "danger", x = 
     name = "Monster on the shortcut to the monastery 4" }
 shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-2", kind = "danger", x = 1289.7, y = -990.7, map = 0,
     name = "Monster on the shortcut to the monastery 5" }
+
+-- Blocked passages: links of WowNav's network the player cannot get through in the game. The walk of 2026-11-27
+-- 00:16 got stuck 17 times on a rock between Chillwind Camp and the Scarlet Monastery (12.6 yd up over 22.7 yd onto a
+-- rock top, then down again; the first trial walk of 2026-11-26 got stuck there too). Every route puts a penalty on
+-- them while their waypoints still lie at these positions (other route data: left out).
+shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 0,
+    a = 14220006522, ax = 1164.8, ay = -1201.3, b = 14220006538, bx = 1177.1, by = -1182.2, x = 1171.0, y = -1191.8 }
+shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-2", kind = "blocked", map = 0,
+    a = 14220006538, ax = 1177.1, ay = -1182.2, b = 14220006580, bx = 1206.2, by = -1182.5, x = 1191.7, y = -1182.4 }
