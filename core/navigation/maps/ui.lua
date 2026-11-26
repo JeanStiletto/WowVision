@@ -67,6 +67,10 @@ local function ensureData(screen)
     screen._px, screen._py, screen._map = px, py, map
     -- With a route engine on (WowNav), its targets are the destinations and its network's waypoints the entry points.
     screen._waypoints, screen._engine = module:destinationWaypoints()
+    -- the player's custom points of this map (customPointsUi.lua) join the destinations
+    if module.withCustomDestinations ~= nil then
+        screen._waypoints = module:withCustomDestinations(screen._waypoints, map)
+    end
     screen._entries = module:entryPoints(screen._waypoints, px, py, map, screen._engine)
     local entry, noWater = module:preselectedEntry(screen._entries)
     if entry ~= nil then
@@ -495,6 +499,11 @@ local function render(builder, screen)
     builder:pushContext("targets", L["Destinations"], nil, false)
     builder:addItem(ControlId.structural("destinations"), destinationCursor(screen))
     builder:popContext()
+
+    -- the custom points' list with Rename and Delete (customPointsUi.lua)
+    if module.renderCustomPointsStop ~= nil then
+        module:renderCustomPointsStop(builder, screen)
+    end
 
     builder:popContext()
 end

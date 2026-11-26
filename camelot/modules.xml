@@ -2,6 +2,8 @@
 ..\FrameXML\UI.xsd">
 
   <Script file="character.lua" />
+  <!-- Custom points the addon ships for Forever (core/navigation/customPoints.lua). -->
+  <Script file="customPointsData.lua" />
   <!-- Forever's mailbox is the Classic one: the send tab comes from classic/. -->
   <Script file="..\classic\mail.lua" />
   <!-- Questie ships a Forever build over its Classic Era database, and

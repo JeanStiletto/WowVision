@@ -132,6 +132,65 @@ local function playerFacing()
     return facing
 end
 
+-- The player's custom danger points (core/navigation/maps/customPointsUi.lua) join the monster spawns of the safe
+-- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (N.dangerGen).
+-- The token names the source's own token and the list's generation, so a table is kept while neither changes.
+local customDangerGen = 0
+local function useCustomDangers(N)
+    local maps = WowVision.base.navigation.maps
+    local cp = WowVision.customPoints
+    if N.customDangersWrapped or maps == nil or cp == nil or maps.customPointStore == nil then
+        return
+    end
+    N.customDangersWrapped = true
+    local original = N.DangerSource
+    local tokens = setmetatable({}, { __mode = "k" })
+    local NONE = {}
+    N.DangerSource = function(zoneId)
+        local token, list = original(zoneId)
+        local store = maps:customPointStore()
+        if store == nil then
+            return token, list
+        end
+        local extra = cp.dangerSpawns(store, N.activeMapId, function(x, y)
+            for _, id in ipairs(N.ZonesForPoint(x, y)) do
+                if id == zoneId then
+                    return true
+                end
+            end
+            return false
+        end)
+        if #extra == 0 then
+            return token, list
+        end
+        local merged = {}
+        for i, spawn in ipairs(list or {}) do
+            merged[i] = spawn
+        end
+        for _, spawn in ipairs(extra) do
+            merged[#merged + 1] = spawn
+        end
+        local key = token or NONE
+        local byGen = tokens[key]
+        if byGen == nil then
+            byGen = {}
+            tokens[key] = byGen
+        end
+        local own = byGen[customDangerGen]
+        if own == nil then
+            own = { source = token, custom = customDangerGen }
+            byGen[customDangerGen] = own
+        end
+        return own, merged
+    end
+    maps.customPointsChanged:subscribe(module, function(_, _, kind)
+        if kind == "danger" then
+            customDangerGen = customDangerGen + 1
+            N.dangerGen = (N.dangerGen or 0) + 1
+        end
+    end)
+end
+
 local indexed = false
 local function ready(self)
     local N, G = self:network()
@@ -141,6 +200,7 @@ local function ready(self)
     if not indexed then
         N.LoadIndex()
         N.ActionAllowed = actionAllowed
+        useCustomDangers(N)
         indexed = true
         route = Route.new({
             N = N, G = G, R = _G.WowVisionNavigationTargetResolver, C = _G.WowVisionNavigationTargetCatalog,
