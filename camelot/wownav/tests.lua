@@ -2620,6 +2620,67 @@ if haveNetwork then
         end
     end
 
+    suite["safe routes: the danger table built in the background equals the one built at once"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        local safety = N.safety
+        local ok, err = pcall(function()
+            N.SetSafety(0)
+            t:assertNil(N.BuildDangerInSteps(ELWYNN, 1, function() return 0 end), "safe routes off: nothing to build")
+            N.SetSafety(30)
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local whole = N.ZoneDanger(zone)
+            local wholeLen, count = {}, 0
+            for k, yards in pairs(whole.len) do
+                wholeLen[k] = yards
+                count = count + 1
+            end
+            t:assertTrue(count > 1000, "Elwynn has dangerous links")
+            -- again, in slices: a clock that runs out after every check
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local clock, steps = 0, 0
+            local function tick()
+                clock = clock + 1
+                return clock
+            end
+            while N.BuildDangerInSteps(ELWYNN, 1, tick) == false do
+                steps = steps + 1
+                t:assertTrue(steps < 100000, "the build ends")
+            end
+            t:assertTrue(steps > 10, "it took many slices")
+            local sliced = zone.danger
+            local same = true
+            for k, yards in pairs(wholeLen) do
+                if sliced.len[k] ~= yards then same = false end
+            end
+            for k in pairs(sliced.len) do
+                if wholeLen[k] == nil then same = false end
+            end
+            t:assertTrue(same, "the same danger yards on every link")
+            t:assertTrue(N.ZoneDanger(zone) == sliced, "the search uses the background table")
+            -- a half-done table is finished by the search that needs it
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            clock = 0
+            t:assertEqual(N.BuildDangerInSteps(ELWYNN, 1, tick), false, "one slice leaves work")
+            local finished = N.ZoneDanger(zone)
+            local all = true
+            for k, yards in pairs(wholeLen) do
+                if finished.len[k] ~= yards then all = false end
+            end
+            t:assertTrue(all, "the search finished the table")
+        end)
+        N.SetSafety(safety)
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+
     suite["trial defaults: safe routes 30 percent, outpost avoidance off"] = function(t)
         t:assertEqual(N.SAFETY_DEFAULT, 30)
         t:assertEqual(N.avoidOutposts, false)

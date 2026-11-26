@@ -1486,8 +1486,27 @@ local function stepPreload(N, px, py, map)
     end
     -- one zone after the other, each over as many frames as it needs
     local zoneId = preload.pending[preload.index + 1]
-    if zoneId ~= nil and (N.decoded[zoneId] or N.LoadZoneInSteps(zoneId, PRELOAD_BUDGET_MS, debugprofilestop)) then
-        preload.index = preload.index + 1
+    if zoneId ~= nil then
+        if N.decoded[zoneId] or N.LoadZoneInSteps(zoneId, PRELOAD_BUDGET_MS, debugprofilestop) then
+            preload.index = preload.index + 1
+        end
+        return
+    end
+    -- then the danger tables of the safe routes for the same zones (N.BuildDangerInSteps), with the same budget, so
+    -- the first safe route of a session does not build them (2026-11-26: about half of that search; safe routes off:
+    -- nothing to do). Not while a search runs: it builds what it needs itself.
+    if job ~= nil or N.BuildDangerInSteps == nil then
+        return
+    end
+    local deadline = debugprofilestop() + PRELOAD_BUDGET_MS
+    for keptId in pairs(preload.keep) do
+        local left = deadline - debugprofilestop()
+        if left <= 0 then
+            return
+        end
+        if N.decoded[keptId] and N.BuildDangerInSteps(keptId, left, debugprofilestop) == false then
+            return
+        end
     end
 end
 
