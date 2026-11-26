@@ -406,7 +406,7 @@ local ENEMY_LETTER = { alliance = "H", horde = "A" }
 -- of NavNetwork.DANGER_RADIUS.
 C.NpcLevel, C.PlayerLevel = nil, nil
 C.HIGH_LEVEL_GAP = 5             -- levels above the player from which a creature counts as high level
-C.HIGH_LEVEL_RADIUS = 35         -- yd: its danger radius (NavNetwork.DANGER_RADIUS for the others)
+C.HIGH_LEVEL_RADIUS = 45         -- yd: its danger radius (NavNetwork.DANGER_RADIUS for the others); user 2026-11-26: 35 was too little
 
 local function HighLevelRadius(class, playerLevel)
     if not playerLevel or type(C.NpcLevel) ~= "function" or class.entry == nil then return nil end
