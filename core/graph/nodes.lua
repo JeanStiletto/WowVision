@@ -735,6 +735,7 @@ end
 -- Push a confirmation child screen: a prompt line and confirm/cancel buttons.
 -- Escape pops without confirming, like cancel.
 -- config: { prompt = string|function, confirmLabel?, cancelLabel?, onConfirm = function, onCancel = function? }
+-- The two buttons say the game's own YES and NO (the client's language; English where the game has none).
 function nodes.pushConfirm(config)
     local host = WowVision.graphHost
     local stack = host:focusedStack()
@@ -749,7 +750,7 @@ function nodes.pushConfirm(config)
             builder:addItem(
                 ControlId.structural("yes"),
                 nodes.button({
-                    label = config.confirmLabel or "Yes",
+                    label = config.confirmLabel or YES or "Yes",
                     onActivate = function()
                         host:pop(host:focusedStack())
                         if config.onConfirm ~= nil then
@@ -761,7 +762,7 @@ function nodes.pushConfirm(config)
             builder:addItem(
                 ControlId.structural("no"),
                 nodes.button({
-                    label = config.cancelLabel or "No",
+                    label = config.cancelLabel or NO or "No",
                     onActivate = function()
                         host:pop(host:focusedStack())
                         if config.onCancel ~= nil then
