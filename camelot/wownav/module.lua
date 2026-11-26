@@ -1640,10 +1640,30 @@ function module:onEnable()
 end
 
 module:registerEvent("event", "PLAYER_DEAD")
+module:registerEvent("event", "PLAYER_REGEN_DISABLED")
+module:registerEvent("event", "PLAYER_REGEN_ENABLED")
+
+-- Walk trace (local, 2026-11-26): where a fight starts and ends on a route, so a walk shows how far from the route and
+-- from which creature the player was attacked. The target's name and level only when the game gives them plainly.
+local function plainUnitText(func, unit)
+    if func == nil or UnitExists == nil or not UnitExists(unit) then
+        return nil
+    end
+    local ok, value = pcall(func, unit)
+    if not ok or (issecretvalue ~= nil and issecretvalue(value)) then
+        return nil
+    end
+    return value
+end
 
 function module:onEvent(event)
     if event == "PLAYER_DEAD" and (self.path ~= nil or job ~= nil or (route ~= nil and route.action ~= nil)) then
         self:stopRoute()
+    elseif (event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED") and self.path ~= nil and route ~= nil then
+        trace.event(event == "PLAYER_REGEN_DISABLED" and "combat_start" or "combat_end", route, gameState(), {
+            targetName = plainUnitText(UnitName, "target"),
+            targetLevel = plainUnitText(UnitLevel, "target"),
+        })
     end
 end
 
