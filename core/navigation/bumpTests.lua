@@ -50,8 +50,18 @@ testRunner:addSuite("BumpLogic", {
 
     ["an object touched counts whichever way the player pushes"] = function(t)
         local zone = makeZone()
-        local o = ahead(zone, 0, -0.6, 0, -1, bumpLogic.REACH, 0)
+        local o = ahead(zone, 0, -0.55, 0, -1, bumpLogic.REACH, 0)
         t:assertEqual(o and o.name, "barrel")
+        -- inside the box
+        o = ahead(zone, 0, -0.2, 0, -1, bumpLogic.REACH, 0)
+        t:assertEqual(o and o.name, "barrel")
+    end,
+
+    ["an object brushed beside or behind is not named"] = function(t)
+        local zone = makeZone()
+        -- 0.2 yd west of the barrel's box: pushing away from it, and pushing north along its side
+        t:assertNil(ahead(zone, 0, -0.7, 0, -1, bumpLogic.REACH, 0))
+        t:assertNil(ahead(zone, 0, -0.7, 1, 0, bumpLogic.REACH, 0))
     end,
 
     ["outdoors only outdoor objects, indoors only the room's"] = function(t)

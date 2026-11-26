@@ -16,7 +16,10 @@ bumpLogic.zones = {}
 
 bumpLogic.REACH = 1.5 -- yd from the player to an object that can be what they push against
 bumpLogic.ANGLE = 0.34 -- cosine: the object lies at most 70 degrees off the way they push
-bumpLogic.TOUCHING = 0.3 -- yd; this close an object counts whichever way the player pushes
+-- yd; this close an object counts whichever way the player pushes (standing in or flat against its box, where
+-- no direction can be told). 0.3 named a bush brushed beside or behind while a slope stopped the player: 0.1 since
+-- the tight boxes (2026-11-26, Talondeep walk: wrong names 10 -> 5 of 19, real 15 of 16)
+bumpLogic.TOUCHING = 0.1
 bumpLogic.WALL_REACH = 2.5 -- yd ahead looked at for the building or structure whose wall it is
 bumpLogic.WALL_STEP = 0.5 -- yd between the points looked at ahead
 bumpLogic.ROOM_MARGIN = 0.5 -- yd around a room's floor boxes that count as on them
