@@ -74,6 +74,8 @@ loadAddonFile("core/navigation/stateRepeat.lua")
 loadAddonFile("core/navigation/stateRepeatTests.lua")
 loadAddonFile("core/navigation/visitedStore.lua")
 loadAddonFile("core/navigation/visitedTests.lua")
+loadAddonFile("core/navigation/customPoints.lua")
+loadAddonFile("core/navigation/customPointsTests.lua")
 loadAddonFile("core/navigation/corpseFind.lua")
 loadAddonFile("core/navigation/corpseTests.lua")
 loadAddonFile("core/navigation/targetFind.lua")
@@ -2861,8 +2863,10 @@ local parseOnly = {
     "core/scanner/providers.lua",
     "core/navigation/maps/module.lua",
     "core/navigation/maps/ui.lua",
+    "core/navigation/maps/customPointsUi.lua",
     "core/navigation/visited.lua",
     "camelot/wownav/module.lua",
+    "camelot/customPointsData.lua",
     "core/navigation/corpse.lua",
     "core/navigation/targetRoute.lua",
     "core/windows/Macros.lua",
@@ -2906,6 +2910,7 @@ local parseOnly = {
     "tbc/character/Skills.lua",
     "tbc/auction/module.lua",
     "core/navigation/maps/ui.lua",
+    "core/navigation/maps/customPointsUi.lua",
     "core/movement.lua",
     "core/navigation/walls.lua",
     "core/navigation/falling.lua",
