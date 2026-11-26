@@ -175,6 +175,36 @@ testRunner:addSuite("CustomPoints", {
         end), 0, "not in the zone asked for")
     end,
 
+    ["a blocked passage penalises its link both ways, once, and only where its waypoints still are"] = function(t)
+        local store = cp.store({})
+        local p = cp.addBlocked(store, 101, 102, 10, 10, 20, 30, 0)
+        t:assertEqual(p.x, 15)
+        t:assertEqual(p.y, 20)
+        t:assertTrue(cp.addBlocked(store, 102, 101, 20, 30, 10, 10, 0) == p, "the same link is not added twice")
+        t:assertEqual(cp.label(p, "blocked", L), "Blocked passage")
+        local positions = { [101] = { 10, 10 }, [102] = { 20.5, 30 } }
+        local function positionOf(id)
+            local pos = positions[id]
+            if pos then
+                return pos[1], pos[2]
+            end
+        end
+        local pen, count = cp.blockedPenalties(store, 0, positionOf)
+        t:assertEqual(count, 1)
+        t:assertEqual(pen[101][102], cp.BLOCKED_PENALTY)
+        t:assertEqual(pen[102][101], cp.BLOCKED_PENALTY)
+        t:assertEqual(select(2, cp.blockedPenalties(store, 1, positionOf)), 0, "another map")
+        positions[102] = { 60, 30 }
+        t:assertEqual(select(2, cp.blockedPenalties(store, 0, positionOf)), 0, "the waypoint moved: other route data")
+        -- shipped passages keep their link fields
+        cp.mergeShipped(store, { { id = "wv:rock", kind = "blocked", a = 7, b = 8, ax = 1, ay = 1, bx = 2, by = 2,
+            map = 0, x = 1.5, y = 1.5 } })
+        local rock = cp.find(store, "blocked", "wv:rock")
+        t:assertEqual(rock.a, 7)
+        t:assertEqual(rock.bx, 2)
+        t:assertNil(rock.kind)
+    end,
+
     ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)
         local parse = WowVision.mapCoordinates.parse
         local function check(text, mode, a, b)
