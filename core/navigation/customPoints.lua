@@ -54,10 +54,20 @@ local function copyPoint(point)
     }
 end
 
--- Hands the shipped points the store has never had to it (appended; nothing existing is touched). Returns how many.
+-- Hands the shipped points the store has never had to it (appended). A shipped point the player already has and
+-- left without a name gets the name the addon ships for it now (a name is only ever filled in, never replaced).
+-- Returns how many points were added or named.
 function customPoints.mergeShipped(store, shipped)
     local added = 0
     for _, point in ipairs(shipped or {}) do
+        local known = point.id ~= nil and customPoints.LISTS[point.kind] ~= nil and store.shippedSeen[point.id]
+        if known and point.name ~= nil then
+            local own = customPoints.find(store, point.kind, point.id)
+            if own ~= nil and own.name == nil then
+                own.name = point.name
+                added = added + 1
+            end
+        end
         if point.id ~= nil and customPoints.LISTS[point.kind] ~= nil and not store.shippedSeen[point.id] then
             store.shippedSeen[point.id] = true
             local entry = copyPoint(point)
