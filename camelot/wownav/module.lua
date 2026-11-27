@@ -28,8 +28,11 @@ local catalog = WowVision.wownavCatalog
 local Route = WowVision.wownavRoute
 local dock = WowVision.wownavDock
 local fishing = WowVision.wownavFishing
+local blocked = WowVision.wownavBlocked
 
 local module = WowVision.base.navigation:createModule("wownav")
+-- the Custom Points list shows its Blocked Passages section only where a route engine uses them (blocked.lua)
+maps.blockedPassagesUsed = true
 local L = module.L
 module:setLabel(L["WowNav Routes"])
 
@@ -137,43 +140,6 @@ end
 -- A zone's token stays while the source's own token and the list's generation stay, so its table is kept.
 local customDangerGen = 0
 
--- The links of the decoded zones that touch a blocked spot: a waypoint inside its circle, within the height band of
--- its height when it has one. Cached per spot until the decoded zones change (N.generation).
-local spotLinkCache = {}
-local function spotLinks(N, cp, point)
-    local key = tostring(point.id) .. ":" .. point.x .. ":" .. point.y .. ":" .. tostring(point.radius)
-    local cached = spotLinkCache[key]
-    if cached ~= nil and cached.generation == N.generation then
-        return cached.links
-    end
-    local links = {}
-    local radius = point.radius or cp.BLOCKED_SPOT_RADIUS
-    local r2, band = radius * radius, cp.BLOCKED_HEIGHT_BAND
-    for _, zoneId in ipairs(N.ZonesForPoint(point.x, point.y)) do
-        local zone = N.zones[zoneId]
-        if zone ~= nil then
-            local zx, zy, zz = zone.x, zone.y, zone.z
-            local inside = {}
-            for i = 1, zone.n do
-                local dx, dy = zx[i] - point.x, zy[i] - point.y
-                if dx * dx + dy * dy <= r2 and (point.z == nil or math.abs(zz[i] - point.z) <= band) then
-                    inside[i - 1] = true
-                end
-            end
-            if next(inside) ~= nil then
-                local lu, lv = zone.lu, zone.lv
-                for k = 1, #lu do
-                    if inside[lu[k]] or inside[lv[k]] then
-                        links[#links + 1] = { zone.base + lu[k], zone.base + lv[k] }
-                    end
-                end
-            end
-        end
-    end
-    spotLinkCache[key] = { generation = N.generation, links = links }
-    return links
-end
-
 local function useCustomDangers(N)
     local maps = WowVision.base.navigation.maps
     local cp = WowVision.customPoints
@@ -224,22 +190,6 @@ local function useCustomDangers(N)
             bumpDanger(N)
         end
     end)
-    -- the player's blocked passages: every new route starts with their penalties (route.lua Route:reset)
-    Route.persistentPenalties = function()
-        local store = maps:customPointStore()
-        if store == nil then
-            return {}
-        end
-        local penalties = cp.blockedPenalties(store, N.activeMapId, function(id)
-            if id >= N.VIRT_BASE or N.zones[math.floor(id / N.ZONE_BASE)] == nil then
-                return nil
-            end
-            return N.Position(id)
-        end, function(point)
-            return spotLinks(N, cp, point)
-        end)
-        return penalties
-    end
 end
 
 local indexed = false
@@ -266,6 +216,12 @@ local function ready(self)
                 return IsPlayerMoving ~= nil and IsPlayerMoving() == true
             end,
             speed = playerSpeed,
+            -- the player's blocked passages: the table every new route starts with (blocked.lua)
+            penalties = function()
+                local cp = WowVision.customPoints
+                local store = cp ~= nil and maps.customPointStore ~= nil and maps:customPointStore() or nil
+                return (blocked.penaltyTable(N, cp, store))
+            end,
         })
     end
     N.SetComfort(self.settings.comfort or 60)
@@ -679,6 +635,11 @@ local function startRoute(self, request, outcome)
         logLine(string.format("route %s: %d waypoints, ends %.1f %.1f %.1f%s%s", tostring(request.label), #route.path,
             lastX or 0, lastY or 0, lastZ or 0, request.dockTarget and ", to a dock" or "",
             trimmed and ", cut before the drop" or ""))
+        -- the blocked passages the search met (filled per zone as it reached them)
+        local blockedStats = blocked.stats(route.penalties)
+        if blockedStats ~= nil and blockedStats.zones > 0 then
+            logLine(string.format("blocked: %d links in %d zones", blockedStats.links, blockedStats.zones))
+        end
     end
     local px, py, map = route.env.position()
     routeMap = map
@@ -1421,6 +1382,47 @@ local function checkRecalculation(self)
     end
 end
 
+-- The link the player is stuck on is saved as a blocked passage (per account, blocked.lua: later routes avoid it too),
+-- but only while he stands near it (blocked.SAVE_DISTANCE in the plane, within the height band): stepping the beacon
+-- with Ctrl-W / Ctrl-S or just wanting another way saves nothing. "Blocked passage saved" only when something new is.
+local function saveStuckLink(route)
+    local a, b = route:currentLink()
+    local cp = WowVision.customPoints
+    if a == nil or cp == nil or maps.saveBlockedPassage == nil then
+        return
+    end
+    local N = route.N
+    local px, py, map = route.env.position()
+    if px == nil or map == nil then
+        return
+    end
+    local found, why = blocked.stuckSave(N, cp, a, b, px, py, route:estimatedHeight())
+    if found == nil then
+        logLine(string.format("blocked: not saved (%s), link %s - %s", why, tostring(a), tostring(b)))
+        return
+    end
+    local saved = false
+    for _, link in ipairs(found.links or {}) do
+        local ax, ay = N.Position(link[1])
+        local bx, by = N.Position(link[2])
+        local _, status = maps:saveBlockedPassage(link[1], link[2], ax, ay, bx, by, map)
+        saved = saved or status == "added" or status == "moved"
+        logLine(string.format("blocked: link %s - %s %s", tostring(link[1]), tostring(link[2]), tostring(status)))
+    end
+    local spot = found.spot
+    if spot ~= nil then
+        local _, status = maps:saveBlockedSpot(spot.x, spot.y, spot.z, map, spot.radius)
+        saved = saved or status == "added"
+        logLine(string.format("blocked: spot %.1f %.1f %.1f r %.1f (link %s - %s) %s", spot.x, spot.y, spot.z,
+            spot.radius, tostring(a), tostring(b), tostring(status)))
+    end
+    -- the new route searched right after feels it too
+    blocked.apply(N, cp, route.penalties, found)
+    if saved then
+        say(L["Blocked passage saved"])
+    end
+end
+
 -- His /vn neu: the link the player is stuck on gets a penalty and the target is searched again from the route's last
 -- reached waypoint (before the blocked link).
 function module:newRoute()
@@ -1430,19 +1432,7 @@ function module:newRoute()
     end
     local request = self.request
     local start = restartPoint(self, request)
-    -- the link the player is stuck on is remembered as a blocked passage (per account): later routes avoid it too
-    local N = route.N
-    local toId = route.path[route.pathIndex]
-    local fromId = route.pathIndex > 1 and route.path[route.pathIndex - 1] or nil
-    if fromId ~= nil and toId ~= nil and fromId < N.VIRT_BASE and toId < N.VIRT_BASE and fromId ~= toId then
-        local ax, ay = N.Position(fromId)
-        local bx, by = N.Position(toId)
-        local maps = WowVision.base.navigation.maps
-        local _, _, map = route.env.position()
-        if maps.saveBlockedPassage ~= nil and maps:saveBlockedPassage(fromId, toId, ax, ay, bx, by, map) ~= nil then
-            say(L["Blocked passage saved"])
-        end
-    end
+    saveStuckLink(route)
     route:penalizeCurrentLink()
     self:stopRoute(true)
     local _, _, map = route.env.position()

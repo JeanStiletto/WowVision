@@ -137,27 +137,42 @@ testRunner:addSuite("CustomPoints", {
         end), 0, "not in the zone asked for")
     end,
 
-    ["a blocked passage penalises its link both ways, once, and only where its waypoints still are"] = function(t)
+    ["a blocked passage: its link in its own zone, only where its waypoints still are"] = function(t)
         local store = cp.store({})
-        local p = cp.addBlocked(store, 101, 102, 10, 10, 20, 30, 0)
+        local p, status = cp.addBlocked(store, 101, 102, 10, 10, 20, 30, 0)
+        t:assertEqual(status, "added")
         t:assertEqual(p.x, 15)
         t:assertEqual(p.y, 20)
-        t:assertTrue(cp.addBlocked(store, 102, 101, 20, 30, 10, 10, 0) == p, "the same link is not added twice")
         t:assertEqual(cp.label(p, "blocked", L), "Blocked passage")
         local positions = { [101] = { 10, 10 }, [102] = { 20.5, 30 } }
-        local function positionOf(id)
-            local pos = positions[id]
-            if pos then
-                return pos[1], pos[2]
-            end
-        end
-        local pen, count = cp.blockedPenalties(store, 0, positionOf)
-        t:assertEqual(count, 1)
-        t:assertEqual(pen[101][102], cp.BLOCKED_PENALTY)
-        t:assertEqual(pen[102][101], cp.BLOCKED_PENALTY)
-        t:assertEqual(select(2, cp.blockedPenalties(store, 1, positionOf)), 0, "another map")
+        local zone = {
+            owns = function(id)
+                return id >= 100 and id < 200
+            end,
+            position = function(id)
+                local pos = positions[id]
+                if pos then
+                    return pos[1], pos[2]
+                end
+            end,
+            touches = function()
+                return true
+            end,
+            linksNear = function()
+                return {}
+            end,
+        }
+        local links = cp.blockedInZone(store, 0, zone)
+        t:assertEqual(#links, 1)
+        t:assertEqual(links[1][1], 101)
+        t:assertEqual(links[1][2], 102)
+        t:assertEqual(#cp.blockedInZone(store, 1, zone), 0, "another map")
+        local otherZone = { owns = function()
+            return false
+        end, position = zone.position, touches = zone.touches, linksNear = zone.linksNear }
+        t:assertEqual(#cp.blockedInZone(store, 0, otherZone), 0, "another zone")
         positions[102] = { 60, 30 }
-        t:assertEqual(select(2, cp.blockedPenalties(store, 0, positionOf)), 0, "the waypoint moved: other route data")
+        t:assertEqual(#cp.blockedInZone(store, 0, zone), 0, "the waypoint moved: other route data")
         -- shipped passages keep their link fields
         cp.mergeShipped(store, { { id = "wv:rock", kind = "blocked", a = 7, b = 8, ax = 1, ay = 1, bx = 2, by = 2,
             map = 0, x = 1.5, y = 1.5 } })
@@ -167,25 +182,84 @@ testRunner:addSuite("CustomPoints", {
         t:assertNil(rock.kind)
     end,
 
-    ["a blocked spot penalises every link the network lists around it, each link once"] = function(t)
+    ["a blocked passage saved again: known at the same positions, replaced when its waypoints moved"] = function(t)
         local store = cp.store({})
-        local spot = cp.addBlockedSpot(store, 100, 100, 80, 0)
+        local p = cp.addBlocked(store, 101, 102, 10, 10, 20, 30, 0)
+        cp.rename(store, "blocked", p.id, "The rock")
+        local again, status = cp.addBlocked(store, 102, 101, 20, 30, 10.5, 10, 0)
+        t:assertTrue(again == p, "the same link, either way round")
+        t:assertEqual(status, "known")
+        t:assertEqual(#store.blocked, 1)
+        local moved, movedStatus, old = cp.addBlocked(store, 101, 102, 40, 40, 50, 50, 0)
+        t:assertEqual(movedStatus, "moved", "same ids, other positions: other route data")
+        t:assertTrue(old == p)
+        t:assertEqual(#store.blocked, 1, "the stale entry is gone")
+        t:assertEqual(moved.ax, 40)
+        t:assertEqual(moved.name, "The rock", "its name is kept")
+        t:assertEqual(select(2, cp.addBlocked(store, 101, 102, 40, 40, 50, 50, 1)), "added", "another map")
+    end,
+
+    ["a blocked spot: its links where its circle meets the zone, a spot saved again is known"] = function(t)
+        local store = cp.store({})
+        local spot, status = cp.addBlockedSpot(store, 100, 100, 80, 0)
+        t:assertEqual(status, "added")
         t:assertEqual(spot.radius, cp.BLOCKED_SPOT_RADIUS)
-        cp.addBlocked(store, 1, 2, 0, 0, 5, 5, 0)
-        local asked = nil
-        local pen, count = cp.blockedPenalties(store, 0, function(id)
-            return id == 1 and 0 or 5, id == 1 and 0 or 5
-        end, function(point)
-            asked = point
-            return { { 1, 2 }, { 3, 4 } }
-        end)
+        t:assertEqual(select(2, cp.addBlockedSpot(store, 100.5, 100, 80, 0)), "known")
+        t:assertEqual(select(2, cp.addBlockedSpot(store, 100, 100, 60, 0)), "added", "another height")
+        table.remove(store.blocked)
+        local asked, askedRadius = nil, nil
+        local touches = true
+        local zone = {
+            owns = function()
+                return true
+            end,
+            position = function()
+                return 0, 0
+            end,
+            touches = function(x, y, radius)
+                return touches and x == 100 and y == 100 and radius == cp.BLOCKED_SPOT_RADIUS
+            end,
+            linksNear = function(point, radius)
+                asked, askedRadius = point, radius
+                return { { 1, 2 }, { 3, 4 } }
+            end,
+        }
+        local links = cp.blockedInZone(store, 0, zone)
         t:assertTrue(asked == spot, "the spot is handed to the network side")
-        t:assertEqual(count, 2, "the link named by both the passage and the spot counts once")
-        t:assertEqual(pen[1][2], cp.BLOCKED_PENALTY)
-        t:assertEqual(pen[4][3], cp.BLOCKED_PENALTY)
-        t:assertEqual(select(2, cp.blockedPenalties(store, 0, function()
-            return 0, 0
-        end)), 0, "without the network side a spot adds nothing (and the link moved)")
+        t:assertEqual(askedRadius, cp.BLOCKED_SPOT_RADIUS)
+        t:assertEqual(#links, 2)
+        touches = false
+        t:assertEqual(#cp.blockedInZone(store, 0, zone), 0, "the circle does not meet the zone")
+    end,
+
+    ["blocked passages saved while the store is provisional are made in the client's store"] = function(t)
+        local provisional = cp.store({})
+        local journal = {}
+        local link = cp.addBlocked(provisional, 101, 102, 10, 10, 20, 30, 0)
+        link.name = "Rock"
+        journal[#journal + 1] = cp.journalEntry("add", "blocked", link)
+        local spot = cp.addBlockedSpot(provisional, 50, 60, 70, 0, 9)
+        journal[#journal + 1] = cp.journalEntry("add", "blocked", spot)
+        local client = cp.store({})
+        cp.add(client, "waypoint", 1, 1, nil, 0, "taken id")
+        t:assertEqual(cp.replay(client, journal), 2)
+        t:assertEqual(#client.blocked, 2)
+        local copy = client.blocked[1]
+        t:assertEqual(copy.a, 101)
+        t:assertEqual(copy.by, 30)
+        t:assertEqual(copy.name, "Rock")
+        t:assertTrue(copy.id ~= link.id, "a new id of the client's store")
+        local spotCopy = client.blocked[2]
+        t:assertNil(spotCopy.a)
+        t:assertEqual(spotCopy.radius, 9)
+        t:assertEqual(spotCopy.z, 70)
+        -- replayed into a store that already has the link: nothing doubled, its own name stays
+        local again = cp.store({})
+        local own = cp.addBlocked(again, 101, 102, 10, 10, 20, 30, 0)
+        own.name = "Mine"
+        cp.replay(again, journal)
+        t:assertEqual(#again.blocked, 2)
+        t:assertEqual(own.name, "Mine")
     end,
 
     ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)
