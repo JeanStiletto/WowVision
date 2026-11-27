@@ -169,13 +169,49 @@ local function npcFaction(entry)
     return "AH"
 end
 
--- Questie may get ready after the first safe route: the danger tables are then judged again (NavNetwork.dangerGen).
+-- Trial 2026-11-26: a creature's highest level (Questie's maxLevel) and the player's (UnitLevel), for the wider
+-- danger radius around creatures far above the player (TargetCatalog C.NpcLevel / C.PlayerLevel). The game shows both
+-- levels to sighted players (tooltip, target frame).
+local function npcLevel(entry)
+    local db = questieDB()
+    if db == nil or (db.NPCPointers ~= nil and db.NPCPointers[entry] == nil) then
+        return nil
+    end
+    local ok, level = pcall(db.QueryNPCSingle, entry, "maxLevel")
+    if ok and type(level) == "number" then
+        return level
+    end
+    return nil
+end
+
+local function playerLevel()
+    if UnitLevel == nil then
+        return nil
+    end
+    local ok, level = pcall(UnitLevel, "player")
+    if not ok or (issecretvalue ~= nil and issecretvalue(level)) or type(level) ~= "number" then
+        return nil
+    end
+    return level
+end
+
+-- Questie may get ready after the first safe route, and the player levels up: the danger tables are then judged
+-- again (NavNetwork.dangerGen).
 local hookedQuestieApi = nil
+local lastPlayerLevel = nil
 local function useQuestieFactions(N, C)
     if C == nil then
         return
     end
     C.NpcFaction = npcFaction
+    C.NpcLevel, C.PlayerLevel = npcLevel, playerLevel
+    local level = playerLevel()
+    if level ~= lastPlayerLevel then
+        if lastPlayerLevel ~= nil then
+            N.dangerGen = (N.dangerGen or 0) + 1
+        end
+        lastPlayerLevel = level
+    end
     local questie = rawget(_G, "Questie")
     local api = type(questie) == "table" and questie.API or nil
     if type(api) == "table" and api ~= hookedQuestieApi and type(api.RegisterOnReady) == "function" then
