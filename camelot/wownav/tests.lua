@@ -2505,6 +2505,194 @@ if haveNetwork then
             error(err, 0)
         end
     end
+    -- Runs fn with N.DangerSource = source (a function(zoneId) -> token, spawns) and safe routes at `safety`; puts back
+    -- the source, the factor and the danger tables of `zones` afterwards.
+    local function withSpawns(source, safety, zones, fn)
+        local saved = { N.DangerSource, N.safety }
+        N.DangerSource = source
+        N.SetSafety(safety)
+        N.dangerGen = N.dangerGen + 1
+        local ok, err = pcall(fn)
+        N.DangerSource = saved[1]
+        N.SetSafety(saved[2])
+        N.dangerGen = N.dangerGen + 1
+        for _, zone in ipairs(zones) do
+            zone.danger = nil
+        end
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    -- The length limit of a safety pass (Pass, danger.limit) is a lower bound also when the goal is a point on a link:
+    -- the length the result counts ends at the link's end waypoint, not at the point. With the limit at the length of
+    -- the cheapest route, that route is still found (2026-11-27: the straight line to the point cut it).
+    suite["safe routes: the length limit keeps a route that fits when the goal is a point on a link"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local from = STORMWIND * N.ZONE_BASE + 8390
+        local fx, fy = N.Position(from)
+        -- a long two-way link far from the start, its middle as the goal
+        local link
+        for k = 1, #zone.lu do
+            local u = zone.lu[k] + 1
+            if zone.ldir[k] == 0 and zone.llen[k] > 25 and zone.lflag[k] < 8
+                and math.sqrt((zone.x[u] - fx) ^ 2 + (zone.y[u] - fy) ^ 2) > 300 then
+                link = k
+                break
+            end
+        end
+        t:assertNotNil(link, "a long link in Stormwind")
+        local starts = { { binding = N.BindingFromId(from), extra = 0, rank = 1 } }
+        local goals = { { binding = N.BindingFromId(N.LinkpointNode(zone, link, 128)), extra = 0, rank = 1 } }
+        t:assertEqual(goals[1].binding.type, "link")
+        withSpawns(function()
+            return "none", {}
+        end, 30, { zone }, function()
+            for _, footOnly in ipairs({ false, true }) do
+                local plain = N.SearchPass(starts, goals, false, nil, footOnly, nil)
+                t:assertNotNil(plain, "a route to the point")
+                local limited = N.SearchPass(starts, goals, false, nil, footOnly, nil,
+                    { w = 0, excl = {}, limit = plain.length + 1e-6 })
+                t:assertNotNil(limited, "the route that fits is not cut")
+                t:assertTrue(math.abs(limited.length - plain.length) < 1e-6, "the same length")
+                t:assertTrue(limited.expansions <= plain.expansions, "never more waypoints searched")
+                local tight = N.SearchPass(starts, goals, false, nil, footOnly, nil,
+                    { w = 0, excl = {}, limit = plain.length * 0.9 })
+                t:assertNil(tight, "a limit below the shortest route: nothing fits")
+            end
+        end)
+    end
+
+    -- A spawn's radius: invalid ones are the usual DANGER_RADIUS, a huge one DANGER_RADIUS_MAX; of two duplicates (same
+    -- name within DANGER_DEDUP) the larger radius stays.
+    suite["safe routes: a spawn's radius is checked, and a duplicate keeps the larger one"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local x, y, z = N.Position(STORMWIND * N.ZONE_BASE + 8390)
+        local spawns = {
+            { x = x, y = y, z = z, name = "huge", radius = math.huge },
+            { x = x + 100, y = y, z = z, name = "negative", radius = -5 },
+            { x = x + 200, y = y, z = z, name = "nan", radius = 0 / 0 },
+            { x = x + 300, y = y, z = z, name = "text", radius = "wide" },
+            { x = x + 400, y = y, z = z, name = "twice", radius = 20 },
+            { x = x + 401, y = y, z = z, name = "twice", radius = 45 },
+            { x = x + 500, y = y, z = z, name = "zero", radius = 0 },
+        }
+        withSpawns(function()
+            return spawns, spawns
+        end, 30, { zone }, function()
+            local danger = N.ZoneDanger(zone)
+            t:assertEqual(danger.count, 6, "the duplicate counts once")
+            t:assertEqual(danger.sr[1], N.DANGER_RADIUS_MAX)
+            t:assertEqual(danger.sr[2], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[3], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[4], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[5], 45, "the larger radius of the two")
+            t:assertEqual(danger.sr[6], N.DANGER_RADIUS)
+            t:assertEqual(danger.maxRadius, N.DANGER_RADIUS_MAX)
+        end)
+    end
+
+    -- A wide spawn lies in several grid cells but counts once per link: the table equals the sum over all spawns.
+    suite["safe routes: a wide spawn counts once on every link it reaches"] = function(t)
+        setup()
+        local zone = N.LoadZone(ELWYNN)
+        local spawns = {}
+        for i, radius in ipairs({ 20, 45, 100, 33, 61 }) do
+            local x, y, z = N.Position(ELWYNN * N.ZONE_BASE + i * 997)
+            spawns[#spawns + 1] = { x = x, y = y, z = z, name = "Spawn " .. i, radius = radius }
+        end
+        withSpawns(function()
+            return spawns, spawns
+        end, 30, { zone }, function()
+            local danger = N.ZoneDanger(zone)
+            -- the yards of each link, spawn by spawn (the same clip as the table: horizontal, DANGER_DZ at the nearest point)
+            local function clip(k, s)
+                local u, v = zone.lu[k] + 1, zone.lv[k] + 1
+                local x1, y1, z1, x2, y2, z2 = zone.x[u], zone.y[u], zone.z[u], zone.x[v], zone.y[v], zone.z[v]
+                local dx, dy = x2 - x1, y2 - y1
+                local a = dx * dx + dy * dy
+                if a <= 1e-9 then return 0 end
+                local px, py = x1 - s.x, y1 - s.y
+                local b = dx * px + dy * py
+                local disc = b * b - a * (px * px + py * py - s.radius * s.radius)
+                if disc <= 0 then return 0 end
+                local r = math.sqrt(disc)
+                local t1, t2 = math.max(0, (-b - r) / a), math.min(1, (-b + r) / a)
+                if t2 <= t1 then return 0 end
+                local tn = math.min(1, math.max(0, -b / a))
+                if math.abs(z1 + (z2 - z1) * tn - s.z) > N.DANGER_DZ then return 0 end
+                return (t2 - t1) * math.sqrt(a)
+            end
+            local same, reached = true, 0
+            for k = 1, #zone.lu do
+                local sum = 0
+                for _, s in ipairs(spawns) do
+                    sum = sum + clip(k, s)
+                end
+                local yards = danger.len[k] or 0
+                if sum > 0 then reached = reached + 1 end
+                if math.abs(yards - sum) > 1e-6 then same = false end
+            end
+            t:assertTrue(reached > 50, "the spawns reach many links")
+            t:assertTrue(same, "every link: the sum over the spawns, each once")
+        end)
+    end
+
+    -- The spawns at the start or the target of a route do not count for it: those within DANGER_RADIUS of the point, also
+    -- when their own radius is wider (a wide spawn still counts for a route that starts in its outer ring).
+    suite["safe routes: a wide spawn is left out only when the start stands at it"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local from, to = STORMWIND * N.ZONE_BASE + 8390, STORMWIND * N.ZONE_BASE + 2959
+        local x, y, z = N.Position(from)
+        local spawns = {}
+        withSpawns(function()
+            return spawns[1], spawns      -- the token: the spawn, so a new one builds a new table
+        end, 30, { zone }, function()
+            -- 30 yd from the start with 45 yd: outside the 20 yd of "at the start", so it endangers the route
+            spawns[1] = { x = x + 30, y = y, z = z, name = "ring", radius = 45 }
+            N.dangerGen = N.dangerGen + 1
+            local ring = N.RouteIds(from, to)
+            t:assertNotNil(ring)
+            t:assertTrue(ring.dangerA > 0, "a spawn 30 yd away with 45 yd counts")
+            -- 10 yd from the start: the start stands at it, so it does not count, whatever its radius
+            spawns[1] = { x = x + 10, y = y, z = z, name = "camp", radius = 45 }
+            N.dangerGen = N.dangerGen + 1
+            local camp = N.RouteIds(from, to)
+            t:assertEqual(camp.dangerA, 0, "a spawn at the start does not count")
+        end)
+    end
+
+    -- Inside a job, a danger table is built in slices (the job yields between them); outside one at once.
+    suite["safe routes: inside a job the danger table is built in slices"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        withSpawns(N.DangerSource, 30, { zone }, function()
+            local whole = N.ZoneDanger(zone)
+            local wholeLen = {}
+            for k, yards in pairs(whole.len) do
+                wholeLen[k] = yards
+            end
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local danger, _, slices = runJob(N.Job(function()
+                return N.ZoneDanger(zone)
+            end))
+            t:assertTrue(slices > 10, "the job took many slices")
+            t:assertNil(danger.nextLink, "the table is done")
+            local same = true
+            for k, yards in pairs(wholeLen) do
+                if danger.len[k] ~= yards then same = false end
+            end
+            for k in pairs(danger.len) do
+                if wholeLen[k] == nil then same = false end
+            end
+            t:assertTrue(same, "the same danger yards as built at once")
+        end)
+    end
 end
 
 testRunner:addSuite("WowNav routes", suite)
