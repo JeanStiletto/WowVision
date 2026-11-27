@@ -74,6 +74,18 @@ local SLOW_NOTICE = 1.0      -- seconds before "calculating route" is said
 local RECALC_DELAY = 1.0     -- seconds after the last change of the road preference before the route is searched again
 
 local job = nil              -- the pending search: { job, request, startedAt, noticed }
+
+-- Asks the safe routes to judge the spawns again (N.dangerGen), for a change made on WowVision's side (a source of the
+-- spawns). While a search runs this waits for its end: a table rebuilt in the middle of a search no longer matches the
+-- start and target exclusions the search took at its start (spawn indices of the old table).
+local dangerAskedOf = nil    -- the network whose bump waits for the running search
+local function bumpDanger(N)
+    if job ~= nil then
+        dangerAskedOf = N
+        return
+    end
+    N.dangerGen = (N.dangerGen or 0) + 1
+end
 local passive = nil          -- the noted dock (his passive mode): { name, near }
 local recalcAt = nil         -- when the running route is searched again with a changed road preference
 local recalcText = nil       -- what is said then (the road preference's text when nil)
@@ -1500,6 +1512,11 @@ function module:onEnable()
             dockMap = map
         end
         if job == nil then
+            if dangerAskedOf ~= nil then
+                local N = dangerAskedOf
+                dangerAskedOf = nil
+                bumpDanger(N)
+            end
             stepCatalog(self)
         end
     end)
