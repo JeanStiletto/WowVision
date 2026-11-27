@@ -560,6 +560,94 @@ testRunner:addSuite("MenuNavigation", {
     end,
 })
 
+-- A yes/no question (nodes.pushConfirm): the buttons speak WowVision's own Yes and No, in the language of the question,
+-- never the game's YES and NO; a caller's own labels win; Escape cancels like the No button.
+local function confirmHost(host, config)
+    local stack = host:open({ key = "root", render = list({ "One" }) })
+    nodes.pushConfirm(config)
+    return stack
+end
+
+local function spokenAt(host, key)
+    press(host, key)
+    return lastSpoken(host) or ""
+end
+
+testRunner:addSuite("ConfirmQuestion", {
+    ["the buttons say WowVision's Yes and No, not the game's words"] = function(t)
+        local savedYes, savedNo = YES, NO
+        YES, NO = "GameYes", "GameNo"
+        local ok, err = pcall(withHost, function(host)
+            local stack = confirmHost(host, { prompt = "Delete it?", onConfirm = function() end })
+            t:assertEqual(#stack.screens, 2, "the question is pushed")
+            t:assertEqual(focusedKey(host), "prompt")
+            local yes = spokenAt(host, "down")
+            t:assertEqual(focusedKey(host), "yes")
+            t:assertTrue(yes:find("Yes", 1, true) ~= nil, "Yes is said: " .. yes)
+            t:assertNil(yes:find("GameYes", 1, true), "not the game's YES")
+            local no = spokenAt(host, "down")
+            t:assertEqual(focusedKey(host), "no")
+            t:assertTrue(no:find("No", 1, true) ~= nil, "No is said: " .. no)
+            t:assertNil(no:find("GameNo", 1, true), "not the game's NO")
+        end)
+        YES, NO = savedYes, savedNo
+        if not ok then
+            error(err, 0)
+        end
+    end,
+
+    ["a caller's own labels win"] = function(t)
+        withHost(function(host)
+            confirmHost(host, { prompt = "Reset?", confirmLabel = "Reset", cancelLabel = "Keep" })
+            local yes = spokenAt(host, "down")
+            t:assertTrue(yes:find("Reset", 1, true) ~= nil, "the confirm label: " .. yes)
+            t:assertNil(yes:find("Yes", 1, true), "not Yes")
+            local no = spokenAt(host, "down")
+            t:assertTrue(no:find("Keep", 1, true) ~= nil, "the cancel label: " .. no)
+            t:assertNil(no:find("No", 1, true), "not No")
+        end)
+    end,
+
+    ["yes confirms, no cancels, and Escape cancels too"] = function(t)
+        withHost(function(host)
+            local calls = {}
+            local config = {
+                prompt = "Delete it?",
+                onConfirm = function()
+                    tinsert(calls, "confirm")
+                end,
+                onCancel = function()
+                    tinsert(calls, "cancel")
+                end,
+            }
+            local stack = confirmHost(host, config)
+            press(host, "down")
+            host:focusedScreen().keyGraph:activate()
+            t:assertEqual(#stack.screens, 1, "Yes closes the question")
+            t:assertEqual(table.concat(calls, ","), "confirm", "and only confirms")
+
+            calls = {}
+            nodes.pushConfirm(config)
+            press(host, "down")
+            press(host, "down")
+            host:focusedScreen().keyGraph:activate()
+            t:assertEqual(#stack.screens, 1, "No closes the question")
+            t:assertEqual(table.concat(calls, ","), "cancel", "and only cancels")
+
+            calls = {}
+            nodes.pushConfirm(config)
+            press(host, "close")
+            t:assertEqual(#stack.screens, 1, "Escape closes the question")
+            t:assertEqual(#host.stacks, 1, "but not the window under it")
+            t:assertEqual(table.concat(calls, ","), "cancel", "and cancels")
+
+            nodes.pushConfirm({ prompt = "Delete it?" })
+            press(host, "close")
+            t:assertEqual(#stack.screens, 1, "Escape without onCancel just closes it")
+        end)
+    end,
+})
+
 -- Up or Down on the first or last entry: Sku's list-edge sound and the entry read again.
 local function withPlaySound(fn)
     local saved = PlaySound
