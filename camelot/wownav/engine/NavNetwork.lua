@@ -1782,9 +1782,27 @@ local function BuildDanger(zone, spawns)
         end
     end
     if danger.count == 0 then return danger end
+    danger.nextLink = 1
+    return danger
+end
+
+-- WowVision (2026-11-26): the links' danger yards, from link danger.nextLink on. clock/deadline (optional): stop once the
+-- clock passes the deadline (checked every DANGER_SLICE links) and return false; true when every link is done.
+local DANGER_SLICE = 256
+local function DangerLinks(zone, danger, clock, deadline)
+    local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
+    local sx, sy, sz, grid = danger.sx, danger.sy, danger.sz, danger.grid
     local len = danger.len
     local lu, lv, nx, ny, nz = zone.lu, zone.lv, zone.x, zone.y, zone.z
-    for k = 1, #lu do
+    local k = danger.nextLink
+    if not k then return true end
+    local last, first = #lu, k
+    while k <= last do
+        -- every DANGER_SLICE links, never before the first batch of this call (a slice always gets on)
+        if clock and k > first and (k - first) % DANGER_SLICE == 0 and clock() >= deadline then
+            danger.nextLink = k
+            return false
+        end
         local u, v = lu[k] + 1, lv[k] + 1
         local x1, y1, z1, x2, y2, z2 = nx[u], ny[u], nz[u], nx[v], ny[v], nz[v]
         local dx, dy = x2 - x1, y2 - y1
@@ -1805,23 +1823,53 @@ local function BuildDanger(zone, spawns)
             end
             if total then len[k] = total end
         end
+        k = k + 1
     end
+    danger.nextLink = nil
+    return true
+end
+
+-- The danger table of a zone (built on first use; rebuilt when the catalogue changed). A table the background left half
+-- done (N.BuildDangerInSteps) is finished here.
+local function DangerOf(zone)
+    local danger = zone.danger
+    if danger and danger.gen == N.dangerGen and not danger.nextLink then return danger end
+    if not (danger and danger.gen == N.dangerGen) then
+        local token, spawns = N.DangerSource(zone.id)
+        if danger and danger.token == token then
+            danger.gen = N.dangerGen
+        else
+            danger = BuildDanger(zone, spawns)
+            danger.token, danger.gen = token, N.dangerGen
+            zone.danger = danger
+        end
+    end
+    DangerLinks(zone, danger)
     return danger
 end
 
--- The danger table of a zone (built on first use; rebuilt when the catalogue changed).
-local function DangerOf(zone)
+-- WowVision (2026-11-26): the danger table of a decoded zone built in the background, a slice per call, so the first safe
+-- route of a session does not build it (about half of that search offline; in the game in frames that cannot be cut).
+-- budget in the clock's unit (debugprofilestop: ms). True when the table is current, false while work is left, nil when
+-- nothing is to be done (safe routes off, zone not decoded).
+function N.BuildDangerInSteps(zoneId, budget, clock)
+    if (N.safety or 0) <= 0 then return nil end
+    local zone = N.zones[zoneId]
+    if not zone then return nil end
+    local deadline = clock() + budget
     local danger = zone.danger
-    if danger and danger.gen == N.dangerGen then return danger end
-    local token, spawns = N.DangerSource(zone.id)
-    if danger and danger.token == token then
-        danger.gen = N.dangerGen
-        return danger
+    if not (danger and danger.gen == N.dangerGen) then
+        local token, spawns = N.DangerSource(zone.id)
+        if danger and danger.token == token then
+            danger.gen = N.dangerGen
+        else
+            danger = BuildDanger(zone, spawns)
+            danger.token, danger.gen = token, N.dangerGen
+            zone.danger = danger
+            if clock() >= deadline then return not danger.nextLink end
+        end
     end
-    danger = BuildDanger(zone, spawns)
-    danger.token, danger.gen = token, N.dangerGen
-    zone.danger = danger
-    return danger
+    return DangerLinks(zone, danger, clock, deadline)
 end
 N.ZoneDanger = DangerOf          -- tests and measurements
 
