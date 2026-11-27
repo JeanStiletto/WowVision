@@ -5,15 +5,17 @@
 --
 -- Questie is read through the Questie backend of the quest adapter (classic/quests/questie.lua, the one place that
 -- knows Questie's internal module names and field shapes; Forever loads it from camelot/modules.xml before this
--- folder). module.lua installs the hooks every frame it runs (danger.install) and so notes when an input of the rules
--- changed: then the safe routes ask the catalogue again (its bumpDanger), and the catalogue's token (C:DangerSpawns)
--- tells whether the spawn list really changed.
+-- folder). module.lua sets the hooks once, when the network is indexed (danger.install), and asks the catalogue again
+-- (its bumpDanger) when an input of the rules may have changed, the WowVision way, by events and not by polling (user
+-- decision 2026-11-27): PLAYER_LEVEL_UP, PLAYER_ENTERING_WORLD (the faction and the level are known by then; it also
+-- covers the first build) and the quest module's events.ready (Questie usable; danger.watch). The catalogue's token
+-- (C:DangerSpawns) tells whether the spawn list really changed.
 
 local danger = {}
 WowVision.wownavDanger = danger
 
 local questie = nil          -- the Questie backend, made once Questie is there
-local seen = nil             -- the inputs the danger tables were last asked with: { level, faction, questieReady }
+local levelUp = nil          -- the level PLAYER_LEVEL_UP gave (UnitLevel can still give the old one for a moment)
 
 -- The Questie backend, or nil without Questie.
 function danger.questie()
@@ -26,9 +28,9 @@ function danger.questie()
     return questie
 end
 
--- tests: forget the backend and the noted inputs
+-- tests: forget the backend and the noted level-up
 function danger.reset()
-    questie, seen = nil, nil
+    questie, levelUp = nil, nil
 end
 
 -- One field of a creature from Questie; second result false when Questie could not be asked.
@@ -65,39 +67,58 @@ function danger.npcLevel(entry)
     return nil
 end
 
--- C.PlayerLevel: UnitLevel("player"), or nil while the game does not give it (it can be nil at the first frames).
+-- C.PlayerLevel: UnitLevel("player"), or nil while the game does not give it (it can be nil at the first frames). Right
+-- after a level-up the level of PLAYER_LEVEL_UP when UnitLevel still gives a lower one: a table built then would
+-- otherwise keep the old level, and its token (the same spawn list) would keep that table until the next event.
 function danger.playerLevel()
-    if UnitLevel == nil then
-        return nil
+    local level = nil
+    if UnitLevel ~= nil then
+        local ok, value = pcall(UnitLevel, "player")
+        if ok and not (issecretvalue ~= nil and issecretvalue(value)) and type(value) == "number" then
+            level = value
+        end
     end
-    local ok, level = pcall(UnitLevel, "player")
-    if not ok or (issecretvalue ~= nil and issecretvalue(level)) or type(level) ~= "number" then
-        return nil
+    if levelUp ~= nil and (level == nil or level < levelUp) then
+        return levelUp
     end
     return level
 end
 
--- Calls bump(N) when the player's level, the player's faction or whether Questie answers differs from the last call
--- (also from unknown to known: UnitLevel nil then 34, the faction unknown at the first build, Questie ready after the
--- first route, with or without its RegisterOnReady). The first call always bumps. True when it bumped.
-function danger.noteInputs(N, bump)
-    local source = danger.questie()
-    local level = danger.playerLevel()
-    local faction = N.PlayerFaction ~= nil and N.PlayerFaction() or nil
-    local questieReady = source ~= nil and source.isReady() == true
-    if seen ~= nil and seen[1] == level and seen[2] == faction and seen[3] == questieReady then
-        return false
+-- The game events that may change an input of the rules; the module registers them.
+danger.EVENTS = { "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }
+
+-- The module's onEvent: true when the event may have changed an input of the rules (then the module asks the
+-- catalogue again). PLAYER_LEVEL_UP's first argument is the new level.
+function danger.onEvent(event, arg1)
+    if event == "PLAYER_LEVEL_UP" then
+        if type(arg1) == "number" then
+            levelUp = arg1
+        end
+        return true
     end
-    seen = { level, faction, questieReady }
-    bump(N)
-    return true
+    return event == "PLAYER_ENTERING_WORLD"
 end
 
--- Sets the catalogue's hooks (C = WowVisionNavigationTargetCatalog) and notes the inputs (noteInputs).
-function danger.install(N, C, bump)
+-- Calls ask() whenever the quest module (core/quests/module.lua) says its data source is usable (events.ready; on
+-- Forever the Questie backend's onReady). quests may be nil (no quest module): then nothing.
+function danger.watch(subscriber, quests, ask)
+    if quests ~= nil and quests.events ~= nil and quests.events.ready ~= nil then
+        quests.events.ready:subscribe(subscriber, function()
+            ask()
+        end)
+    end
+end
+
+function danger.unwatch(subscriber, quests)
+    if quests ~= nil and quests.events ~= nil and quests.events.ready ~= nil then
+        quests.events.ready:unsubscribe(subscriber)
+    end
+end
+
+-- Sets the catalogue's hooks (C = WowVisionNavigationTargetCatalog), once when the network is indexed.
+function danger.install(C)
     if C == nil then
         return
     end
     C.NpcFaction, C.NpcLevel, C.PlayerLevel = danger.npcFaction, danger.npcLevel, danger.playerLevel
-    danger.noteInputs(N, bump)
 end

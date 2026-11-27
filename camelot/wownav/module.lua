@@ -88,6 +88,14 @@ local function bumpDanger(N)
     end
     N.dangerGen = (N.dangerGen or 0) + 1
 end
+-- The danger rules' inputs may have changed (danger.lua: a level-up, the login, Questie ready): the catalogue is asked
+-- again; its token tells whether the spawn list really changed.
+local function askDangerAgain()
+    local N = _G.WowVisionNavigationNavNetwork
+    if N ~= nil then
+        bumpDanger(N)
+    end
+end
 local passive = nil          -- the noted dock (his passive mode): { name, near }
 local recalcAt = nil         -- when the running route is searched again with a changed road preference
 local recalcText = nil       -- what is said then (the road preference's text when nil)
@@ -158,14 +166,15 @@ local function ready(self)
             end,
             speed = playerSpeed,
         })
+        -- the faction and level sources of the safe routes (danger.lua), set once; the events at the end of this
+        -- file ask the catalogue again when one of their inputs may have changed
+        danger.install(_G.WowVisionNavigationTargetCatalog)
     end
     N.SetComfort(self.settings.comfort or 60)
     if N.SetSafety ~= nil and not N.SetSafety(self.settings.safety or N.SAFETY_DEFAULT) then
         N.SetSafety(N.SAFETY_DEFAULT)
     end
     N.SetAvoidOutposts(self.settings.avoidOutposts ~= false)
-    -- the faction and level sources of the safe routes (danger.lua); a changed input asks the catalogue again
-    danger.install(N, _G.WowVisionNavigationTargetCatalog, bumpDanger)
     -- his settings live in WowVisionNavigationDB, where his resolver and route rules read them (R:Settings,
     -- Route.chokeFallback); while the standalone addon is loaded this module is off and the table is his
     WowVisionNavigationDB = type(WowVisionNavigationDB) == "table" and WowVisionNavigationDB or {}
@@ -1524,11 +1533,23 @@ function module:onEnable()
             stepCatalog(self)
         end
     end)
+    danger.watch(self, WowVision.base.quests, askDangerAgain)
+end
+
+function module:onDisable()
+    danger.unwatch(self, WowVision.base.quests)
 end
 
 module:registerEvent("event", "PLAYER_DEAD")
+-- the inputs of the safe routes' danger rules (danger.lua): the player's level, and faction and level at login
+for _, event in ipairs(danger.EVENTS) do
+    module:registerEvent("event", event)
+end
 
-function module:onEvent(event)
+function module:onEvent(event, arg1)
+    if danger.onEvent(event, arg1) then
+        askDangerAgain()
+    end
     if event == "PLAYER_DEAD" and (self.path ~= nil or job ~= nil or (route ~= nil and route.action ~= nil)) then
         self:stopRoute()
     end
