@@ -2832,33 +2832,25 @@ if haveNetwork then
         end)
     end
 
-    -- A spawn's radius: invalid ones are the usual DANGER_RADIUS, a huge one DANGER_RADIUS_MAX; of two duplicates (same
-    -- name within DANGER_DEDUP) the larger radius stays.
-    suite["safe routes: a spawn's radius is checked, and a duplicate keeps the larger one"] = function(t)
+    -- A spawn without a radius has the usual DANGER_RADIUS; of two duplicates (same name within DANGER_DEDUP) the larger
+    -- radius stays.
+    suite["safe routes: a duplicate spawn keeps the larger radius"] = function(t)
         setup()
         local zone = N.LoadZone(STORMWIND)
         local x, y, z = N.Position(STORMWIND * N.ZONE_BASE + 8390)
         local spawns = {
-            { x = x, y = y, z = z, name = "huge", radius = math.huge },
-            { x = x + 100, y = y, z = z, name = "negative", radius = -5 },
-            { x = x + 200, y = y, z = z, name = "nan", radius = 0 / 0 },
-            { x = x + 300, y = y, z = z, name = "text", radius = "wide" },
+            { x = x, y = y, z = z, name = "plain" },
             { x = x + 400, y = y, z = z, name = "twice", radius = 20 },
             { x = x + 401, y = y, z = z, name = "twice", radius = 45 },
-            { x = x + 500, y = y, z = z, name = "zero", radius = 0 },
         }
         withSpawns(function()
             return spawns, spawns
         end, 30, { zone }, function()
             local danger = N.ZoneDanger(zone)
-            t:assertEqual(danger.count, 6, "the duplicate counts once")
-            t:assertEqual(danger.sr[1], N.DANGER_RADIUS_MAX)
-            t:assertEqual(danger.sr[2], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[3], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[4], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[5], 45, "the larger radius of the two")
-            t:assertEqual(danger.sr[6], N.DANGER_RADIUS)
-            t:assertEqual(danger.maxRadius, N.DANGER_RADIUS_MAX)
+            t:assertEqual(danger.count, 2, "the duplicate counts once")
+            t:assertEqual(danger.sr[1], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[2], 45, "the larger radius of the two")
+            t:assertEqual(danger.maxRadius, 45)
         end)
     end
 
@@ -3247,8 +3239,9 @@ if haveNetwork then
 end
 
 -- The danger rules' sources (danger.lua) on a stand-in Questie read through the Questie backend
--- (classic/quests/questie.lua): Questie's field names, not ready / ready (with no RegisterOnReady at all), the player's
--- level from nil to known, and the inputs that make the module ask the catalogue again.
+-- (classic/quests/questie.lua): Questie's field names, not ready / ready, the player's level from nil to known and at a
+-- level-up, and the events that make the module ask the catalogue again (no polling: the quest module's events.ready,
+-- PLAYER_LEVEL_UP, PLAYER_ENTERING_WORLD).
 suite["safe routes: Questie's factions and levels through the Questie backend"] = function(t)
     local danger = WowVision.wownavDanger
     local saved = { rawget(_G, "Questie"), rawget(_G, "QuestieLoader"), rawget(_G, "UnitLevel"), rawget(_G, "CreateFrame") }
@@ -3283,45 +3276,48 @@ suite["safe routes: Questie's factions and levels through the Questie backend"] 
             return level
         end
         danger.reset()
-        local faction = nil
-        local N = {
-            PlayerFaction = function()
-                return faction
-            end,
-        }
-        local bumps = 0
-        local function bump()
-            bumps = bumps + 1
-        end
         local C = {}
-        danger.install(N, C, bump)
+        danger.install(C)
         t:assertTrue(C.NpcFaction == danger.npcFaction and C.NpcLevel == danger.npcLevel, "the hooks are set")
         t:assertTrue(C.PlayerLevel == danger.playerLevel)
-        t:assertEqual(bumps, 1, "the first call asks")
         t:assertEqual(danger.npcFaction(251001), false, "Questie not ready: no answer")
         t:assertNil(danger.npcLevel(1740))
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 1, "nothing changed: no bump")
+        t:assertNil(danger.playerLevel(), "no level yet")
+        -- the quest module's ready event asks again (a stand-in module with the real Event class)
+        local quests = { events = { ready = WowVision.Event:new("questsReady") } }
+        local subscriber = {}
+        local asks = 0
+        danger.watch(subscriber, quests, function()
+            asks = asks + 1
+        end)
         _G.Questie.API.isReady = true
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 2, "Questie got ready (it has no RegisterOnReady here): a bump")
+        quests.events.ready:emit()
+        t:assertEqual(asks, 1, "Questie got ready: the catalogue is asked again")
         t:assertEqual(danger.npcFaction(251001), "H")
         t:assertEqual(danger.npcFaction(11194), "AH")
         t:assertNil(danger.npcFaction(1740), "friendly to neither")
         t:assertEqual(danger.npcFaction(99999), false, "an ID Questie does not know: no answer")
         t:assertEqual(danger.npcLevel(1740), 56, "maxLevel")
+        danger.unwatch(subscriber, quests)
+        quests.events.ready:emit()
+        t:assertEqual(asks, 1, "unwatched: no more asks")
+        danger.watch(subscriber, nil, function() end) -- no quest module: nothing, no error
+        -- the game events
         level = 34
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 3, "the level from unknown to known: a bump")
+        t:assertTrue(danger.onEvent("PLAYER_ENTERING_WORLD"), "the login asks again")
         t:assertEqual(danger.playerLevel(), 34)
-        faction = "alliance"
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 4, "the faction from unknown to known: a bump")
+        t:assertTrue(danger.onEvent("PLAYER_LEVEL_UP", 35), "a level-up asks again")
+        t:assertEqual(danger.playerLevel(), 35, "UnitLevel still gives the old level: the event's level counts")
         level = 35
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 5, "a level-up: a bump (the catalogue's token says whether anything changed)")
-        danger.install(N, C, bump)
-        t:assertEqual(bumps, 5)
+        t:assertEqual(danger.playerLevel(), 35)
+        level = 36
+        t:assertEqual(danger.playerLevel(), 36, "UnitLevel ahead of the noted level-up: UnitLevel counts")
+        t:assertFalse(danger.onEvent("PLAYER_DEAD"), "another event does not ask")
+        local registered = {}
+        for _, event in ipairs(danger.EVENTS) do
+            registered[event] = true
+        end
+        t:assertTrue(registered.PLAYER_LEVEL_UP and registered.PLAYER_ENTERING_WORLD, "the module registers both events")
     end)
     _G.Questie, _G.QuestieLoader, _G.UnitLevel, _G.CreateFrame = saved[1], saved[2], saved[3], saved[4]
     danger.reset()

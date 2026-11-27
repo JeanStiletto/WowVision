@@ -102,7 +102,7 @@ Keep this list current; everything else is his text, line for line (line endings
   and no more once all are current). `DangerOf` finishes a half-done table: inside a job in slices that yield like the
   search, outside at once. `CurrentDanger` holds his rule when a table is kept or rebuilt.
 - `NavNetwork.lua`, safe routes, a radius per spawn (2026-11-26/27): a spawn may bring `radius` (the danger source
-  sets it; checked: above 0, at most `N.DANGER_RADIUS_MAX` = 100 yd, else his `DANGER_RADIUS`). `danger.sr[i]` is the
+  sets it; without one his `DANGER_RADIUS`). `danger.sr[i]` is the
   radius of spawn i, `danger.maxRadius` the largest; of two duplicates the larger radius stays. A spawn wider than
   `DANGER_RADIUS` lies in every grid cell within its radius minus `DANGER_RADIUS` and counts once per link (`cx0`,
   `cy0`), so the cells searched per link stay his. The start or target of a route leaves out the spawns within
@@ -118,9 +118,11 @@ Keep this list current; everything else is his text, line for line (line endings
   player the radius `C.HIGH_LEVEL_RADIUS` (45 yd) as its spawns' `radius`. `C:DangerSpawns` returns his token (the
   catalogue) while the result is his (the kinds mob and creature, no radius); otherwise `DangerToken`, one table per
   catalogue and fingerprint of the result (the dangerous class indices with their radii; it holds no reference to the
-  catalogue). So a table is rebuilt exactly when the spawn list changes; the module bumps `N.dangerGen` (deferred while
-  a search runs) when the player's level or faction or Questie's readiness changes, which only asks again. Without the
-  hooks everything is his.
+  catalogue). So a table is rebuilt exactly when the spawn list changes. The module sets the hooks once, when the
+  network is indexed, and bumps `N.dangerGen` (deferred while a search runs), which only asks again, on game events
+  and not by polling (user decision 2026-11-27): PLAYER_LEVEL_UP (its level is used while UnitLevel still gives the
+  old one), PLAYER_ENTERING_WORLD (faction and level known; the first build) and the quest module's `events.ready`
+  (Questie usable). Without the hooks everything is his.
 - His walk-in portal as a link of the route (WowVisionNavigation.lua, 5a1290b) is in `../route.lua`, not here:
   `Route.triggerPoint` (his `WowVisionNavigationTriggerPoint`) and the leg's last waypoint in the trigger
   (`Route:begin`). His `PendingTriggerEntered` was already WowVision's `Route:walkInTransit`, and the exit zone of a

@@ -98,48 +98,6 @@ testRunner:addSuite("CustomPoints", {
         t:assertNil(cp.find(store, "danger", "wv:n1").name)
     end,
 
-    ["changes in a provisional store are made again in the client's store"] = function(t)
-        -- the provisional store: a copy of the account as this character last saw it
-        local real = cp.store({})
-        local old = cp.add(real, "waypoint", 1, 1, nil, 0, "Old")
-        local gone = cp.add(real, "danger", 2, 2, nil, 0)
-        local provisional = cp.store({ customPoints = {
-            waypoints = { { id = old.id, name = "Old", x = 1, y = 1, map = 0 } },
-            dangers = { { id = gone.id, x = 2, y = 2, map = 0 } },
-            nextId = real.nextId, shippedSeen = {},
-        } })
-        -- another character added a point to the real store meanwhile: it took the next id
-        local other = cp.add(real, "waypoint", 9, 9, nil, 0, "Other")
-        local journal = {}
-        local new = cp.add(provisional, "waypoint", 5, 5, nil, 0, "Camp")
-        journal[#journal + 1] = cp.journalEntry("add", "waypoint", new)
-        cp.rename(provisional, "waypoint", new.id, "Camp 2")
-        journal[#journal + 1] = cp.journalEntry("rename", "waypoint", new)
-        cp.rename(provisional, "waypoint", old.id, "Renamed")
-        journal[#journal + 1] = cp.journalEntry("rename", "waypoint", cp.find(provisional, "waypoint", old.id))
-        local removed = cp.find(provisional, "danger", gone.id)
-        cp.remove(provisional, "danger", gone.id)
-        journal[#journal + 1] = cp.journalEntry("remove", "danger", removed)
-        t:assertEqual(new.id, other.id, "the provisional id collides with the other character's point")
-
-        t:assertEqual(cp.replay(real, journal), 4)
-        t:assertEqual(#real.waypoints, 3, "old, other, camp")
-        t:assertEqual(cp.find(real, "waypoint", other.id).name, "Other", "the other point is untouched")
-        t:assertEqual(real.waypoints[3].name, "Camp 2", "the new point with its later name")
-        t:assertTrue(real.waypoints[3].id ~= other.id, "an id of the real store")
-        t:assertEqual(cp.find(real, "waypoint", old.id).name, "Renamed")
-        t:assertEqual(#real.dangers, 0, "the deletion carried over")
-    end,
-
-    ["replay drops a change whose point is another one in the client's store"] = function(t)
-        local real = cp.store({})
-        cp.add(real, "waypoint", 50, 50, nil, 0, "Theirs")
-        local journal = { { op = "rename", kind = "waypoint", id = "u1", x = 1, y = 1, map = 0, name = "Mine" },
-            { op = "remove", kind = "waypoint", id = "u1", x = 1, y = 1, map = 0 } }
-        t:assertEqual(cp.replay(real, journal), 0)
-        t:assertEqual(real.waypoints[1].name, "Theirs")
-    end,
-
     ["a shipped point already handed over gets a name shipped later, unless the player named it"] = function(t)
         local store = cp.store({})
         local shipped = {
@@ -155,6 +113,10 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(cp.find(store, "danger", "wv:v2").name, "My vulture", "the player's name stays")
         t:assertEqual(#store.dangers, 2, "nothing added twice")
         t:assertEqual(cp.mergeShipped(store, shipped), 0, "nothing left to do")
+        -- a shipped name changed later (2026-11-27: English names) never replaces the name a point already has
+        shipped[1].name = "Monster on the shortcut to the monastery 1"
+        t:assertEqual(select(2, cp.mergeShipped(store, shipped)), 0, "no point renamed")
+        t:assertEqual(cp.find(store, "danger", "wv:v1").name, "Pestschwingengeier", "the old name stays")
     end,
 
     ["lists are per map; danger spawns carry a unique name and the radius"] = function(t)
@@ -268,36 +230,6 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(#links, 2)
         touches = false
         t:assertEqual(#cp.blockedInZone(store, 0, zone), 0, "the circle does not meet the zone")
-    end,
-
-    ["blocked passages saved while the store is provisional are made in the client's store"] = function(t)
-        local provisional = cp.store({})
-        local journal = {}
-        local link = cp.addBlocked(provisional, 101, 102, 10, 10, 20, 30, 0)
-        link.name = "Rock"
-        journal[#journal + 1] = cp.journalEntry("add", "blocked", link)
-        local spot = cp.addBlockedSpot(provisional, 50, 60, 70, 0, 9)
-        journal[#journal + 1] = cp.journalEntry("add", "blocked", spot)
-        local client = cp.store({})
-        cp.add(client, "waypoint", 1, 1, nil, 0, "taken id")
-        t:assertEqual(cp.replay(client, journal), 2)
-        t:assertEqual(#client.blocked, 2)
-        local copy = client.blocked[1]
-        t:assertEqual(copy.a, 101)
-        t:assertEqual(copy.by, 30)
-        t:assertEqual(copy.name, "Rock")
-        t:assertTrue(copy.id ~= link.id, "a new id of the client's store")
-        local spotCopy = client.blocked[2]
-        t:assertNil(spotCopy.a)
-        t:assertEqual(spotCopy.radius, 9)
-        t:assertEqual(spotCopy.z, 70)
-        -- replayed into a store that already has the link: nothing doubled, its own name stays
-        local again = cp.store({})
-        local own = cp.addBlocked(again, 101, 102, 10, 10, 20, 30, 0)
-        own.name = "Mine"
-        cp.replay(again, journal)
-        t:assertEqual(#again.blocked, 2)
-        t:assertEqual(own.name, "Mine")
     end,
 
     ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)

@@ -35,20 +35,14 @@ local LIST_TITLES = { waypoint = "Custom Waypoints", danger = "Danger Points", b
 
 module.customPointsChanged = WowVision.Event:new("customPointsChanged")
 
--- While the account store is provisional (WoW: Forever hands the account's saved variables over after the addon
--- loaded), changes go into it and into this journal; when the client's store arrives (setDBObj below) the journal is
--- made there too (customPoints.replay), so nothing saved in the meantime is lost.
-local journal = {}
+-- The points are written into whatever account store is bound, as every other account value is: on WoW: Forever the
+-- client hands its account file over after the addon loaded (core/WowVision.lua bindGlobalStore), and a point saved
+-- in that short gap stays in the provisional table, which becomes the account's only when the client never hands one
+-- over (user decision 2026-11-27). The store is read fresh on every access, so the client's points show once it is
+-- adopted.
 local storeData = nil   -- the saved table the store was last bound to
 
-local function record(op, kind, point)
-    if WowVision.globalStoreProvisional then
-        journal[#journal + 1] = cp.journalEntry(op, kind, point)
-    end
-end
-
--- A new account store (the client's replacing the provisional one): the journal is carried over, and the danger
--- tables are built again from the new store.
+-- A new account store (the client's replacing the provisional one): the danger tables are built again from it.
 local setDBObj = module.setDBObj
 function module:setDBObj(db, globalDB)
     setDBObj(self, db, globalDB)
@@ -58,12 +52,6 @@ function module:setDBObj(db, globalDB)
     end
     local previous = storeData
     storeData = data
-    if previous ~= nil and data ~= nil and #journal > 0 then
-        cp.replay(cp.store(data), journal)
-    end
-    if not WowVision.globalStoreProvisional then
-        journal = {}
-    end
     if previous ~= nil then
         self.customPointsChanged:emit("danger")
     end
@@ -128,7 +116,6 @@ local function save(kind, x, y, map, offered)
     end
     if kind == "danger" then
         local point = cp.add(store, "danger", x, y, nil, map)
-        record("add", "danger", point)
         module.customPointsChanged:emit("danger")
         WowVision:notify(L["Danger point saved"])
         return
@@ -137,14 +124,13 @@ local function save(kind, x, y, map, offered)
         label = L["Name of the waypoint"],
         text = offered or "",
         onCommit = function(text)
-            -- asked again: the client's account store may have arrived while the name was typed
+            -- read again: the client's account store may have been adopted while the name was typed
             store = storeOrSay()
             if store == nil then
                 return
             end
             local name = type(text) == "string" and text:match("^%s*(.-)%s*$") or nil
             local point = cp.add(store, "waypoint", x, y, nil, map, name ~= "" and name or nil)
-            record("add", "waypoint", point)
             module.customPointsChanged:emit("waypoint")
             WowVision:notify(string.format(L["Waypoint saved: %s"], cp.label(point, "waypoint", L)))
         end,
@@ -226,17 +212,13 @@ function module:saveBlockedPassage(a, b, ax, ay, bx, by, map)
     if store == nil then
         return nil
     end
-    local point, status, old = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
+    local point, status = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
     if status == "known" then
         return point, status
-    end
-    if old ~= nil then
-        record("remove", "blocked", old)
     end
     if point.name == nil and placeName() ~= "" then
         point.name = placeName()
     end
-    record("add", "blocked", point)
     self.customPointsChanged:emit("blocked")
     return point, status
 end
@@ -253,7 +235,6 @@ function module:saveBlockedSpot(x, y, z, map, radius)
         if placeName() ~= "" then
             point.name = placeName()
         end
-        record("add", "blocked", point)
         self.customPointsChanged:emit("blocked")
     end
     return point, status
@@ -361,7 +342,6 @@ local function renderList(builder, screen)
                             onCommit = function(text)
                                 local current = storeOrSay()
                                 if current ~= nil and cp.rename(current, kind, captured.id, text) then
-                                    record("rename", kind, captured)
                                     -- only the name: the danger tables stay (a spawn's name is its id)
                                     module.customPointsChanged:emit("rename")
                                     WowVision:notify(string.format(L["Renamed: %s"], cp.label(captured, kind, L)))
@@ -378,7 +358,6 @@ local function renderList(builder, screen)
                             onConfirm = function()
                                 local current = storeOrSay()
                                 if current ~= nil and cp.remove(current, kind, captured.id) then
-                                    record("remove", kind, captured)
                                     module.customPointsChanged:emit(kind)
                                     WowVision:notify(L["Deleted"])
                                 end

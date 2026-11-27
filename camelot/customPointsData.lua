@@ -4,21 +4,25 @@
 
 local shipped = WowVision.customPoints.shipped
 
--- A level 58 vulture ("Pestschwingengeier", in neither the route data nor Questie) attacked a level 34 player twice
--- on the way from Chillwind Camp to the Scarlet Monastery, Western Plaguelands (trial walks 2026-11-26, the fight
--- starts the walk trace recorded).
--- Named after the creature as the German client says it (user 2026-11-27); the English name is not known.
+-- The five danger points on the way from Chillwind Camp to the Scarlet Monastery, Western Plaguelands, are named in
+-- English and numbered in this file's order (user decision 2026-11-27); a player who already has them keeps the name
+-- he has, since mergeShipped fills in only a point without a name.
+
+-- A level 58 vulture ("Pestschwingengeier" in the German client, in neither the route data nor Questie) attacked a
+-- level 34 player twice on that way (trial walks 2026-11-26, the fight starts the walk trace recorded).
 shipped[#shipped + 1] = { id = "wv:forever:wpl-vulture-1", kind = "danger", x = 1198.2, y = -1116.0, map = 0,
-    name = "Pestschwingengeier" }
+    name = "Monster on the shortcut to the monastery 1" }
 shipped[#shipped + 1] = { id = "wv:forever:wpl-vulture-2", kind = "danger", x = 1183.6, y = -1137.0, map = 0,
-    name = "Pestschwingengeier" }
+    name = "Monster on the shortcut to the monastery 2" }
 
 -- The next walk (2026-11-27 00:00), same way: a vulture attacked again further south-west (the fight start), then a
 -- second fight with an unknown creature and the death spot; no monster of any zone's data within 80 yd of the three.
 shipped[#shipped + 1] = { id = "wv:forever:wpl-vulture-3", kind = "danger", x = 1087.2, y = -1140.8, map = 0,
-    name = "Pestschwingengeier" }
-shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-1", kind = "danger", x = 1247.3, y = -1023.9, map = 0 }
-shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-2", kind = "danger", x = 1289.7, y = -990.7, map = 0 }
+    name = "Monster on the shortcut to the monastery 3" }
+shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-1", kind = "danger", x = 1247.3, y = -1023.9, map = 0,
+    name = "Monster on the shortcut to the monastery 4" }
+shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-2", kind = "danger", x = 1289.7, y = -990.7, map = 0,
+    name = "Monster on the shortcut to the monastery 5" }
 
 -- Blocked passages: links of WowNav's network the player cannot get through in the game. The walk of 2026-11-27
 -- 00:16 got stuck 17 times on a rock between Chillwind Camp and the Scarlet Monastery (12.6 yd up over 22.7 yd onto a
