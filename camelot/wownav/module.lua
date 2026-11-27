@@ -32,9 +32,13 @@ local catalog = WowVision.wownavCatalog
 local Route = WowVision.wownavRoute
 local dock = WowVision.wownavDock
 local fishing = WowVision.wownavFishing
+local danger = WowVision.wownavDanger
+local blocked = WowVision.wownavBlocked
 local trace = WowVision.wownavTrace
 
 local module = WowVision.base.navigation:createModule("wownav")
+-- the Custom Points list shows its Blocked Passages section only where a route engine uses them (blocked.lua)
+maps.blockedPassagesUsed = true
 local L = module.L
 module:setLabel(L["WowNav Routes"])
 
@@ -43,13 +47,13 @@ settings:add({ key = "enabled", type = "Bool", label = L["Routes from WowNav"], 
 -- WowNav's comfort level: a road route may be up to this many percent longer than the shortest way (his default 60
 -- since 2026-10-25).
 settings:add({ key = "comfort", type = "Number", label = L["Road Preference (Percent Longer)"], default = 60, min = 0, max = 300 })
--- his /vn safety (his default 0 = off; WowVision trial 2026-11-26: 30): a route may be up to this many percent longer
--- than the shortest way to keep away from monster spawns and from creatures of the other faction (Questie's
--- friendlyToFaction, see the faction source below). Off, the search is the one without it (no extra pass, no spawn table).
-settings:add({ key = "safety", type = "Number", label = L["Safe Routes (Percent Longer)"], default = 30, min = 0, max = 300 })
--- his /vn outposts (Z2, his default on; WowVision trial 2026-11-26: off, the faction danger above replaces it): routes
--- go around the outposts and capitals of the opposing faction; without a way around they lead through one and say so
-settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = false })
+-- his /vn safety (default 0 = off): a route may be up to this many percent longer than the shortest way to keep away
+-- from monster spawns and from creatures of the other faction or far above the player's level (danger.lua, the
+-- sources from Questie). Off, the search is the one without it (no extra pass, no spawn table).
+settings:add({ key = "safety", type = "Number", label = L["Safe Routes (Percent Longer)"], default = 0, min = 0, max = 300 })
+-- his /vn outposts (Z2, default on): routes go around the outposts and capitals of the opposing faction; without a way
+-- around they lead through one and say so
+settings:add({ key = "avoidOutposts", type = "Bool", label = L["Avoid Enemy Outposts"], default = true })
 -- his /vn showauto (default off): the network's own waypoints near the player join the F10 list, by height
 settings:add({ key = "showAuto", type = "Bool", label = L["Show Automatic Waypoints"], default = false })
 -- his /vn radius and /vn toleranz: how far from the network a target may lie, and the height band of a floor
@@ -80,6 +84,18 @@ local SLOW_NOTICE = 1.0      -- seconds before "calculating route" is said
 local RECALC_DELAY = 1.0     -- seconds after the last change of the road preference before the route is searched again
 
 local job = nil              -- the pending search: { job, request, startedAt, noticed }
+
+-- Asks the safe routes to judge the spawns again (N.dangerGen), for a change made on WowVision's side (a source of the
+-- spawns). While a search runs this waits for its end: a table rebuilt in the middle of a search no longer matches the
+-- start and target exclusions the search took at its start (spawn indices of the old table).
+local dangerAskedOf = nil    -- the network whose bump waits for the running search
+local function bumpDanger(N)
+    if job ~= nil then
+        dangerAskedOf = N
+        return
+    end
+    N.dangerGen = (N.dangerGen or 0) + 1
+end
 local passive = nil          -- the noted dock (his passive mode): { name, near }
 local recalcAt = nil         -- when the running route is searched again with a changed road preference
 local recalcText = nil       -- what is said then (the road preference's text when nil)
@@ -163,136 +179,10 @@ local function gameState(full)
     return game
 end
 
--- Trial 2026-11-26 (Broesel decides): the faction of a creature for the safe routes (TargetCatalog C.NpcFaction), from
--- Questie's friendlyToFaction ("A", "H", "AH" or nil = friendly to neither). Sighted players see it as the colour of the
--- name. false while Questie cannot be asked or does not know the ID: then his kind rule judges that creature.
-local function questieDB()
-    if QuestieLoader == nil or type(QuestieLoader.ImportModule) ~= "function" then
-        return nil
-    end
-    local questie = rawget(_G, "Questie")
-    if type(questie) ~= "table" or type(questie.API) ~= "table" or questie.API.isReady ~= true then
-        return nil
-    end
-    local ok, db = pcall(QuestieLoader.ImportModule, QuestieLoader, "QuestieDB")
-    if not ok or type(db) ~= "table" or type(db.QueryNPCSingle) ~= "function" then
-        return nil
-    end
-    return db
-end
-
-local function npcFaction(entry)
-    local db = questieDB()
-    if db == nil or (db.NPCPointers ~= nil and db.NPCPointers[entry] == nil) then
-        return false
-    end
-    local ok, friendly = pcall(db.QueryNPCSingle, entry, "friendlyToFaction")
-    if not ok then
-        return false
-    end
-    if friendly == "A" or friendly == "H" then
-        return friendly
-    end
-    if friendly == nil or friendly == "" then
-        return nil
-    end
-    return "AH"
-end
-
--- Trial 2026-11-26: a creature's highest level (Questie's maxLevel) and the player's (UnitLevel), for the wider
--- danger radius around creatures far above the player (TargetCatalog C.NpcLevel / C.PlayerLevel). The game shows both
--- levels to sighted players (tooltip, target frame).
-local function npcLevel(entry)
-    local db = questieDB()
-    if db == nil or (db.NPCPointers ~= nil and db.NPCPointers[entry] == nil) then
-        return nil
-    end
-    local ok, level = pcall(db.QueryNPCSingle, entry, "maxLevel")
-    if ok and type(level) == "number" then
-        return level
-    end
-    return nil
-end
-
-local function playerLevel()
-    if UnitLevel == nil then
-        return nil
-    end
-    local ok, level = pcall(UnitLevel, "player")
-    if not ok or (issecretvalue ~= nil and issecretvalue(level)) or type(level) ~= "number" then
-        return nil
-    end
-    return level
-end
-
--- Questie may get ready after the first safe route, and the player levels up: the danger tables are then judged
--- again (NavNetwork.dangerGen).
-local hookedQuestieApi = nil
-local lastPlayerLevel = nil
-local function useQuestieFactions(N, C)
-    if C == nil then
-        return
-    end
-    C.NpcFaction = npcFaction
-    C.NpcLevel, C.PlayerLevel = npcLevel, playerLevel
-    local level = playerLevel()
-    if level ~= lastPlayerLevel then
-        if lastPlayerLevel ~= nil then
-            N.dangerGen = (N.dangerGen or 0) + 1
-        end
-        lastPlayerLevel = level
-    end
-    local questie = rawget(_G, "Questie")
-    local api = type(questie) == "table" and questie.API or nil
-    if type(api) == "table" and api ~= hookedQuestieApi and type(api.RegisterOnReady) == "function" then
-        hookedQuestieApi = api
-        pcall(api.RegisterOnReady, function()
-            N.dangerGen = (N.dangerGen or 0) + 1
-        end)
-    end
-end
-
 -- The player's custom danger points (core/navigation/maps/customPointsUi.lua) join the monster spawns of the safe
--- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (N.dangerGen).
--- The token names the source's own token and the list's generation, so a table is kept while neither changes.
+-- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (bumpDanger).
+-- A zone's token stays while the source's own token and the list's generation stay, so its table is kept.
 local customDangerGen = 0
-
--- The links of the decoded zones that touch a blocked spot: a waypoint inside its circle, within the height band of
--- its height when it has one. Cached per spot until the decoded zones change (N.generation).
-local spotLinkCache = {}
-local function spotLinks(N, cp, point)
-    local key = tostring(point.id) .. ":" .. point.x .. ":" .. point.y .. ":" .. tostring(point.radius)
-    local cached = spotLinkCache[key]
-    if cached ~= nil and cached.generation == N.generation then
-        return cached.links
-    end
-    local links = {}
-    local radius = point.radius or cp.BLOCKED_SPOT_RADIUS
-    local r2, band = radius * radius, cp.BLOCKED_HEIGHT_BAND
-    for _, zoneId in ipairs(N.ZonesForPoint(point.x, point.y)) do
-        local zone = N.zones[zoneId]
-        if zone ~= nil then
-            local zx, zy, zz = zone.x, zone.y, zone.z
-            local inside = {}
-            for i = 1, zone.n do
-                local dx, dy = zx[i] - point.x, zy[i] - point.y
-                if dx * dx + dy * dy <= r2 and (point.z == nil or math.abs(zz[i] - point.z) <= band) then
-                    inside[i - 1] = true
-                end
-            end
-            if next(inside) ~= nil then
-                local lu, lv = zone.lu, zone.lv
-                for k = 1, #lu do
-                    if inside[lu[k]] or inside[lv[k]] then
-                        links[#links + 1] = { zone.base + lu[k], zone.base + lv[k] }
-                    end
-                end
-            end
-        end
-    end
-    spotLinkCache[key] = { generation = N.generation, links = links }
-    return links
-end
 
 local function useCustomDangers(N)
     local maps = WowVision.base.navigation.maps
@@ -302,17 +192,19 @@ local function useCustomDangers(N)
     end
     N.customDangersWrapped = true
     local original = N.DangerSource
-    local tokens = setmetatable({}, { __mode = "k" })
-    local NONE = {}
+    local tokens = {}   -- [zoneId] = { source = the source's token, gen = customDangerGen, token = the token handed on }
     N.DangerSource = function(zoneId)
         local token, list = original(zoneId)
         local store = maps:customPointStore()
         if store == nil then
             return token, list
         end
-        local extra = cp.dangerSpawns(store, N.activeMapId, function(x, y)
-            for _, id in ipairs(N.ZonesForPoint(x, y)) do
-                if id == zoneId then
+        -- the zone's own map and boxes (its index entry), not the active continent's
+        local entry = N.index[zoneId]
+        local map = entry ~= nil and entry.nativeMapId or N.activeMapId
+        local extra = cp.dangerSpawns(store, map, function(x, y)
+            for _, box in pairs(entry ~= nil and entry.worldBoxes or {}) do
+                if x >= box.xmin and x <= box.xmax and y >= box.ymin and y <= box.ymax then
                     return true
                 end
             end
@@ -328,41 +220,20 @@ local function useCustomDangers(N)
         for _, spawn in ipairs(extra) do
             merged[#merged + 1] = spawn
         end
-        local key = token or NONE
-        local byGen = tokens[key]
-        if byGen == nil then
-            byGen = {}
-            tokens[key] = byGen
+        local own = tokens[zoneId]
+        if own == nil or own.source ~= token or own.gen ~= customDangerGen then
+            own = { source = token, gen = customDangerGen, token = {} }
+            tokens[zoneId] = own
         end
-        local own = byGen[customDangerGen]
-        if own == nil then
-            own = { source = token, custom = customDangerGen }
-            byGen[customDangerGen] = own
-        end
-        return own, merged
+        return own.token, merged
     end
+    -- "danger": the danger points or the store changed (a rename or a waypoint leaves the tables alone)
     maps.customPointsChanged:subscribe(module, function(_, _, kind)
         if kind == "danger" then
             customDangerGen = customDangerGen + 1
-            N.dangerGen = (N.dangerGen or 0) + 1
+            bumpDanger(N)
         end
     end)
-    -- the player's blocked passages: every new route starts with their penalties (route.lua Route:reset)
-    Route.persistentPenalties = function()
-        local store = maps:customPointStore()
-        if store == nil then
-            return {}
-        end
-        local penalties = cp.blockedPenalties(store, N.activeMapId, function(id)
-            if id >= N.VIRT_BASE or N.zones[math.floor(id / N.ZONE_BASE)] == nil then
-                return nil
-            end
-            return N.Position(id)
-        end, function(point)
-            return spotLinks(N, cp, point)
-        end)
-        return penalties
-    end
 end
 
 local indexed = false
@@ -393,6 +264,12 @@ local function ready(self)
                 return IsPlayerMoving ~= nil and IsPlayerMoving() == true
             end,
             speed = playerSpeed,
+            -- the player's blocked passages: the table every new route starts with (blocked.lua)
+            penalties = function()
+                local cp = WowVision.customPoints
+                local store = cp ~= nil and maps.customPointStore ~= nil and maps:customPointStore() or nil
+                return (blocked.penaltyTable(N, cp, store))
+            end,
             -- his blockage telemetry, saved by trace.lua
             telemetry = function(entry)
                 trace.blockage(entry, gameState())
@@ -403,8 +280,9 @@ local function ready(self)
     if N.SetSafety ~= nil and not N.SetSafety(self.settings.safety or N.SAFETY_DEFAULT) then
         N.SetSafety(N.SAFETY_DEFAULT)
     end
-    N.SetAvoidOutposts(self.settings.avoidOutposts == true)
-    useQuestieFactions(N, _G.WowVisionNavigationTargetCatalog)
+    N.SetAvoidOutposts(self.settings.avoidOutposts ~= false)
+    -- the faction and level sources of the safe routes (danger.lua); a changed input asks the catalogue again
+    danger.install(N, _G.WowVisionNavigationTargetCatalog, bumpDanger)
     -- his settings live in WowVisionNavigationDB, where his resolver and route rules read them (R:Settings,
     -- Route.chokeFallback); while the standalone addon is loaded this module is off and the table is his
     WowVisionNavigationDB = type(WowVisionNavigationDB) == "table" and WowVisionNavigationDB or {}
@@ -811,6 +689,11 @@ local function startRoute(self, request, outcome)
         logLine(string.format("route %s: %d waypoints, ends %.1f %.1f %.1f%s%s", tostring(request.label), #route.path,
             lastX or 0, lastY or 0, lastZ or 0, request.dockTarget and ", to a dock" or "",
             trimmed and ", cut before the drop" or ""))
+        -- the blocked passages the search met (filled per zone as it reached them)
+        local blockedStats = blocked.stats(route.penalties)
+        if blockedStats ~= nil and blockedStats.zones > 0 then
+            logLine(string.format("blocked: %d links in %d zones", blockedStats.links, blockedStats.zones))
+        end
     end
     local px, py, map = route.env.position()
     routeMap = map
@@ -1558,6 +1441,47 @@ local function checkRecalculation(self)
     end
 end
 
+-- The link the player is stuck on is saved as a blocked passage (per account, blocked.lua: later routes avoid it too),
+-- but only while he stands near it (blocked.SAVE_DISTANCE in the plane, within the height band): stepping the beacon
+-- with Ctrl-W / Ctrl-S or just wanting another way saves nothing. "Blocked passage saved" only when something new is.
+local function saveStuckLink(route)
+    local a, b = route:currentLink()
+    local cp = WowVision.customPoints
+    if a == nil or cp == nil or maps.saveBlockedPassage == nil then
+        return
+    end
+    local N = route.N
+    local px, py, map = route.env.position()
+    if px == nil or map == nil then
+        return
+    end
+    local found, why = blocked.stuckSave(N, cp, a, b, px, py, route:estimatedHeight())
+    if found == nil then
+        logLine(string.format("blocked: not saved (%s), link %s - %s", why, tostring(a), tostring(b)))
+        return
+    end
+    local saved = false
+    for _, link in ipairs(found.links or {}) do
+        local ax, ay = N.Position(link[1])
+        local bx, by = N.Position(link[2])
+        local _, status = maps:saveBlockedPassage(link[1], link[2], ax, ay, bx, by, map)
+        saved = saved or status == "added" or status == "moved"
+        logLine(string.format("blocked: link %s - %s %s", tostring(link[1]), tostring(link[2]), tostring(status)))
+    end
+    local spot = found.spot
+    if spot ~= nil then
+        local _, status = maps:saveBlockedSpot(spot.x, spot.y, spot.z, map, spot.radius)
+        saved = saved or status == "added"
+        logLine(string.format("blocked: spot %.1f %.1f %.1f r %.1f (link %s - %s) %s", spot.x, spot.y, spot.z,
+            spot.radius, tostring(a), tostring(b), tostring(status)))
+    end
+    -- the new route searched right after feels it too
+    blocked.apply(N, cp, route.penalties, found)
+    if saved then
+        say(L["Blocked passage saved"])
+    end
+end
+
 -- His /vn neu: the link the player is stuck on gets a penalty and the target is searched again from the route's last
 -- reached waypoint (before the blocked link).
 function module:newRoute()
@@ -1567,19 +1491,7 @@ function module:newRoute()
     end
     local request = self.request
     local start = restartPoint(self, request)
-    -- the link the player is stuck on is remembered as a blocked passage (per account): later routes avoid it too
-    local N = route.N
-    local toId = route.path[route.pathIndex]
-    local fromId = route.pathIndex > 1 and route.path[route.pathIndex - 1] or nil
-    if fromId ~= nil and toId ~= nil and fromId < N.VIRT_BASE and toId < N.VIRT_BASE and fromId ~= toId then
-        local ax, ay = N.Position(fromId)
-        local bx, by = N.Position(toId)
-        local maps = WowVision.base.navigation.maps
-        local _, _, map = route.env.position()
-        if maps.saveBlockedPassage ~= nil and maps:saveBlockedPassage(fromId, toId, ax, ay, bx, by, map) ~= nil then
-            say(L["Blocked passage saved"])
-        end
-    end
+    saveStuckLink(route)
     route:penalizeCurrentLink()
     self:stopRoute(true)
     local _, _, map = route.env.position()
@@ -1612,10 +1524,11 @@ local function stepPreload(N, px, py, map)
         table.sort(own)
         local key = map .. ":" .. table.concat(own, ",")
         if preload == nil or preload.key ~= key then
-            local keep, pending = {}, {}
+            local keep, pending, order = {}, {}, {}
             local function add(zoneId)
                 if not keep[zoneId] then
                     keep[zoneId] = true
+                    order[#order + 1] = zoneId
                     if not N.decoded[zoneId] and N.ZoneAvailable(zoneId) then
                         pending[#pending + 1] = zoneId
                     end
@@ -1644,7 +1557,8 @@ local function stepPreload(N, px, py, map)
                     break
                 end
             end
-            preload = { key = key, pending = pending, index = 0, keep = keep }
+            -- order: the kept zones, the player's own first (the danger tables are built in this order)
+            preload = { key = key, pending = pending, index = 0, keep = keep, order = order }
         end
     end
     -- one zone after the other, each over as many frames as it needs
@@ -1657,19 +1571,32 @@ local function stepPreload(N, px, py, map)
     end
     -- then the danger tables of the safe routes for the same zones (N.BuildDangerInSteps), with the same budget, so
     -- the first safe route of a session does not build them (2026-11-26: about half of that search; safe routes off:
-    -- nothing to do). Not while a search runs: it builds what it needs itself.
-    if job ~= nil or N.BuildDangerInSteps == nil then
+    -- nothing to do). Never while a search runs (stepCatalog only runs without a job): it builds what it needs itself.
+    -- The player's own zones first; once all are current, nothing more until the catalogue (N.dangerGen) or the kept
+    -- zones (a new preload) change.
+    if N.safety <= 0 or preload.dangerDone == N.dangerGen then
         return
     end
     local deadline = debugprofilestop() + PRELOAD_BUDGET_MS
-    for keptId in pairs(preload.keep) do
+    local done = true
+    for _, keptId in ipairs(preload.order) do
         local left = deadline - debugprofilestop()
         if left <= 0 then
             return
         end
-        if N.decoded[keptId] and N.BuildDangerInSteps(keptId, left, debugprofilestop) == false then
-            return
+        if N.decoded[keptId] then
+            local current = N.BuildDangerInSteps(keptId, left, debugprofilestop)
+            if current == false then
+                return
+            end
+            -- nil: decoded but not attached (N.zones), so it is tried again later
+            if current == nil then
+                done = false
+            end
         end
+    end
+    if done then
+        preload.dangerDone = N.dangerGen
     end
 end
 
@@ -1761,6 +1688,11 @@ function module:onEnable()
             dockMap = map
         end
         if job == nil then
+            if dangerAskedOf ~= nil then
+                local N = dangerAskedOf
+                dangerAskedOf = nil
+                bumpDanger(N)
+            end
             stepCatalog(self)
         end
     end)

@@ -396,13 +396,13 @@ end
 C.SEARCH_LIMIT = 1000            -- at most this many entries per search of the target list
 
 -- WowVision (trial 2026-11-26, Broesel decides): which faction a creature is friendly to. function(entry) -> "A" | "H" | "AH" | nil (no
--- faction: friendly to neither), or false when it cannot be said (no source, or the source is not ready). WowVision's module sets it from
+-- faction: friendly to neither), or false when it cannot be said (no source, or the source is not ready). WowVision sets it (danger.lua) from
 -- Questie (friendlyToFaction); nil here keeps his kind rule.
 C.NpcFaction = nil
 local ENEMY_LETTER = { alliance = "H", horde = "A" }
 -- WowVision (trial 2026-11-26): a creature's level and the player's, for a wider danger radius around creatures far
 -- above the player (they notice from further away). C.NpcLevel(entry) -> its highest level | nil; C.PlayerLevel() -> the
--- player's level | nil. The module sets both (Questie's maxLevel, UnitLevel); without them every spawn keeps the radius
+-- player's level | nil. WowVision sets both (danger.lua: Questie's maxLevel, UnitLevel); without them every spawn keeps the radius
 -- of NavNetwork.DANGER_RADIUS.
 C.NpcLevel, C.PlayerLevel = nil, nil
 C.HIGH_LEVEL_GAP = 5             -- levels above the player from which a creature counts as high level
@@ -430,21 +430,26 @@ local function FactionDanger(class, faction)
     return false
 end
 
--- Faction-dependent tokens: the danger table of a zone is kept while catalogue and rule stay (NavNetwork.DangerOf compares the token).
-local factionTokens = setmetatable({}, { __mode = "k" })
-local function DangerToken(catalog, key)
-    local byKey = factionTokens[catalog]
-    if not byKey then byKey = {}; factionTokens[catalog] = byKey end
-    local token = byKey[key]
-    if not token then token = { catalog = catalog, rule = key }; byKey[key] = token end
+-- WowVision (2026-11-27): the token of a zone's danger table when the rule differs from his: one table per catalogue and fingerprint
+-- of the result (which classes endanger, with which radius), so the table is kept exactly while the spawn list it was built from
+-- stays (NavNetwork CurrentDanger compares the token). The tokens hold no reference to their catalogue: the map is weak-keyed and
+-- Lua 5.1 has no ephemerons, so a back reference would keep every catalogue alive.
+local dangerTokens = setmetatable({}, { __mode = "k" })
+local function DangerToken(catalog, fingerprint)
+    local byPrint = dangerTokens[catalog]
+    if not byPrint then byPrint = {}; dangerTokens[catalog] = byPrint end
+    local token = byPrint[fingerprint]
+    if not token then token = { rule = fingerprint }; byPrint[fingerprint] = token end
     return token
 end
 
 -- Monster spawns of a zone for the safe routes (NavNetwork.DangerSource, /vn safety): the rows of the logical catalogue whose class has the kind
--- mob or creature (npc and objects do not endanger). Returns the catalogue as the token of the data and the list { {x, y, z (or nil), name} }
+-- mob or creature (npc and objects do not endanger). Returns the token of the data and the list { {x, y, z (or nil), name, radius (or nil)} }
 -- | nil when the zone has no logical catalogue.
--- WowVision: with a faction source the classes are judged by FactionDanger (a class it cannot judge keeps his kind rule); the token then
--- names catalogue, player faction and whether every class could be judged, so a source that becomes ready later builds the table again.
+-- WowVision (2026-11-26, 2026-11-27): with a faction source the classes are judged by FactionDanger (a class it cannot judge keeps his kind
+-- rule), and with a level source a creature far above the player brings C.HIGH_LEVEL_RADIUS (HighLevelRadius). While the result is his (the
+-- kinds mob and creature, no own radius) the token is the catalogue, as in his code; else DangerToken(catalogue, fingerprint of the result).
+-- So the table is built again exactly when a source that got ready, a level-up or another faction changes the list, never otherwise.
 function C:DangerSpawns(zoneId)
     local provider = self.providers["package_logical_" .. tostring(zoneId)]
     local catalog = provider and provider.compact
@@ -458,23 +463,23 @@ function C:DangerSpawns(zoneId)
         local ok, level = pcall(C.PlayerLevel)
         if ok and type(level) == "number" and level > 0 then playerLevel = level end
     end
-    local names, radii, any, judged, unjudged = {}, {}, false, 0, 0
+    local names, radii, any, his, parts = {}, {}, false, true, {}
     for index = 1, #classes do
         local class = classes[index]
-        local byFaction = FactionDanger(class, faction)
-        if byFaction ~= nil then judged = judged + 1 elseif class.kind == "npc" or class.kind == "mob" or class.kind == "creature" then unjudged = unjudged + 1 end
-        local danger = byFaction
-        if danger == nil then danger = class.kind == "mob" or class.kind == "creature" end
+        local kindRule = class.kind == "mob" or class.kind == "creature"
+        local danger = FactionDanger(class, faction)
+        if danger == nil then danger = kindRule end
         if danger then
-            names[index] = class.nameEn
-            radii[index] = HighLevelRadius(class, playerLevel)
-            any = true
+            local radius = HighLevelRadius(class, playerLevel)
+            names[index], radii[index], any = class.nameEn, radius, true
+            parts[#parts + 1] = radius and (index .. ":" .. radius) or tostring(index)
+            if radius or not kindRule then his = false end
+        elseif kindRule then
+            his = false
         end
     end
     local token = catalog
-    if judged > 0 or playerLevel then
-        token = DangerToken(catalog, tostring(faction) .. (unjudged > 0 and ":partial" or ":full") .. ":" .. tostring(playerLevel))
-    end
+    if not his then token = DangerToken(catalog, table.concat(parts, ",")) end
     local list = {}
     if any then
         local rows = catalog.targets

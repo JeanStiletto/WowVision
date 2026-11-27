@@ -74,10 +74,10 @@ Zwei Aktionen können nicht dieselbe Taste teilen. Gehört die aufgenommene Tast
 | Was du hörst | Was es bedeutet | Was du tun solltest |
 |---|---|---|
 | „Diese Eingabe existiert bereits für diese Belegung.“ | Die Aktion hat diese Taste schon. | Nichts hat sich geändert. |
-| „Diese Eingabe steht in Konflikt mit (Name der Aktion). Ersetzen?“, gefolgt von Yes und No (diese beiden Schalter werden auf Englisch angesagt) | Eine andere Aktion hat diese Taste. | Yes nimmt der anderen Aktion die Taste weg und gibt sie dieser. No oder Esc ändert nichts. |
+| „Diese Eingabe steht in Konflikt mit (Name der Aktion). Ersetzen?“, gefolgt von Ja und Nein | Eine andere Aktion hat diese Taste. | Ja nimmt der anderen Aktion die Taste weg und gibt sie dieser. Nein oder Esc ändert nichts. |
 | „Diese Belegung kann nicht ersetzt werden, da mindestens eine Eingabe erforderlich ist.“ | Die andere Aktion ist unverzichtbar, und das ist ihre einzige Taste. | Gib dieser Aktion zuerst eine andere Taste und versuche es dann noch einmal. |
 
-Beispiel: Du willst, dass die Leertaste auch als Linksklick wirkt. Öffne Hinzufügen bei Linksklick, drücke die Leertaste. Du hörst „Diese Eingabe steht in Konflikt mit Tooltip vorlesen. Ersetzen?“. Drücke Pfeil runter bis Yes und Eingabe. Die Leertaste klickt jetzt, und Tooltip vorlesen hat seine Taste verloren; gib ihr eine andere, zum Beispiel Umschalt+Leertaste, wenn du sie noch haben willst.
+Beispiel: Du willst, dass die Leertaste auch als Linksklick wirkt. Öffne Hinzufügen bei Linksklick, drücke die Leertaste. Du hörst „Diese Eingabe steht in Konflikt mit Tooltip vorlesen. Ersetzen?“. Drücke Pfeil runter bis Ja und Eingabe. Die Leertaste klickt jetzt, und Tooltip vorlesen hat seine Taste verloren; gib ihr eine andere, zum Beispiel Umschalt+Leertaste, wenn du sie noch haben willst.
 
 WowVision prüft Tasten nur gegen die eigenen Aktionen. Die Tastenbelegungen des Spiels werden nicht geprüft, und solange die Taste von WowVision aktiv ist, hat sie Vorrang. Wähle Tasten, die du nicht für etwas anderes brauchst.
 

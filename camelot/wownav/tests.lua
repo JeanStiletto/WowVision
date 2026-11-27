@@ -115,29 +115,37 @@ local function rowsWith(rows, category)
 end
 
 local suite = {
-    -- 2026-11-27: the player's blocked passages (Route.persistentPenalties) come back with every new route; a manual new
-    -- route keeps what it has.
-    ["every new route starts with the saved blocked passages' penalties"] = function(t)
-        local saved = Route.persistentPenalties
-        local ok, err = pcall(function()
-            local calls = 0
-            Route.persistentPenalties = function()
-                calls = calls + 1
-                return { [11] = { [12] = 1000 }, [12] = { [11] = 1000 } }
-            end
-            local route = Route.new(newGame().env)
-            t:assertEqual(route.penalties[11][12], 1000, "a new route has them")
-            route.penalties[11][12] = 2000
-            route:reset(true)
-            t:assertEqual(route.penalties[11][12], 2000, "the manual new route keeps its own")
-            route:reset()
-            t:assertEqual(route.penalties[11][12], 1000, "the next route starts afresh with the saved ones")
-            t:assertTrue(calls >= 2)
-        end)
-        Route.persistentPenalties = saved
-        if not ok then
-            error(err, 0)
+    -- 2026-11-27: the player's blocked passages (env.penalties, blocked.lua) come back with every new route; a manual
+    -- new route keeps what it has.
+    ["every new route starts with the table env.penalties hands"] = function(t)
+        local calls = 0
+        local game = newGame()
+        game.env.penalties = function()
+            calls = calls + 1
+            return { [11] = { [12] = 1000 }, [12] = { [11] = 1000 } }
         end
+        local route = Route.new(game.env)
+        t:assertEqual(route.penalties[11][12], 1000, "a new route has them")
+        route.penalties[11][12] = 2000
+        route:reset(true)
+        t:assertEqual(route.penalties[11][12], 2000, "the manual new route keeps its own")
+        route:reset()
+        t:assertEqual(route.penalties[11][12], 1000, "the next route starts afresh with the saved ones")
+        t:assertTrue(calls >= 2)
+        t:assertNil(next(Route.new(newGame().env).penalties), "without env.penalties: none")
+    end,
+
+    ["the current link: the steering targets before and at the index, real waypoints only"] = function(t)
+        local route = Route.new(newGame().env)
+        t:assertNil(route:currentLink(), "no route")
+        route.active, route.path, route.pathIndex = true, { 11, 12, N.VIRT_BASE + 1 }, 2
+        local a, b = route:currentLink()
+        t:assertEqual(a, 11)
+        t:assertEqual(b, 12)
+        route.pathIndex = 1
+        t:assertNil(route:currentLink(), "at the first waypoint there is no link")
+        route.pathIndex = 3
+        t:assertNil(route:currentLink(), "a virtual point is no link of the network")
     end,
 
     ["a transit is proven in the plane: left the source, then in the arrival volume"] = function(t)
@@ -385,16 +393,10 @@ if haveNetwork then
             N.SetPlayerFaction(nil)
             return result
         end
-        -- the trial of 2026-11-26 turns the avoidance off by default; his rule itself is tested switched on
-        N.SetAvoidOutposts(true)
         local horde = routeAs("Horde")
-        N.SetAvoidOutposts(false)
         t:assertNotNil(horde, "an outpost never makes a route fail")
         t:assertEqual(horde.outpost, "target", "Stormwind is an Alliance capital: the target lies in it")
-        N.SetAvoidOutposts(true)
-        local alliance = routeAs("Alliance")
-        N.SetAvoidOutposts(false)
-        t:assertNil(alliance.outpost, "no warning in the own capital")
+        t:assertNil(routeAs("Alliance").outpost, "no warning in the own capital")
         t:assertTrue(WowVisionNavigationText("outpost_target") ~= "outpost_target", "the warning has a text")
     end
 
@@ -2608,7 +2610,7 @@ if haveNetwork then
             return out
         end
         local factions = { [251001] = "H", [1495] = "H", [11194] = "AH", [1740] = "H" }
-        local source = C.NpcFaction
+        local source, savedFaction = C.NpcFaction, N.playerFaction
         local ok, err = pcall(function()
             N.SetPlayerFaction("Alliance")
             local plainToken, plain = C:DangerSpawns(TIRISFAL)
@@ -2629,17 +2631,37 @@ if haveNetwork then
             N.SetPlayerFaction("Horde")
             local horde = names(select(2, C:DangerSpawns(TIRISFAL)))
             t:assertNil(horde["Deathguard Kristof"], "a Horde player's own guards do not count")
-            -- a source that cannot answer (Questie not ready) keeps his kind rule
+            -- a source that cannot answer (Questie not ready) keeps his kind rule, and so his token: the result is his
             C.NpcFaction = function()
                 return false
             end
             N.SetPlayerFaction("Alliance")
             local waitingToken, waiting = C:DangerSpawns(TIRISFAL)
             t:assertNil(names(waiting)["Deathguard Kristof"], "no answer: his rule")
-            t:assertTrue(waitingToken == plainToken, "no answer: his token")
+            t:assertTrue(waitingToken == plainToken, "no answer: his result, his token")
+            -- review 2026-11-27: a source that answers for some classes only gives a token of its own, and the full
+            -- answer another one (before, both were ":partial" and the stale table was kept)
+            C.NpcFaction = function(entry)
+                if entry == 251001 then
+                    return "H"
+                end
+                return false
+            end
+            local partialToken, partial = C:DangerSpawns(TIRISFAL)
+            t:assertTrue(names(partial)["Deathguard Kristof"] == true, "the class it answered for counts")
+            t:assertNil(names(partial)["Deathguard Linnea"], "the others keep his rule")
+            t:assertTrue(partialToken ~= plainToken and partialToken ~= token, "a partial answer: its own token")
+            C.NpcFaction = function(entry)
+                return factions[entry]
+            end
+            t:assertTrue(C:DangerSpawns(TIRISFAL) == token, "the full answer again: the full answer's token")
+            -- the token holds no reference to its catalogue (a weak-keyed map would keep it alive)
+            for _, value in pairs(token) do
+                t:assertTrue(type(value) ~= "table", "no table inside the token")
+            end
         end)
         C.NpcFaction = source
-        N.SetPlayerFaction(nil)
+        N.playerFaction = savedFaction
         if not ok then
             error(err, 0)
         end
@@ -2705,6 +2727,257 @@ if haveNetwork then
             error(err, 0)
         end
     end
+    -- A spawn may bring its own danger radius (spawn.radius); without one it keeps DANGER_RADIUS.
+    suite["safe routes: a spawn's own radius widens its danger"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        local saved = { N.DangerSource, N.safety }
+        local ok, err = pcall(function()
+            N.SetSafety(30)
+            local function yards()
+                N.dangerGen = N.dangerGen + 1
+                zone.danger = nil
+                local danger = N.ZoneDanger(zone)
+                local sum = 0
+                for _, y in pairs(danger.len) do
+                    sum = sum + y
+                end
+                return sum, danger
+            end
+            local plain, before = yards()
+            t:assertEqual(before.maxRadius, N.DANGER_RADIUS, "no spawn radius: the usual one")
+            local WIDE = 45
+            N.DangerSource = function(zoneId)
+                local token, list = saved[1](zoneId)
+                local wide = {}
+                for i, spawn in ipairs(list or {}) do
+                    local copy = {}
+                    for k, v in pairs(spawn) do
+                        copy[k] = v
+                    end
+                    copy.radius = WIDE
+                    wide[i] = copy
+                end
+                return { wide = token }, wide
+            end
+            local wideSum, after = yards()
+            t:assertEqual(after.maxRadius, WIDE)
+            t:assertTrue(wideSum > plain * 1.5, "the wider radius endangers more of the links")
+        end)
+        N.DangerSource = saved[1]
+        N.SetSafety(saved[2])
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+    -- Runs fn with N.DangerSource = source (a function(zoneId) -> token, spawns) and safe routes at `safety`; puts back
+    -- the source, the factor and the danger tables of `zones` afterwards.
+    local function withSpawns(source, safety, zones, fn)
+        local saved = { N.DangerSource, N.safety }
+        N.DangerSource = source
+        N.SetSafety(safety)
+        N.dangerGen = N.dangerGen + 1
+        local ok, err = pcall(fn)
+        N.DangerSource = saved[1]
+        N.SetSafety(saved[2])
+        N.dangerGen = N.dangerGen + 1
+        for _, zone in ipairs(zones) do
+            zone.danger = nil
+        end
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    -- The length limit of a safety pass (Pass, danger.limit) is a lower bound also when the goal is a point on a link:
+    -- the length the result counts ends at the link's end waypoint, not at the point. With the limit at the length of
+    -- the cheapest route, that route is still found (2026-11-27: the straight line to the point cut it).
+    suite["safe routes: the length limit keeps a route that fits when the goal is a point on a link"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local from = STORMWIND * N.ZONE_BASE + 8390
+        local fx, fy = N.Position(from)
+        -- a long two-way link far from the start, its middle as the goal
+        local link
+        for k = 1, #zone.lu do
+            local u = zone.lu[k] + 1
+            if zone.ldir[k] == 0 and zone.llen[k] > 25 and zone.lflag[k] < 8
+                and math.sqrt((zone.x[u] - fx) ^ 2 + (zone.y[u] - fy) ^ 2) > 300 then
+                link = k
+                break
+            end
+        end
+        t:assertNotNil(link, "a long link in Stormwind")
+        local starts = { { binding = N.BindingFromId(from), extra = 0, rank = 1 } }
+        local goals = { { binding = N.BindingFromId(N.LinkpointNode(zone, link, 128)), extra = 0, rank = 1 } }
+        t:assertEqual(goals[1].binding.type, "link")
+        withSpawns(function()
+            return "none", {}
+        end, 30, { zone }, function()
+            for _, footOnly in ipairs({ false, true }) do
+                local plain = N.SearchPass(starts, goals, false, nil, footOnly, nil)
+                t:assertNotNil(plain, "a route to the point")
+                local limited = N.SearchPass(starts, goals, false, nil, footOnly, nil,
+                    { w = 0, excl = {}, limit = plain.length + 1e-6 })
+                t:assertNotNil(limited, "the route that fits is not cut")
+                t:assertTrue(math.abs(limited.length - plain.length) < 1e-6, "the same length")
+                t:assertTrue(limited.expansions <= plain.expansions, "never more waypoints searched")
+                local tight = N.SearchPass(starts, goals, false, nil, footOnly, nil,
+                    { w = 0, excl = {}, limit = plain.length * 0.9 })
+                t:assertNil(tight, "a limit below the shortest route: nothing fits")
+            end
+        end)
+    end
+
+    -- A spawn's radius: invalid ones are the usual DANGER_RADIUS, a huge one DANGER_RADIUS_MAX; of two duplicates (same
+    -- name within DANGER_DEDUP) the larger radius stays.
+    suite["safe routes: a spawn's radius is checked, and a duplicate keeps the larger one"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local x, y, z = N.Position(STORMWIND * N.ZONE_BASE + 8390)
+        local spawns = {
+            { x = x, y = y, z = z, name = "huge", radius = math.huge },
+            { x = x + 100, y = y, z = z, name = "negative", radius = -5 },
+            { x = x + 200, y = y, z = z, name = "nan", radius = 0 / 0 },
+            { x = x + 300, y = y, z = z, name = "text", radius = "wide" },
+            { x = x + 400, y = y, z = z, name = "twice", radius = 20 },
+            { x = x + 401, y = y, z = z, name = "twice", radius = 45 },
+            { x = x + 500, y = y, z = z, name = "zero", radius = 0 },
+        }
+        withSpawns(function()
+            return spawns, spawns
+        end, 30, { zone }, function()
+            local danger = N.ZoneDanger(zone)
+            t:assertEqual(danger.count, 6, "the duplicate counts once")
+            t:assertEqual(danger.sr[1], N.DANGER_RADIUS_MAX)
+            t:assertEqual(danger.sr[2], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[3], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[4], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[5], 45, "the larger radius of the two")
+            t:assertEqual(danger.sr[6], N.DANGER_RADIUS)
+            t:assertEqual(danger.maxRadius, N.DANGER_RADIUS_MAX)
+        end)
+    end
+
+    -- A wide spawn lies in several grid cells but counts once per link: the table equals the sum over all spawns.
+    suite["safe routes: a wide spawn counts once on every link it reaches"] = function(t)
+        setup()
+        local zone = N.LoadZone(ELWYNN)
+        local spawns = {}
+        for i, radius in ipairs({ 20, 45, 100, 33, 61 }) do
+            local x, y, z = N.Position(ELWYNN * N.ZONE_BASE + i * 997)
+            spawns[#spawns + 1] = { x = x, y = y, z = z, name = "Spawn " .. i, radius = radius }
+        end
+        withSpawns(function()
+            return spawns, spawns
+        end, 30, { zone }, function()
+            local danger = N.ZoneDanger(zone)
+            -- the yards of each link, spawn by spawn (the same clip as the table: horizontal, DANGER_DZ at the nearest point)
+            local function clip(k, s)
+                local u, v = zone.lu[k] + 1, zone.lv[k] + 1
+                local x1, y1, z1, x2, y2, z2 = zone.x[u], zone.y[u], zone.z[u], zone.x[v], zone.y[v], zone.z[v]
+                local dx, dy = x2 - x1, y2 - y1
+                local a = dx * dx + dy * dy
+                if a <= 1e-9 then return 0 end
+                local px, py = x1 - s.x, y1 - s.y
+                local b = dx * px + dy * py
+                local disc = b * b - a * (px * px + py * py - s.radius * s.radius)
+                if disc <= 0 then return 0 end
+                local r = math.sqrt(disc)
+                local t1, t2 = math.max(0, (-b - r) / a), math.min(1, (-b + r) / a)
+                if t2 <= t1 then return 0 end
+                local tn = math.min(1, math.max(0, -b / a))
+                if math.abs(z1 + (z2 - z1) * tn - s.z) > N.DANGER_DZ then return 0 end
+                return (t2 - t1) * math.sqrt(a)
+            end
+            local same, reached = true, 0
+            for k = 1, #zone.lu do
+                local sum = 0
+                for _, s in ipairs(spawns) do
+                    sum = sum + clip(k, s)
+                end
+                local yards = danger.len[k] or 0
+                if sum > 0 then reached = reached + 1 end
+                if math.abs(yards - sum) > 1e-6 then same = false end
+            end
+            t:assertTrue(reached > 50, "the spawns reach many links")
+            t:assertTrue(same, "every link: the sum over the spawns, each once")
+        end)
+    end
+
+    -- The spawns at the start or the target of a route do not count for it: those within DANGER_RADIUS of the point, also
+    -- when their own radius is wider (a wide spawn still counts for a route that starts in its outer ring).
+    suite["safe routes: a wide spawn is left out only when the start stands at it"] = function(t)
+        setup()
+        local zone = N.LoadZone(STORMWIND)
+        local from, to = STORMWIND * N.ZONE_BASE + 8390, STORMWIND * N.ZONE_BASE + 2959
+        local x, y, z = N.Position(from)
+        local spawns = {}
+        withSpawns(function()
+            return spawns[1], spawns      -- the token: the spawn, so a new one builds a new table
+        end, 30, { zone }, function()
+            -- 30 yd from the start with 45 yd: outside the 20 yd of "at the start", so it endangers the route
+            spawns[1] = { x = x + 30, y = y, z = z, name = "ring", radius = 45 }
+            N.dangerGen = N.dangerGen + 1
+            local ring = N.RouteIds(from, to)
+            t:assertNotNil(ring)
+            t:assertTrue(ring.dangerA > 0, "a spawn 30 yd away with 45 yd counts")
+            -- 10 yd from the start: the start stands at it, so it does not count, whatever its radius
+            spawns[1] = { x = x + 10, y = y, z = z, name = "camp", radius = 45 }
+            N.dangerGen = N.dangerGen + 1
+            local camp = N.RouteIds(from, to)
+            t:assertEqual(camp.dangerA, 0, "a spawn at the start does not count")
+        end)
+    end
+
+    -- Inside a job, a danger table is built in slices (the job yields between them); outside one at once.
+    suite["safe routes: inside a job the danger table is built in slices"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        withSpawns(N.DangerSource, 30, { zone }, function()
+            local whole = N.ZoneDanger(zone)
+            local wholeLen = {}
+            for k, yards in pairs(whole.len) do
+                wholeLen[k] = yards
+            end
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local danger, _, slices = runJob(N.Job(function()
+                return N.ZoneDanger(zone)
+            end))
+            t:assertTrue(slices > 10, "the job took many slices")
+            t:assertNil(danger.nextLink, "the table is done")
+            local same = true
+            for k, yards in pairs(wholeLen) do
+                if danger.len[k] ~= yards then same = false end
+            end
+            for k in pairs(danger.len) do
+                if wholeLen[k] == nil then same = false end
+            end
+            t:assertTrue(same, "the same danger yards as built at once")
+        end)
+    end
+
+    -- 2026-11-27: blocked passages on the real data (blocked.lua), Western Plaguelands (zone 1422) near Chillwind Camp.
+    local blocked = WowVision.wownavBlocked
+    local cp = WowVision.customPoints
+    local WPL = 1422
+    -- the first passages shipped for WoW: Forever (camelot/customPointsData.lua, not loaded here): a rock link and the
+    -- rock top
+    local function shippedStore()
+        local store = cp.store({})
+        cp.mergeShipped(store, {
+            { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 0, a = 14220006522, ax = 1164.8, ay = -1201.3,
+                b = 14220006538, bx = 1177.1, by = -1182.2, x = 1171.0, y = -1191.8 },
+            { id = "wv:forever:wpl-rock-top", kind = "blocked", map = 0, x = 1185.5, y = -1182.0, z = 81.5,
+                radius = 12 },
+        })
+        return store
+    end
 
     -- Trial 2026-11-26: a level 56 Skeletal Acolyte attacked a level 34 player from about 30 yd; creatures at least
     -- C.HIGH_LEVEL_GAP levels above the player endanger within C.HIGH_LEVEL_RADIUS instead of DANGER_RADIUS.
@@ -2758,9 +3031,302 @@ if haveNetwork then
         end
     end
 
-    suite["trial defaults: safe routes 30 percent, outpost avoidance off"] = function(t)
-        t:assertEqual(N.SAFETY_DEFAULT, 30)
-        t:assertEqual(N.avoidOutposts, false)
+    -- Review 2026-11-27: the token is a fingerprint of the result (which classes endanger, with which radius), so a
+    -- known player level (the game's path: C.PlayerLevel is always set there) changes nothing while no radius changes,
+    -- and a level-up that moves no creature over C.HIGH_LEVEL_GAP keeps the table.
+    suite["safe routes: the danger token follows the spawn list, not the player's level"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local saved = { C.NpcLevel, C.PlayerLevel }
+        local ok, err = pcall(function()
+            local npcLevel, player = 38, 34
+            C.NpcLevel, C.PlayerLevel = nil, nil
+            local plainToken = C:DangerSpawns(ELWYNN)
+            C.NpcLevel = function()
+                return npcLevel
+            end
+            C.PlayerLevel = function()
+                return player
+            end
+            t:assertTrue(C:DangerSpawns(ELWYNN) == plainToken, "level known, no creature far above: his token")
+            player = 35
+            t:assertTrue(C:DangerSpawns(ELWYNN) == plainToken, "a level-up that changes no radius keeps the token")
+            player = 33
+            local highToken, list = C:DangerSpawns(ELWYNN)
+            t:assertEqual(list[1].radius, C.HIGH_LEVEL_RADIUS, "five levels above: the wider radius")
+            t:assertTrue(highToken ~= plainToken, "another radius, another token")
+            player = 30
+            t:assertTrue(C:DangerSpawns(ELWYNN) == highToken, "the same radii at another level: the same token")
+        end)
+        C.NpcLevel, C.PlayerLevel = saved[1], saved[2]
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    -- Review 2026-11-27: a source that gets ready after the first build: the table stays until the danger generation is
+    -- bumped (the module does that when an input changes, danger.lua), is then built again, and a bump that changes
+    -- nothing keeps it.
+    suite["safe routes: a faction source that gets ready rebuilds the danger table after a bump"] = function(t)
+        setup()
+        local TIRISFAL = 18
+        t:assertTrue(#zoneRows(TIRISFAL) > 0, "Tirisfal's catalogue is active")
+        local zone = N.LoadZone(TIRISFAL)
+        local saved = { C.NpcFaction, C.PlayerLevel, N.playerFaction, N.safety }
+        local ok, err = pcall(function()
+            N.SetSafety(30)
+            N.SetPlayerFaction("Alliance")
+            local isReady = false
+            C.NpcFaction = function(entry)
+                if not isReady then
+                    return false
+                end
+                return entry == 251001 and "H" or false
+            end
+            C.PlayerLevel = function()
+                return 34
+            end
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local waiting = N.ZoneDanger(zone)
+            isReady = true
+            t:assertTrue(N.ZoneDanger(zone) == waiting, "no bump: the table is kept")
+            N.dangerGen = N.dangerGen + 1
+            local judged = N.ZoneDanger(zone)
+            t:assertTrue(judged ~= waiting, "after the bump: built again")
+            t:assertTrue(judged.count > waiting.count, "with Deathguard Kristof's spawns")
+            N.dangerGen = N.dangerGen + 1
+            t:assertTrue(N.ZoneDanger(zone) == judged, "a bump that changes no input keeps the table")
+        end)
+        C.NpcFaction, C.PlayerLevel, N.playerFaction = saved[1], saved[2], saved[3]
+        N.SetSafety(saved[4])
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+    suite["blocked passages: a zone decoded after the route started still gets its penalties"] = function(t)
+        setup()
+        N.UnloadZone(WPL)
+        local store = shippedStore()
+        t:assertEqual(#store.blocked, 2)
+        local penalties, stats = blocked.penaltyTable(N, cp, store)
+        t:assertEqual(stats.zones, 0, "nothing filled before the search asks")
+        t:assertNil(penalties[14220006522], "the zone is not decoded: nothing yet")
+        N.LoadZone(WPL)
+        local row = penalties[14220006522]
+        t:assertTrue(row ~= nil and row[14220006538] == cp.BLOCKED_PENALTY, "the shipped rock link, once decoded")
+        t:assertEqual(penalties[14220006538][14220006522], cp.BLOCKED_PENALTY, "both ways")
+        t:assertEqual(stats.zones, 1)
+        t:assertTrue(stats.links > 100, "the rock top: " .. stats.links .. " links")
+        local filledLinks = stats.links
+        t:assertNil(penalties[14220000001], "a waypoint far from every passage: no row")
+        t:assertEqual(stats.links, filledLinks, "the zone is filled once")
+        t:assertEqual(stats.zones, 1)
+        -- the same store on another map: nothing
+        for _, point in ipairs(store.blocked) do
+            point.map = 1
+        end
+        local other, otherStats = blocked.penaltyTable(N, cp, store)
+        t:assertNil(other[14220006522])
+        t:assertEqual(otherStats.links, 0, "passages of another map are left out")
+    end
+
+    suite["blocked spots: every link leaving a waypoint in the circle and the band"] = function(t)
+        setup()
+        N.LoadZone(WPL)
+        local spot = { x = 1185.5, y = -1182.0, z = 81.5 }
+        local links = blocked.spotLinks(N, WPL, spot, 12, cp.BLOCKED_HEIGHT_BAND)
+        t:assertTrue(#links > 100, #links .. " links")
+        local outside = nil
+        for _, link in ipairs(links) do
+            local x, y, z = N.Position(link[1])
+            if (x - spot.x) ^ 2 + (y - spot.y) ^ 2 > 144 or math.abs(z - spot.z) > cp.BLOCKED_HEIGHT_BAND then
+                outside = link[1]
+                break
+            end
+        end
+        t:assertNil(outside, "every link starts at a waypoint inside the circle and the band")
+        t:assertTrue(blocked.spotLinks(N, WPL, spot, 12, cp.BLOCKED_HEIGHT_BAND) == links, "cached for the zone")
+        t:assertEqual(#blocked.spotLinks(N, WPL, { x = spot.x, y = spot.y, z = spot.z + 30 }, 12, 8), 0,
+            "a spot 30 yd above: nothing in the band")
+    end
+
+    suite["blocked spots: a circle that only reaches into a zone over its edge is found there"] = function(t)
+        setup()
+        local zone = N.LoadZone(WPL)
+        local entry = N.index[WPL]
+        local xmin = math.huge
+        for _, box in pairs(entry.worldBoxes) do
+            xmin = math.min(xmin, box.xmin)
+        end
+        -- the zone's westmost waypoint with links, and a circle round a point 1 yd west of the zone's boxes that just
+        -- reaches it (in data 1f8530e 57 yd: the boxes are the zone map's rectangle)
+        local best = nil
+        for i = 1, zone.n do
+            if #zone.adj[i] > 0 and (best == nil or zone.x[i] < zone.x[best]) then
+                best = i
+            end
+        end
+        local id = zone.base + best - 1
+        local cx = xmin - 1
+        for _, zoneId in ipairs(N.ZonesForPoint(cx, zone.y[best])) do
+            t:assertTrue(zoneId ~= WPL, "the centre lies outside the zone")
+        end
+        local store = cp.store({})
+        cp.addBlockedSpot(store, cx, zone.y[best], nil, entry.nativeMapId or N.activeMapId, zone.x[best] - cx + 1)
+        local penalties = blocked.penaltyTable(N, cp, store)
+        local row = penalties[id]
+        t:assertTrue(row ~= nil and next(row) ~= nil, "the waypoint's links are penalised")
+    end
+
+    suite["the manual new route: what is saved for the pair the player is stuck on"] = function(t)
+        setup()
+        local zone = N.LoadZone(WPL)
+        local a, b = 14220006522, 14220006538
+        local ax, ay, az = N.Position(a)
+        local bx, by, bz = N.Position(b)
+        local mx, my, mz = (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2
+        local found = blocked.stuckSave(N, cp, a, b, mx + 2, my, mz)
+        t:assertTrue(found ~= nil and found.links ~= nil and #found.links == 1, "a link of the network")
+        t:assertEqual(found.links[1][1], a)
+        t:assertEqual(found.links[1][2], b)
+        t:assertTrue(blocked.stuckSave(N, cp, a, b, mx, my, nil) ~= nil, "height unknown (swimming): the plane only")
+        local _, why = blocked.stuckSave(N, cp, a, b, mx + 25, my + 25, mz)
+        t:assertEqual(why, "far", "the player is not near the link")
+        _, why = blocked.stuckSave(N, cp, a, b, mx, my, mz + 20)
+        t:assertEqual(why, "far", "the player is far above or below it")
+        -- a branch waypoint his steering targets leave out: the two links around it
+        local branchFound = false
+        for localId, pair in pairs(zone.branch) do
+            local c, p, q = zone.base + localId, zone.base + pair[1], zone.base + pair[2]
+            local cx, cy, cz = N.Position(c)
+            local save = blocked.stuckSave(N, cp, p, q, cx, cy, cz)
+            if save ~= nil and save.links ~= nil and #save.links == 2 then
+                t:assertEqual(save.links[1][2], c)
+                t:assertEqual(save.links[2][1], c)
+                -- the running route feels them at once (its own penalty lies on p - q, no link)
+                local penalties = {}
+                blocked.apply(N, cp, penalties, save)
+                t:assertEqual(penalties[p][c], cp.BLOCKED_PENALTY)
+                t:assertEqual(penalties[q][c], cp.BLOCKED_PENALTY)
+                branchFound = true
+                break
+            end
+        end
+        t:assertTrue(branchFound, "a branch waypoint of the zone")
+        -- a seam step into the next zone (no link of a zone joins them): a spot over both ends
+        local p, q = nil, nil
+        for localId, seams in pairs(zone.seam) do
+            for _, seam in ipairs(seams) do
+                if not seam.link and seam[1] ~= nil then
+                    p, q = zone.base + localId, seam[1]
+                    break
+                end
+            end
+            if p ~= nil then
+                break
+            end
+        end
+        t:assertTrue(p ~= nil, "a seam step of the zone")
+        N.LoadZone(math.floor(q / N.ZONE_BASE))
+        local px, py, pz = N.Position(p)
+        local qx, qy = N.Position(q)
+        local save = blocked.stuckSave(N, cp, p, q, (px + qx) / 2, (py + qy) / 2, pz)
+        t:assertTrue(save ~= nil and save.spot ~= nil, "no link: a spot")
+        local touches = false
+        for _, link in ipairs(blocked.spotLinks(N, WPL, save.spot, save.spot.radius, cp.BLOCKED_HEIGHT_BAND)) do
+            if link[1] == p then touches = true end
+        end
+        t:assertTrue(touches, "the spot covers the pair's waypoints")
+        local penalties = {}
+        blocked.apply(N, cp, penalties, save)
+        t:assertTrue(penalties[p] ~= nil and next(penalties[p]) ~= nil, "the running route feels the spot at once")
+    end
+end
+
+-- The danger rules' sources (danger.lua) on a stand-in Questie read through the Questie backend
+-- (classic/quests/questie.lua): Questie's field names, not ready / ready (with no RegisterOnReady at all), the player's
+-- level from nil to known, and the inputs that make the module ask the catalogue again.
+suite["safe routes: Questie's factions and levels through the Questie backend"] = function(t)
+    local danger = WowVision.wownavDanger
+    local saved = { rawget(_G, "Questie"), rawget(_G, "QuestieLoader"), rawget(_G, "UnitLevel"), rawget(_G, "CreateFrame") }
+    local ok, err = pcall(function()
+        if saved[4] == nil then
+            -- the backend makes its (here unused) index frame
+            _G.CreateFrame = function()
+                return { Hide = function() end, Show = function() end, SetScript = function() end }
+            end
+        end
+        local rows = {
+            [251001] = { friendlyToFaction = "H", maxLevel = 15 },
+            [11194] = { friendlyToFaction = "AH", maxLevel = 60 },
+            [1740] = { friendlyToFaction = nil, maxLevel = 56 },
+        }
+        local QuestieDB = {
+            NPCPointers = { [251001] = 1, [11194] = 2, [1740] = 3 },
+            QueryQuest = function() end,
+            QueryNPCSingle = function(id, field)
+                return rows[id][field]
+            end,
+        }
+        local modules = { QuestieDB = QuestieDB, ZoneDB = {} }
+        _G.QuestieLoader = {
+            ImportModule = function(_, name)
+                return modules[name]
+            end,
+        }
+        _G.Questie = { API = { isReady = false } }
+        local level = nil
+        _G.UnitLevel = function()
+            return level
+        end
+        danger.reset()
+        local faction = nil
+        local N = {
+            PlayerFaction = function()
+                return faction
+            end,
+        }
+        local bumps = 0
+        local function bump()
+            bumps = bumps + 1
+        end
+        local C = {}
+        danger.install(N, C, bump)
+        t:assertTrue(C.NpcFaction == danger.npcFaction and C.NpcLevel == danger.npcLevel, "the hooks are set")
+        t:assertTrue(C.PlayerLevel == danger.playerLevel)
+        t:assertEqual(bumps, 1, "the first call asks")
+        t:assertEqual(danger.npcFaction(251001), false, "Questie not ready: no answer")
+        t:assertNil(danger.npcLevel(1740))
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 1, "nothing changed: no bump")
+        _G.Questie.API.isReady = true
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 2, "Questie got ready (it has no RegisterOnReady here): a bump")
+        t:assertEqual(danger.npcFaction(251001), "H")
+        t:assertEqual(danger.npcFaction(11194), "AH")
+        t:assertNil(danger.npcFaction(1740), "friendly to neither")
+        t:assertEqual(danger.npcFaction(99999), false, "an ID Questie does not know: no answer")
+        t:assertEqual(danger.npcLevel(1740), 56, "maxLevel")
+        level = 34
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 3, "the level from unknown to known: a bump")
+        t:assertEqual(danger.playerLevel(), 34)
+        faction = "alliance"
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 4, "the faction from unknown to known: a bump")
+        level = 35
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 5, "a level-up: a bump (the catalogue's token says whether anything changed)")
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 5)
+    end)
+    _G.Questie, _G.QuestieLoader, _G.UnitLevel, _G.CreateFrame = saved[1], saved[2], saved[3], saved[4]
+    danger.reset()
+    if not ok then
+        error(err, 0)
     end
 end
 

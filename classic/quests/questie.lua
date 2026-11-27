@@ -177,6 +177,23 @@ function quests.questieBackend()
         return { id = id, name = npc.name, subName = npc.subName, spawns = npc.spawns, zone = npc.zoneID }
     end
 
+    -- One raw field of an NPC row (QueryNPCSingle, e.g. "friendlyToFaction", "maxLevel"). Second result false when
+    -- Questie could not be asked (not ready, ID not in its database, query error): the caller then must not read
+    -- the nil first result as "no value".
+    function backend.npcField(id, field)
+        if not backend.isReady() or QuestieDB.QueryNPCSingle == nil then
+            return nil, false
+        end
+        if QuestieDB.NPCPointers ~= nil and QuestieDB.NPCPointers[id] == nil then
+            return nil, false
+        end
+        local ok, value = pcall(QuestieDB.QueryNPCSingle, id, field)
+        if not ok then
+            return nil, false
+        end
+        return value, true
+    end
+
     function backend.object(id)
         local ok, object = pcall(QuestieDB.GetObject, QuestieDB, id)
         if not ok or object == nil then

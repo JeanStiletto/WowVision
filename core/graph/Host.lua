@@ -1302,7 +1302,10 @@ end
 function GraphHost:_close(screen)
     local stack = self:focusedStack()
     if #stack.screens > 1 then
-        self:pop(stack)
+        local removed = self:pop(stack)
+        if removed ~= nil and removed.config.onEscape ~= nil then
+            removed.config.onEscape()
+        end
         return
     end
     if stack.config ~= nil and stack.config.onRequestClose ~= nil then

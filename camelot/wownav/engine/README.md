@@ -85,6 +85,42 @@ Keep this list current; everything else is his text, line for line (line endings
   `points` only while the factor is above 0, so a repeated search inside a job is answered as before when it is off.
   The module sets the factor from the setting Safe Routes (`N.SetSafety`), and `../route.lua` passes the player's and
   the target's position as `points` only while it is on.
+- `NavNetwork.lua`, safe routes, less search work (2026-11-26/27): his weights `{30, 8, 2}` are `{30, 8}` (the 2 won
+  none of eight measured routes). A safety pass gets the length limit (`Pass(..., danger)` with `danger.limit` =
+  `SAFETY_RATIO` x the length of pass (a), the caller's own bound) and does not follow a link to a waypoint from which
+  no route can fit: the length walked so far plus a lower bound of what is left (`LengthBound`: the straight line to
+  the goal's waypoints, or over the action ends of `WVN7ActionEnds`, whose actions count 0 yd). `danger.cap` stops
+  the pass above the cost the chosen route has in it (his pass without the limit never searched further). The passes
+  stop once the chosen route has no danger left. Twelve routes in the Plaguelands and Alterac (safety 10, 30 and
+  100): 1.5 to 11 times fewer waypoints searched than without the limit; 7 the same routes, 5 a route with less
+  danger within the same limit (without the limit the pass's cheapest route was too long and counted for nothing).
+  `N.SearchPass` is `Pass`, for the tests.
+- `NavNetwork.lua`, safe routes, danger tables in steps (2026-11-26/27): `BuildDanger` builds the spawns and the
+  grid, `DangerLinks` the links' danger yards from `danger.nextLink` on, resumable (256 links per clock check).
+  `N.BuildDangerInSteps(zoneId, budget, clock)` builds a table in slices; the module's preloader builds the tables of
+  the kept zones with it (the player's own zones first, 4 ms a frame, only with safe routes on and no search running,
+  and no more once all are current). `DangerOf` finishes a half-done table: inside a job in slices that yield like the
+  search, outside at once. `CurrentDanger` holds his rule when a table is kept or rebuilt.
+- `NavNetwork.lua`, safe routes, a radius per spawn (2026-11-26/27): a spawn may bring `radius` (the danger source
+  sets it; checked: above 0, at most `N.DANGER_RADIUS_MAX` = 100 yd, else his `DANGER_RADIUS`). `danger.sr[i]` is the
+  radius of spawn i, `danger.maxRadius` the largest; of two duplicates the larger radius stays. A spawn wider than
+  `DANGER_RADIUS` lies in every grid cell within its radius minus `DANGER_RADIUS` and counts once per link (`cx0`,
+  `cy0`), so the cells searched per link stay his. The start or target of a route leaves out the spawns within
+  `DANGER_RADIUS` of it (or the spawn's own radius when smaller), and `EdgeDanger` then subtracts the whole yards the
+  table counted for such a spawn. Without radii the tables are his.
+- `TargetCatalog.lua`, safe routes, faction and level of a creature (trial 2026-11-26/27, Broesel decides): three
+  hooks the module sets from Questie and the game (`../danger.lua`): `C.NpcFaction(entry)` -> "A" | "H" | "AH" | nil
+  (friendly to neither) | false (cannot be said), `C.NpcLevel(entry)` -> its highest level | nil, `C.PlayerLevel()` ->
+  the player's level | nil. `FactionDanger` judges a class by faction (with the player's faction from
+  `N.PlayerFaction`): friendly to the other side only endangers whatever its kind (quest givers and guards are kind
+  npc), a mob or creature friendly to neither endangers, friendly to the player's side or to both does not; a class it
+  cannot judge keeps his kind rule. `HighLevelRadius` gives a creature at least `C.HIGH_LEVEL_GAP` (5) levels above the
+  player the radius `C.HIGH_LEVEL_RADIUS` (45 yd) as its spawns' `radius`. `C:DangerSpawns` returns his token (the
+  catalogue) while the result is his (the kinds mob and creature, no radius); otherwise `DangerToken`, one table per
+  catalogue and fingerprint of the result (the dangerous class indices with their radii; it holds no reference to the
+  catalogue). So a table is rebuilt exactly when the spawn list changes; the module bumps `N.dangerGen` (deferred while
+  a search runs) when the player's level or faction or Questie's readiness changes, which only asks again. Without the
+  hooks everything is his.
 - His walk-in portal as a link of the route (WowVisionNavigation.lua, 5a1290b) is in `../route.lua`, not here:
   `Route.triggerPoint` (his `WowVisionNavigationTriggerPoint`) and the leg's last waypoint in the trigger
   (`Route:begin`). His `PendingTriggerEntered` was already WowVision's `Route:walkInTransit`, and the exit zone of a

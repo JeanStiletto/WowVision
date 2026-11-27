@@ -32,9 +32,6 @@ Route.BLOCKAGE_MIN_MOVEMENT = 1.0     -- yd: below this it counts as stuck
 Route.BLOCKAGE_MOVEMENT_TOLERANCE = 0.5 -- s: "tries to walk" survives short dropouts of the moving flag
 Route.BLOCKAGE_ESCALATION_WAIT_TIME = 1.5 -- s of continuous sticking until escalation
 Route.BLOCKAGE_EDGE_PENALTY = 1000.0  -- yd on the blocked link of a manual new route
--- WowVision (2026-11-27): the penalties every route starts with (the player's saved blocked passages, set by the
--- module): function() -> a fresh { [a] = { [b] = yd } } table. Nil: none.
-Route.persistentPenalties = nil
 Route.STAGNATION_WINDOW = 10.0        -- s observation window
 Route.STAGNATION_MIN_APPROACH = 2.0   -- yd the distance has to drop within the window
 Route.STAGNATION_MIN_TRAVEL = 5.0     -- yd of way covered in the window ("moves")
@@ -83,7 +80,7 @@ function Route.new(env)
     self.env = env
     self.N, self.G, self.R, self.C = env.N, env.G, env.R, env.C
     self.A = env.A or _G.WowVisionNavigationTransitActivation
-    self.penalties = {}       -- EdgePenalties[a][b] in yd, dropped at the end of the route (persistent ones come back)
+    self.penalties = {}       -- EdgePenalties[a][b] in yd, dropped at the end of the route (env.penalties: see reset)
     self.anchor = { height = nil, preferred = nil, last = nil }   -- his HeightAnchor
     self:reset()
     return self
@@ -544,7 +541,9 @@ function Route:reset(keepPenalties)
     self.source = nil         -- the target (his layerTargetSource)
     self.anchor.height = nil
     if not keepPenalties then
-        self.penalties = Route.persistentPenalties ~= nil and Route.persistentPenalties() or {}
+        -- WowVision (2026-11-27): env.penalties (optional) hands the table every new route starts with (the player's
+        -- blocked passages, camelot/wownav/blocked.lua); his core starts empty
+        self.penalties = self.env.penalties ~= nil and self.env.penalties() or {}
     end
     self.blockagesPerEdge = {}
     self.fallbackTimePerIndex = {}
@@ -901,10 +900,10 @@ end
 -- Manual new route (his PerformRecalculation): the blocked link gets a penalty, the target is resolved anew
 -- ---------------------------------------------------------------------------------------------------------------
 
--- Puts the penalty on the current link (real waypoints only) and stops the route, keeping the penalties. Returns the
--- target to resolve again, or nil when there is no route.
-function Route:penalizeCurrentLink()
-    if not self.active or not self.path then
+-- WowVision (2026-11-27): the link the player is on, as his PerformRecalculation takes it: the steering targets
+-- before and at pathIndex, real waypoints only. Returns fromId, toId, or nil. Also used by the module to save it.
+function Route:currentLink()
+    if not self.active or not self.path or not self.pathIndex then
         return nil
     end
     local VIRT = self.N.VIRT_BASE
@@ -913,6 +912,19 @@ function Route:penalizeCurrentLink()
     local a = fromId and fromId < VIRT and fromId or nil
     local b = toId and toId < VIRT and toId or nil
     if a and b and a ~= b then
+        return a, b
+    end
+    return nil
+end
+
+-- Puts the penalty on the current link (real waypoints only) and stops the route, keeping the penalties. Returns the
+-- target to resolve again, or nil when there is no route.
+function Route:penalizeCurrentLink()
+    if not self.active or not self.path then
+        return nil
+    end
+    local a, b = self:currentLink()
+    if a then
         local p = self.penalties
         p[a] = p[a] or {}
         p[b] = p[b] or {}

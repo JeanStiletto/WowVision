@@ -22,6 +22,8 @@ local graph = WowVision.graph
 --                   on it, and Escape puts it aside (graph/combatKeys.lua)
 --   noLevelBack     the left arrow does not go back from this pushed screen
 --                   (a yes/no question)
+--   onEscape        function() -- run after the close key (Escape) popped this
+--                   pushed screen (a question's cancel); not on any other pop
 local Screen = WowVision.Class("GraphScreen")
 graph.Screen = Screen
 

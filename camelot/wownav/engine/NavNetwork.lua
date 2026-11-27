@@ -53,10 +53,12 @@ N.SetComfort(N.COMFORT_DEFAULT)
 -- Safety factor (user request 2026-11-23, /vn safety <p>): p percent, 0 to 300, default 0 = off. X = 1 + p/100 is how much longer a safer route may be
 -- than the shortest one (pass (a)). The danger of a link is the length of the link (yd, horizontal) within DANGER_RADIUS of a monster spawn of the
 -- logical targets (classes of kind mob / creature; npc and objects do not count). Values to be confirmed by the user.
--- WowVision (trial 2026-11-26, Broesel decides): default 30 instead of 0, and the spawns judged by faction (TargetCatalog C:DangerSpawns,
--- creatures of the other faction count whatever their kind); with that the outpost avoidance below is off by default.
-N.SAFETY_DEFAULT, N.SAFETY_MAX = 30, 300
+-- WowVision (2026-11-26/27): with a faction source the spawns are judged by faction (TargetCatalog C:DangerSpawns: creatures of the other
+-- faction count whatever their kind), and with a level source a creature far above the player brings a wider radius (spawn.radius).
+N.SAFETY_DEFAULT, N.SAFETY_MAX = 0, 300
 N.DANGER_RADIUS = 20.0        -- yd: a spawn endangers the part of a link that lies this close to it (aggro range of the usual mobs plus a margin)
+-- WowVision (2026-11-27): the largest radius a spawn may bring (spawn.radius); a larger one counts as this, an invalid one as DANGER_RADIUS
+N.DANGER_RADIUS_MAX = 100.0
 N.DANGER_DZ = 8.0             -- yd: a spawn whose height differs this much from the link at its nearest point does not count (caves, floors)
 N.DANGER_DEDUP = 2.0          -- yd: spawns of the same name this close to each other (several sources of one spawn) count once
 -- WowVision trial 2026-11-26: his { 30, 8, 2 } without the 2, which won none of eight measured routes (Chillwind Camp, Chillwind Point and
@@ -69,8 +71,9 @@ function N.SetSafety(percent)
 end
 N.SetSafety(N.SAFETY_DEFAULT)
 N.dangerGen = 0               -- counts the changes of the catalogue the spawns come from (the target catalogue bumps it on activation)
--- The spawns of a zone: function(zoneId) -> token, { {x, y, z (or nil), name}, ... } | nil. The token identifies the data (the zone
--- keeps its danger table while the token stays). Default: the compact logical catalogue of the target catalogue.
+-- The spawns of a zone: function(zoneId) -> token, { {x, y, z (or nil), name, radius (optional)}, ... } | nil. The token identifies the
+-- data (the zone keeps its danger table while the token stays). Default: the compact logical catalogue of the target catalogue.
+-- WowVision (2026-11-26): radius = the spawn's own danger radius in yd (0 < radius <= DANGER_RADIUS_MAX), else DANGER_RADIUS.
 N.DangerSource = function(zoneId)
     local catalog = _G.WowVisionNavigationTargetCatalog
     if catalog and catalog.DangerSpawns then return catalog:DangerSpawns(zoneId) end
@@ -1716,12 +1719,18 @@ local function Options(binding, road, asStart)
     return options
 end
 
+-- Time slicing (chapter 7 point 4, "at most 30 ms per frame"): set while a route job's coroutine runs.
+-- (WowVision: declared before the safe routes, whose danger tables are built in slices inside a job too)
+local slicing = nil
+local SLICE_CHECK = 64     -- expansions between clock reads
+
 -- ---------------------------------------------------------------------------
--- Safe routes (/vn safety). Per zone, once and lazily (first route that needs it): the spawns (deduplicated, on a grid of cell size
--- DANGER_RADIUS) and, per link, the yards of the link within DANGER_RADIUS of a spawn, summed over the spawns (danger.len[k], only links with
--- danger > 0; one number per link keeps the table small). The spawns around the start and the end of a route do not count for that route (the
--- quest target often lies in the camp): `excl[zone] = { list = {spawn, ...}, cache = {} }`; the yards of those few spawns are computed again for a
--- link when the search first touches it, and subtracted.
+-- Safe routes (/vn safety). Per zone, once: the spawns (deduplicated, on a grid of cell size DANGER_RADIUS) and, per link, the yards of the
+-- link within a spawn's radius of it (DANGER_RADIUS; WowVision: or the spawn's own), summed over the spawns (danger.len[k], only links with
+-- danger > 0; one number per link keeps the table small). WowVision (2026-11-26): the table is built in the background (N.BuildDangerInSteps,
+-- the module's preloader) or by the first route that needs it, in slices inside a job (DangerOf). The spawns around the start and the end of
+-- a route do not count for that route (the quest target often lies in the camp): `excl[zone] = { list = {spawn, ...}, cache = {} }`; the
+-- yards of those few spawns are computed again for a link when the search first touches it, and subtracted.
 -- ---------------------------------------------------------------------------
 local function DangerCell(value) return floor(value / N.DANGER_RADIUS) end
 local function DangerKey(cx, cy) return (cx + 4096) * 8192 + (cy + 4096) end
@@ -1747,45 +1756,72 @@ local function ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx, sy, sz, radius, dz)
     return (t2 - t1) * root
 end
 
+-- WowVision (2026-11-27): a spawn's own danger radius (spawn.radius): above 0, at most DANGER_RADIUS_MAX; else DANGER_RADIUS.
+local function SpawnRadius(value)
+    local r = tonumber(value)
+    if r == nil or r ~= r or r <= 0 then return N.DANGER_RADIUS end
+    if r > N.DANGER_RADIUS_MAX then return N.DANGER_RADIUS_MAX end
+    return r
+end
+
 local function BuildDanger(zone, spawns)
-    local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
-    -- WowVision (2026-11-26): sr[i] = the spawn's own radius (spawn.radius, e.g. a monster far above the player's level),
-    -- else DANGER_RADIUS; maxRadius = the largest, so the grid search reaches every spawn
-    local danger = { len = {}, sx = {}, sy = {}, sz = {}, sr = {}, grid = {}, count = 0, maxRadius = radius }
+    local radius = N.DANGER_RADIUS
+    -- WowVision (2026-11-26): sr[i] = the spawn's own radius (SpawnRadius); maxRadius = the largest. WowVision (2026-11-27): a spawn
+    -- wider than DANGER_RADIUS lies in every grid cell within (its radius - DANGER_RADIUS) of it, so the search around a link stays
+    -- DANGER_RADIUS wide; cx0[i], cy0[i] = its first cell (nil for a spawn in one cell), so it counts once per link (DangerLinks).
+    local danger = { len = {}, sx = {}, sy = {}, sz = {}, sr = {}, cx0 = {}, cy0 = {}, grid = {}, count = 0, maxRadius = radius }
     local sx, sy, sz, sr, grid = danger.sx, danger.sy, danger.sz, danger.sr, danger.grid
-    -- deduplication: the same name within DANGER_DEDUP counts once
+    -- deduplication: the same name within DANGER_DEDUP counts once (WowVision: with the larger radius of the two)
     local names, dedup, step = {}, {}, N.DANGER_DEDUP
     for _, spawn in ipairs(spawns or {}) do
         local x, y = spawn.x, spawn.y
+        local own = SpawnRadius(spawn.radius)
         local cx, cy = floor(x / step), floor(y / step)
-        local duplicate = false
+        local duplicate
         for gx = cx - 1, cx + 1 do
             for gy = cy - 1, cy + 1 do
                 local list = dedup[DangerKey(gx, gy)]
                 if list then
                     for _, i in ipairs(list) do
-                        if names[i] == spawn.name and (sx[i] - x) ^ 2 + (sy[i] - y) ^ 2 <= step * step then duplicate = true; break end
+                        if names[i] == spawn.name and (sx[i] - x) ^ 2 + (sy[i] - y) ^ 2 <= step * step then duplicate = i; break end
                     end
                 end
                 if duplicate then break end
             end
             if duplicate then break end
         end
-        if not duplicate then
+        if duplicate then
+            if own > sr[duplicate] then sr[duplicate] = own end
+        else
             local i = danger.count + 1
             danger.count = i
-            sx[i], sy[i], sz[i], names[i] = x, y, spawn.z or false, spawn.name
-            local own = tonumber(spawn.radius) or radius
-            sr[i] = own
-            if own > danger.maxRadius then danger.maxRadius = own end
+            sx[i], sy[i], sz[i], sr[i], names[i] = x, y, spawn.z or false, own, spawn.name
             local key = DangerKey(cx, cy)
             local list = dedup[key]
             if not list then list = {}; dedup[key] = list end
             list[#list + 1] = i
-            key = DangerKey(DangerCell(x), DangerCell(y))
-            list = grid[key]
-            if not list then list = {}; grid[key] = list end
-            list[#list + 1] = i
+        end
+    end
+    -- the grid, once every spawn has its radius
+    for i = 1, danger.count do
+        local x, y, own = sx[i], sy[i], sr[i]
+        if own > danger.maxRadius then danger.maxRadius = own end
+        local reach = own - radius
+        local fx, fy, lx, ly
+        if reach > 0 then
+            fx, fy, lx, ly = DangerCell(x - reach), DangerCell(y - reach), DangerCell(x + reach), DangerCell(y + reach)
+            danger.cx0[i], danger.cy0[i] = fx, fy
+        else
+            fx, fy = DangerCell(x), DangerCell(y)
+            lx, ly = fx, fy
+        end
+        for gx = fx, lx do
+            for gy = fy, ly do
+                local key = DangerKey(gx, gy)
+                local list = grid[key]
+                if not list then list = {}; grid[key] = list end
+                list[#list + 1] = i
+            end
         end
     end
     if danger.count == 0 then return danger end
@@ -1797,12 +1833,12 @@ end
 -- clock passes the deadline (checked every DANGER_SLICE links) and return false; true when every link is done.
 local DANGER_SLICE = 256
 local function DangerLinks(zone, danger, clock, deadline)
-    local radius, dz = danger.maxRadius or N.DANGER_RADIUS, N.DANGER_DZ
-    local sx, sy, sz, sr, grid = danger.sx, danger.sy, danger.sz, danger.sr, danger.grid
-    local len = danger.len
-    local lu, lv, nx, ny, nz = zone.lu, zone.lv, zone.x, zone.y, zone.z
     local k = danger.nextLink
     if not k then return true end
+    local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
+    local sx, sy, sz, sr, cx0, cy0, grid = danger.sx, danger.sy, danger.sz, danger.sr, danger.cx0, danger.cy0, danger.grid
+    local len = danger.len
+    local lu, lv, nx, ny, nz = zone.lu, zone.lv, zone.x, zone.y, zone.z
     local last, first = #lu, k
     while k <= last do
         -- every DANGER_SLICE links, never before the first batch of this call (a slice always gets on)
@@ -1817,13 +1853,18 @@ local function DangerLinks(zone, danger, clock, deadline)
         if a > 1e-9 then
             local total
             local root = sqrt(a)
-            for cx = DangerCell(min(x1, x2) - radius), DangerCell(max(x1, x2) + radius) do
-                for cy = DangerCell(min(y1, y2) - radius), DangerCell(max(y1, y2) + radius) do
+            local qx, qy = DangerCell(min(x1, x2) - radius), DangerCell(min(y1, y2) - radius)
+            for cx = qx, DangerCell(max(x1, x2) + radius) do
+                for cy = qy, DangerCell(max(y1, y2) + radius) do
                     local bucket = grid[DangerKey(cx, cy)]
                     if bucket then
                         for _, i in ipairs(bucket) do
-                            local yards = ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx[i], sy[i], sz[i], sr[i] or radius, dz)
-                            if yards > 0 then total = (total or 0) + yards end
+                            -- a wide spawn counts in the first cell of this window that holds it
+                            local wx = cx0[i]
+                            if wx == nil or (cx == max(wx, qx) and cy == max(cy0[i], qy)) then
+                                local yards = ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx[i], sy[i], sz[i], sr[i], dz)
+                                if yards > 0 then total = (total or 0) + yards end
+                            end
                         end
                     end
                 end
@@ -1836,22 +1877,36 @@ local function DangerLinks(zone, danger, clock, deadline)
     return true
 end
 
--- The danger table of a zone (built on first use; rebuilt when the catalogue changed). A table the background left half
--- done (N.BuildDangerInSteps) is finished here.
-local function DangerOf(zone)
+-- WowVision (2026-11-27): the danger table of a zone for the current catalogue: kept while the generation or the source's
+-- token stays, else rebuilt (the spawns and the grid; the links are left to DangerLinks). Second result: true when just built.
+local function CurrentDanger(zone)
     local danger = zone.danger
-    if danger and danger.gen == N.dangerGen and not danger.nextLink then return danger end
-    if not (danger and danger.gen == N.dangerGen) then
-        local token, spawns = N.DangerSource(zone.id)
-        if danger and danger.token == token then
-            danger.gen = N.dangerGen
-        else
-            danger = BuildDanger(zone, spawns)
-            danger.token, danger.gen = token, N.dangerGen
-            zone.danger = danger
-        end
+    if danger and danger.gen == N.dangerGen then return danger, false end
+    local token, spawns = N.DangerSource(zone.id)
+    if danger and danger.token == token then
+        danger.gen = N.dangerGen
+        return danger, false
     end
-    DangerLinks(zone, danger)
+    danger = BuildDanger(zone, spawns)
+    danger.token, danger.gen = token, N.dangerGen
+    zone.danger = danger
+    return danger, true
+end
+
+-- The danger table of a zone (built on first use; rebuilt when the catalogue changed). WowVision (2026-11-27): a table the
+-- background left half done (N.BuildDangerInSteps) is finished here; inside a job in slices that yield once the frame's
+-- budget is used (as the search does), outside a job at once.
+local function DangerOf(zone)
+    local danger = CurrentDanger(zone)
+    if not danger.nextLink then return danger end
+    if slicing then
+        while not DangerLinks(zone, danger, slicing.clock, slicing.deadline) do
+            coroutine.yield()
+            danger = CurrentDanger(zone)       -- the catalogue may have changed in between
+        end
+    else
+        DangerLinks(zone, danger)
+    end
     return danger
 end
 
@@ -1860,22 +1915,12 @@ end
 -- budget in the clock's unit (debugprofilestop: ms). True when the table is current, false while work is left, nil when
 -- nothing is to be done (safe routes off, zone not decoded).
 function N.BuildDangerInSteps(zoneId, budget, clock)
-    if (N.safety or 0) <= 0 then return nil end
+    if N.safety <= 0 then return nil end
     local zone = N.zones[zoneId]
     if not zone then return nil end
     local deadline = clock() + budget
-    local danger = zone.danger
-    if not (danger and danger.gen == N.dangerGen) then
-        local token, spawns = N.DangerSource(zone.id)
-        if danger and danger.token == token then
-            danger.gen = N.dangerGen
-        else
-            danger = BuildDanger(zone, spawns)
-            danger.token, danger.gen = token, N.dangerGen
-            zone.danger = danger
-            if clock() >= deadline then return not danger.nextLink end
-        end
-    end
+    local danger, built = CurrentDanger(zone)
+    if built and clock() >= deadline then return not danger.nextLink end
     return DangerLinks(zone, danger, clock, deadline)
 end
 N.ZoneDanger = DangerOf          -- tests and measurements
@@ -1892,10 +1937,10 @@ local function EdgeDanger(zone, danger, k, excl)
             local x1, y1, z1, x2, y2, z2 = zone.x[u], zone.y[u], zone.z[u], zone.x[v], zone.y[v], zone.z[v]
             local a = (x2 - x1) ^ 2 + (y2 - y1) ^ 2
             local root = sqrt(a)
-            local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
+            local dz = N.DANGER_DZ
+            -- WowVision (2026-11-26): with the radius the table counted for that spawn
             for _, i in ipairs(skip.list) do
-                yards = yards - ClipLink(x1, y1, z1, x2, y2, z2, a, root, danger.sx[i], danger.sy[i], danger.sz[i],
-                    danger.sr and danger.sr[i] or radius, dz)
+                yards = yards - ClipLink(x1, y1, z1, x2, y2, z2, a, root, danger.sx[i], danger.sy[i], danger.sz[i], danger.sr[i], dz)
             end
             if yards < 1e-9 then yards = 0 end
             skip.cache[k] = yards
@@ -1906,21 +1951,22 @@ local function EdgeDanger(zone, danger, k, excl)
     return yards
 end
 
--- Spawns around a point (start or end of a route): they do not endanger this route.
+-- Spawns around a point (start or end of a route): they do not endanger this route. WowVision (2026-11-27): "around" stays
+-- DANGER_RADIUS (the point stands at the spawn) for a wider spawn too, or the spawn's own radius when that is smaller; so a
+-- wide spawn still counts for a route that starts or ends in its outer ring. A wide spawn lies in several cells (seen: once).
 local function ExcludeAround(excl, zone, x, y, z)
     local danger = DangerOf(zone)
     if danger.count == 0 then return end
     local radius = N.DANGER_RADIUS
     local cx, cy = DangerCell(x), DangerCell(y)
-    local reach = math.ceil((danger.maxRadius or radius) / N.DANGER_RADIUS)
-    for gx = cx - reach, cx + reach do
-        for gy = cy - reach, cy + reach do
+    for gx = cx - 1, cx + 1 do
+        for gy = cy - 1, cy + 1 do
             local bucket = danger.grid[DangerKey(gx, gy)]
             if bucket then
                 for _, i in ipairs(bucket) do
                     local zs = danger.sz[i]
-                    local own = danger.sr and danger.sr[i] or radius
-                    if (danger.sx[i] - x) ^ 2 + (danger.sy[i] - y) ^ 2 <= own * own
+                    local near = min(danger.sr[i], radius)
+                    if (danger.sx[i] - x) ^ 2 + (danger.sy[i] - y) ^ 2 <= near * near
                         and (not z or not zs or abs(z - zs) <= N.DANGER_DZ) then
                         local skip = excl[zone]
                         if not skip then skip = { list = {}, seen = {}, cache = {} }; excl[zone] = skip end
@@ -1971,7 +2017,7 @@ end
 -- Z2: outposts and capitals of the opposing faction. A route avoids their waypoints (a detour), never fails because of them: when no
 -- route exists without one, the route leads through (N.Route). An outpost that holds the start or the target of the route is open.
 -- ---------------------------------------------------------------------------
-N.avoidOutposts = false                     -- /vn outposts on|off (WowVision trial 2026-11-26: default off, see N.SAFETY_DEFAULT)
+N.avoidOutposts = true                      -- /vn outposts on|off
 local OPPONENT = { horde = "alliance", alliance = "horde" }
 
 function N.SetAvoidOutposts(enabled)
@@ -2066,9 +2112,6 @@ local function Blocked(avoid, id)
     return group ~= nil and not avoid.open[group]
 end
 
--- Time slicing (chapter 7 point 4, "at most 30 ms per frame"): set while a route job's coroutine runs.
-local slicing = nil
-local SLICE_CHECK = 64     -- expansions between clock reads
 -- WowVision: the waypoints reached by the plain searches of the running job that found no target (N.Route), one list
 -- per foot-only switch. Such a set holds everything reachable from each of its waypoints, so it also bounds every
 -- start whose options all lie in it.
@@ -2239,8 +2282,82 @@ local function ActionBound(goals, hmin, footOnly)
     return nearest, goalMap, startsByMap
 end
 
+-- WowVision (2026-11-27): the length limit of a safety pass (Pass, danger.limit). The result counts a route's length from the
+-- waypoint of its start option to the waypoint of its goal option (targetMap: an end of the goal's link, not the point on it):
+-- links with their length, which is never below their straight line (0 of 1.44 million links in six zones), seams and parts of
+-- links with their straight line, actions with 0. So what a route still walks from a position is at least the straight line to
+-- the nearest goal waypoint when it takes no action, else the straight line to the nearest action start of the position's map
+-- (no seam joins two maps) plus the straight line from the nearest action end on a goal waypoint's map to a goal waypoint. The
+-- action ends of the whole data (WVN7ActionEnds) count, so a zone decoded during the search changes nothing; on foot no action
+-- is taken. Returns fits(x, y, z, starts, budget) -> false when no route from the position walks at most `budget` yd more, and
+-- startsOf(zone) -> the action starts of the zone's map (nil: none count). Without WVN7ActionEnds, and not on foot, only the
+-- length walked so far counts.
+local function LengthBound(targetMap, footOnly)
+    local gx, gy, gz, goalMaps, n = {}, {}, {}, {}, 0
+    for id in pairs(targetMap) do
+        n = n + 1
+        gx[n], gy[n], gz[n] = N.Position(id)
+        local zone = id >= VIRT_BASE and N.virt[id] and N.virt[id].zone or ZoneOf(id)
+        local entry = zone and N.index[zone.id]
+        if goalMaps and entry and entry.mapId ~= nil then goalMaps[entry.mapId] = true else goalMaps = nil end
+    end
+    local anyStart, rest, startsByMap = false, math.huge, {}
+    if not footOnly then
+        local ends = _G.WVN7ActionEnds
+        if type(ends) ~= "table" then
+            return function(_, _, _, _, budget) return budget >= 0 end, function() return nil end
+        end
+        for _, action in ipairs(ends) do
+            local list = startsByMap[action.fromMap] or {}
+            list[#list + 1], list[#list + 2], list[#list + 3] = action.fx, action.fy, action.fz
+            startsByMap[action.fromMap] = list
+            anyStart = true
+            if goalMaps == nil or goalMaps[action.toMap] then
+                for i = 1, n do
+                    local d = Distance3(action.tx, action.ty, action.tz, gx[i], gy[i], gz[i])
+                    if d < rest then rest = d end
+                end
+            end
+        end
+    end
+    local all
+    local function startsOf(zone)
+        if not anyStart or rest == math.huge then return nil end
+        local entry = zone and N.index[zone.id]
+        local map = entry and entry.mapId
+        if map ~= nil then return startsByMap[map] end
+        if not all then
+            all = {}
+            for _, list in pairs(startsByMap) do
+                for i = 1, #list do all[#all + 1] = list[i] end
+            end
+        end
+        return all
+    end
+    local function fits(x, y, z, starts, budget)
+        if budget < 0 then return false end
+        local b2 = budget * budget
+        for i = 1, n do
+            local dx, dy, dz = x - gx[i], y - gy[i], z - gz[i]
+            if dx * dx + dy * dy + dz * dz <= b2 then return true end
+        end
+        if not starts then return false end
+        local left = budget - rest
+        if left < 0 then return false end
+        local l2 = left * left
+        for i = 1, #starts, 3 do
+            local dx, dy, dz = x - starts[i], y - starts[i + 1], z - starts[i + 2]
+            if dx * dx + dy * dy + dz * dz <= l2 then return true end
+        end
+        return false
+    end
+    return fits, startsOf
+end
+
 -- danger (optional, safety pass): { w = cost per yd of danger, excl = spawns of this route that do not count } adds w x danger of the link
--- to the cost of every land link (cost only grows: the straight-line heuristic stays admissible).
+-- to the cost of every land link (cost only grows: the straight-line heuristic stays admissible). WowVision (2026-11-26/27): limit = the
+-- largest length the caller accepts (a link to a waypoint from which no route fits is not followed: LengthBound); cap = the cost of a
+-- route the caller has already (the search stops above it).
 local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
     local targetMap = {}
     for _, entry in ipairs(goals) do
@@ -2258,11 +2375,15 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
     -- that virtual point), the action, or false for a seam
     local g, previous, via, startEntry = {}, {}, {}, {}
     -- WowVision, speed (2026-11-26): a safety pass only counts when its route is at most danger.limit yd long (the
-    -- caller drops a longer candidate), so it does not follow a waypoint whose length so far plus the straight line to
-    -- the goals is longer. glen[id] = the length of the links walked to the waypoint (seams, actions and partial links
-    -- count 0: a lower bound, so no candidate that fits is cut). Without a limit (every other pass) nothing changes.
+    -- caller drops a longer candidate), so it does not follow a link to a waypoint whose length so far plus what any
+    -- route from there still walks (LengthBound, 2026-11-27) is longer. glen[id] = the length of the links walked to the
+    -- waypoint (seams, actions and partial links count 0: a lower bound, so no candidate that fits is cut). Without a
+    -- limit (every other pass) nothing changes. danger.cap: see the loop.
     local limit = danger and danger.limit or nil
+    local cap = danger and danger.cap or nil
     local glen = limit and {} or nil
+    local fits, startsOf
+    if limit then fits, startsOf = LengthBound(targetMap, footOnly) end
     local heap = HeapNew()
     local useStraightLine = N.actionCount == 0   -- cheap teleports make the straight line inadmissible
     -- WowVision, speed: the goals' positions in plain arrays and the estimate from a position, so a waypoint of a zone
@@ -2396,6 +2517,10 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
         local f, id, cost = HeapPop(heap)
         if not f then break end
         if f > bestSum or (f == bestSum and single) then break end
+        -- WowVision (2026-11-27): with the length limit a safety pass whose cheapest route is too long goes on past that
+        -- route's cost; the caller already has a route of cost `cap` in this pass's costs, and his pass without the limit
+        -- never searched past it, so this one stops there too
+        if cap and f > cap then break end
         if cost <= (g[id] or math.huge) then
             expansions = expansions + 1
             -- time slice (N.RouteJob): only inside a job's coroutine, never in a plain N.Route call
@@ -2426,6 +2551,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                 local hostile = avoid and zone.hasFactions and HostileTable(zone, avoid.faction) or nil
                 local open = avoid and avoid.open
                 local lenHere = glen and (glen[id] or 0)
+                local lengthStarts = fits and startsOf(zone)
                 local onGoal, starts = zoneBound(zone)
                 -- safe routes (his /vn safety): the danger yards of the zone's links, only in a safety pass (nil otherwise,
                 -- so a plain search pays one test per link)
@@ -2441,14 +2567,13 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                         local group = hostile and hostile[v + 1]
                         if not (group ~= nil and not open[group]) then
                             local i = v + 1
-                            local h = useStraightLine and estimateAt(zx[i], zy[i], zz[i], onGoal, starts) or 0
                             local walked = lenHere and lenHere + llen[k]
-                            -- the estimate is a straight line only without action shortcuts (goalMap nil)
-                            if not walked or walked + (goalMap == nil and h / hmin or 0) <= limit then
+                            if not walked or fits(zx[i], zy[i], zz[i], lengthStarts, limit - walked) then
                                 g[vid] = new
                                 previous[vid], via[vid] = id, k
                                 if glen then glen[vid] = walked end
-                                HeapPush(heap, new + h, vid, new)
+                                HeapPush(heap, new + (useStraightLine and estimateAt(zx[i], zy[i], zz[i], onGoal, starts) or 0),
+                                    vid, new)
                             end
                         end
                     end
@@ -2571,6 +2696,8 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
     return { path = path, edges = edges, length = length, cost = bestSum - first.extra - bestGoal.extra, total = bestSum,
         startBinding = first.binding, targetBinding = bestGoal.binding, expansions = expansions }
 end
+
+N.SearchPass = Pass             -- WowVision: tests and measurements
 
 -- Two passes: (a) comfort costs, (b) with the road factor 1/r; (b) wins when its geometric length is at most r x that
 -- of (a) (r = 1 + comfort/100, default 1.5; comfort 0 has no pass (b)). Start and target are bindings from N.Bind.
@@ -2726,12 +2853,18 @@ RouteSearch = function(startBinding, targetBinding, penalties, footOnly, startPo
         if danger > 0 then
             local limit = N.SAFETY_RATIO * a.length
             local road = pass == "b"
+            -- WowVision (2026-11-27): the cost of the chosen route without its danger (a safety pass's total holds w x danger)
+            local plain = chosen.total
             for _, weight in ipairs(N.DANGER_WEIGHTS) do
-                local candidate = Pass(starts, goals, road, penalties, footOnly, passAvoid, { w = weight, excl = excl, limit = limit })
+                -- the chosen route costs plain + weight x danger in this pass: the cheapest route costs no more (cap)
+                local cap = (plain + weight * danger) * (1 + 1e-9) + 1e-6
+                local candidate = Pass(starts, goals, road, penalties, footOnly, passAvoid,
+                    { w = weight, excl = excl, limit = limit, cap = cap })
                 if candidate and candidate.length <= limit then
                     local d = RouteDanger(candidate, excl)
                     if d < danger - 1e-6 or (d <= danger + 1e-6 and candidate.length < chosen.length - 1e-6) then
                         chosen, pass, danger = candidate, "s", d
+                        plain = candidate.total - weight * d
                     end
                 end
                 if danger <= 1e-6 then break end      -- nothing left to avoid

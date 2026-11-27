@@ -65,6 +65,12 @@ local function joinTarget(screen, target)
     if row ~= nil then
         wp.x, wp.y, wp.z, wp.routeData = row.x, row.y, row.z, row
     end
+    -- a destination of its own at the same place (a custom point opened from its list) is not listed twice
+    for id, other in pairs(screen._waypoints) do
+        if other.virtual and other.x == target.x and other.y == target.y then
+            screen._waypoints[id] = nil
+        end
+    end
     screen._waypoints[TARGET_ID] = wp
     screen._target = wp
     screen._destinations = nil
@@ -86,10 +92,6 @@ local function ensureData(screen)
     screen._px, screen._py, screen._map = px, py, map
     -- With a route engine on (WowNav), its targets are the destinations and its network's waypoints the entry points.
     screen._waypoints, screen._engine = module:destinationWaypoints()
-    -- the player's custom points of this map (customPointsUi.lua) join the destinations
-    if module.withCustomDestinations ~= nil then
-        screen._waypoints = module:withCustomDestinations(screen._waypoints, map)
-    end
     screen._entries = module:entryPoints(screen._waypoints, px, py, map, screen._engine)
     local entry, noWater = module:preselectedEntry(screen._entries)
     if entry ~= nil then
