@@ -120,6 +120,7 @@ loadAddonFile("camelot/wownav/catalog.lua")
 loadAddonFile("camelot/wownav/route.lua")
 loadAddonFile("camelot/wownav/dock.lua")
 loadAddonFile("camelot/wownav/fishing.lua")
+loadAddonFile("camelot/wownav/danger.lua")
 loadAddonFile("camelot/wownav/tests.lua")
 
 -- Movement intent: stand-ins record the hooks and the event frame so the
@@ -274,6 +275,8 @@ loadAddonFile("core/navigation/maps/unitAim.lua")
 loadAddonFile("core/navigation/maps/unitAimTests.lua")
 loadAddonFile("core/quests/Adapter.lua")
 loadAddonFile("core/quests/tests.lua")
+-- the Questie backend (a stand-in Questie in the WowNav danger tests)
+loadAddonFile("classic/quests/questie.lua")
 loadAddonFile("core/quests/completion.lua")
 loadAddonFile("core/quests/completionTests.lua")
 loadAddonFile("core/quests/nearbyEngine.lua")
@@ -2842,7 +2845,6 @@ local parseOnly = {
     "core/windows/mail.lua",
     "classic/mail.lua",
     "classic/friends.lua",
-    "classic/quests/questie.lua",
     "core/quests/module.lua",
     "core/quests/nearbySounds.lua",
     "core/quests/scanner.lua",

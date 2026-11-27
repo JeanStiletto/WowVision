@@ -2414,7 +2414,7 @@ if haveNetwork then
             return out
         end
         local factions = { [251001] = "H", [1495] = "H", [11194] = "AH", [1740] = "H" }
-        local source = C.NpcFaction
+        local source, savedFaction = C.NpcFaction, N.playerFaction
         local ok, err = pcall(function()
             N.SetPlayerFaction("Alliance")
             local plainToken, plain = C:DangerSpawns(TIRISFAL)
@@ -2435,17 +2435,37 @@ if haveNetwork then
             N.SetPlayerFaction("Horde")
             local horde = names(select(2, C:DangerSpawns(TIRISFAL)))
             t:assertNil(horde["Deathguard Kristof"], "a Horde player's own guards do not count")
-            -- a source that cannot answer (Questie not ready) keeps his kind rule
+            -- a source that cannot answer (Questie not ready) keeps his kind rule, and so his token: the result is his
             C.NpcFaction = function()
                 return false
             end
             N.SetPlayerFaction("Alliance")
             local waitingToken, waiting = C:DangerSpawns(TIRISFAL)
             t:assertNil(names(waiting)["Deathguard Kristof"], "no answer: his rule")
-            t:assertTrue(waitingToken == plainToken, "no answer: his token")
+            t:assertTrue(waitingToken == plainToken, "no answer: his result, his token")
+            -- review 2026-11-27: a source that answers for some classes only gives a token of its own, and the full
+            -- answer another one (before, both were ":partial" and the stale table was kept)
+            C.NpcFaction = function(entry)
+                if entry == 251001 then
+                    return "H"
+                end
+                return false
+            end
+            local partialToken, partial = C:DangerSpawns(TIRISFAL)
+            t:assertTrue(names(partial)["Deathguard Kristof"] == true, "the class it answered for counts")
+            t:assertNil(names(partial)["Deathguard Linnea"], "the others keep his rule")
+            t:assertTrue(partialToken ~= plainToken and partialToken ~= token, "a partial answer: its own token")
+            C.NpcFaction = function(entry)
+                return factions[entry]
+            end
+            t:assertTrue(C:DangerSpawns(TIRISFAL) == token, "the full answer again: the full answer's token")
+            -- the token holds no reference to its catalogue (a weak-keyed map would keep it alive)
+            for _, value in pairs(token) do
+                t:assertTrue(type(value) ~= "table", "no table inside the token")
+            end
         end)
         C.NpcFaction = source
-        N.SetPlayerFaction(nil)
+        N.playerFaction = savedFaction
         if not ok then
             error(err, 0)
         end
@@ -2788,6 +2808,166 @@ if haveNetwork then
         if not ok then
             error(err, 0)
         end
+    end
+
+    -- Review 2026-11-27: the token is a fingerprint of the result (which classes endanger, with which radius), so a
+    -- known player level (the game's path: C.PlayerLevel is always set there) changes nothing while no radius changes,
+    -- and a level-up that moves no creature over C.HIGH_LEVEL_GAP keeps the table.
+    suite["safe routes: the danger token follows the spawn list, not the player's level"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local saved = { C.NpcLevel, C.PlayerLevel }
+        local ok, err = pcall(function()
+            local npcLevel, player = 38, 34
+            C.NpcLevel, C.PlayerLevel = nil, nil
+            local plainToken = C:DangerSpawns(ELWYNN)
+            C.NpcLevel = function()
+                return npcLevel
+            end
+            C.PlayerLevel = function()
+                return player
+            end
+            t:assertTrue(C:DangerSpawns(ELWYNN) == plainToken, "level known, no creature far above: his token")
+            player = 35
+            t:assertTrue(C:DangerSpawns(ELWYNN) == plainToken, "a level-up that changes no radius keeps the token")
+            player = 33
+            local highToken, list = C:DangerSpawns(ELWYNN)
+            t:assertEqual(list[1].radius, C.HIGH_LEVEL_RADIUS, "five levels above: the wider radius")
+            t:assertTrue(highToken ~= plainToken, "another radius, another token")
+            player = 30
+            t:assertTrue(C:DangerSpawns(ELWYNN) == highToken, "the same radii at another level: the same token")
+        end)
+        C.NpcLevel, C.PlayerLevel = saved[1], saved[2]
+        if not ok then
+            error(err, 0)
+        end
+    end
+
+    -- Review 2026-11-27: a source that gets ready after the first build: the table stays until the danger generation is
+    -- bumped (the module does that when an input changes, danger.lua), is then built again, and a bump that changes
+    -- nothing keeps it.
+    suite["safe routes: a faction source that gets ready rebuilds the danger table after a bump"] = function(t)
+        setup()
+        local TIRISFAL = 18
+        t:assertTrue(#zoneRows(TIRISFAL) > 0, "Tirisfal's catalogue is active")
+        local zone = N.LoadZone(TIRISFAL)
+        local saved = { C.NpcFaction, C.PlayerLevel, N.playerFaction, N.safety }
+        local ok, err = pcall(function()
+            N.SetSafety(30)
+            N.SetPlayerFaction("Alliance")
+            local isReady = false
+            C.NpcFaction = function(entry)
+                if not isReady then
+                    return false
+                end
+                return entry == 251001 and "H" or false
+            end
+            C.PlayerLevel = function()
+                return 34
+            end
+            N.dangerGen = N.dangerGen + 1
+            zone.danger = nil
+            local waiting = N.ZoneDanger(zone)
+            isReady = true
+            t:assertTrue(N.ZoneDanger(zone) == waiting, "no bump: the table is kept")
+            N.dangerGen = N.dangerGen + 1
+            local judged = N.ZoneDanger(zone)
+            t:assertTrue(judged ~= waiting, "after the bump: built again")
+            t:assertTrue(judged.count > waiting.count, "with Deathguard Kristof's spawns")
+            N.dangerGen = N.dangerGen + 1
+            t:assertTrue(N.ZoneDanger(zone) == judged, "a bump that changes no input keeps the table")
+        end)
+        C.NpcFaction, C.PlayerLevel, N.playerFaction = saved[1], saved[2], saved[3]
+        N.SetSafety(saved[4])
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
+end
+
+-- The danger rules' sources (danger.lua) on a stand-in Questie read through the Questie backend
+-- (classic/quests/questie.lua): Questie's field names, not ready / ready (with no RegisterOnReady at all), the player's
+-- level from nil to known, and the inputs that make the module ask the catalogue again.
+suite["safe routes: Questie's factions and levels through the Questie backend"] = function(t)
+    local danger = WowVision.wownavDanger
+    local saved = { rawget(_G, "Questie"), rawget(_G, "QuestieLoader"), rawget(_G, "UnitLevel"), rawget(_G, "CreateFrame") }
+    local ok, err = pcall(function()
+        if saved[4] == nil then
+            -- the backend makes its (here unused) index frame
+            _G.CreateFrame = function()
+                return { Hide = function() end, Show = function() end, SetScript = function() end }
+            end
+        end
+        local rows = {
+            [251001] = { friendlyToFaction = "H", maxLevel = 15 },
+            [11194] = { friendlyToFaction = "AH", maxLevel = 60 },
+            [1740] = { friendlyToFaction = nil, maxLevel = 56 },
+        }
+        local QuestieDB = {
+            NPCPointers = { [251001] = 1, [11194] = 2, [1740] = 3 },
+            QueryQuest = function() end,
+            QueryNPCSingle = function(id, field)
+                return rows[id][field]
+            end,
+        }
+        local modules = { QuestieDB = QuestieDB, ZoneDB = {} }
+        _G.QuestieLoader = {
+            ImportModule = function(_, name)
+                return modules[name]
+            end,
+        }
+        _G.Questie = { API = { isReady = false } }
+        local level = nil
+        _G.UnitLevel = function()
+            return level
+        end
+        danger.reset()
+        local faction = nil
+        local N = {
+            PlayerFaction = function()
+                return faction
+            end,
+        }
+        local bumps = 0
+        local function bump()
+            bumps = bumps + 1
+        end
+        local C = {}
+        danger.install(N, C, bump)
+        t:assertTrue(C.NpcFaction == danger.npcFaction and C.NpcLevel == danger.npcLevel, "the hooks are set")
+        t:assertTrue(C.PlayerLevel == danger.playerLevel)
+        t:assertEqual(bumps, 1, "the first call asks")
+        t:assertEqual(danger.npcFaction(251001), false, "Questie not ready: no answer")
+        t:assertNil(danger.npcLevel(1740))
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 1, "nothing changed: no bump")
+        _G.Questie.API.isReady = true
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 2, "Questie got ready (it has no RegisterOnReady here): a bump")
+        t:assertEqual(danger.npcFaction(251001), "H")
+        t:assertEqual(danger.npcFaction(11194), "AH")
+        t:assertNil(danger.npcFaction(1740), "friendly to neither")
+        t:assertEqual(danger.npcFaction(99999), false, "an ID Questie does not know: no answer")
+        t:assertEqual(danger.npcLevel(1740), 56, "maxLevel")
+        level = 34
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 3, "the level from unknown to known: a bump")
+        t:assertEqual(danger.playerLevel(), 34)
+        faction = "alliance"
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 4, "the faction from unknown to known: a bump")
+        level = 35
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 5, "a level-up: a bump (the catalogue's token says whether anything changed)")
+        danger.install(N, C, bump)
+        t:assertEqual(bumps, 5)
+    end)
+    _G.Questie, _G.QuestieLoader, _G.UnitLevel, _G.CreateFrame = saved[1], saved[2], saved[3], saved[4]
+    danger.reset()
+    if not ok then
+        error(err, 0)
     end
 end
 
