@@ -55,8 +55,6 @@ N.SetComfort(N.COMFORT_DEFAULT)
 -- logical targets (classes of kind mob / creature; npc and objects do not count). Values to be confirmed by the user.
 N.SAFETY_DEFAULT, N.SAFETY_MAX = 0, 300
 N.DANGER_RADIUS = 20.0        -- yd: a spawn endangers the part of a link that lies this close to it (aggro range of the usual mobs plus a margin)
--- WowVision (2026-11-27): the largest radius a spawn may bring (spawn.radius); a larger one counts as this, an invalid one as DANGER_RADIUS
-N.DANGER_RADIUS_MAX = 100.0
 N.DANGER_DZ = 8.0             -- yd: a spawn whose height differs this much from the link at its nearest point does not count (caves, floors)
 N.DANGER_DEDUP = 2.0          -- yd: spawns of the same name this close to each other (several sources of one spawn) count once
 -- WowVision trial 2026-11-26: his { 30, 8, 2 } without the 2, which won none of eight measured routes (Chillwind Camp, Chillwind Point and
@@ -71,7 +69,7 @@ N.SetSafety(N.SAFETY_DEFAULT)
 N.dangerGen = 0               -- counts the changes of the catalogue the spawns come from (the target catalogue bumps it on activation)
 -- The spawns of a zone: function(zoneId) -> token, { {x, y, z (or nil), name, radius (optional)}, ... } | nil. The token identifies the
 -- data (the zone keeps its danger table while the token stays). Default: the compact logical catalogue of the target catalogue.
--- WowVision (2026-11-26): radius = the spawn's own danger radius in yd (0 < radius <= DANGER_RADIUS_MAX), else DANGER_RADIUS.
+-- WowVision (2026-11-26): radius = the spawn's own danger radius in yd (set by WowVision's own sources), else DANGER_RADIUS.
 N.DangerSource = function(zoneId)
     local catalog = _G.WowVisionNavigationTargetCatalog
     if catalog and catalog.DangerSpawns then return catalog:DangerSpawns(zoneId) end
@@ -1754,12 +1752,9 @@ local function ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx, sy, sz, radius, dz)
     return (t2 - t1) * root
 end
 
--- WowVision (2026-11-27): a spawn's own danger radius (spawn.radius): above 0, at most DANGER_RADIUS_MAX; else DANGER_RADIUS.
+-- WowVision (2026-11-27): a spawn's own danger radius (spawn.radius), else DANGER_RADIUS. Only WowVision's own sources set it.
 local function SpawnRadius(value)
-    local r = tonumber(value)
-    if r == nil or r ~= r or r <= 0 then return N.DANGER_RADIUS end
-    if r > N.DANGER_RADIUS_MAX then return N.DANGER_RADIUS_MAX end
-    return r
+    return value or N.DANGER_RADIUS
 end
 
 local function BuildDanger(zone, spawns)

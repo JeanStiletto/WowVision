@@ -102,7 +102,7 @@ Keep this list current; everything else is his text, line for line (line endings
   and no more once all are current). `DangerOf` finishes a half-done table: inside a job in slices that yield like the
   search, outside at once. `CurrentDanger` holds his rule when a table is kept or rebuilt.
 - `NavNetwork.lua`, safe routes, a radius per spawn (2026-11-26/27): a spawn may bring `radius` (the danger source
-  sets it; checked: above 0, at most `N.DANGER_RADIUS_MAX` = 100 yd, else his `DANGER_RADIUS`). `danger.sr[i]` is the
+  sets it; without one his `DANGER_RADIUS`). `danger.sr[i]` is the
   radius of spawn i, `danger.maxRadius` the largest; of two duplicates the larger radius stays. A spawn wider than
   `DANGER_RADIUS` lies in every grid cell within its radius minus `DANGER_RADIUS` and counts once per link (`cx0`,
   `cy0`), so the cells searched per link stay his. The start or target of a route leaves out the spawns within

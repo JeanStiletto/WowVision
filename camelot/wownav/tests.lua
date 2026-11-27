@@ -2564,33 +2564,25 @@ if haveNetwork then
         end)
     end
 
-    -- A spawn's radius: invalid ones are the usual DANGER_RADIUS, a huge one DANGER_RADIUS_MAX; of two duplicates (same
-    -- name within DANGER_DEDUP) the larger radius stays.
-    suite["safe routes: a spawn's radius is checked, and a duplicate keeps the larger one"] = function(t)
+    -- A spawn without a radius has the usual DANGER_RADIUS; of two duplicates (same name within DANGER_DEDUP) the larger
+    -- radius stays.
+    suite["safe routes: a duplicate spawn keeps the larger radius"] = function(t)
         setup()
         local zone = N.LoadZone(STORMWIND)
         local x, y, z = N.Position(STORMWIND * N.ZONE_BASE + 8390)
         local spawns = {
-            { x = x, y = y, z = z, name = "huge", radius = math.huge },
-            { x = x + 100, y = y, z = z, name = "negative", radius = -5 },
-            { x = x + 200, y = y, z = z, name = "nan", radius = 0 / 0 },
-            { x = x + 300, y = y, z = z, name = "text", radius = "wide" },
+            { x = x, y = y, z = z, name = "plain" },
             { x = x + 400, y = y, z = z, name = "twice", radius = 20 },
             { x = x + 401, y = y, z = z, name = "twice", radius = 45 },
-            { x = x + 500, y = y, z = z, name = "zero", radius = 0 },
         }
         withSpawns(function()
             return spawns, spawns
         end, 30, { zone }, function()
             local danger = N.ZoneDanger(zone)
-            t:assertEqual(danger.count, 6, "the duplicate counts once")
-            t:assertEqual(danger.sr[1], N.DANGER_RADIUS_MAX)
-            t:assertEqual(danger.sr[2], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[3], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[4], N.DANGER_RADIUS)
-            t:assertEqual(danger.sr[5], 45, "the larger radius of the two")
-            t:assertEqual(danger.sr[6], N.DANGER_RADIUS)
-            t:assertEqual(danger.maxRadius, N.DANGER_RADIUS_MAX)
+            t:assertEqual(danger.count, 2, "the duplicate counts once")
+            t:assertEqual(danger.sr[1], N.DANGER_RADIUS)
+            t:assertEqual(danger.sr[2], 45, "the larger radius of the two")
+            t:assertEqual(danger.maxRadius, 45)
         end)
     end
 
