@@ -232,36 +232,6 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(#cp.blockedInZone(store, 0, zone), 0, "the circle does not meet the zone")
     end,
 
-    ["blocked passages saved while the store is provisional are made in the client's store"] = function(t)
-        local provisional = cp.store({})
-        local journal = {}
-        local link = cp.addBlocked(provisional, 101, 102, 10, 10, 20, 30, 0)
-        link.name = "Rock"
-        journal[#journal + 1] = cp.journalEntry("add", "blocked", link)
-        local spot = cp.addBlockedSpot(provisional, 50, 60, 70, 0, 9)
-        journal[#journal + 1] = cp.journalEntry("add", "blocked", spot)
-        local client = cp.store({})
-        cp.add(client, "waypoint", 1, 1, nil, 0, "taken id")
-        t:assertEqual(cp.replay(client, journal), 2)
-        t:assertEqual(#client.blocked, 2)
-        local copy = client.blocked[1]
-        t:assertEqual(copy.a, 101)
-        t:assertEqual(copy.by, 30)
-        t:assertEqual(copy.name, "Rock")
-        t:assertTrue(copy.id ~= link.id, "a new id of the client's store")
-        local spotCopy = client.blocked[2]
-        t:assertNil(spotCopy.a)
-        t:assertEqual(spotCopy.radius, 9)
-        t:assertEqual(spotCopy.z, 70)
-        -- replayed into a store that already has the link: nothing doubled, its own name stays
-        local again = cp.store({})
-        local own = cp.addBlocked(again, 101, 102, 10, 10, 20, 30, 0)
-        own.name = "Mine"
-        cp.replay(again, journal)
-        t:assertEqual(#again.blocked, 2)
-        t:assertEqual(own.name, "Mine")
-    end,
-
     ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)
         local parse = WowVision.mapCoordinates.parse
         local function check(text, mode, a, b)

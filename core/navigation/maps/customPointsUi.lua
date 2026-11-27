@@ -212,7 +212,7 @@ function module:saveBlockedPassage(a, b, ax, ay, bx, by, map)
     if store == nil then
         return nil
     end
-    local point, status, old = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
+    local point, status = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
     if status == "known" then
         return point, status
     end
