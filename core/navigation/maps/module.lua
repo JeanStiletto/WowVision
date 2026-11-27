@@ -295,11 +295,19 @@ function module:navigateToName(fragment)
     if engine ~= nil then
         -- no window to pick the entry point in: the one F10 would preselect
         local start = self:preselectedEntry(self:entryPoints(waypoints, px, py, map, engine))
-        if self:routeTo(target.x, target.y, target.n, onArrive, target.z, target, start and start.waypoint) then
+        -- a virtual destination (a custom point) hands its routeData on, as goToDestination does
+        local data = target.virtual and target.routeData or target
+        if self:routeTo(target.x, target.y, target.n, onArrive, target.z, data, start and start.waypoint) then
             return true
         end
     end
-    return self:navigateTo(target.id, waypoints, { onArrive = onArrive })
+    local routed = self:navigateTo(target.id, waypoints, { onArrive = onArrive })
+    if not routed and target.virtual then
+        -- a virtual destination too far from any route: a straight beacon, as goToDestination gives it
+        self:beaconTo(target.x, target.y, target.n, onArrive)
+        return true
+    end
+    return routed
 end
 
 -- How many entry points F10 offers.
@@ -835,21 +843,15 @@ function module:openNavigationFromKey()
 end
 
 -- Map-percentage coordinates ("50.5 30.4") on the current zone map, the
--- numbers quest guides use: converted to a world position, then a straight
--- beacon. GetWorldPosFromMapPos returns coordinates in UnitPosition's
--- convention, which is exactly what Beacon consumes.
+-- numbers quest guides use: converted to a world position
+-- (WowVision.mapCoordinates.toWorld, in UnitPosition's convention, which is
+-- exactly what Beacon consumes), then a straight beacon.
 function module:beaconToMapCoords(xPercent, yPercent)
-    local mapId = C_Map.GetBestMapForUnit("player")
-    if mapId == nil then
+    local wx, wy = WowVision.mapCoordinates.toWorld(xPercent, yPercent)
+    if wx == nil then
         WowVision:notify(L["Position unavailable"])
         return false
     end
-    local _, worldPos = C_Map.GetWorldPosFromMapPos(mapId, CreateVector2D(xPercent / 100, yPercent / 100))
-    if worldPos == nil then
-        WowVision:notify(L["Position unavailable"])
-        return false
-    end
-    local wx, wy = worldPos:GetXY()
     self:beaconTo(wx, wy, string.format("%.1f %.1f", xPercent, yPercent))
     return true
 end
@@ -1096,20 +1098,17 @@ function module:handleBeaconCommand(args)
         return
     end
 
-    local worldX, worldY = args:match("^[Ww]orld%s+(-?%d+%.?%d*)%s+(-?%d+%.?%d*)$")
-    worldX, worldY = tonumber(worldX), tonumber(worldY)
-    if worldX ~= nil and worldY ~= nil then
-        self:beaconTo(worldX, worldY)
+    -- the input rules of the custom points too (navigation/mapCoordinates.lua)
+    local mode, a, b = WowVision.mapCoordinates.parse(args)
+    if mode == "world" then
+        self:beaconTo(a, b)
         return
     end
-
-    local x, y = args:match("^(-?%d+%.?%d*)%s+(-?%d+%.?%d*)$")
-    x, y = tonumber(x), tonumber(y)
-    if not x or not y then
+    if mode == nil then
         WowVision:speak("Usage beacon x y")
         return
     end
-    self:beaconToMapCoords(x, y)
+    self:beaconToMapCoords(a, b)
 end
 
 module:registerCommand({

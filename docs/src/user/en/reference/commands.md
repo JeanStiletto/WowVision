@@ -117,6 +117,8 @@ Sets a straight-line beacon, routes to a named place, or tells you where you are
 
 Examples: /beacon 50.5 30.4 says "Beacon set 245 yards" and starts a straight-line beacon to that spot; it does not open the navigation window. /beacon to innkeeper speaks the place it found and starts a route to it, or says "No route found innkeeper". /beacon 12 with only one number says "Usage beacon x y".
 
+The two numbers may be separated by spaces, a comma or a semicolon: 50.5 30.4, 50.5,30.4 and 50.5; 30.4 all work. A decimal comma works too when spaces or a semicolon separate the numbers, as in 50,5 30,4. Map coordinates run from 0 to 100; other numbers say "Usage beacon x y". The same rules apply when you type coordinates for a custom waypoint or danger point.
+
 Versions: all. /beacon to needs map data for the continent you are on; see [Navigation](../world/navigation.md).
 
 ### /focus1 to /focus5

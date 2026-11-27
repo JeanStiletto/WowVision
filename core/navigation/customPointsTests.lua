@@ -22,13 +22,14 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(#again.dangers, 0, "a missing list comes back empty")
     end,
 
-    ["points get their own ids; dangers get the danger radius"] = function(t)
+    ["points get their own ids; a danger point keeps no radius of its own (the default applies)"] = function(t)
         local store = cp.store({})
         local a = cp.add(store, "waypoint", 10, 20, 5, 0, "Camp")
         local b = cp.add(store, "danger", 30, 40, nil, 0)
         t:assertTrue(a.id ~= b.id)
         t:assertNil(a.radius)
-        t:assertEqual(b.radius, cp.DANGER_RADIUS)
+        t:assertNil(b.radius, "not stored")
+        t:assertEqual(cp.dangerSpawns(store, 0)[1].radius, cp.DANGER_RADIUS, "the default radius for the engine")
         t:assertEqual(cp.label(a, "waypoint", L), "Camp")
         t:assertEqual(cp.label(b, "danger", L), "Monster spawn", "a danger point needs no name")
     end,
@@ -52,7 +53,7 @@ testRunner:addSuite("CustomPoints", {
         }
         t:assertEqual(cp.mergeShipped(store, shipped), 2)
         t:assertEqual(#store.dangers, 1)
-        t:assertEqual(store.dangers[1].radius, cp.DANGER_RADIUS)
+        t:assertNil(store.dangers[1].radius, "the default radius is not stored")
         t:assertEqual(store.waypoints[1], mine, "the player's own point keeps its place")
         t:assertEqual(#store.waypoints, 2)
         -- the player renames a shipped point; a later merge leaves his name
@@ -68,6 +69,77 @@ testRunner:addSuite("CustomPoints", {
         t:assertEqual(cp.mergeShipped(store, shipped), 1)
     end,
 
+    ["a shipped point keeps only a radius of its own"] = function(t)
+        local store = cp.store({})
+        cp.mergeShipped(store, {
+            { id = "wv:r1", kind = "danger", x = 1, y = 1, map = 0, radius = 20 },
+            { id = "wv:r2", kind = "danger", x = 2, y = 2, map = 0, radius = cp.DANGER_RADIUS },
+        })
+        t:assertEqual(cp.find(store, "danger", "wv:r1").radius, 20)
+        t:assertNil(cp.find(store, "danger", "wv:r2").radius)
+        t:assertEqual(cp.dangerSpawns(store, 0)[1].radius, 20)
+    end,
+
+    ["a shipped name the player cleared is not filled in again"] = function(t)
+        local store = cp.store({})
+        local shipped = { { id = "wv:n1", kind = "danger", x = 1, y = 1, map = 0, name = "Vulture" } }
+        cp.mergeShipped(store, shipped)
+        t:assertEqual(cp.find(store, "danger", "wv:n1").name, "Vulture")
+        cp.rename(store, "danger", "wv:n1", "")
+        local added, named = cp.mergeShipped(store, shipped)
+        t:assertEqual(added, 0)
+        t:assertEqual(named, 0, "no change, so no rebuild")
+        t:assertNil(cp.find(store, "danger", "wv:n1").name, "the default name stays")
+        -- a new name of his own ends the cleared state; clearing again keeps it cleared
+        cp.rename(store, "danger", "wv:n1", "Mine")
+        t:assertNil(cp.find(store, "danger", "wv:n1").nameCleared)
+        cp.rename(store, "danger", "wv:n1", " ")
+        cp.mergeShipped(store, shipped)
+        t:assertNil(cp.find(store, "danger", "wv:n1").name)
+    end,
+
+    ["changes in a provisional store are made again in the client's store"] = function(t)
+        -- the provisional store: a copy of the account as this character last saw it
+        local real = cp.store({})
+        local old = cp.add(real, "waypoint", 1, 1, nil, 0, "Old")
+        local gone = cp.add(real, "danger", 2, 2, nil, 0)
+        local provisional = cp.store({ customPoints = {
+            waypoints = { { id = old.id, name = "Old", x = 1, y = 1, map = 0 } },
+            dangers = { { id = gone.id, x = 2, y = 2, map = 0 } },
+            nextId = real.nextId, shippedSeen = {},
+        } })
+        -- another character added a point to the real store meanwhile: it took the next id
+        local other = cp.add(real, "waypoint", 9, 9, nil, 0, "Other")
+        local journal = {}
+        local new = cp.add(provisional, "waypoint", 5, 5, nil, 0, "Camp")
+        journal[#journal + 1] = cp.journalEntry("add", "waypoint", new)
+        cp.rename(provisional, "waypoint", new.id, "Camp 2")
+        journal[#journal + 1] = cp.journalEntry("rename", "waypoint", new)
+        cp.rename(provisional, "waypoint", old.id, "Renamed")
+        journal[#journal + 1] = cp.journalEntry("rename", "waypoint", cp.find(provisional, "waypoint", old.id))
+        local removed = cp.find(provisional, "danger", gone.id)
+        cp.remove(provisional, "danger", gone.id)
+        journal[#journal + 1] = cp.journalEntry("remove", "danger", removed)
+        t:assertEqual(new.id, other.id, "the provisional id collides with the other character's point")
+
+        t:assertEqual(cp.replay(real, journal), 4)
+        t:assertEqual(#real.waypoints, 3, "old, other, camp")
+        t:assertEqual(cp.find(real, "waypoint", other.id).name, "Other", "the other point is untouched")
+        t:assertEqual(real.waypoints[3].name, "Camp 2", "the new point with its later name")
+        t:assertTrue(real.waypoints[3].id ~= other.id, "an id of the real store")
+        t:assertEqual(cp.find(real, "waypoint", old.id).name, "Renamed")
+        t:assertEqual(#real.dangers, 0, "the deletion carried over")
+    end,
+
+    ["replay drops a change whose point is another one in the client's store"] = function(t)
+        local real = cp.store({})
+        cp.add(real, "waypoint", 50, 50, nil, 0, "Theirs")
+        local journal = { { op = "rename", kind = "waypoint", id = "u1", x = 1, y = 1, map = 0, name = "Mine" },
+            { op = "remove", kind = "waypoint", id = "u1", x = 1, y = 1, map = 0 } }
+        t:assertEqual(cp.replay(real, journal), 0)
+        t:assertEqual(real.waypoints[1].name, "Theirs")
+    end,
+
     ["a shipped point already handed over gets a name shipped later, unless the player named it"] = function(t)
         local store = cp.store({})
         local shipped = {
@@ -78,7 +150,7 @@ testRunner:addSuite("CustomPoints", {
         cp.rename(store, "danger", "wv:v2", "My vulture")
         shipped[1].name = "Pestschwingengeier"
         shipped[2].name = "Pestschwingengeier"
-        t:assertEqual(cp.mergeShipped(store, shipped), 1, "one point named")
+        t:assertEqual(select(2, cp.mergeShipped(store, shipped)), 1, "one point named")
         t:assertEqual(cp.find(store, "danger", "wv:v1").name, "Pestschwingengeier")
         t:assertEqual(cp.find(store, "danger", "wv:v2").name, "My vulture", "the player's name stays")
         t:assertEqual(#store.dangers, 2, "nothing added twice")
@@ -103,26 +175,34 @@ testRunner:addSuite("CustomPoints", {
         end), 0, "not in the zone asked for")
     end,
 
-    ["coordinates: map percent with dot or comma, or world yards"] = function(t)
-        local mode, a, b = cp.parseCoordinates("45.2 63.1")
-        t:assertEqual(mode, "map")
-        t:assertEqual(a, 45.2)
-        t:assertEqual(b, 63.1)
-        mode, a, b = cp.parseCoordinates("45,2 63,1")
-        t:assertEqual(a, 45.2, "decimal comma")
-        t:assertEqual(b, 63.1)
-        mode, a, b = cp.parseCoordinates("45.2, 63.1")
-        t:assertEqual(a, 45.2, "comma and space between")
-        t:assertEqual(b, 63.1)
-        mode, a, b = cp.parseCoordinates("45; 63")
-        t:assertEqual(a, 45)
-        t:assertEqual(b, 63)
-        mode, a, b = cp.parseCoordinates("world 1198.2 -1116")
-        t:assertEqual(mode, "world")
-        t:assertEqual(a, 1198.2)
-        t:assertEqual(b, -1116)
-        t:assertNil(cp.parseCoordinates("hello"))
-        t:assertNil(cp.parseCoordinates("45.2"))
-        t:assertNil(cp.parseCoordinates("145 20"), "map percent above 100")
+    ["coordinates: the forms with spaces, comma or semicolon between the numbers"] = function(t)
+        local parse = WowVision.mapCoordinates.parse
+        local function check(text, mode, a, b)
+            local m, x, y = parse(text)
+            t:assertEqual(m, mode, text)
+            t:assertEqual(x, a, text)
+            t:assertEqual(y, b, text)
+        end
+        check("45.2 63.1", "map", 45.2, 63.1)
+        check("  45.2   63.1  ", "map", 45.2, 63.1)
+        check("45,2 63,1", "map", 45.2, 63.1)
+        check("45.2,63.1", "map", 45.2, 63.1)
+        check("45.2, 63.1", "map", 45.2, 63.1)
+        check("45.2 , 63.1", "map", 45.2, 63.1)
+        check("45,63", "map", 45, 63)
+        check("45; 63", "map", 45, 63)
+        check("45,2;63,1", "map", 45.2, 63.1)
+        check("45,2 ; 63,1", "map", 45.2, 63.1)
+        check("world 1198.2 -1116", "world", 1198.2, -1116)
+        check("World 1198.2,-1116", "world", 1198.2, -1116)
+        check("WORLD -5,5 7", "world", -5.5, 7)
+        check("world 1198.2 , -1116", "world", 1198.2, -1116)
+        t:assertNil(parse("hello"))
+        t:assertNil(parse("45.2"))
+        t:assertNil(parse("45,2,63,1"), "decimal commas with a comma between: ambiguous")
+        t:assertNil(parse("45,2, 63,1"), "ambiguous too")
+        t:assertNil(parse("145 20"), "map percent above 100")
+        t:assertNil(parse("-1 20"), "map percent below 0")
+        t:assertNil(parse(nil))
     end,
 })

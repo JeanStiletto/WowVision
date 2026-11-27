@@ -64,6 +64,8 @@ local function closeMenus()
         host:pop(stack)
     end
 end
+-- For an action that pushes a screen of its own (a confirmation) and closes the menu once that is done.
+contextMenu.close = closeMenus
 
 local function entryNode(entry, index)
     if entry.submenu ~= nil then

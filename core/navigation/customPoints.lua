@@ -8,7 +8,8 @@
 --
 -- Pure Lua (headless tests): the store is a plain table the module keeps in the account's saved variables.
 --   store = { waypoints = { point, ... }, dangers = { point, ... }, nextId = n, shippedSeen = { [id] = true } }
---   point = { id, name (nil: the kind's default name), x, y, z (or nil), map (UnitPosition's map), radius (dangers) }
+--   point = { id, name (nil: the kind's default name), x, y, z (or nil), map (UnitPosition's map), radius (dangers;
+--             nil: DANGER_RADIUS), nameCleared (the player cleared the name: a shipped name is not filled in again) }
 
 local customPoints = {}
 WowVision.customPoints = customPoints
@@ -55,32 +56,32 @@ local function copyPoint(point)
 end
 
 -- Hands the shipped points the store has never had to it (appended). A shipped point the player already has and
--- left without a name gets the name the addon ships for it now (a name is only ever filled in, never replaced).
--- Returns how many points were added or named.
+-- never named gets the name the addon ships for it now (a name is only ever filled in, never replaced; one the player
+-- cleared stays cleared). Returns how many points were added, then how many were named.
 function customPoints.mergeShipped(store, shipped)
-    local added = 0
+    local added, named = 0, 0
     for _, point in ipairs(shipped or {}) do
         local known = point.id ~= nil and customPoints.LISTS[point.kind] ~= nil and store.shippedSeen[point.id]
         if known and point.name ~= nil then
             local own = customPoints.find(store, point.kind, point.id)
-            if own ~= nil and own.name == nil then
+            if own ~= nil and own.name == nil and not own.nameCleared then
                 own.name = point.name
-                added = added + 1
+                named = named + 1
             end
         end
         if point.id ~= nil and customPoints.LISTS[point.kind] ~= nil and not store.shippedSeen[point.id] then
             store.shippedSeen[point.id] = true
             local entry = copyPoint(point)
             entry.shipped = true
-            if point.kind == "danger" and entry.radius == nil then
-                entry.radius = customPoints.DANGER_RADIUS
+            if entry.radius == customPoints.DANGER_RADIUS then
+                entry.radius = nil
             end
             local list = listOf(store, point.kind)
             list[#list + 1] = entry
             added = added + 1
         end
     end
-    return added
+    return added, named
 end
 
 -- A new point of `kind` at x, y (z may be nil) on `map`. name nil: the kind's default name. Returns the point.
@@ -89,9 +90,6 @@ function customPoints.add(store, kind, x, y, z, map, name)
     local id = "u" .. store.nextId
     store.nextId = store.nextId + 1
     local point = { id = id, name = name, x = x, y = y, z = z, map = map }
-    if kind == "danger" then
-        point.radius = customPoints.DANGER_RADIUS
-    end
     list[#list + 1] = point
     return point
 end
@@ -105,7 +103,8 @@ function customPoints.find(store, kind, id)
     return nil
 end
 
--- A new name (empty or blank: back to the kind's default name). True when the point exists.
+-- A new name (empty or blank: back to the kind's default name, and a shipped name is not filled in again). True when
+-- the point exists.
 function customPoints.rename(store, kind, id, name)
     local point = customPoints.find(store, kind, id)
     if point == nil then
@@ -115,6 +114,7 @@ function customPoints.rename(store, kind, id, name)
         name = name:match("^%s*(.-)%s*$")
     end
     point.name = (name ~= nil and name ~= "") and name or nil
+    point.nameCleared = point.name == nil or nil
     return true
 end
 
@@ -147,42 +147,6 @@ function customPoints.label(point, kind, L)
     return kind == "danger" and L["Monster spawn"] or L["Custom waypoint"]
 end
 
--- Typed coordinates: "45.2 63.1" (map percent of the current zone, the numbers maps and guides give; a decimal comma,
--- a comma or semicolon between the two numbers are taken too) or "world 1198.2 -1116" (world yards, the convention of
--- UnitPosition). Returns "map" | "world", a, b; nil when the text is not two numbers.
-function customPoints.parseCoordinates(text)
-    if type(text) ~= "string" then
-        return nil
-    end
-    local mode = "map"
-    local rest = text:match("^%s*[Ww][Oo][Rr][Ll][Dd]%s+(.*)$")
-    if rest ~= nil then
-        mode = "world"
-        text = rest
-    end
-    text = text:match("^%s*(.-)%s*$")
-    local number = "(-?%d+[%.,]?%d*)"
-    local a, b = text:match("^" .. number .. "%s*[;]%s*" .. number .. "$")
-    if a == nil then
-        a, b = text:match("^" .. number .. "%s+" .. number .. "$")
-    end
-    if a == nil then
-        -- "45.2, 63.1": a comma and a space between the numbers
-        a, b = text:match("^" .. number .. ",%s+" .. number .. "$")
-    end
-    if a == nil then
-        return nil
-    end
-    a, b = tonumber((a:gsub(",", "."))), tonumber((b:gsub(",", ".")))
-    if a == nil or b == nil then
-        return nil
-    end
-    if mode == "map" and (a < 0 or a > 100 or b < 0 or b > 100) then
-        return nil
-    end
-    return mode, a, b
-end
-
 -- The custom danger points on `map` that lie in a zone, as monster spawns for the route engine's danger table:
 -- { { x, y, z, name, radius } }. inZone(x, y) -> true for a point of the zone asked for. The name is unique per
 -- point, so the engine's merging of spawns of one name close together never joins two of them.
@@ -197,4 +161,46 @@ function customPoints.dangerSpawns(store, map, inZone)
         end
     end
     return out
+end
+
+-- ---- changes made while the account store is provisional (WoW: Forever hands the account's saved variables over
+-- after the addon loaded; core/WowVision.lua bindGlobalStore). They go into the provisional store, which is saved as
+-- the account's when the client never hands one over, and each is noted in a journal: when the client's store
+-- arrives, replay makes the same changes there.
+--   entry = { op = "add" | "rename" | "remove", kind, id, x, y, z, map, name }
+
+-- The journal entry for a change of `point` (for "add" and "rename": its name after the change).
+function customPoints.journalEntry(op, kind, point)
+    return {
+        op = op, kind = kind, id = point.id, x = point.x, y = point.y, z = point.z, map = point.map, name = point.name,
+    }
+end
+
+-- Makes the journal's changes in `store`. An added point gets an id of this store; a renamed or deleted point is found
+-- by its id and must still lie where it lay (else it is another point, and the change is dropped). Returns how many
+-- changes were made.
+function customPoints.replay(store, journal)
+    local ids = {}
+    local done = 0
+    for _, entry in ipairs(journal or {}) do
+        if entry.op == "add" then
+            ids[entry.id] = customPoints.add(store, entry.kind, entry.x, entry.y, entry.z, entry.map, entry.name).id
+            done = done + 1
+        else
+            local id = ids[entry.id]
+            local point = customPoints.find(store, entry.kind, id or entry.id)
+            if point ~= nil and id == nil and (point.x ~= entry.x or point.y ~= entry.y) then
+                point = nil
+            end
+            if point ~= nil then
+                if entry.op == "rename" then
+                    customPoints.rename(store, entry.kind, point.id, entry.name)
+                else
+                    customPoints.remove(store, entry.kind, point.id)
+                end
+                done = done + 1
+            end
+        end
+    end
+    return done
 end
