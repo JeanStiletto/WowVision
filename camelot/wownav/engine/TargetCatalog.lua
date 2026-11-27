@@ -400,6 +400,20 @@ C.SEARCH_LIMIT = 1000            -- at most this many entries per search of the 
 -- Questie (friendlyToFaction); nil here keeps his kind rule.
 C.NpcFaction = nil
 local ENEMY_LETTER = { alliance = "H", horde = "A" }
+-- WowVision (trial 2026-11-26): a creature's level and the player's, for a wider danger radius around creatures far
+-- above the player (they notice from further away). C.NpcLevel(entry) -> its highest level | nil; C.PlayerLevel() -> the
+-- player's level | nil. The module sets both (Questie's maxLevel, UnitLevel); without them every spawn keeps the radius
+-- of NavNetwork.DANGER_RADIUS.
+C.NpcLevel, C.PlayerLevel = nil, nil
+C.HIGH_LEVEL_GAP = 5             -- levels above the player from which a creature counts as high level
+C.HIGH_LEVEL_RADIUS = 35         -- yd: its danger radius (NavNetwork.DANGER_RADIUS for the others)
+
+local function HighLevelRadius(class, playerLevel)
+    if not playerLevel or type(C.NpcLevel) ~= "function" or class.entry == nil then return nil end
+    local ok, level = pcall(C.NpcLevel, class.entry)
+    if ok and type(level) == "number" and level >= playerLevel + C.HIGH_LEVEL_GAP then return C.HIGH_LEVEL_RADIUS end
+    return nil
+end
 
 -- Whether a class endangers the player of `faction` ("alliance" | "horde" | nil). His rule: the kinds mob and creature. With a faction source
 -- (C.NpcFaction) and a known player faction: a creature friendly to the other faction only ("H" for an Alliance player) endangers whatever its
@@ -439,24 +453,35 @@ function C:DangerSpawns(zoneId)
     if not classes then return nil end
     local network = _G.WowVisionNavigationNavNetwork
     local faction = network and network.PlayerFaction and network.PlayerFaction() or nil
-    local names, any, judged, unjudged = {}, false, 0, 0
+    local playerLevel = nil
+    if type(C.PlayerLevel) == "function" then
+        local ok, level = pcall(C.PlayerLevel)
+        if ok and type(level) == "number" and level > 0 then playerLevel = level end
+    end
+    local names, radii, any, judged, unjudged = {}, {}, false, 0, 0
     for index = 1, #classes do
         local class = classes[index]
         local byFaction = FactionDanger(class, faction)
         if byFaction ~= nil then judged = judged + 1 elseif class.kind == "npc" or class.kind == "mob" or class.kind == "creature" then unjudged = unjudged + 1 end
         local danger = byFaction
         if danger == nil then danger = class.kind == "mob" or class.kind == "creature" end
-        if danger then names[index] = class.nameEn; any = true end
+        if danger then
+            names[index] = class.nameEn
+            radii[index] = HighLevelRadius(class, playerLevel)
+            any = true
+        end
     end
     local token = catalog
-    if judged > 0 then token = DangerToken(catalog, tostring(faction) .. (unjudged > 0 and ":partial" or ":full")) end
+    if judged > 0 or playerLevel then
+        token = DangerToken(catalog, tostring(faction) .. (unjudged > 0 and ":partial" or ":full") .. ":" .. tostring(playerLevel))
+    end
     local list = {}
     if any then
         local rows = catalog.targets
         for index = 1, #rows do
             local row = rows[index]
             local name = names[row[2]]
-            if name then list[#list + 1] = { x = row[3], y = row[4], z = row[5], name = name } end
+            if name then list[#list + 1] = { x = row[3], y = row[4], z = row[5], name = name, radius = radii[row[2]] } end
         end
     end
     return token, list
