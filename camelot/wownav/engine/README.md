@@ -108,6 +108,19 @@ Keep this list current; everything else is his text, line for line (line endings
   `cy0`), so the cells searched per link stay his. The start or target of a route leaves out the spawns within
   `DANGER_RADIUS` of it (or the spawn's own radius when smaller), and `EdgeDanger` then subtracts the whole yards the
   table counted for such a spawn. Without radii the tables are his.
+- `TargetCatalog.lua`, safe routes, faction and level of a creature (trial 2026-11-26/27, Broesel decides): three
+  hooks the module sets from Questie and the game (`../danger.lua`): `C.NpcFaction(entry)` -> "A" | "H" | "AH" | nil
+  (friendly to neither) | false (cannot be said), `C.NpcLevel(entry)` -> its highest level | nil, `C.PlayerLevel()` ->
+  the player's level | nil. `FactionDanger` judges a class by faction (with the player's faction from
+  `N.PlayerFaction`): friendly to the other side only endangers whatever its kind (quest givers and guards are kind
+  npc), a mob or creature friendly to neither endangers, friendly to the player's side or to both does not; a class it
+  cannot judge keeps his kind rule. `HighLevelRadius` gives a creature at least `C.HIGH_LEVEL_GAP` (5) levels above the
+  player the radius `C.HIGH_LEVEL_RADIUS` (45 yd) as its spawns' `radius`. `C:DangerSpawns` returns his token (the
+  catalogue) while the result is his (the kinds mob and creature, no radius); otherwise `DangerToken`, one table per
+  catalogue and fingerprint of the result (the dangerous class indices with their radii; it holds no reference to the
+  catalogue). So a table is rebuilt exactly when the spawn list changes; the module bumps `N.dangerGen` (deferred while
+  a search runs) when the player's level or faction or Questie's readiness changes, which only asks again. Without the
+  hooks everything is his.
 - His walk-in portal as a link of the route (WowVisionNavigation.lua, 5a1290b) is in `../route.lua`, not here:
   `Route.triggerPoint` (his `WowVisionNavigationTriggerPoint`) and the leg's last waypoint in the trigger
   (`Route:begin`). His `PendingTriggerEntered` was already WowVision's `Route:walkInTransit`, and the exit zone of a

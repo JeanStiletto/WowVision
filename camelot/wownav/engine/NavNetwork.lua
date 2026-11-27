@@ -53,8 +53,8 @@ N.SetComfort(N.COMFORT_DEFAULT)
 -- Safety factor (user request 2026-11-23, /vn safety <p>): p percent, 0 to 300, default 0 = off. X = 1 + p/100 is how much longer a safer route may be
 -- than the shortest one (pass (a)). The danger of a link is the length of the link (yd, horizontal) within DANGER_RADIUS of a monster spawn of the
 -- logical targets (classes of kind mob / creature; npc and objects do not count). Values to be confirmed by the user.
--- WowVision (2026-11-26): with a faction source the spawns are judged by faction (TargetCatalog C:DangerSpawns: creatures of the other
--- faction count whatever their kind).
+-- WowVision (2026-11-26/27): with a faction source the spawns are judged by faction (TargetCatalog C:DangerSpawns: creatures of the other
+-- faction count whatever their kind), and with a level source a creature far above the player brings a wider radius (spawn.radius).
 N.SAFETY_DEFAULT, N.SAFETY_MAX = 0, 300
 N.DANGER_RADIUS = 20.0        -- yd: a spawn endangers the part of a link that lies this close to it (aggro range of the usual mobs plus a margin)
 -- WowVision (2026-11-27): the largest radius a spawn may bring (spawn.radius); a larger one counts as this, an invalid one as DANGER_RADIUS
