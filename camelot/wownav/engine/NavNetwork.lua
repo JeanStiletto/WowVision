@@ -57,7 +57,9 @@ N.SAFETY_DEFAULT, N.SAFETY_MAX = 0, 300
 N.DANGER_RADIUS = 20.0        -- yd: a spawn endangers the part of a link that lies this close to it (aggro range of the usual mobs plus a margin)
 N.DANGER_DZ = 8.0             -- yd: a spawn whose height differs this much from the link at its nearest point does not count (caves, floors)
 N.DANGER_DEDUP = 2.0          -- yd: spawns of the same name this close to each other (several sources of one spawn) count once
-N.DANGER_WEIGHTS = { 30, 8, 2 }   -- cost per yd of danger of the safety passes, strongest first: a long detour for a certain gain, then milder ones
+-- WowVision trial 2026-11-26: his { 30, 8, 2 } without the 2, which won none of eight measured routes (Chillwind Camp, Chillwind Point and
+-- Alterac to Scarlet Monastery, Chillwind Camp to Hillsbrad, safety 30 and 100) and cost a fifth of the search
+N.DANGER_WEIGHTS = { 30, 8 }      -- cost per yd of danger of the safety passes, strongest first: a long detour for a certain gain, then a milder one
 function N.SetSafety(percent)
     if type(percent) ~= "number" or percent ~= percent or percent < 0 or percent > N.SAFETY_MAX then return false end
     N.safety, N.SAFETY_RATIO = percent, 1 + percent / 100
@@ -2197,6 +2199,12 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
     -- -k for part of a link up to or from a seam point (4.37; the link lies in the zone of the waypoint before, or of
     -- that virtual point), the action, or false for a seam
     local g, previous, via, startEntry = {}, {}, {}, {}
+    -- WowVision, speed (2026-11-26): a safety pass only counts when its route is at most danger.limit yd long (the
+    -- caller drops a longer candidate), so it does not follow a waypoint whose length so far plus the straight line to
+    -- the goals is longer. glen[id] = the length of the links walked to the waypoint (seams, actions and partial links
+    -- count 0: a lower bound, so no candidate that fits is cut). Without a limit (every other pass) nothing changes.
+    local limit = danger and danger.limit or nil
+    local glen = limit and {} or nil
     local heap = HeapNew()
     local useStraightLine = N.actionCount == 0   -- cheap teleports make the straight line inadmissible
     -- WowVision, speed: the goals' positions in plain arrays and the estimate from a position, so a waypoint of a zone
@@ -2278,6 +2286,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                 g[option.id] = cost
                 previous[option.id], via[option.id] = false, false
                 startEntry[option.id] = entry
+                if glen then glen[option.id] = 0 end
                 HeapPush(heap, cost + estimate(option.id), option.id, cost)
             end
         end
@@ -2303,6 +2312,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
         if new < (g[vid] or math.huge) then
             g[vid] = new
             previous[vid], via[vid] = from, edge
+            if glen then glen[vid] = glen[from] or 0 end
             HeapPush(heap, new + estimate(vid), vid, new)
         end
     end
@@ -2357,6 +2367,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                 local row = penalties and penalties[id]
                 local hostile = avoid and zone.hasFactions and HostileTable(zone, avoid.faction) or nil
                 local open = avoid and avoid.open
+                local lenHere = glen and (glen[id] or 0)
                 local onGoal, starts = zoneBound(zone)
                 -- safe routes (his /vn safety): the danger yards of the zone's links, only in a safety pass (nil otherwise,
                 -- so a plain search pays one test per link)
@@ -2371,11 +2382,16 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                     if new < (g[vid] or huge) then
                         local group = hostile and hostile[v + 1]
                         if not (group ~= nil and not open[group]) then
-                            g[vid] = new
-                            previous[vid], via[vid] = id, k
                             local i = v + 1
-                            HeapPush(heap, new + (useStraightLine and estimateAt(zx[i], zy[i], zz[i], onGoal, starts) or 0),
-                                vid, new)
+                            local h = useStraightLine and estimateAt(zx[i], zy[i], zz[i], onGoal, starts) or 0
+                            local walked = lenHere and lenHere + llen[k]
+                            -- the estimate is a straight line only without action shortcuts (goalMap nil)
+                            if not walked or walked + (goalMap == nil and h / hmin or 0) <= limit then
+                                g[vid] = new
+                                previous[vid], via[vid] = id, k
+                                if glen then glen[vid] = walked end
+                                HeapPush(heap, new + h, vid, new)
+                            end
                         end
                     end
                 end
@@ -2390,6 +2406,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                             if new < (g[action.toNode] or math.huge) then
                                 g[action.toNode] = new
                                 previous[action.toNode], via[action.toNode] = id, action
+                                if glen then glen[action.toNode] = lenHere end
                                 HeapPush(heap, new + estimate(action.toNode), action.toNode, new)
                             end
                         end
@@ -2425,6 +2442,7 @@ local function Pass(starts, goals, road, penalties, footOnly, avoid, danger)
                                 if new < (g[seam[1]] or math.huge) then
                                     g[seam[1]] = new
                                     previous[seam[1]], via[seam[1]] = id, false
+                                    if glen then glen[seam[1]] = lenHere end
                                     HeapPush(heap, new + estimate(seam[1]), seam[1], new)
                                 end
                             end
@@ -2651,13 +2669,14 @@ RouteSearch = function(startBinding, targetBinding, penalties, footOnly, startPo
             local limit = N.SAFETY_RATIO * a.length
             local road = pass == "b"
             for _, weight in ipairs(N.DANGER_WEIGHTS) do
-                local candidate = Pass(starts, goals, road, penalties, footOnly, passAvoid, { w = weight, excl = excl })
+                local candidate = Pass(starts, goals, road, penalties, footOnly, passAvoid, { w = weight, excl = excl, limit = limit })
                 if candidate and candidate.length <= limit then
                     local d = RouteDanger(candidate, excl)
                     if d < danger - 1e-6 or (d <= danger + 1e-6 and candidate.length < chosen.length - 1e-6) then
                         chosen, pass, danger = candidate, "s", d
                     end
                 end
+                if danger <= 1e-6 then break end      -- nothing left to avoid
             end
         end
     end
