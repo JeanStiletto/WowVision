@@ -1339,10 +1339,11 @@ local function stepPreload(N, px, py, map)
         table.sort(own)
         local key = map .. ":" .. table.concat(own, ",")
         if preload == nil or preload.key ~= key then
-            local keep, pending = {}, {}
+            local keep, pending, order = {}, {}, {}
             local function add(zoneId)
                 if not keep[zoneId] then
                     keep[zoneId] = true
+                    order[#order + 1] = zoneId
                     if not N.decoded[zoneId] and N.ZoneAvailable(zoneId) then
                         pending[#pending + 1] = zoneId
                     end
@@ -1371,7 +1372,8 @@ local function stepPreload(N, px, py, map)
                     break
                 end
             end
-            preload = { key = key, pending = pending, index = 0, keep = keep }
+            -- order: the kept zones, the player's own first (the danger tables are built in this order)
+            preload = { key = key, pending = pending, index = 0, keep = keep, order = order }
         end
     end
     -- one zone after the other, each over as many frames as it needs
@@ -1384,19 +1386,32 @@ local function stepPreload(N, px, py, map)
     end
     -- then the danger tables of the safe routes for the same zones (N.BuildDangerInSteps), with the same budget, so
     -- the first safe route of a session does not build them (2026-11-26: about half of that search; safe routes off:
-    -- nothing to do). Not while a search runs: it builds what it needs itself.
-    if job ~= nil or N.BuildDangerInSteps == nil then
+    -- nothing to do). Never while a search runs (stepCatalog only runs without a job): it builds what it needs itself.
+    -- The player's own zones first; once all are current, nothing more until the catalogue (N.dangerGen) or the kept
+    -- zones (a new preload) change.
+    if N.safety <= 0 or preload.dangerDone == N.dangerGen then
         return
     end
     local deadline = debugprofilestop() + PRELOAD_BUDGET_MS
-    for keptId in pairs(preload.keep) do
+    local done = true
+    for _, keptId in ipairs(preload.order) do
         local left = deadline - debugprofilestop()
         if left <= 0 then
             return
         end
-        if N.decoded[keptId] and N.BuildDangerInSteps(keptId, left, debugprofilestop) == false then
-            return
+        if N.decoded[keptId] then
+            local current = N.BuildDangerInSteps(keptId, left, debugprofilestop)
+            if current == false then
+                return
+            end
+            -- nil: decoded but not attached (N.zones), so it is tried again later
+            if current == nil then
+                done = false
+            end
         end
+    end
+    if done then
+        preload.dangerDone = N.dangerGen
     end
 end
 
