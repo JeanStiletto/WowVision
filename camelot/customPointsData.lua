@@ -23,20 +23,21 @@ shipped[#shipped + 1] = { id = "wv:forever:wpl-unknown-2", kind = "danger", x = 
 -- Blocked passages: links of WowNav's network the player cannot get through in the game. The walk of 2026-11-27
 -- 00:16 got stuck 17 times on a rock between Chillwind Camp and the Scarlet Monastery (12.6 yd up over 22.7 yd onto a
 -- rock top, then down again; the first trial walk of 2026-11-26 got stuck there too). Every route puts a penalty on
--- them while their waypoints still lie at these positions (other route data: left out).
-shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 0,
+-- them while their waypoints still lie at these positions (other route data: left out). Names: short English
+-- descriptions for the Custom Points list (a player who had a passage without a name gets it filled in once).
+shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 0, name = "Chillwind rock link 1",
     a = 14220006522, ax = 1164.8, ay = -1201.3, b = 14220006538, bx = 1177.1, by = -1182.2, x = 1171.0, y = -1191.8 }
-shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-2", kind = "blocked", map = 0,
+shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-2", kind = "blocked", map = 0, name = "Chillwind rock link 2",
     a = 14220006538, ax = 1177.1, ay = -1182.2, b = 14220006580, bx = 1206.2, by = -1182.5, x = 1191.7, y = -1182.4 }
 -- The next walk (00:30) went over the same rock top on parallel links (14220006547-6551-6582): the rock top carries a
 -- dense mesh of links, so the whole top is a blocked spot (links touching a waypoint within 12 yd and 8 yd of 81.5 yd
 -- height; the foot of the rock lies at about 69 yd and is not hit).
 shipped[#shipped + 1] = { id = "wv:forever:wpl-rock-top", kind = "blocked", map = 0, x = 1185.5, y = -1182.0, z = 81.5,
-    radius = 12 }
+    radius = 12, name = "Chillwind rock top" }
 -- The walk of 00:43: a slope past the water north-east of the rock where the player kept falling and sliding for
 -- about 20 s (links 14220012999 - 13030 - 13033 - 13078, 11 yd down over 11 yd), and the bank the next route tried to
 -- leave the water by (links 14220013138 - 13090 - 13105, blocked from the water and from the bank).
 shipped[#shipped + 1] = { id = "wv:forever:wpl-slope-1", kind = "blocked", map = 0, x = 1446.0, y = -995.0, z = 78.0,
-    radius = 10 }
+    radius = 10, name = "Chillwind slope" }
 shipped[#shipped + 1] = { id = "wv:forever:wpl-bank-1", kind = "blocked", map = 0, x = 1450.0, y = -975.0, z = 57.0,
-    radius = 8 }
+    radius = 8, name = "Chillwind bank" }

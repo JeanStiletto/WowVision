@@ -6,7 +6,11 @@
 -- Navigation page has a "Custom Points" button that lists them with Rename and Delete (Shift+F10 on a point); Enter
 -- on one opens F10 aimed at it. A route engine's safe routes count the danger points
 -- (customPointsChanged tells it when they change; camelot/wownav/module.lua). Its argument says what changed: "danger"
--- (the danger points or the store itself), "waypoint" (the waypoints), "rename" (only a name).
+-- (the danger points or the store itself), "waypoint" (the waypoints), "blocked" (the blocked passages), "rename"
+-- (only a name).
+-- The list's third section, Blocked Passages (only where WowNav's routes use them: WoW: Forever), holds the links and
+-- spots every route avoids: the shipped ones and those the manual new route saved where the player was stuck
+-- (saveBlockedPassage, saveBlockedSpot). Rename and Delete only; they are not destinations, Enter does nothing.
 -- Kept per account (the module's account store); the points the addon ships (customPoints.shipped) are handed over
 -- once and never replace the player's.
 
@@ -25,9 +29,6 @@ local KIND_WORDS = {
     end,
     danger = function()
         return L["Danger point"]
-    end,
-    blocked = function()
-        return L["Blocked passage"]
     end,
 }
 local LIST_TITLES = { waypoint = "Custom Waypoints", danger = "Danger Points", blocked = "Blocked Passages" }
@@ -217,19 +218,45 @@ module:registerWindow({
 })
 
 -- A passage of the route network the player could not get through (the route engine's manual new route saves the
--- link it was stuck on): later routes put a penalty on it. a, b: the network's waypoints, with their positions.
+-- link it was stuck on, camelot/wownav/module.lua): later routes put a penalty on it. a, b: the network's waypoints,
+-- with their positions. A new one is named after the subzone. Returns the point and what happened ("added", "known",
+-- "moved": customPoints.addBlocked), nil when there is no store.
 function module:saveBlockedPassage(a, b, ax, ay, bx, by, map)
     local store = storeOrSay()
     if store == nil then
         return nil
     end
-    local count = #store.blocked
-    local point = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
-    if #store.blocked > count then
-        record("add", "blocked", point)
+    local point, status, old = cp.addBlocked(store, a, b, ax, ay, bx, by, map)
+    if status == "known" then
+        return point, status
     end
+    if old ~= nil then
+        record("remove", "blocked", old)
+    end
+    if point.name == nil and placeName() ~= "" then
+        point.name = placeName()
+    end
+    record("add", "blocked", point)
     self.customPointsChanged:emit("blocked")
-    return point
+    return point, status
+end
+
+-- A blocked spot (the stuck place is no single link, a seam step between zones): every link touching a waypoint in
+-- the circle gets the penalty. Returns the point and "added" or "known", nil when there is no store.
+function module:saveBlockedSpot(x, y, z, map, radius)
+    local store = storeOrSay()
+    if store == nil then
+        return nil
+    end
+    local point, status = cp.addBlockedSpot(store, x, y, z, map, radius)
+    if status == "added" then
+        if placeName() ~= "" then
+            point.name = placeName()
+        end
+        record("add", "blocked", point)
+        self.customPointsChanged:emit("blocked")
+    end
+    return point, status
 end
 
 function module:newCustomPoint(kind)
@@ -290,7 +317,12 @@ end
 local function renderList(builder, screen)
     local store = module:customPointStore()
     local _, _, map = playerPosition()
-    for _, kind in ipairs({ "waypoint", "danger", "blocked" }) do
+    -- blocked passages only where a route engine fills and uses them (camelot/wownav/module.lua sets the flag)
+    local kinds = { "waypoint", "danger" }
+    if module.blockedPassagesUsed then
+        kinds[#kinds + 1] = "blocked"
+    end
+    for _, kind in ipairs(kinds) do
         builder:beginStop(kind)
         builder:pushContext(kind, L[LIST_TITLES[kind]])
         local points = (store ~= nil and map ~= nil) and cp.list(store, kind, map) or {}
@@ -307,8 +339,12 @@ local function renderList(builder, screen)
             local distance = distanceText(point)
             local node = nodes.button({
                 label = distance ~= nil and (label .. ", " .. distance) or label,
-                -- Enter: the navigation window aims at the point (it heads the destinations, Enter there routes)
+                -- Enter: the navigation window aims at the point (it heads the destinations, Enter there routes);
+                -- a blocked passage is no destination, Enter does nothing there
                 onActivate = function()
+                    if kind == "blocked" then
+                        return
+                    end
                     local host = WowVision.graphHost
                     host:pop(host:focusedStack())
                     module:openNavigationTo(captured.x, captured.y, cp.label(captured, kind, L))

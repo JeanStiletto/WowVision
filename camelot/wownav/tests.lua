@@ -110,29 +110,37 @@ local function rowsWith(rows, category)
 end
 
 local suite = {
-    -- 2026-11-27: the player's blocked passages (Route.persistentPenalties) come back with every new route; a manual new
-    -- route keeps what it has.
-    ["every new route starts with the saved blocked passages' penalties"] = function(t)
-        local saved = Route.persistentPenalties
-        local ok, err = pcall(function()
-            local calls = 0
-            Route.persistentPenalties = function()
-                calls = calls + 1
-                return { [11] = { [12] = 1000 }, [12] = { [11] = 1000 } }
-            end
-            local route = Route.new(newGame().env)
-            t:assertEqual(route.penalties[11][12], 1000, "a new route has them")
-            route.penalties[11][12] = 2000
-            route:reset(true)
-            t:assertEqual(route.penalties[11][12], 2000, "the manual new route keeps its own")
-            route:reset()
-            t:assertEqual(route.penalties[11][12], 1000, "the next route starts afresh with the saved ones")
-            t:assertTrue(calls >= 2)
-        end)
-        Route.persistentPenalties = saved
-        if not ok then
-            error(err, 0)
+    -- 2026-11-27: the player's blocked passages (env.penalties, blocked.lua) come back with every new route; a manual
+    -- new route keeps what it has.
+    ["every new route starts with the table env.penalties hands"] = function(t)
+        local calls = 0
+        local game = newGame()
+        game.env.penalties = function()
+            calls = calls + 1
+            return { [11] = { [12] = 1000 }, [12] = { [11] = 1000 } }
         end
+        local route = Route.new(game.env)
+        t:assertEqual(route.penalties[11][12], 1000, "a new route has them")
+        route.penalties[11][12] = 2000
+        route:reset(true)
+        t:assertEqual(route.penalties[11][12], 2000, "the manual new route keeps its own")
+        route:reset()
+        t:assertEqual(route.penalties[11][12], 1000, "the next route starts afresh with the saved ones")
+        t:assertTrue(calls >= 2)
+        t:assertNil(next(Route.new(newGame().env).penalties), "without env.penalties: none")
+    end,
+
+    ["the current link: the steering targets before and at the index, real waypoints only"] = function(t)
+        local route = Route.new(newGame().env)
+        t:assertNil(route:currentLink(), "no route")
+        route.active, route.path, route.pathIndex = true, { 11, 12, N.VIRT_BASE + 1 }, 2
+        local a, b = route:currentLink()
+        t:assertEqual(a, 11)
+        t:assertEqual(b, 12)
+        route.pathIndex = 1
+        t:assertNil(route:currentLink(), "at the first waypoint there is no link")
+        route.pathIndex = 3
+        t:assertNil(route:currentLink(), "a virtual point is no link of the network")
     end,
 
     ["a transit is proven in the plane: left the source, then in the arrival volume"] = function(t)
@@ -2717,6 +2725,162 @@ if haveNetwork then
             end
             t:assertTrue(same, "the same danger yards as built at once")
         end)
+    end
+
+    -- 2026-11-27: blocked passages on the real data (blocked.lua), Western Plaguelands (zone 1422) near Chillwind Camp.
+    local blocked = WowVision.wownavBlocked
+    local cp = WowVision.customPoints
+    local WPL = 1422
+    -- the first passages shipped for WoW: Forever (camelot/customPointsData.lua, not loaded here): a rock link and the
+    -- rock top
+    local function shippedStore()
+        local store = cp.store({})
+        cp.mergeShipped(store, {
+            { id = "wv:forever:wpl-rock-1", kind = "blocked", map = 0, a = 14220006522, ax = 1164.8, ay = -1201.3,
+                b = 14220006538, bx = 1177.1, by = -1182.2, x = 1171.0, y = -1191.8 },
+            { id = "wv:forever:wpl-rock-top", kind = "blocked", map = 0, x = 1185.5, y = -1182.0, z = 81.5,
+                radius = 12 },
+        })
+        return store
+    end
+
+    suite["blocked passages: a zone decoded after the route started still gets its penalties"] = function(t)
+        setup()
+        N.UnloadZone(WPL)
+        local store = shippedStore()
+        t:assertEqual(#store.blocked, 2)
+        local penalties, stats = blocked.penaltyTable(N, cp, store)
+        t:assertEqual(stats.zones, 0, "nothing filled before the search asks")
+        t:assertNil(penalties[14220006522], "the zone is not decoded: nothing yet")
+        N.LoadZone(WPL)
+        local row = penalties[14220006522]
+        t:assertTrue(row ~= nil and row[14220006538] == cp.BLOCKED_PENALTY, "the shipped rock link, once decoded")
+        t:assertEqual(penalties[14220006538][14220006522], cp.BLOCKED_PENALTY, "both ways")
+        t:assertEqual(stats.zones, 1)
+        t:assertTrue(stats.links > 100, "the rock top: " .. stats.links .. " links")
+        local filledLinks = stats.links
+        t:assertNil(penalties[14220000001], "a waypoint far from every passage: no row")
+        t:assertEqual(stats.links, filledLinks, "the zone is filled once")
+        t:assertEqual(stats.zones, 1)
+        -- the same store on another map: nothing
+        for _, point in ipairs(store.blocked) do
+            point.map = 1
+        end
+        local other, otherStats = blocked.penaltyTable(N, cp, store)
+        t:assertNil(other[14220006522])
+        t:assertEqual(otherStats.links, 0, "passages of another map are left out")
+    end
+
+    suite["blocked spots: every link leaving a waypoint in the circle and the band"] = function(t)
+        setup()
+        N.LoadZone(WPL)
+        local spot = { x = 1185.5, y = -1182.0, z = 81.5 }
+        local links = blocked.spotLinks(N, WPL, spot, 12, cp.BLOCKED_HEIGHT_BAND)
+        t:assertTrue(#links > 100, #links .. " links")
+        local outside = nil
+        for _, link in ipairs(links) do
+            local x, y, z = N.Position(link[1])
+            if (x - spot.x) ^ 2 + (y - spot.y) ^ 2 > 144 or math.abs(z - spot.z) > cp.BLOCKED_HEIGHT_BAND then
+                outside = link[1]
+                break
+            end
+        end
+        t:assertNil(outside, "every link starts at a waypoint inside the circle and the band")
+        t:assertTrue(blocked.spotLinks(N, WPL, spot, 12, cp.BLOCKED_HEIGHT_BAND) == links, "cached for the zone")
+        t:assertEqual(#blocked.spotLinks(N, WPL, { x = spot.x, y = spot.y, z = spot.z + 30 }, 12, 8), 0,
+            "a spot 30 yd above: nothing in the band")
+    end
+
+    suite["blocked spots: a circle that only reaches into a zone over its edge is found there"] = function(t)
+        setup()
+        local zone = N.LoadZone(WPL)
+        local entry = N.index[WPL]
+        local xmin = math.huge
+        for _, box in pairs(entry.worldBoxes) do
+            xmin = math.min(xmin, box.xmin)
+        end
+        -- the zone's westmost waypoint with links, and a circle round a point 1 yd west of the zone's boxes that just
+        -- reaches it (in data 1f8530e 57 yd: the boxes are the zone map's rectangle)
+        local best = nil
+        for i = 1, zone.n do
+            if #zone.adj[i] > 0 and (best == nil or zone.x[i] < zone.x[best]) then
+                best = i
+            end
+        end
+        local id = zone.base + best - 1
+        local cx = xmin - 1
+        for _, zoneId in ipairs(N.ZonesForPoint(cx, zone.y[best])) do
+            t:assertTrue(zoneId ~= WPL, "the centre lies outside the zone")
+        end
+        local store = cp.store({})
+        cp.addBlockedSpot(store, cx, zone.y[best], nil, entry.nativeMapId or N.activeMapId, zone.x[best] - cx + 1)
+        local penalties = blocked.penaltyTable(N, cp, store)
+        local row = penalties[id]
+        t:assertTrue(row ~= nil and next(row) ~= nil, "the waypoint's links are penalised")
+    end
+
+    suite["the manual new route: what is saved for the pair the player is stuck on"] = function(t)
+        setup()
+        local zone = N.LoadZone(WPL)
+        local a, b = 14220006522, 14220006538
+        local ax, ay, az = N.Position(a)
+        local bx, by, bz = N.Position(b)
+        local mx, my, mz = (ax + bx) / 2, (ay + by) / 2, (az + bz) / 2
+        local found = blocked.stuckSave(N, cp, a, b, mx + 2, my, mz)
+        t:assertTrue(found ~= nil and found.links ~= nil and #found.links == 1, "a link of the network")
+        t:assertEqual(found.links[1][1], a)
+        t:assertEqual(found.links[1][2], b)
+        t:assertTrue(blocked.stuckSave(N, cp, a, b, mx, my, nil) ~= nil, "height unknown (swimming): the plane only")
+        local _, why = blocked.stuckSave(N, cp, a, b, mx + 25, my + 25, mz)
+        t:assertEqual(why, "far", "the player is not near the link")
+        _, why = blocked.stuckSave(N, cp, a, b, mx, my, mz + 20)
+        t:assertEqual(why, "far", "the player is far above or below it")
+        -- a branch waypoint his steering targets leave out: the two links around it
+        local branchFound = false
+        for localId, pair in pairs(zone.branch) do
+            local c, p, q = zone.base + localId, zone.base + pair[1], zone.base + pair[2]
+            local cx, cy, cz = N.Position(c)
+            local save = blocked.stuckSave(N, cp, p, q, cx, cy, cz)
+            if save ~= nil and save.links ~= nil and #save.links == 2 then
+                t:assertEqual(save.links[1][2], c)
+                t:assertEqual(save.links[2][1], c)
+                -- the running route feels them at once (its own penalty lies on p - q, no link)
+                local penalties = {}
+                blocked.apply(N, cp, penalties, save)
+                t:assertEqual(penalties[p][c], cp.BLOCKED_PENALTY)
+                t:assertEqual(penalties[q][c], cp.BLOCKED_PENALTY)
+                branchFound = true
+                break
+            end
+        end
+        t:assertTrue(branchFound, "a branch waypoint of the zone")
+        -- a seam step into the next zone (no link of a zone joins them): a spot over both ends
+        local p, q = nil, nil
+        for localId, seams in pairs(zone.seam) do
+            for _, seam in ipairs(seams) do
+                if not seam.link and seam[1] ~= nil then
+                    p, q = zone.base + localId, seam[1]
+                    break
+                end
+            end
+            if p ~= nil then
+                break
+            end
+        end
+        t:assertTrue(p ~= nil, "a seam step of the zone")
+        N.LoadZone(math.floor(q / N.ZONE_BASE))
+        local px, py, pz = N.Position(p)
+        local qx, qy = N.Position(q)
+        local save = blocked.stuckSave(N, cp, p, q, (px + qx) / 2, (py + qy) / 2, pz)
+        t:assertTrue(save ~= nil and save.spot ~= nil, "no link: a spot")
+        local touches = false
+        for _, link in ipairs(blocked.spotLinks(N, WPL, save.spot, save.spot.radius, cp.BLOCKED_HEIGHT_BAND)) do
+            if link[1] == p then touches = true end
+        end
+        t:assertTrue(touches, "the spot covers the pair's waypoints")
+        local penalties = {}
+        blocked.apply(N, cp, penalties, save)
+        t:assertTrue(penalties[p] ~= nil and next(penalties[p]) ~= nil, "the running route feels the spot at once")
     end
 end
 
