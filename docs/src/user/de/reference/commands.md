@@ -118,6 +118,8 @@ Setzt ein Beacon in gerader Linie, routet zu einem benannten Ort oder sagt dir, 
 
 Beispiele: /beacon 50.5 30.4 sagt "Beacon gesetzt 245 Meter" und startet ein Beacon in gerader Linie zu dieser Stelle; es öffnet nicht das Navigationsfenster. /beacon to innkeeper spricht den gefundenen Ort und startet eine Route dorthin, oder sagt "Keine Route gefunden innkeeper". /beacon 12 mit nur einer Zahl sagt "Usage beacon x y".
 
+Zwischen den beiden Zahlen stehen Leerzeichen, ein Komma oder ein Semikolon: 50.5 30.4, 50.5,30.4 und 50.5; 30.4 gehen alle. Ein Dezimalkomma geht auch, wenn Leerzeichen oder ein Semikolon die Zahlen trennen, etwa 50,5 30,4. Kartenkoordinaten gehen von 0 bis 100; andere Zahlen sagen "Usage beacon x y". Dieselben Regeln gelten, wenn du Koordinaten für einen eigenen Wegpunkt oder Gefahrenpunkt eingibst.
+
 Versionen: alle. /beacon to braucht Kartendaten für den Kontinent, auf dem du bist; siehe [Navigation und Routen](../world/navigation.md).
 
 ### /focus1 bis /focus5

@@ -133,8 +133,8 @@ local function playerFacing()
 end
 
 -- The player's custom danger points (core/navigation/maps/customPointsUi.lua) join the monster spawns of the safe
--- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (N.dangerGen).
--- The token names the source's own token and the list's generation, so a table is kept while neither changes.
+-- routes: the danger source is wrapped once, and a changed point list rebuilds the danger tables (bumpDanger).
+-- A zone's token stays while the source's own token and the list's generation stay, so its table is kept.
 local customDangerGen = 0
 local function useCustomDangers(N)
     local maps = WowVision.base.navigation.maps
@@ -144,17 +144,19 @@ local function useCustomDangers(N)
     end
     N.customDangersWrapped = true
     local original = N.DangerSource
-    local tokens = setmetatable({}, { __mode = "k" })
-    local NONE = {}
+    local tokens = {}   -- [zoneId] = { source = the source's token, gen = customDangerGen, token = the token handed on }
     N.DangerSource = function(zoneId)
         local token, list = original(zoneId)
         local store = maps:customPointStore()
         if store == nil then
             return token, list
         end
-        local extra = cp.dangerSpawns(store, N.activeMapId, function(x, y)
-            for _, id in ipairs(N.ZonesForPoint(x, y)) do
-                if id == zoneId then
+        -- the zone's own map and boxes (its index entry), not the active continent's
+        local entry = N.index[zoneId]
+        local map = entry ~= nil and entry.nativeMapId or N.activeMapId
+        local extra = cp.dangerSpawns(store, map, function(x, y)
+            for _, box in pairs(entry ~= nil and entry.worldBoxes or {}) do
+                if x >= box.xmin and x <= box.xmax and y >= box.ymin and y <= box.ymax then
                     return true
                 end
             end
@@ -170,23 +172,18 @@ local function useCustomDangers(N)
         for _, spawn in ipairs(extra) do
             merged[#merged + 1] = spawn
         end
-        local key = token or NONE
-        local byGen = tokens[key]
-        if byGen == nil then
-            byGen = {}
-            tokens[key] = byGen
+        local own = tokens[zoneId]
+        if own == nil or own.source ~= token or own.gen ~= customDangerGen then
+            own = { source = token, gen = customDangerGen, token = {} }
+            tokens[zoneId] = own
         end
-        local own = byGen[customDangerGen]
-        if own == nil then
-            own = { source = token, custom = customDangerGen }
-            byGen[customDangerGen] = own
-        end
-        return own, merged
+        return own.token, merged
     end
+    -- "danger": the danger points or the store changed (a rename or a waypoint leaves the tables alone)
     maps.customPointsChanged:subscribe(module, function(_, _, kind)
         if kind == "danger" then
             customDangerGen = customDangerGen + 1
-            N.dangerGen = (N.dangerGen or 0) + 1
+            bumpDanger(N)
         end
     end)
 end
