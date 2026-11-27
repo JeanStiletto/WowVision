@@ -2459,6 +2459,52 @@ if haveNetwork then
             error(err, 0)
         end
     end
+    -- A spawn may bring its own danger radius (spawn.radius); without one it keeps DANGER_RADIUS.
+    suite["safe routes: a spawn's own radius widens its danger"] = function(t)
+        setup()
+        t:assertTrue(#zoneRows(ELWYNN) > 0, "Elwynn's catalogue is active")
+        local zone = N.LoadZone(ELWYNN)
+        local saved = { N.DangerSource, N.safety }
+        local ok, err = pcall(function()
+            N.SetSafety(30)
+            local function yards()
+                N.dangerGen = N.dangerGen + 1
+                zone.danger = nil
+                local danger = N.ZoneDanger(zone)
+                local sum = 0
+                for _, y in pairs(danger.len) do
+                    sum = sum + y
+                end
+                return sum, danger
+            end
+            local plain, before = yards()
+            t:assertEqual(before.maxRadius, N.DANGER_RADIUS, "no spawn radius: the usual one")
+            local WIDE = 45
+            N.DangerSource = function(zoneId)
+                local token, list = saved[1](zoneId)
+                local wide = {}
+                for i, spawn in ipairs(list or {}) do
+                    local copy = {}
+                    for k, v in pairs(spawn) do
+                        copy[k] = v
+                    end
+                    copy.radius = WIDE
+                    wide[i] = copy
+                end
+                return { wide = token }, wide
+            end
+            local wideSum, after = yards()
+            t:assertEqual(after.maxRadius, WIDE)
+            t:assertTrue(wideSum > plain * 1.5, "the wider radius endangers more of the links")
+        end)
+        N.DangerSource = saved[1]
+        N.SetSafety(saved[2])
+        N.dangerGen = N.dangerGen + 1
+        zone.danger = nil
+        if not ok then
+            error(err, 0)
+        end
+    end
 end
 
 testRunner:addSuite("WowNav routes", suite)

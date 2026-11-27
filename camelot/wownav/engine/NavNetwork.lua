@@ -1747,8 +1747,10 @@ end
 
 local function BuildDanger(zone, spawns)
     local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
-    local danger = { len = {}, sx = {}, sy = {}, sz = {}, grid = {}, count = 0 }
-    local sx, sy, sz, grid = danger.sx, danger.sy, danger.sz, danger.grid
+    -- WowVision (2026-11-26): sr[i] = the spawn's own radius (spawn.radius, set by the danger source),
+    -- else DANGER_RADIUS; maxRadius = the largest, so the grid search reaches every spawn
+    local danger = { len = {}, sx = {}, sy = {}, sz = {}, sr = {}, grid = {}, count = 0, maxRadius = radius }
+    local sx, sy, sz, sr, grid = danger.sx, danger.sy, danger.sz, danger.sr, danger.grid
     -- deduplication: the same name within DANGER_DEDUP counts once
     local names, dedup, step = {}, {}, N.DANGER_DEDUP
     for _, spawn in ipairs(spawns or {}) do
@@ -1771,6 +1773,9 @@ local function BuildDanger(zone, spawns)
             local i = danger.count + 1
             danger.count = i
             sx[i], sy[i], sz[i], names[i] = x, y, spawn.z or false, spawn.name
+            local own = tonumber(spawn.radius) or radius
+            sr[i] = own
+            if own > danger.maxRadius then danger.maxRadius = own end
             local key = DangerKey(cx, cy)
             local list = dedup[key]
             if not list then list = {}; dedup[key] = list end
@@ -1790,8 +1795,8 @@ end
 -- clock passes the deadline (checked every DANGER_SLICE links) and return false; true when every link is done.
 local DANGER_SLICE = 256
 local function DangerLinks(zone, danger, clock, deadline)
-    local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
-    local sx, sy, sz, grid = danger.sx, danger.sy, danger.sz, danger.grid
+    local radius, dz = danger.maxRadius or N.DANGER_RADIUS, N.DANGER_DZ
+    local sx, sy, sz, sr, grid = danger.sx, danger.sy, danger.sz, danger.sr, danger.grid
     local len = danger.len
     local lu, lv, nx, ny, nz = zone.lu, zone.lv, zone.x, zone.y, zone.z
     local k = danger.nextLink
@@ -1815,7 +1820,7 @@ local function DangerLinks(zone, danger, clock, deadline)
                     local bucket = grid[DangerKey(cx, cy)]
                     if bucket then
                         for _, i in ipairs(bucket) do
-                            local yards = ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx[i], sy[i], sz[i], radius, dz)
+                            local yards = ClipLink(x1, y1, z1, x2, y2, z2, a, root, sx[i], sy[i], sz[i], sr[i] or radius, dz)
                             if yards > 0 then total = (total or 0) + yards end
                         end
                     end
@@ -1887,7 +1892,8 @@ local function EdgeDanger(zone, danger, k, excl)
             local root = sqrt(a)
             local radius, dz = N.DANGER_RADIUS, N.DANGER_DZ
             for _, i in ipairs(skip.list) do
-                yards = yards - ClipLink(x1, y1, z1, x2, y2, z2, a, root, danger.sx[i], danger.sy[i], danger.sz[i], radius, dz)
+                yards = yards - ClipLink(x1, y1, z1, x2, y2, z2, a, root, danger.sx[i], danger.sy[i], danger.sz[i],
+                    danger.sr and danger.sr[i] or radius, dz)
             end
             if yards < 1e-9 then yards = 0 end
             skip.cache[k] = yards
@@ -1904,13 +1910,15 @@ local function ExcludeAround(excl, zone, x, y, z)
     if danger.count == 0 then return end
     local radius = N.DANGER_RADIUS
     local cx, cy = DangerCell(x), DangerCell(y)
-    for gx = cx - 1, cx + 1 do
-        for gy = cy - 1, cy + 1 do
+    local reach = math.ceil((danger.maxRadius or radius) / N.DANGER_RADIUS)
+    for gx = cx - reach, cx + reach do
+        for gy = cy - reach, cy + reach do
             local bucket = danger.grid[DangerKey(gx, gy)]
             if bucket then
                 for _, i in ipairs(bucket) do
                     local zs = danger.sz[i]
-                    if (danger.sx[i] - x) ^ 2 + (danger.sy[i] - y) ^ 2 <= radius * radius
+                    local own = danger.sr and danger.sr[i] or radius
+                    if (danger.sx[i] - x) ^ 2 + (danger.sy[i] - y) ^ 2 <= own * own
                         and (not z or not zs or abs(z - zs) <= N.DANGER_DZ) then
                         local skip = excl[zone]
                         if not skip then skip = { list = {}, seen = {}, cache = {} }; excl[zone] = skip end
